@@ -2,7 +2,7 @@ import { StrictMode, useEffect, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, BookOpenCheck, Bot, ChevronDown, Download, FileBarChart, FlaskConical, LayoutDashboard, ListChecks, Play, Plus, Sparkles } from "lucide-react";
+import { Archive, BookOpenCheck, Bot, ChevronDown, Download, FileBarChart, FlaskConical, LayoutDashboard, ListChecks, Pencil, Play, Plus, Sparkles } from "lucide-react";
 import { api, timeAgo, type BackupInfo, type Project } from "./api";
 import { Empty, Modal, ToastProvider, useHotkeys, useToast } from "./components/ui";
 import { CasesPage } from "./pages/Cases";
@@ -140,6 +140,40 @@ function NewProjectModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+function RenameProjectModal({ project, onClose }: { project: Project; onClose: () => void }) {
+  const [name, setName] = useState(project.name);
+  const qc = useQueryClient();
+  const toast = useToast();
+  const save = useMutation({
+    mutationFn: () => api.patch<Project>(`/api/projects/${project.id}`, { name: name.trim() }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["projects"] });
+      onClose();
+    },
+    onError: (e: Error) => toast("error", e.message),
+  });
+  const valid = !!name.trim() && name.trim() !== project.name;
+  return (
+    <Modal
+      title="Rename project"
+      onClose={onClose}
+      width={440}
+      footer={<button className="btn primary" disabled={!valid || save.isPending} onClick={() => save.mutate()}>Save</button>}
+    >
+      <form className="col" style={{ gap: 12 }} onSubmit={(e) => { e.preventDefault(); if (valid) save.mutate(); }}>
+        <div className="field">
+          <label htmlFor="rname">Name</label>
+          <input id="rname" className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} />
+          <span className="muted" style={{ fontSize: 12 }}>
+            The key <code className="inline">{project.key}</code> stays the same, because case IDs and <code className="inline">@{project.key}-12</code> tags in your tests use it.
+          </span>
+        </div>
+        <button type="submit" hidden />
+      </form>
+    </Modal>
+  );
+}
+
 function ProjectLayout() {
   const { data: projects, isLoading } = useProjects();
   const { pid } = useParams();
@@ -148,6 +182,7 @@ function ProjectLayout() {
   const [menu, setMenu] = useState(false);
   const { data: backup } = useQuery({ queryKey: ["backup-info"], queryFn: () => api.get<BackupInfo>("/api/backup/info"), staleTime: 60_000 });
   const [creating, setCreating] = useState(false);
+  const [renaming, setRenaming] = useState(false);
 
   useEffect(() => {
     if (pid) storage.set(LAST_PROJECT, pid);
@@ -195,6 +230,9 @@ function ProjectLayout() {
                   </button>
                 ))}
                 <div style={{ borderTop: "1px solid var(--border)", margin: "4px 0" }} />
+                <button className="nav-item" onClick={() => { setMenu(false); setRenaming(true); }}>
+                  <Pencil size={14} /> Rename this project
+                </button>
                 <button className="nav-item" onClick={() => { setMenu(false); setCreating(true); }}>
                   <Plus size={14} /> New project
                 </button>
@@ -233,6 +271,7 @@ function ProjectLayout() {
         <Outlet />
       </main>
       {creating && <NewProjectModal onClose={() => setCreating(false)} />}
+      {renaming && <RenameProjectModal project={project} onClose={() => setRenaming(false)} />}
     </div>
   );
 }

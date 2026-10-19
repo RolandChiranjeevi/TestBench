@@ -8,6 +8,8 @@ npm install
 npm run dev        # http://localhost:5173 (API on 127.0.0.1:4100)
 ```
 
+Rename a project from the project menu at the top of the sidebar ("Rename this project"). Its key stays fixed because case IDs and `@KEY-12` tags use it.
+
 Data lives in `data/testbench.db` (SQLite) and `data/uploads/`. Back up that folder to keep everything.
 
 ## Linking automated tests to cases
