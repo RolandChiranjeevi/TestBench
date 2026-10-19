@@ -2,7 +2,7 @@ import { StrictMode, useEffect, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, ChevronDown, Download, FlaskConical, ListChecks, Play, Plus, Sparkles } from "lucide-react";
+import { Bot, ChevronDown, Download, FileBarChart, FlaskConical, LayoutDashboard, ListChecks, Play, Plus, Sparkles } from "lucide-react";
 import { api, type Project } from "./api";
 import { Empty, Modal, ToastProvider, useHotkeys, useToast } from "./components/ui";
 import { CasesPage } from "./pages/Cases";
@@ -10,6 +10,8 @@ import { RunsPage } from "./pages/Runs";
 import { RunDetailPage } from "./pages/RunDetail";
 import { AutomatedPage } from "./pages/Automated";
 import { ImportPage } from "./pages/Import";
+import { DashboardPage } from "./pages/Dashboard";
+import { ReportsPage } from "./pages/Reports";
 import "./styles.css";
 
 const LAST_PROJECT = "testbench:lastProject";
@@ -38,7 +40,7 @@ function Home() {
   if (!data?.length) return <Welcome />;
   const last = Number(storage.get(LAST_PROJECT));
   const project = data.find((p) => p.id === last) ?? data[0];
-  return <Navigate to={`/p/${project.id}/cases`} replace />;
+  return <Navigate to={`/p/${project.id}/dashboard`} replace />;
 }
 
 function Welcome() {
@@ -149,10 +151,12 @@ function ProjectLayout() {
   }, [pid]);
 
   useHotkeys({
-    "1": () => navigate(`/p/${pid}/cases`),
-    "2": () => navigate(`/p/${pid}/runs`),
-    "3": () => navigate(`/p/${pid}/automated`),
-    "4": () => navigate(`/p/${pid}/import`),
+    "1": () => navigate(`/p/${pid}/dashboard`),
+    "2": () => navigate(`/p/${pid}/cases`),
+    "3": () => navigate(`/p/${pid}/runs`),
+    "4": () => navigate(`/p/${pid}/automated`),
+    "5": () => navigate(`/p/${pid}/import`),
+    "6": () => navigate(`/p/${pid}/reports`),
   });
 
   if (isLoading) return null;
@@ -195,10 +199,13 @@ function ProjectLayout() {
         </div>
 
         <div className="sidebar-section">Workspace</div>
-        {link("cases", <ListChecks size={15} />, "Test cases", "1")}
-        {link("runs", <Play size={15} />, "Runs", "2")}
-        {link("automated", <Bot size={15} />, "Automated tests", "3")}
-        {link("import", <Download size={15} />, "Import results", "4")}
+        {link("dashboard", <LayoutDashboard size={15} />, "Dashboard", "1")}
+        {link("cases", <ListChecks size={15} />, "Test cases", "2")}
+        {link("runs", <Play size={15} />, "Runs", "3")}
+        {link("automated", <Bot size={15} />, "Automated tests", "4")}
+        {link("import", <Download size={15} />, "Import results", "5")}
+        <div className="sidebar-section">Reporting</div>
+        {link("reports", <FileBarChart size={15} />, "Sprint reports", "6")}
 
         <div className="sidebar-footer">
           {project.case_count} cases · {project.run_count} runs
@@ -222,7 +229,10 @@ createRoot(document.getElementById("root")!).render(
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/p/:pid" element={<ProjectLayout />}>
-              <Route index element={<Navigate to="cases" replace />} />
+              <Route index element={<Navigate to="dashboard" replace />} />
+              <Route path="dashboard" element={<DashboardPage />} />
+              <Route path="reports" element={<ReportsPage />} />
+              <Route path="reports/:mid" element={<ReportsPage />} />
               <Route path="cases" element={<CasesPage />} />
               <Route path="runs" element={<RunsPage />} />
               <Route path="runs/:runId" element={<RunDetailPage />} />

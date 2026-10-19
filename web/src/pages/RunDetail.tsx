@@ -307,8 +307,17 @@ function ExecutionPanel({ resultId, projectKey, onMark }: { resultId: number; pr
           <PriorityIcon priority={c.priority} />
           {c.tags.map((t) => <span key={t} className="chip">{t}</span>)}
           <span className="spacer" />
-          <Link to={`/p/${c.project_id}/cases?case=${c.id}`} className="btn ghost sm"><ExternalLink size={12} /> Edit case</Link>
+          {c.id ? (
+            <Link to={`/p/${c.project_id}/cases?case=${c.id}`} className="btn ghost sm"><ExternalLink size={12} /> Open case</Link>
+          ) : (
+            <span className="chip">Case deleted</span>
+          )}
         </div>
+        {c.edited_since && (
+          <div className="muted" style={{ fontSize: 12 }}>
+            This case was edited after the run started. You're seeing the steps as they were then.
+          </div>
+        )}
         <h2 style={{ margin: 0, fontSize: 19, fontWeight: 600, letterSpacing: "-0.01em" }}>{c.title}</h2>
         {c.description && <p style={{ margin: 0, color: "var(--text-2)", whiteSpace: "pre-wrap" }}>{c.description}</p>}
       </div>

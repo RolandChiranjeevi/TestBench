@@ -11,6 +11,10 @@ import { seedDemo } from "./demo.ts";
 import { getToken, importRun, listRuns, type GithubSource } from "./importers/github.ts";
 import { importReport, mergeReports } from "./importers/import.ts";
 import type { CaseSnapshot } from "./db.ts";
+import { exportCasesCsv, exportJson, exportMarkdownZip, exportResultsCsv } from "./exporter.ts";
+import { htmlToPdf } from "./pdf.ts";
+import { renderReport } from "./reportHtml.ts";
+import { dashboardData, listMilestones, milestoneReport } from "./stats.ts";
 import { parseReport, type Framework, type ParsedReport } from "./importers/parse.ts";
 
 const PORT = Number(process.env.TESTBENCH_API_PORT ?? 4100);
@@ -571,6 +575,101 @@ app.post("/api/github-sources/:id/runs/:runId/import", async (req) => {
   } catch (e) {
     throw new HttpError(400, (e as Error).message);
   }
+});
+
+// ---------------- Dashboard ----------------
+
+app.get("/api/projects/:id/dashboard", (req) => must(dashboardData(idParam(req)) ?? undefined, "Project"));
+
+// ---------------- Sprints & releases ----------------
+
+const dateField = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD").nullable();
+const milestoneBody = z.object({
+  name: z.string().trim().min(1).max(100),
+  kind: z.enum(["sprint", "release"]),
+  startDate: dateField,
+  endDate: dateField,
+});
+
+app.get("/api/projects/:id/milestones", (req) => listMilestones(idParam(req)));
+
+app.post("/api/projects/:id/milestones", (req) => {
+  const projectId = idParam(req);
+  const body = milestoneBody.partial({ kind: true, startDate: true, endDate: true }).parse(req.body);
+  if (db.prepare("SELECT 1 FROM milestones WHERE project_id = ? AND name = ?").get(projectId, body.name)) throw new HttpError(409, `"${body.name}" already exists`);
+  return db
+    .prepare("INSERT INTO milestones (project_id, name, kind, start_date, end_date) VALUES (?, ?, ?, ?, ?) RETURNING *")
+    .get(projectId, body.name, body.kind ?? "sprint", body.startDate ?? null, body.endDate ?? null);
+});
+
+app.patch("/api/milestones/:id", (req) => {
+  const id = idParam(req);
+  const body = milestoneBody.partial().parse(req.body);
+  const cur = must(db.prepare("SELECT * FROM milestones WHERE id = ?").get(id) as Record<string, any> | undefined, "Milestone");
+  const name = body.name ?? cur.name;
+  if (name !== cur.name && db.prepare("SELECT 1 FROM milestones WHERE project_id = ? AND name = ?").get(cur.project_id, name)) throw new HttpError(409, `"${name}" already exists`);
+  if (body.startDate && body.endDate && body.endDate < body.startDate) throw new HttpError(400, "End date is before start date");
+  return db.transaction(() => {
+    // Runs reference a milestone by name, so a rename has to follow them.
+    if (name !== cur.name) db.prepare("UPDATE runs SET milestone = ? WHERE project_id = ? AND milestone = ?").run(name, cur.project_id, cur.name);
+    return db
+      .prepare("UPDATE milestones SET name = ?, kind = ?, start_date = ?, end_date = ? WHERE id = ? RETURNING *")
+      .get(
+        name,
+        body.kind ?? cur.kind,
+        body.startDate === undefined ? cur.start_date : body.startDate,
+        body.endDate === undefined ? cur.end_date : body.endDate,
+        id,
+      );
+  })();
+});
+
+// ---------------- Reports ----------------
+
+const reportFor = (req: FastifyRequest) => must(milestoneReport(idParam(req)) ?? undefined, "Milestone");
+const fileSafe = (s: string) => s.replace(/[^\w.-]+/g, "_").replace(/^_+|_+$/g, "") || "report";
+
+app.get("/api/milestones/:id/report", (req) => reportFor(req));
+
+app.get("/api/milestones/:id/report.html", (req, reply) => {
+  const r = reportFor(req);
+  const html = renderReport(r);
+  reply.type("text/html; charset=utf-8").header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data:");
+  if ((req.query as Record<string, string>).download) reply.header("Content-Disposition", `attachment; filename="${fileSafe(`${r.project.key}-${r.milestone.name}`)}-report.html"`);
+  return html;
+});
+
+app.get("/api/milestones/:id/report.pdf", async (req, reply) => {
+  const r = reportFor(req);
+  const pdf = await htmlToPdf(renderReport(r), `${r.project.name} · ${r.milestone.name} test report`);
+  reply.type("application/pdf").header("Content-Disposition", `attachment; filename="${fileSafe(`${r.project.key}-${r.milestone.name}`)}-report.pdf"`);
+  return Buffer.from(pdf);
+});
+
+// ---------------- Export ----------------
+
+function download(reply: import("fastify").FastifyReply, name: string, type: string, data: string | Uint8Array | object | null) {
+  if (data == null) throw new HttpError(404, "Project not found");
+  reply.type(type).header("Content-Disposition", `attachment; filename="${name}"`);
+  return typeof data === "string" || data instanceof Uint8Array ? Buffer.from(data as string | Uint8Array) : JSON.stringify(data, null, 2);
+}
+const projectKey = (id: number) => (db.prepare("SELECT key FROM projects WHERE id = ?").get(id) as { key: string } | undefined)?.key.toLowerCase() ?? "project";
+
+app.get("/api/projects/:id/export.json", (req, reply) => {
+  const id = idParam(req);
+  return download(reply, `${projectKey(id)}-export.json`, "application/json", exportJson(id));
+});
+app.get("/api/projects/:id/export-cases.csv", (req, reply) => {
+  const id = idParam(req);
+  return download(reply, `${projectKey(id)}-cases.csv`, "text/csv; charset=utf-8", exportCasesCsv(id));
+});
+app.get("/api/projects/:id/export-results.csv", (req, reply) => {
+  const id = idParam(req);
+  return download(reply, `${projectKey(id)}-results.csv`, "text/csv; charset=utf-8", exportResultsCsv(id));
+});
+app.get("/api/projects/:id/export-markdown.zip", (req, reply) => {
+  const id = idParam(req);
+  return download(reply, `${projectKey(id)}-cases-markdown.zip`, "application/zip", exportMarkdownZip(id));
 });
 
 await app.listen({ port: PORT, host: "127.0.0.1" });

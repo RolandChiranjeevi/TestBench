@@ -17,6 +17,7 @@ export interface AutomatedTest {
 export interface HistoryEntry { id: number; status: Status; flaky: number; duration_ms: number | null; executed_at: string | null; run_id: number; run_title: string; kind: string; started_at: string }
 export interface CaseDetail extends CaseSummary {
   description: string; preconditions: string; project_key: string; steps: Required<Step>[]; automated: AutomatedTest[]; history: HistoryEntry[];
+  edited_since?: boolean;
 }
 export interface Counts { total: number; passed: number; failed: number; blocked: number; skipped: number; untested: number; flaky: number; duration_ms: number }
 export interface RunSummary extends Counts {
@@ -41,6 +42,28 @@ export interface WorkflowRun {
   status: string; conclusion: string | null; created_at: string; html_url: string; imported_run_id: number | null;
 }
 export interface ImportResult { runId: number; duplicate: boolean; total: number; linked: number; artifacts?: string[] }
+
+export interface Milestone {
+  id: number; project_id: number; name: string; kind: "sprint" | "release"; start_date: string | null; end_date: string | null; run_count: number;
+}
+export interface DashboardRun extends Counts {
+  id: number; title: string; started_at: string; framework: string | null; milestone: string; run_status: string; rate: number | null;
+}
+export interface TestStat { id: number; title: string; file: string; framework: string; last_status: Status | null; case_number: number | null; runs: number; failures: number; flaky: number; avg_ms: number | null }
+export interface Dashboard {
+  project: { id: number; name: string; key: string };
+  summary: {
+    cases: number; automatedCases: number; coverage: number; automatedTests: number; unlinkedTests: number; latestRate: number | null;
+    previousRate: number | null; flakyTests: number; failingCases: number; openManualRuns: number;
+  };
+  automatedRuns: DashboardRun[];
+  manualRuns: DashboardRun[];
+  mostFailing: TestStat[];
+  flaky: TestStat[];
+  slowest: TestStat[];
+  failingCases: { id: number; number: number; title: string; priority: Priority; suite_name: string | null; status: Status; executed_at: string; run_title: string }[];
+  bySuite: { name: string; cases: number; automated: number }[];
+}
 
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { "X-Testbench": "1" };

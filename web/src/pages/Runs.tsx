@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bot, Download, GitBranch, Hand, Play, Plus, Search } from "lucide-react";
-import { api, formatDuration, passRate, timeAgo, type CaseSummary, type Project, type RunSummary, type Suite } from "../api";
+import { api, formatDuration, passRate, timeAgo, type CaseSummary, type Milestone, type Project, type RunSummary, type Suite } from "../api";
 import { Empty, FrameworkBadge, Github, Kbd, Modal, PriorityIcon, ProgressBar, useHotkeys, useToast } from "../components/ui";
 
 type Kind = "all" | "manual" | "automated";
@@ -119,6 +119,7 @@ export function NewRunModal({ initialCaseIds = [], onClose, onCreated }: { initi
   const key = projects?.find((p) => p.id === Number(pid))?.key;
   const { data: suites = [] } = useQuery({ queryKey: ["suites", pid], queryFn: () => api.get<Suite[]>(`/api/projects/${pid}/suites`) });
   const { data: cases = [] } = useQuery({ queryKey: ["cases", pid], queryFn: () => api.get<CaseSummary[]>(`/api/projects/${pid}/cases`) });
+  const { data: milestones = [] } = useQuery({ queryKey: ["milestones", pid], queryFn: () => api.get<Milestone[]>(`/api/projects/${pid}/milestones`) });
 
   const today = new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" });
   const [title, setTitle] = useState(`Regression · ${today}`);
@@ -146,6 +147,8 @@ export function NewRunModal({ initialCaseIds = [], onClose, onCreated }: { initi
     onSuccess: (run) => {
       qc.invalidateQueries({ queryKey: ["runs", pid] });
       qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["milestones", pid] });
+      qc.invalidateQueries({ queryKey: ["dashboard", pid] });
       onCreated?.();
       onClose();
       navigate(`/p/${pid}/runs/${run.id}`);
@@ -176,7 +179,8 @@ export function NewRunModal({ initialCaseIds = [], onClose, onCreated }: { initi
         </div>
         <div className="field grow">
           <label htmlFor="ms">Sprint / release</label>
-          <input id="ms" className="input" placeholder="Sprint 42, v2.3.0…" value={milestone} onChange={(e) => setMilestone(e.target.value)} />
+          <input id="ms" className="input" list="milestone-options" placeholder="Sprint 42, v2.3.0…" value={milestone} onChange={(e) => setMilestone(e.target.value)} />
+          <datalist id="milestone-options">{milestones.map((m) => <option key={m.id} value={m.name} />)}</datalist>
         </div>
       </div>
       <div className="row">

@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Download, FileUp, GitBranch, Loader2, Plus, RefreshCw, Trash2, Upload, XCircle } from "lucide-react";
-import { api, timeAgo, type GithubSource, type ImportResult, type Project, type WorkflowRun } from "../api";
+import { api, timeAgo, type GithubSource, type ImportResult, type Milestone, type Project, type WorkflowRun } from "../api";
 import { Github, Modal, useToast } from "../components/ui";
 
 export function ImportPage() {
@@ -33,6 +33,8 @@ function useImportDone() {
     for (const k of ["runs", "automated", "cases"]) qc.invalidateQueries({ queryKey: [k, pid] });
     qc.invalidateQueries({ queryKey: ["projects"] });
     qc.invalidateQueries({ queryKey: ["gh-runs"] });
+    qc.invalidateQueries({ queryKey: ["milestones", pid] });
+    qc.invalidateQueries({ queryKey: ["dashboard", pid] });
     if (r.duplicate) toast("success", "Already imported, opening the existing run");
     else toast("success", `Imported ${r.total} tests, ${r.linked} linked to cases`);
     navigate(`/p/${pid}/runs/${r.runId}`);
@@ -50,6 +52,7 @@ function UploadCard() {
   const [milestone, setMilestone] = useState("");
   const [over, setOver] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const { data: milestones = [] } = useQuery({ queryKey: ["milestones", pid], queryFn: () => api.get<Milestone[]>(`/api/projects/${pid}/milestones`) });
 
   const upload = useMutation({
     mutationFn: () => {
@@ -122,7 +125,8 @@ function UploadCard() {
           </div>
           <div className="field grow">
             <label htmlFor="rms">Sprint / release</label>
-            <input id="rms" className="input" placeholder="Sprint 42" value={milestone} onChange={(e) => setMilestone(e.target.value)} />
+            <input id="rms" className="input" list="milestone-options" placeholder="Sprint 42" value={milestone} onChange={(e) => setMilestone(e.target.value)} />
+            <datalist id="milestone-options">{milestones.map((m) => <option key={m.id} value={m.name} />)}</datalist>
           </div>
         </div>
         <div className="row">

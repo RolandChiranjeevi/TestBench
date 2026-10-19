@@ -1,4 +1,4 @@
-import { db } from "./db.ts";
+import { db, ensureMilestone } from "./db.ts";
 import { importReport } from "./importers/import.ts";
 import { parseReport } from "./importers/parse.ts";
 
@@ -129,6 +129,7 @@ export function seedDemo() {
       source: "upload",
       title: `Nightly e2e · chromium`,
       environment: "staging",
+      milestone: failing ? "Sprint 42" : "Sprint 41",
       meta: { files: ["results.json"] },
     });
   }
@@ -137,6 +138,7 @@ export function seedDemo() {
     source: "upload",
     title: "TestCafe regression",
     environment: "staging",
+    milestone: "Sprint 42",
     meta: { files: ["xunit.xml"] },
   });
 
@@ -144,6 +146,7 @@ export function seedDemo() {
   const run = db
     .prepare("INSERT INTO runs (project_id, title, kind, source, environment, milestone) VALUES (?, 'Sprint 42 regression', 'manual', 'manual', 'staging', 'Sprint 42') RETURNING id")
     .get(project.id) as { id: number };
+  ensureMilestone(project.id, "Sprint 42");
   const statuses = ["passed", "passed", "failed", "passed", "untested", "untested", "blocked", "untested", "untested"];
   const now = new Date().toISOString().slice(0, 19).replace("T", " ");
   caseIds.forEach((caseId, i) =>

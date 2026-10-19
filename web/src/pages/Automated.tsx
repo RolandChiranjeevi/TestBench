@@ -14,7 +14,7 @@ export function AutomatedPage() {
   const toast = useToast();
   const [params, setParams] = useSearchParams();
   const filter = (params.get("filter") as Filter) || "all";
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(params.get("q") ?? "");
   const [framework, setFramework] = useState("");
 
   const { data: projects } = useQuery({ queryKey: ["projects"], queryFn: () => api.get<Project[]>("/api/projects") });
