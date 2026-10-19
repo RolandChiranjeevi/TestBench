@@ -40,6 +40,11 @@ and is never stored.
 - **Run templates** (Runs → Templates): a saved set of cases, like "Smoke test", with an optional default environment. Start a run
   from one in a click, or pick it in the New run dialog. Make one from ticked cases on Test cases ("Save as template"), or tick
   "Save this selection as a template" when starting a run. Templates follow your cases: deleted cases drop out, deprecated ones are skipped.
+- **Bug reports for Jira**: on a failed or blocked result, **Report bug** opens an editable draft (summary, steps to reproduce with the
+  failing step marked, expected/actual, environment, sprint, run). **Copy description** puts rich text on the clipboard for pasting
+  into Jira's editor (plain text is the fallback). Attachments can't be pasted several at a time, so **Download .zip** gives you
+  the screenshots to drag into the issue. Paste the issue key (or link) back to link it: it then shows on the result, in the run's
+  case list, in the sprint report and in the exports.
 - Manual runs freeze each case's title and steps when the run starts, so editing a case later doesn't rewrite old runs.
 
 ## Keyboard

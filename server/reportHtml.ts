@@ -55,6 +55,9 @@ export function headline(r: MilestoneReport): string {
 
 const PRIORITY_LABEL: Record<string, string> = { critical: "Critical", high: "High", medium: "Medium", low: "Low" };
 
+/** Show a linked issue as its key, whether a key or a full URL was pasted. */
+const jiraLabel = (v: string) => v.match(/[A-Za-z][A-Za-z0-9_]*-\d+/g)?.at(-1)?.toUpperCase() ?? v;
+
 export function renderReport(r: MilestoneReport): string {
   const key = r.project.key;
   const m = r.milestone;
@@ -103,7 +106,7 @@ export function renderReport(r: MilestoneReport): string {
         .map(
           (f) => `<div class="fail">
             <div class="fh"><span class="id">${esc(key)}-${esc(f.number ?? "?")}</span><span class="ft">${esc(f.title)}</span>
-              <span class="badge ${esc(f.status)}">${esc(f.status)}</span><span class="pri">${esc(PRIORITY_LABEL[f.priority] ?? f.priority)}</span></div>
+              <span class="badge ${esc(f.status)}">${esc(f.status)}</span>${f.jira ? `<span class="jira">${esc(jiraLabel(f.jira))}</span>` : ""}<span class="pri">${esc(PRIORITY_LABEL[f.priority] ?? f.priority)}</span></div>
             ${f.suite ? `<div class="fm">${esc(f.suite)}</div>` : ""}
             ${f.steps.map((s) => `<div class="fs"><strong>Step ${s.number || "?"}:</strong> ${esc(s.action)}${s.expected ? `<br><span class="mut">Expected:</span> ${esc(s.expected)}` : ""}${s.actual ? `<br><span class="mut">Actual:</span> ${esc(s.actual)}` : ""}</div>`).join("")}
             ${f.notes ? `<div class="fs"><span class="mut">Notes:</span> ${esc(f.notes)}</div>` : ""}
@@ -187,6 +190,7 @@ export function renderReport(r: MilestoneReport): string {
   .badge { font-size: 8pt; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; padding: 1px 6px; border-radius: 3px; color: #fff; }
   .badge.failed { background: ${COLORS.failed}; } .badge.blocked { background: ${COLORS.blocked}; }
   .pri { font-size: 8.5pt; color: #6b707a; }
+  .jira { font: 600 8.5pt ui-monospace, Menlo, monospace; color: #0052cc; background: #eef4ff; border: 1px solid #b3d0ff; border-radius: 3px; padding: 0 5px; }
   pre { margin: 6px 0 0; padding: 7px 9px; background: #f4f5f7; border-radius: 4px; white-space: pre-wrap; word-break: break-word; font: 8.5pt/1.4 ui-monospace, Menlo, monospace; }
   footer { margin-top: 30px; padding-top: 8px; border-top: 1px solid #dfe2e7; font-size: 8.5pt; color: #8a8f98; }
 </style></head>

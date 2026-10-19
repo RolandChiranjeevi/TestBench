@@ -26,7 +26,7 @@ export interface RunSummary extends Counts {
 }
 export interface RunResult {
   id: number; case_id: number | null; automated_test_id: number | null; status: Status; flaky: number; duration_ms: number | null;
-  error: string; notes: string; executed_at: string | null; case_number: number | null; case_title: string | null; case_priority: Priority | null;
+  error: string; notes: string; jira_key: string | null; executed_at: string | null; case_number: number | null; case_title: string | null; case_priority: Priority | null;
   suite_name: string | null; test_title: string | null; test_file: string | null; test_suite_path: string | null; test_full_name: string | null; step_count: number;
 }
 export interface RunDetail extends Omit<RunSummary, keyof Counts> { project_key: string; counts: Counts; results: RunResult[] }

@@ -41,14 +41,14 @@ export function exportJson(projectId: number) {
     startedAt: r.started_at, finishedAt: r.finished_at, meta: parseJson(r.meta, {}),
     results: (db
       .prepare(`
-        SELECT r.status, r.flaky, r.duration_ms AS durationMs, r.error, r.notes, r.executed_at AS executedAt,
+        SELECT r.status, r.flaky, r.duration_ms AS durationMs, r.error, r.notes, r.executed_at AS executedAt, r.jira_key AS jiraKey,
           c.number AS caseNumber, a.full_name AS testName
         FROM results r LEFT JOIN cases c ON c.id = r.case_id LEFT JOIN automated_tests a ON a.id = r.automated_test_id
         WHERE r.run_id = ? ORDER BY r.position, r.id`)
       .all(r.id) as Record<string, any>[]).map((x) => ({
       case: x.caseNumber ? `${p.key}-${x.caseNumber}` : null,
       test: x.testName,
-      status: x.status, flaky: !!x.flaky, durationMs: x.durationMs, error: x.error || undefined, notes: x.notes || undefined, executedAt: x.executedAt,
+      status: x.status, flaky: !!x.flaky, durationMs: x.durationMs, error: x.error || undefined, notes: x.notes || undefined, jira: x.jiraKey || undefined, executedAt: x.executedAt,
     })),
   }));
   return { exportedAt: new Date().toISOString(), format: "testbench-export/1", project: { name: p.name, key: p.key }, suites, milestones, templates, cases, runs };
@@ -85,14 +85,14 @@ export function exportResultsCsv(projectId: number) {
     .prepare(`
       SELECT ru.title AS run, ru.kind, ru.framework, ru.milestone, ru.environment, ru.started_at,
         c.number AS case_number, COALESCE(json_extract(r.snapshot, '$.title'), c.title) AS case_title,
-        a.full_name AS test, r.status, r.flaky, r.duration_ms, r.error, r.notes
+        a.full_name AS test, r.status, r.flaky, r.duration_ms, r.error, r.notes, r.jira_key
       FROM results r JOIN runs ru ON ru.id = r.run_id
       LEFT JOIN cases c ON c.id = r.case_id LEFT JOIN automated_tests a ON a.id = r.automated_test_id
       WHERE ru.project_id = ? ORDER BY ru.started_at, ru.id, r.position, r.id`)
     .all(projectId) as Record<string, any>[];
   return csv([
-    ["Run", "Type", "Framework", "Sprint/release", "Environment", "Started", "Case", "Case title", "Automated test", "Status", "Flaky", "Duration ms", "Error", "Notes"],
-    ...rows.map((r) => [r.run, r.kind, r.framework ?? "", r.milestone, r.environment, r.started_at, r.case_number ? `${p.key}-${r.case_number}` : "", r.case_title ?? "", r.test ?? "", r.status, r.flaky ? "yes" : "", r.duration_ms ?? "", r.error, r.notes]),
+    ["Run", "Type", "Framework", "Sprint/release", "Environment", "Started", "Case", "Case title", "Automated test", "Status", "Flaky", "Duration ms", "Error", "Notes", "Jira issue"],
+    ...rows.map((r) => [r.run, r.kind, r.framework ?? "", r.milestone, r.environment, r.started_at, r.case_number ? `${p.key}-${r.case_number}` : "", r.case_title ?? "", r.test ?? "", r.status, r.flaky ? "yes" : "", r.duration_ms ?? "", r.error, r.notes, r.jira_key ?? ""]),
   ]);
 }
 

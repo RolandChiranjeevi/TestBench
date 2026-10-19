@@ -9,7 +9,9 @@ import {
   api, formatDateTime, formatDuration, passRate, timeAgo,
   type Attachment, type ResultDetail, type RunDetail, type RunResult, type Status,
 } from "../api";
+import { Bug } from "lucide-react";
 import { Empty, FrameworkBadge, Github, Kbd, PriorityIcon, ProgressBar, StatusIcon, STATUS_LABEL, useHotkeys, useToast } from "../components/ui";
+import { BugReportModal, jiraLabel, jiraUrl } from "./BugReport";
 
 export function RunDetailPage() {
   const { pid, runId } = useParams();
@@ -193,6 +195,7 @@ function ManualRun({ run }: { run: RunDetail }) {
                   <StatusIcon status={r.status} />
                   <span className="mono muted" style={{ width: 58, flexShrink: 0 }}>{run.project_key}-{r.case_number ?? "?"}</span>
                   <span className="title">{r.case_title ?? "Deleted case"}</span>
+                  {r.jira_key && <span className="chip" title={`Linked Jira issue ${jiraLabel(r.jira_key)}`}><Bug size={10} /> {jiraLabel(r.jira_key)}</span>}
                 </div>
               ))}
             </div>
@@ -200,7 +203,7 @@ function ManualRun({ run }: { run: RunDetail }) {
         </div>
         <div className="pane grow">
           {selectedId ? (
-            <ExecutionPanel key={selectedId} resultId={selectedId} projectKey={run.project_key} onMark={(s) => mark(s, s === "passed" || s === "skipped")} />
+            <ExecutionPanel key={selectedId} resultId={selectedId} projectKey={run.project_key} run={run} onMark={(s) => mark(s, s === "passed" || s === "skipped")} />
           ) : (
             <Empty icon={<Check size={20} />} title="Nothing to execute" />
           )}
@@ -210,7 +213,8 @@ function ManualRun({ run }: { run: RunDetail }) {
   );
 }
 
-function ExecutionPanel({ resultId, projectKey, onMark }: { resultId: number; projectKey: string; onMark: (s: Status) => void }) {
+function ExecutionPanel({ resultId, projectKey, run, onMark }: { resultId: number; projectKey: string; run: { title: string; environment: string; milestone: string }; onMark: (s: Status) => void }) {
+  const [bugOpen, setBugOpen] = useState(false);
   const qc = useQueryClient();
   const toast = useToast();
   const { data: r } = useQuery({ queryKey: ["result", resultId], queryFn: () => api.get<ResultDetail>(`/api/results/${resultId}`) });
@@ -335,6 +339,17 @@ function ExecutionPanel({ resultId, projectKey, onMark }: { resultId: number; pr
             </button>
           ))}
         </div>
+        {(r.status === "failed" || r.status === "blocked") && (
+          <div className="row" style={{ gap: 8 }}>
+            <button className="btn sm" onClick={() => setBugOpen(true)}><Bug size={13} /> {r.jira_key ? "Edit bug report" : "Report bug"}</button>
+            {r.jira_key &&
+              (jiraUrl(r.jira_key) ? (
+                <a className="chip accent" href={jiraUrl(r.jira_key)!} target="_blank" rel="noreferrer">{jiraLabel(r.jira_key)}</a>
+              ) : (
+                <span className="chip accent">{jiraLabel(r.jira_key)}</span>
+              ))}
+          </div>
+        )}
       </div>
 
       {c.preconditions && (
@@ -416,6 +431,7 @@ function ExecutionPanel({ resultId, projectKey, onMark }: { resultId: number; pr
           <input ref={fileRef} type="file" multiple hidden accept="image/*,video/*,.txt,.log,.pdf" onChange={(e) => e.target.files && upload(e.target.files)} />
         </div>
       </section>
+      {bugOpen && <BugReportModal result={r} projectKey={projectKey} run={run} onClose={() => setBugOpen(false)} />}
     </div>
   );
 }

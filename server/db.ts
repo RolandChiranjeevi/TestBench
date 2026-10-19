@@ -202,6 +202,9 @@ export function snapshotCase(caseId: number): CaseSnapshot | null {
   })();
 }
 
+// A Jira issue (key like PROJ-123, or a pasted URL) linked to a failed result.
+if (!hasColumn("results", "jira_key")) db.exec("ALTER TABLE results ADD COLUMN jira_key TEXT");
+
 // Run templates: a named, reusable selection of cases. Deleting a case or template removes it from the link table.
 db.exec(`
 CREATE TABLE IF NOT EXISTS run_templates (

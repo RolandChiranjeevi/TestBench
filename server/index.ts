@@ -3,7 +3,8 @@ import multipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { unlink, writeFile } from "node:fs/promises";
+import { readFile, unlink, writeFile } from "node:fs/promises";
+import { zipSync } from "fflate";
 import { extname, join } from "node:path";
 import { z } from "zod";
 import { db, ensureMilestone, parseJson, snapshotCase, UPLOAD_DIR } from "./db.ts";
@@ -322,7 +323,7 @@ app.get("/api/runs/:id", (req) => {
   const counts = db.prepare(`SELECT ${STATUS_COUNTS}, COALESCE(SUM(r.duration_ms), 0) AS duration_ms FROM results r WHERE r.run_id = ?`).get(id);
   const results = db
     .prepare(`
-      SELECT r.id, r.run_id, r.case_id, r.automated_test_id, r.status, r.flaky, r.duration_ms, r.error, r.notes, r.position, r.executed_at,
+      SELECT r.id, r.run_id, r.case_id, r.automated_test_id, r.status, r.flaky, r.duration_ms, r.error, r.notes, r.position, r.executed_at, r.jira_key,
         COALESCE(json_extract(r.snapshot, '$.number'), c.number) AS case_number,
         COALESCE(json_extract(r.snapshot, '$.title'), c.title) AS case_title,
         COALESCE(json_extract(r.snapshot, '$.priority'), c.priority) AS case_priority,
@@ -405,14 +406,29 @@ const resultStatus = z.enum(["untested", "passed", "failed", "blocked", "skipped
 
 app.patch("/api/results/:id", (req) => {
   const id = idParam(req);
-  const body = z.object({ status: resultStatus.optional(), notes: z.string().max(20000).optional() }).parse(req.body);
+  const body = z
+    .object({
+      status: resultStatus.optional(),
+      notes: z.string().max(20000).optional(),
+      // A Jira key (PROJ-123) or an issue URL. Only http(s) links are accepted, since this is rendered as a link.
+      jiraKey: z
+        .string()
+        .trim()
+        .max(300)
+        .refine((v) => v === "" || /^[A-Za-z][A-Za-z0-9_]*-\d+$/.test(v) || /^https?:\/\/\S+$/.test(v), "Use an issue key like PROJ-123 or a link starting with http(s)://")
+        .nullable()
+        .optional(),
+    })
+    .parse(req.body);
   const cur = must(db.prepare("SELECT * FROM results WHERE id = ?").get(id) as Record<string, any> | undefined, "Result");
+  // Keys are stored upper-case (proj-1 -> PROJ-1); links are kept exactly as pasted.
+  const jiraKey = body.jiraKey === undefined ? cur.jira_key : !body.jiraKey ? null : /^https?:/.test(body.jiraKey) ? body.jiraKey : body.jiraKey.toUpperCase();
   return db
     .prepare(`
-      UPDATE results SET status = ?, notes = ?,
+      UPDATE results SET status = ?, notes = ?, jira_key = ?,
         executed_at = CASE WHEN ? != status THEN datetime('now') ELSE executed_at END
       WHERE id = ? RETURNING *`)
-    .get(body.status ?? cur.status, body.notes ?? cur.notes, body.status ?? cur.status, id);
+    .get(body.status ?? cur.status, body.notes ?? cur.notes, jiraKey, body.status ?? cur.status, id);
 });
 
 app.put("/api/results/:id/steps/:stepId", (req) => {
@@ -448,6 +464,24 @@ app.post("/api/results/:id/attachments", async (req) => {
     );
   }
   return saved;
+});
+
+// All attachments of a result in one zip, to drag into a Jira ticket.
+app.get("/api/results/:id/attachments.zip", async (req, reply) => {
+  const id = idParam(req);
+  const rows = db.prepare("SELECT filename, stored_name FROM attachments WHERE result_id = ? ORDER BY id").all(id) as { filename: string; stored_name: string }[];
+  if (!rows.length) throw new HttpError(404, "This result has no attachments");
+  const files: Record<string, Uint8Array> = {};
+  for (const r of rows) {
+    // Keep the original name, adding a counter when two attachments share one (pasted screenshots are often both "image.png").
+    const base = r.filename.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_") || "attachment";
+    const dot = base.lastIndexOf(".");
+    let name = base;
+    for (let n = 2; name in files; n++) name = dot > 0 ? `${base.slice(0, dot)}-${n}${base.slice(dot)}` : `${base}-${n}`;
+    files[name] = new Uint8Array(await readFile(join(UPLOAD_DIR, r.stored_name)));
+  }
+  reply.type("application/zip").header("Content-Disposition", `attachment; filename="result-${id}-attachments.zip"`);
+  return Buffer.from(zipSync(files));
 });
 
 app.delete("/api/attachments/:id", async (req) => {

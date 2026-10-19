@@ -148,6 +148,7 @@ interface Row {
   notes: string;
   executed_at: string | null;
   snapshot: string | null;
+  jira_key: string | null;
   kind: "manual" | "automated";
   run_title: string;
   started_at: string;
@@ -163,7 +164,7 @@ interface Row {
 function milestoneRows(projectId: number, name: string): Row[] {
   return db
     .prepare(`
-      SELECT r.id, r.run_id, r.case_id, r.automated_test_id, r.status, r.flaky, r.duration_ms, r.error, r.notes, r.executed_at, r.snapshot,
+      SELECT r.id, r.run_id, r.case_id, r.automated_test_id, r.status, r.flaky, r.duration_ms, r.error, r.notes, r.executed_at, r.snapshot, r.jira_key,
         ru.kind, ru.title AS run_title, ru.started_at, ru.framework,
         COALESCE(json_extract(r.snapshot, '$.title'), c.title) AS case_title,
         COALESCE(json_extract(r.snapshot, '$.number'), c.number) AS case_number,
@@ -246,7 +247,7 @@ export function milestoneReport(milestoneId: number) {
       });
       return {
         number: r.case_number, title: r.case_title ?? "Deleted case", priority: r.priority ?? "medium", suite: r.suite_name,
-        status: r.status, notes: r.notes, steps,
+        status: r.status, notes: r.notes, steps, jira: r.jira_key,
       };
     })
     .sort((a, b) => PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority));
