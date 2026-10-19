@@ -289,6 +289,20 @@ CREATE TABLE IF NOT EXISTS requirement_cases (
   PRIMARY KEY (requirement_id, case_id)
 );
 CREATE INDEX IF NOT EXISTS requirement_cases_case ON requirement_cases(case_id);`);
+  // Release checklist: manual tasks per sprint/release, ticked off with a timestamp. `source` leaves room for automatic checks later
+  // (e.g. 'auto:pass-rate'); today every item is 'manual'.
+  d.exec(`
+CREATE TABLE IF NOT EXISTS milestone_checklist (
+  id INTEGER PRIMARY KEY,
+  milestone_id INTEGER NOT NULL REFERENCES milestones(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL DEFAULT 0,
+  title TEXT NOT NULL,
+  done_at TEXT,
+  source TEXT NOT NULL DEFAULT 'manual',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS milestone_checklist_ms ON milestone_checklist(milestone_id);`);
+
   // Edits to a requirement, newest last. `material` marks a change to the title or description: linked cases then need a second look.
   d.exec(`
 CREATE TABLE IF NOT EXISTS requirement_revisions (

@@ -97,6 +97,10 @@ and is never stored.
   headline, pass rate, comparison with the previous sprint, results per suite and open failures. Download it as **PDF**
   (rendered with your installed Google Chrome; set `TESTBENCH_CHROME_CHANNEL=msedge` to use Edge) or as standalone HTML.
   Sprint dates are set on the Reports page and decide which sprint counts as "previous".
+- **Release checklist** (Reports page, above each report): add your own tasks to a sprint or release, like "Regression signed off"
+  or "Release notes written", and tick them off. The time is recorded when you tick (click the time to correct it). The report
+  gets a "Release checklist" section showing what is done and when, and what is still open. **Copy tasks from…** reuses the list from
+  another sprint. Tasks have a `source` field ("manual" today) so automatic checks can be added later.
 - **Export** (Reports page): full JSON backup, one Markdown file per case (zip), cases CSV, requirements CSV, results CSV.
 - **Run templates** (Runs → Templates): a saved set of cases, like "Smoke test", with an optional default environment. Start a run
   from one in a click, or pick it in the New run dialog. Make one from ticked cases on Test cases ("Save as template"), or tick

@@ -1,5 +1,6 @@
 import { strToU8, zipSync } from "fflate";
 import { db, parseJson } from "./db.ts";
+import { checklistSummary } from "./checklist.ts";
 import { listRequirements } from "./requirements.ts";
 
 interface CaseRow {
@@ -31,7 +32,9 @@ export function exportJson(projectId: number) {
     createdAt: c.created_at,
     updatedAt: c.updated_at,
   }));
-  const milestones = db.prepare("SELECT name, kind, start_date AS startDate, end_date AS endDate FROM milestones WHERE project_id = ? ORDER BY id").all(projectId);
+  const milestones = (db.prepare("SELECT id, name, kind, start_date AS startDate, end_date AS endDate FROM milestones WHERE project_id = ? ORDER BY id").all(projectId) as { id: number; name: string; kind: string; startDate: string | null; endDate: string | null }[]).map(
+    ({ id, ...m }) => ({ ...m, checklist: checklistSummary(id).items }),
+  );
   const templates = (db.prepare("SELECT id, name, environment FROM run_templates WHERE project_id = ? ORDER BY name").all(projectId) as { id: number; name: string; environment: string }[]).map((t) => ({
     name: t.name,
     environment: t.environment,

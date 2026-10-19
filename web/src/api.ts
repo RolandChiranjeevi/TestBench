@@ -88,6 +88,7 @@ export interface ImportResult { runId: number; duplicate: boolean; total: number
 export interface Milestone {
   id: number; project_id: number; name: string; kind: "sprint" | "release"; start_date: string | null; end_date: string | null; run_count: number;
 }
+export interface ChecklistItem { id: number; milestone_id: number; position: number; title: string; done_at: string | null; source: string }
 export interface RunTemplate {
   id: number; project_id: number; name: string; environment: string; created_at: string; updated_at: string;
   run_count: number; last_used: string | null; caseIds: number[];

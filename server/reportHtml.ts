@@ -175,6 +175,15 @@ export function renderReport(r: MilestoneReport): string {
        }`
     : "";
 
+  const cl = r.checklist;
+  const checklistSection = cl.total
+    ? `<h2>Release checklist</h2>
+       <p class="mut">${cl.done} of ${cl.total} tasks done${cl.done === cl.total ? " – everything is complete" : ""}.</p>
+       <table class="t"><tbody>${cl.items
+         .map((i) => `<tr><td style="width:24px">${i.doneAt ? "&#10003;" : "&#9744;"}</td><td>${esc(i.title)}</td><td class="num mut">${i.doneAt ? `Done ${fmtDate(i.doneAt)}` : "Open"}</td></tr>`)
+         .join("")}</tbody></table>`
+    : "";
+
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(r.project.name)} – ${esc(m.name)} test report</title>
 <style>
@@ -249,6 +258,7 @@ export function renderReport(r: MilestoneReport): string {
 ${comparison}
 ${suites}
 ${requirementsSection}
+${checklistSection}
 ${failures}
 ${flaky}
 ${runs}

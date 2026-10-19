@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, Calendar, ExternalLink, FileDown, FileJson, FileSpreadsheet, FileText, Loader2, Plus, Rocket, Trash2, Zap } from "lucide-react";
-import { api, type Milestone } from "../api";
+import { Archive, Calendar, Check, ExternalLink, FileDown, FileJson, FileSpreadsheet, FileText, Loader2, Plus, Rocket, Trash2, Zap } from "lucide-react";
+import { api, type ChecklistItem, type Milestone } from "../api";
 import { Empty, Modal, useToast } from "../components/ui";
 
 type MilestoneEdit = Partial<{ name: string; kind: string; startDate: string | null; endDate: string | null }>;
@@ -122,6 +122,7 @@ export function ReportsPage() {
           ) : current ? (
             <>
               <MilestoneBar key={current.id} m={current} onChange={(b) => update.mutate(b)} onDelete={() => confirm(`Delete "${current.name}"? It has no runs.`) && remove.mutate()} />
+              <ChecklistPanel key={`cl-${current.id}`} milestone={current} others={milestones.filter((m) => m.id !== current.id)} onChanged={() => setNonce((n) => n + 1)} />
               <div style={{ flex: 1, minHeight: 0, padding: 16, display: "flex", justifyContent: "center" }}>
                 {current.run_count === 0 ? (
                   <Empty icon={<FileText size={20} />} title="No runs in this sprint yet">Start a manual run or import results and set “{current.name}” as the sprint/release.</Empty>
@@ -207,5 +208,80 @@ function NewMilestoneModal({ onClose }: { onClose: () => void }) {
         </select>
       </div>
     </Modal>
+  );
+}
+
+const parseUtc = (s: string) => new Date(s.replace(" ", "T") + "Z");
+const toLocalInput = (s: string) => {
+  const d = parseUtc(s);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+/** Manual release checklist: add tasks, tick them off (the time is recorded), and the report lists what was done and when. */
+function ChecklistPanel({ milestone, others, onChanged }: { milestone: Milestone; others: Milestone[]; onChanged: () => void }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const key = ["checklist", milestone.id];
+  const { data: items = [] } = useQuery({ queryKey: key, queryFn: () => api.get<ChecklistItem[]>(`/api/milestones/${milestone.id}/checklist`) });
+  const [open, setOpen] = useState(true);
+  const [title, setTitle] = useState("");
+  const [editing, setEditing] = useState<number | null>(null);
+
+  const run = useMutation({
+    mutationFn: (fn: () => Promise<ChecklistItem[]>) => fn(),
+    onSuccess: (next) => { qc.setQueryData(key, next); onChanged(); },
+    onError: (e: Error) => toast("error", e.message),
+  });
+  const base = `/api/milestones/${milestone.id}/checklist`;
+  const add = () => { if (title.trim()) { run.mutate(() => api.post<ChecklistItem[]>(base, { title })); setTitle(""); } };
+  const done = items.filter((i) => i.done_at).length;
+
+  return (
+    <div className="card" style={{ margin: "12px 16px 0", flexShrink: 0, alignSelf: "center", width: "min(900px, calc(100% - 32px))", background: "var(--bg)" }}>
+      <button className="card-header row" style={{ width: "100%", cursor: "pointer", background: "none", border: 0, textAlign: "left" }} onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        <span style={{ fontWeight: 600, fontSize: 13 }}>Release checklist</span>
+        <span className="faint" style={{ fontSize: 12 }}>{items.length ? `${done} of ${items.length} done` : "No tasks yet"}</span>
+        {items.length > 0 && done === items.length && <Check size={13} style={{ color: "var(--passed)" }} />}
+        <span className="spacer" />
+        <span className="faint" style={{ fontSize: 12 }}>{open ? "Hide" : "Show"}</span>
+      </button>
+      {open && (
+        <div style={{ maxHeight: 260, overflow: "auto" }}>
+          {items.map((i) => (
+            <div key={i.id} className="row" style={{ padding: "6px 16px", borderTop: "1px solid var(--border)", minHeight: 36 }}>
+              <input type="checkbox" className="checkbox" checked={!!i.done_at} aria-label={`Done: ${i.title}`}
+                onChange={(e) => { const done = e.target.checked; run.mutate(() => api.patch<ChecklistItem[]>(`/api/checklist/${i.id}`, { done })); }} />
+              {editing === i.id ? (
+                <input className="input grow" autoFocus defaultValue={i.title} aria-label="Task"
+                  onBlur={(e) => { setEditing(null); const v = e.target.value.trim(); if (v && v !== i.title) run.mutate(() => api.patch<ChecklistItem[]>(`/api/checklist/${i.id}`, { title: v })); }}
+                  onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setEditing(null); }} />
+              ) : (
+                <span className="grow" style={{ cursor: "text", textDecoration: i.done_at ? "line-through" : undefined, color: i.done_at ? "var(--text-3)" : undefined }} onClick={() => setEditing(i.id)}>{i.title}</span>
+              )}
+              {i.done_at && (
+                <label className="row faint" style={{ fontSize: 12, gap: 4 }} title="When it was done. Click to change.">
+                  Done
+                  <input type="datetime-local" className="input" style={{ height: 24, width: 170, fontSize: 12 }} value={toLocalInput(i.done_at)}
+                    onChange={(e) => { const v = e.target.value; if (v) run.mutate(() => api.patch<ChecklistItem[]>(`/api/checklist/${i.id}`, { doneAt: new Date(v).toISOString().slice(0, 16) })); }} />
+                </label>
+              )}
+              <button className="btn ghost icon sm danger" aria-label={`Delete ${i.title}`} onClick={() => run.mutate(() => api.del<ChecklistItem[]>(`/api/checklist/${i.id}`))}><Trash2 size={12} /></button>
+            </div>
+          ))}
+          <div className="row" style={{ padding: "8px 16px", borderTop: items.length ? "1px solid var(--border)" : undefined }}>
+            <input className="input grow" placeholder="Add a task, e.g. Regression signed off by QA" value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} aria-label="New task" />
+            <button className="btn sm" onClick={add} disabled={!title.trim()}><Plus size={13} /> Add</button>
+            {others.length > 0 && (
+              <select className="select" style={{ width: 150, height: 28 }} value="" aria-label="Copy tasks from another sprint"
+                onChange={(e) => { const from = Number(e.target.value); if (from) run.mutate(() => api.post<ChecklistItem[]>(`${base}/copy`, { fromId: from })); }}>
+                <option value="">Copy tasks from…</option>
+                {others.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

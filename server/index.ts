@@ -20,6 +20,7 @@ import { exportCasesCsv, exportJson, exportMarkdownZip, exportRequirementsCsv, e
 import { htmlToPdf } from "./pdf.ts";
 import { renderReport } from "./reportHtml.ts";
 import { automationCandidates, insightsData } from "./insights.ts";
+import { addChecklistItem, copyChecklist, listChecklist } from "./checklist.ts";
 import { addRequirementCases, createRequirement, getRequirement, linkCaseByTags, listRequirements, markReviewed, recordRevision, requirementsForCase, requirementSummary, setCaseRequirements, setRequirementCases, type RevisionChange } from "./requirements.ts";
 import { dashboardData, listMilestones, milestoneReport } from "./stats.ts";
 import { parseReport, type Framework, type ParsedReport } from "./importers/parse.ts";
@@ -945,6 +946,52 @@ app.patch("/api/milestones/:id", (req) => {
 });
 
 // Only empty sprints can go: runs reference a sprint by name, so deleting a used one would orphan them.
+// ---- Release checklist: manual tasks on a sprint/release, ticked off with a timestamp ----
+const checklistRow = (id: number) => must(db.prepare("SELECT * FROM milestone_checklist WHERE id = ?").get(id) as Record<string, any> | undefined, "Checklist item");
+
+app.get("/api/milestones/:id/checklist", (req) => listChecklist(idParam(req)));
+
+app.post("/api/milestones/:id/checklist", (req) => {
+  const id = idParam(req);
+  const { title } = z.object({ title: z.string().trim().min(1).max(300) }).parse(req.body);
+  must(db.prepare("SELECT id FROM milestones WHERE id = ?").get(id), "Milestone");
+  addChecklistItem(id, title);
+  return listChecklist(id);
+});
+
+app.post("/api/milestones/:id/checklist/copy", (req) => {
+  const id = idParam(req);
+  const { fromId } = z.object({ fromId: z.number().int() }).parse(req.body);
+  const to = must(db.prepare("SELECT project_id FROM milestones WHERE id = ?").get(id) as { project_id: number } | undefined, "Milestone");
+  const from = db.prepare("SELECT project_id FROM milestones WHERE id = ?").get(fromId) as { project_id: number } | undefined;
+  if (!from || from.project_id !== to.project_id) throw new HttpError(400, "Pick a sprint or release from this project");
+  copyChecklist(id, fromId);
+  return listChecklist(id);
+});
+
+// `done: true` stamps the time it was ticked (or `doneAt` to record when it really happened); `done: false` clears it.
+app.patch("/api/checklist/:id", (req) => {
+  const id = idParam(req);
+  const body = z.object({
+    title: z.string().trim().min(1).max(300).optional(),
+    done: z.boolean().optional(),
+    doneAt: z.string().regex(/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/).optional(),
+  }).parse(req.body);
+  const cur = checklistRow(id);
+  let doneAt: string | null = cur.done_at;
+  if (body.doneAt) doneAt = body.doneAt.replace("T", " ").padEnd(19, ":00");
+  else if (body.done === true && !cur.done_at) doneAt = new Date().toISOString().slice(0, 19).replace("T", " ");
+  else if (body.done === false) doneAt = null;
+  db.prepare("UPDATE milestone_checklist SET title = ?, done_at = ? WHERE id = ?").run(body.title ?? cur.title, doneAt, id);
+  return listChecklist(cur.milestone_id);
+});
+
+app.delete("/api/checklist/:id", (req) => {
+  const cur = checklistRow(idParam(req));
+  db.prepare("DELETE FROM milestone_checklist WHERE id = ?").run(cur.id);
+  return listChecklist(cur.milestone_id);
+});
+
 app.delete("/api/milestones/:id", (req) => {
   const id = idParam(req);
   const m = must(db.prepare("SELECT * FROM milestones WHERE id = ?").get(id) as Record<string, any> | undefined, "Milestone");

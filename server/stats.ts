@@ -1,3 +1,4 @@
+import { checklistSummary } from "./checklist.ts";
 import { db, parseJson, type CaseSnapshot } from "./db.ts";
 import { classify, listRequirements } from "./requirements.ts";
 
@@ -337,6 +338,7 @@ export function milestoneReport(milestoneId: number) {
     totals,
     previous,
     requirements,
+    checklist: checklistSummary(milestone.id),
     openManualRuns: runs.filter((r) => r.kind === "manual" && r.run_status === "in_progress").length,
     coverage: { cases: cases.n, automated: automatedCases.n, percent: cases.n ? Math.round((automatedCases.n / cases.n) * 100) : 0 },
     manualFailures,
