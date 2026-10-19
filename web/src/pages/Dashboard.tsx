@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Bot, Download, FlaskConical, Play } from "lucide-react";
+import { Bot, Download, FlaskConical, Play, Sparkles } from "lucide-react";
 import { api, formatDuration, passRate, timeAgo, type Dashboard, type TestStat } from "../api";
 import { Empty, FrameworkBadge, PriorityIcon, ProgressBar, StatusIcon } from "../components/ui";
 import { CoverageBar, TrendChart } from "../components/charts";
@@ -156,6 +156,27 @@ export function DashboardPage() {
                   {d.bySuite.length === 0 ? <span className="muted">No suites yet.</span> : d.bySuite.map((x) => <CoverageBar key={x.name} label={x.name} value={x.automated} total={x.cases} />)}
                 </div>
               </div>
+            </div>
+
+            <div className="card">
+              <div className="card-header" style={{ fontSize: 13 }}>
+                <Sparkles size={14} /> Automate next
+                <Link to={`/p/${pid}/automated?view=insights`} style={{ marginLeft: "auto", color: "var(--accent)", fontSize: 12, fontWeight: 400 }}>
+                  {d.candidatesTotal > d.candidates.length ? `All ${d.candidatesTotal}` : "Insights"}
+                </Link>
+              </div>
+              {d.candidates.length === 0 ? (
+                <div className="muted" style={{ padding: 16 }}>Every active case has an automated test.</div>
+              ) : (
+                d.candidates.map((c) => (
+                  <Link key={c.id} to={`/p/${pid}/cases?case=${c.id}`} className="row" style={{ padding: "0 16px", height: 38, borderBottom: "1px solid var(--border)" }}>
+                    <PriorityIcon priority={c.priority} />
+                    <span className="mono muted" style={{ width: 62 }}>{key}-{c.number}</span>
+                    <span className="truncate grow">{c.title}</span>
+                    <span className="faint truncate" style={{ fontSize: 12, maxWidth: 220 }}>{c.reasons.join(" · ")}</span>
+                  </Link>
+                ))
+              )}
             </div>
 
             {d.automatedRuns.length > 0 && (

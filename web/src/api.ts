@@ -75,7 +75,24 @@ export interface DashboardRun extends Counts {
   id: number; title: string; started_at: string; framework: string | null; milestone: string; run_status: string; rate: number | null;
 }
 export interface TestStat { id: number; title: string; file: string; framework: string; last_status: Status | null; case_number: number | null; runs: number; failures: number; flaky: number; avg_ms: number | null }
+export interface FlakyTest {
+  testId: number; title: string; file: string; framework: string; caseNumber: number | null;
+  runs: number; failures: number; retries: number; flips: number; events: number; failingNow: boolean; lastEventRunId: number;
+  strip: { status: Status; flaky: boolean; runId: number; runTitle: string; startedAt: string }[];
+}
+export interface Slowdown { testId: number; title: string; file: string; caseNumber: number | null; beforeMs: number; recentMs: number; deltaMs: number; pct: number; runId: number }
+/** A manual case with no automated test, ranked by how much automating it would pay off. */
+export interface Candidate {
+  id: number; number: number; title: string; priority: Priority; suite: string | null; executions: number; fails: number; lastManual: string | null; score: number; reasons: string[];
+}
+export interface Insights {
+  window: number;
+  runs: { id: number; title: string; started_at: string; duration_ms: number; tests: number; failed: number }[];
+  flaky: FlakyTest[]; flakyTotal: number; slowdowns: Slowdown[]; candidates: Candidate[]; candidatesTotal: number;
+}
 export interface Dashboard {
+  candidates: Candidate[];
+  candidatesTotal: number;
   project: { id: number; name: string; key: string };
   summary: {
     cases: number; automatedCases: number; coverage: number; automatedTests: number; unlinkedTests: number; latestRate: number | null;

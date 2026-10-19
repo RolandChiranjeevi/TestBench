@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bot, Download, Link2, Search } from "lucide-react";
 import { api, formatDuration, timeAgo, type AutomatedTest, type CaseSummary, type Project } from "../api";
 import { Empty, FrameworkBadge, StatusIcon, useToast } from "../components/ui";
+import { InsightsPage, ViewTabs } from "./Insights";
 
 type Filter = "all" | "unlinked" | "failing" | "flaky";
 
@@ -45,10 +46,13 @@ export function AutomatedPage() {
   const count = (f: Filter) => (tests ?? []).filter((t) => matches(t, f)).length;
   const linkedPct = tests?.length ? Math.round(((tests.length - (tests ?? []).filter((t) => !t.case_id).length) / tests.length) * 100) : 0;
 
+  if (params.get("view") === "insights") return <InsightsPage />;
+
   return (
     <>
       <div className="topbar">
         <h1>Automated tests</h1>
+        <ViewTabs view="tests" />
         {tests && tests.length > 0 && <span className="faint" style={{ fontSize: 12.5 }}>{linkedPct}% linked to cases</span>}
         <span className="spacer" />
         <div className="search" style={{ width: 240 }}>

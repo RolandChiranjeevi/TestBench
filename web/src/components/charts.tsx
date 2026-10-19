@@ -69,6 +69,60 @@ export function TrendChart({ points, onOpen }: { points: Point[]; onOpen?: (id: 
   );
 }
 
+interface DurationBar { id: number; label: string; date: string; ms: number; failed: number }
+
+/** Total test time per run as bars (red when the run had failures). Hover for details; click opens the run. */
+export function DurationChart({ bars, onOpen }: { bars: DurationBar[]; onOpen?: (id: number) => void }) {
+  const [hover, setHover] = useState<number | null>(null);
+  if (!bars.length) return <div className="muted" style={{ padding: 24 }}>No automated runs yet.</div>;
+  const W = 640, H = 170, L = 44, R = 8, T = 10, B = 20;
+  const max = Math.max(...bars.map((b) => b.ms), 1);
+  const slot = (W - L - R) / bars.length;
+  const bw = Math.max(3, Math.min(28, slot * 0.7));
+  const y = (ms: number) => T + (1 - ms / max) * (H - T - B);
+  const fmt = (ms: number) => (ms >= 60_000 ? `${(ms / 60_000).toFixed(1)}m` : `${(ms / 1000).toFixed(ms >= 10_000 ? 0 : 1)}s`);
+  const shown = hover != null ? bars[hover] : null;
+
+  return (
+    <div style={{ position: "relative" }}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={`Test time per run, latest ${fmt(bars.at(-1)!.ms)}`} style={{ display: "block" }}>
+        {[0, 0.5, 1].map((f) => (
+          <g key={f}>
+            <line x1={L} x2={W - R} y1={y(max * f)} y2={y(max * f)} stroke="var(--border)" strokeDasharray={f === 0.5 ? "3 4" : undefined} />
+            <text x={L - 8} y={y(max * f) + 4} textAnchor="end" fontSize="10.5" fill="var(--text-4)">{fmt(max * f)}</text>
+          </g>
+        ))}
+        {bars.map((b, i) => {
+          const x = L + i * slot + (slot - bw) / 2;
+          return (
+            <g key={b.id}>
+              <rect x={x} y={y(b.ms)} width={bw} height={Math.max(1, H - B - y(b.ms))} rx={2} fill={b.failed ? "var(--failed)" : "var(--accent)"} opacity={hover == null || hover === i ? 1 : 0.55} />
+              <rect
+                x={L + i * slot} y={T} width={slot} height={H - T - B} fill="transparent" tabIndex={0} style={{ cursor: onOpen ? "pointer" : "default", outline: "none" }}
+                aria-label={`${b.label}: ${fmt(b.ms)}${b.failed ? `, ${b.failed} failed` : ""}`}
+                onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} onFocus={() => setHover(i)} onBlur={() => setHover(null)}
+                onClick={() => onOpen?.(b.id)} onKeyDown={(e) => e.key === "Enter" && onOpen?.(b.id)}
+              />
+            </g>
+          );
+        })}
+      </svg>
+      {shown && hover != null && (
+        <div
+          className="card"
+          style={{
+            position: "absolute", pointerEvents: "none", padding: "6px 10px", fontSize: 12, boxShadow: "var(--shadow)", background: "var(--bg-elev)", whiteSpace: "nowrap",
+            left: `${((L + hover * slot + slot / 2) / W) * 100}%`, top: 0, transform: `translateX(${hover > bars.length / 2 ? "calc(-100% - 8px)" : "8px"})`,
+          }}
+        >
+          <div style={{ fontWeight: 600 }}>{fmt(shown.ms)} · {shown.label}</div>
+          <div className="muted">{shown.failed ? `${shown.failed} failed · ` : ""}{formatDateTime(shown.date)}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Horizontal bar with a label, used for coverage per suite. */
 export function CoverageBar({ label, value, total }: { label: string; value: number; total: number }) {
   const pct = total ? Math.round((value / total) * 100) : 0;

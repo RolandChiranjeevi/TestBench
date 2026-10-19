@@ -18,6 +18,7 @@ import type { CaseSnapshot } from "./db.ts";
 import { exportCasesCsv, exportJson, exportMarkdownZip, exportResultsCsv } from "./exporter.ts";
 import { htmlToPdf } from "./pdf.ts";
 import { renderReport } from "./reportHtml.ts";
+import { automationCandidates, insightsData } from "./insights.ts";
 import { dashboardData, listMilestones, milestoneReport } from "./stats.ts";
 import { parseReport, type Framework, type ParsedReport } from "./importers/parse.ts";
 
@@ -792,7 +793,18 @@ app.post("/api/restore", async (req) => {
 
 // ---------------- Dashboard ----------------
 
-app.get("/api/projects/:id/dashboard", (req) => must(dashboardData(idParam(req)) ?? undefined, "Project"));
+app.get("/api/projects/:id/dashboard", (req) => {
+  const id = idParam(req);
+  return { ...must(dashboardData(id) ?? undefined, "Project"), ...automationCandidates(id, 5) };
+});
+
+// Flaky tests, test-time trend, slowdowns and manual cases worth automating next.
+app.get("/api/projects/:id/insights", (req) => {
+  const id = idParam(req);
+  must(db.prepare("SELECT id FROM projects WHERE id = ?").get(id), "Project");
+  const { runs } = z.object({ runs: z.coerce.number().int().refine((n) => [10, 20, 50].includes(n), "runs must be 10, 20 or 50").default(20) }).parse(req.query);
+  return insightsData(id, runs);
+});
 
 // ---------------- Sprints & releases ----------------
 
