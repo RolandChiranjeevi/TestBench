@@ -12,8 +12,18 @@ import { getToken, importRun, listRuns, type GithubSource } from "./importers/gi
 import { importReport, mergeReports } from "./importers/import.ts";
 import { parseReport, type Framework, type ParsedReport } from "./importers/parse.ts";
 
-const PORT = Number(process.env.PORT ?? 4100);
+const PORT = Number(process.env.TESTBENCH_API_PORT ?? 4100);
 const app = Fastify({ logger: { level: "warn" } });
+
+// Any web page can send "simple" cross-site requests to localhost. Reject foreign Host headers
+// (DNS rebinding) and require a custom header on writes, which forces a CORS preflight we never approve.
+app.addHook("onRequest", async (req, reply) => {
+  const host = (req.headers.host ?? "").replace(/:\d+$/, "");
+  if (!["localhost", "127.0.0.1", "[::1]"].includes(host)) return reply.code(403).send({ error: "Forbidden host" });
+  if (req.method !== "GET" && req.method !== "HEAD" && req.headers["x-testbench"] !== "1") {
+    return reply.code(403).send({ error: "Missing X-Testbench header" });
+  }
+});
 await app.register(multipart, { limits: { fileSize: 100 * 1024 * 1024, files: 20 } });
 await app.register(fastifyStatic, { root: UPLOAD_DIR, prefix: "/uploads/", decorateReply: false });
 

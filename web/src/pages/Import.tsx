@@ -239,8 +239,9 @@ function WorkflowRuns({ source }: { source: GithubSource }) {
           <ConclusionIcon run={r} />
           <div className="grow col" style={{ gap: 1 }}>
             <span className="truncate">{r.display_title}</span>
-            <span className="row faint" style={{ fontSize: 11.5, gap: 6 }}>
-              <span>{r.name} #{r.run_number}</span>·<GitBranch size={10} />{r.head_branch}·<span>{timeAgo(r.created_at)}</span>
+            <span className="row faint" style={{ fontSize: 11.5, gap: 6, whiteSpace: "nowrap", overflow: "hidden" }}>
+              <span>{r.name} #{r.run_number}</span>·<GitBranch size={10} style={{ flexShrink: 0 }} />
+              <span className="truncate" style={{ maxWidth: 180 }}>{r.head_branch}</span>·<span>{timeAgo(r.created_at)}</span>
             </span>
           </div>
           {r.imported_run_id ? (

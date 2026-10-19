@@ -16,6 +16,8 @@ export function CasesPage() {
   const toast = useToast();
   const [params, setParams] = useSearchParams();
   const selectedId = params.get("case") ? Number(params.get("case")) : null;
+  // With the editor open the list gets narrow, so drop secondary metadata.
+  const compact = selectedId != null;
   const suiteParam = params.get("suite");
   const suiteFilter: number | "none" | null = suiteParam === "none" ? "none" : suiteParam ? Number(suiteParam) : null;
 
@@ -164,7 +166,7 @@ export function CasesPage() {
         <div className="topbar">
           <h1>Test cases</h1>
           <span className="spacer" />
-          <div className="search" style={{ width: 220 }}>
+          <div className="search" style={{ width: compact ? 160 : 220 }}>
             <Search size={13} />
             <input
               ref={searchRef}
@@ -208,9 +210,11 @@ export function CasesPage() {
             </div>
           )}
           <span className="spacer" />
-          <span className="faint" style={{ fontSize: 12 }}>
-            <Kbd>J</Kbd> <Kbd>K</Kbd> move · <Kbd>X</Kbd> select · <Kbd>↵</Kbd> open
-          </span>
+          {!compact && (
+            <span className="faint" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+              <Kbd>J</Kbd> <Kbd>K</Kbd> move · <Kbd>X</Kbd> select · <Kbd>↵</Kbd> open
+            </span>
+          )}
         </div>
         <div className="content" ref={listRef}>
           {isLoading ? null : flat.length === 0 ? (
@@ -256,16 +260,18 @@ export function CasesPage() {
                         {c.title}
                       </span>
                       <span className="meta">
-                        {c.status === "draft" && <span className="chip">Draft</span>}
-                        {c.tags.slice(0, 3).map((t) => <span key={t} className="chip">{t}</span>)}
+                        {!compact && c.status === "draft" && <span className="chip">Draft</span>}
+                        {!compact && c.tags.slice(0, 3).map((t) => <span key={t} className="chip">{t}</span>)}
                         {c.automated_count > 0 && (
                           <span className="chip accent" title={`${c.automated_count} automated test(s)`}>
                             <Bot size={11} /> {c.automated_count}
                           </span>
                         )}
-                        <span className="faint tabular" style={{ width: 52, textAlign: "right" }} title="Steps">
-                          {c.step_count} {c.step_count === 1 ? "step" : "steps"}
-                        </span>
+                        {!compact && (
+                          <span className="faint tabular" style={{ width: 52, textAlign: "right" }} title="Steps">
+                            {c.step_count} {c.step_count === 1 ? "step" : "steps"}
+                          </span>
+                        )}
                         <StatusIcon status={c.last_status} />
                       </span>
                     </div>

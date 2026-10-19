@@ -43,11 +43,12 @@ export interface WorkflowRun {
 export interface ImportResult { runId: number; duplicate: boolean; total: number; linked: number; artifacts?: string[] }
 
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
-  const init: RequestInit = { method };
+  const headers: Record<string, string> = { "X-Testbench": "1" };
+  const init: RequestInit = { method, headers };
   if (body instanceof FormData) init.body = body;
   else if (body !== undefined) {
     init.body = JSON.stringify(body);
-    init.headers = { "Content-Type": "application/json" };
+    headers["Content-Type"] = "application/json";
   }
   const res = await fetch(url, init);
   const data = await res.json().catch(() => ({}));

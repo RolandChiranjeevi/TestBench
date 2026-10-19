@@ -45,6 +45,7 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted }: { caseId: num
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const queue = useRef<Promise<void>>(Promise.resolve());
   const dirty = useRef(false);
+  const focusStep = useRef<string | null>(null);
 
   const setDraft = (d: Draft) => {
     draftRef.current = d;
@@ -121,6 +122,13 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted }: { caseId: num
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // Focus a newly added step once it has rendered.
+  useEffect(() => {
+    if (!focusStep.current) return;
+    document.querySelector<HTMLTextAreaElement>(`[data-step="${focusStep.current}"]`)?.focus();
+    focusStep.current = null;
+  }, [draft?.steps.length]);
+
   if (!data || !draft) {
     return (
       <div className="row muted" style={{ padding: 24 }}>
@@ -138,11 +146,9 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted }: { caseId: num
     update({ steps }, true);
   };
   const addStep = () => {
-    update({ steps: [...draft.steps, { uid: uid(), action: "", expected: "" }] }, true);
-    requestAnimationFrame(() => {
-      const areas = document.querySelectorAll<HTMLTextAreaElement>(".step textarea.action");
-      areas[areas.length - 1]?.focus();
-    });
+    const step = { uid: uid(), action: "", expected: "" };
+    focusStep.current = step.uid;
+    update({ steps: [...draft.steps, step] }, true);
   };
 
   const remove = async () => {
@@ -248,13 +254,12 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted }: { caseId: num
                 <div />
                 <div>Action</div>
                 <div style={{ borderLeft: "1px solid var(--border)" }}>Expected result</div>
-                <div />
               </div>
               {draft.steps.map((s, i) => (
                 <div className="step" key={s.uid}>
                   <div className="step-num">{i + 1}</div>
                   <textarea
-                    className="action"
+                    data-step={s.uid}
                     rows={1}
                     value={s.action}
                     placeholder="Do something…"

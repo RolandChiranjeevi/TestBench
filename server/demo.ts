@@ -15,7 +15,7 @@ const SUITES: Record<string, DemoCase[]> = {
       steps: [
         ["Open /login", "Login form is shown"],
         ["Enter a valid email and password", "Fields accept input, password is masked"],
-        ["Click **Sign in**", "User lands on the dashboard and sees their name"],
+        ["Click Sign in", "User lands on the dashboard and sees their name"],
       ],
     },
     {
@@ -24,7 +24,7 @@ const SUITES: Record<string, DemoCase[]> = {
       tags: ["auth"],
       steps: [
         ["Open /login and enter a valid email with a wrong password", "—"],
-        ["Click **Sign in**", "Inline error 'Wrong email or password' appears; no redirect"],
+        ["Click Sign in", "Inline error 'Wrong email or password' appears; no redirect"],
       ],
     },
     {
@@ -32,7 +32,7 @@ const SUITES: Record<string, DemoCase[]> = {
       priority: "medium",
       tags: ["auth", "email"],
       steps: [
-        ["Click **Forgot password** and submit the account email", "Confirmation message is shown"],
+        ["Click Forgot password and submit the account email", "Confirmation message is shown"],
         ["Open the reset link from the email", "New password form is shown"],
         ["Set a new password and log in with it", "Login succeeds"],
       ],
@@ -44,8 +44,8 @@ const SUITES: Record<string, DemoCase[]> = {
       priority: "critical",
       tags: ["smoke", "cart"],
       steps: [
-        ["Open any product page", "Price and **Add to cart** button are visible"],
-        ["Click **Add to cart**", "Cart badge shows 1"],
+        ["Open any product page", "Price and Add to cart button are visible"],
+        ["Click Add to cart", "Cart badge shows 1"],
       ],
     },
     {
@@ -74,7 +74,7 @@ const SUITES: Record<string, DemoCase[]> = {
       tags: ["smoke", "checkout", "payments"],
       pre: "Cart contains at least one product",
       steps: [
-        ["Click **Checkout** and fill in the shipping address", "Shipping options load"],
+        ["Click Checkout and fill in the shipping address", "Shipping options load"],
         ["Pay with test card 4242 4242 4242 4242", "Payment is accepted"],
         ["Wait for the confirmation page", "Order number is shown and a confirmation email is sent"],
       ],
