@@ -3,3 +3,6 @@ dist
 data/
 .claude-flow
 .DS_Store
+.swarm/
+ruvector.db
+agentdb.rvf*
