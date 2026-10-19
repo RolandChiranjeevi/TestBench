@@ -15,6 +15,27 @@ Data lives in `data/testbench.db` (SQLite) and `data/uploads/`. Back up that fol
 Each case gets an ID like `SHOP-12`. Put `@SHOP-12` in a test title (or a Playwright tag) and imports
 link the test to the case automatically. You can also link by hand on **Automated tests**.
 
+## Playwright evidence
+
+Turn on evidence in `playwright.config.ts` and write a JSON report:
+
+```ts
+reporter: [["html"], ["json", { outputFile: "results.json" }]],
+use: { trace: "retain-on-failure", screenshot: "only-on-failure", video: "retain-on-failure" },
+```
+
+Upload `results.json` **and** `test-results/` (in GitHub Actions: `path: |` both, see the guide on the Import page). Then import
+the downloaded artifact `.zip`, pick the project folder with **Choose a test-results folder**, or click Import on a workflow run.
+Expand a test in an automated run to see:
+
+- the **attempts** (Attempt 1, Retry 1…), so a flaky test shows what failed first and that it passed on retry
+- the error with Playwright's code frame, the location, and console output
+- **screenshots and video** per attempt, and **Open trace**, which runs Playwright's trace viewer from this app (nothing is uploaded anywhere)
+- the **history** of that test over its last 20 runs, and a **Report bug** draft for Jira (same flow as manual bugs)
+
+Evidence files are matched to tests by their path, so any artifact layout works. If both `results.json` and a JUnit XML of the same
+run are present, the JSON is used (it has the details) so tests aren't counted twice. Deleting a run deletes its evidence files.
+
 ## Report formats
 
 | Framework  | Report                                                          |
