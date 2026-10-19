@@ -6,10 +6,11 @@ import { existsSync } from "node:fs";
 import { unlink, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { z } from "zod";
-import { db, parseJson, UPLOAD_DIR } from "./db.ts";
+import { db, ensureMilestone, parseJson, snapshotCase, UPLOAD_DIR } from "./db.ts";
 import { seedDemo } from "./demo.ts";
 import { getToken, importRun, listRuns, type GithubSource } from "./importers/github.ts";
 import { importReport, mergeReports } from "./importers/import.ts";
+import type { CaseSnapshot } from "./db.ts";
 import { parseReport, type Framework, type ParsedReport } from "./importers/parse.ts";
 
 const PORT = Number(process.env.TESTBENCH_API_PORT ?? 4100);
@@ -295,8 +296,9 @@ app.post("/api/projects/:id/runs", (req) => {
     const cases = db
       .prepare(`SELECT id FROM cases WHERE project_id = ? AND id IN (${placeholders}) ORDER BY position, number`)
       .all(projectId, ...body.caseIds) as { id: number }[];
-    const ins = db.prepare("INSERT INTO results (run_id, case_id, position) VALUES (?, ?, ?)");
-    cases.forEach((c, i) => ins.run(run.id, c.id, i));
+    const ins = db.prepare("INSERT INTO results (run_id, case_id, position, snapshot) VALUES (?, ?, ?, ?)");
+    cases.forEach((c, i) => ins.run(run.id, c.id, i, JSON.stringify(snapshotCase(c.id))));
+    ensureMilestone(projectId, body.milestone ?? "");
     return run;
   })();
 });
@@ -312,9 +314,13 @@ app.get("/api/runs/:id", (req) => {
   const counts = db.prepare(`SELECT ${STATUS_COUNTS}, COALESCE(SUM(r.duration_ms), 0) AS duration_ms FROM results r WHERE r.run_id = ?`).get(id);
   const results = db
     .prepare(`
-      SELECT r.*, c.number AS case_number, c.title AS case_title, c.priority AS case_priority, s.name AS suite_name,
+      SELECT r.id, r.run_id, r.case_id, r.automated_test_id, r.status, r.flaky, r.duration_ms, r.error, r.notes, r.position, r.executed_at,
+        COALESCE(json_extract(r.snapshot, '$.number'), c.number) AS case_number,
+        COALESCE(json_extract(r.snapshot, '$.title'), c.title) AS case_title,
+        COALESCE(json_extract(r.snapshot, '$.priority'), c.priority) AS case_priority,
+        s.name AS suite_name,
         a.title AS test_title, a.file AS test_file, a.suite_path AS test_suite_path, a.full_name AS test_full_name,
-        (SELECT COUNT(*) FROM case_steps st WHERE st.case_id = r.case_id) AS step_count
+        COALESCE(json_array_length(r.snapshot, '$.steps'), (SELECT COUNT(*) FROM case_steps st WHERE st.case_id = r.case_id)) AS step_count
       FROM results r
       LEFT JOIN cases c ON c.id = r.case_id
       LEFT JOIN suites s ON s.id = c.suite_id
@@ -336,6 +342,7 @@ app.patch("/api/runs/:id", (req) => {
     .parse(req.body);
   const cur = must(db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as Record<string, any> | undefined, "Run");
   const status = body.status ?? cur.status;
+  if (body.milestone) ensureMilestone(cur.project_id, body.milestone);
   return db
     .prepare(`
       UPDATE runs SET title = ?, environment = ?, milestone = ?, status = ?,
@@ -358,10 +365,29 @@ app.delete("/api/runs/:id", async (req) => {
 
 app.get("/api/results/:id", (req) => {
   const id = idParam(req);
-  const result = must(db.prepare("SELECT * FROM results WHERE id = ?").get(id) as Record<string, any> | undefined, "Result");
+  const { snapshot: rawSnapshot, ...result } = must(db.prepare("SELECT * FROM results WHERE id = ?").get(id) as Record<string, any> | undefined, "Result");
+  const snap = parseJson<CaseSnapshot | null>(rawSnapshot, null);
+  const live = result.case_id ? getCase(result.case_id) : null;
+  const run = db.prepare("SELECT ru.project_id, p.key FROM runs ru JOIN projects p ON p.id = ru.project_id WHERE ru.id = ?").get(result.run_id) as {
+    project_id: number;
+    key: string;
+  };
+  // A manual result shows the case as it was when the run started, even if it was edited or deleted since.
+  const frozen = snap
+    ? {
+        ...(live ?? { id: null, project_id: run.project_id, project_key: run.key, tags: [], suite_id: null, status: "ready", automated: [], history: [] }),
+        number: snap.number,
+        title: snap.title,
+        priority: snap.priority,
+        description: snap.description,
+        preconditions: snap.preconditions,
+        steps: snap.steps,
+        edited_since: !!live && JSON.stringify(snap.steps.map((s) => [s.action, s.expected])) !== JSON.stringify(live.steps.map((s: any) => [s.action, s.expected])),
+      }
+    : live;
   return {
     ...result,
-    case: result.case_id ? getCase(result.case_id) : null,
+    case: frozen,
     stepResults: db.prepare("SELECT * FROM step_results WHERE result_id = ?").all(id),
     attachments: db.prepare("SELECT * FROM attachments WHERE result_id = ? ORDER BY id").all(id),
   };

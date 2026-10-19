@@ -129,7 +129,90 @@ CREATE TABLE IF NOT EXISTS github_sources (
 );
 `);
 
-export const parseJson = <T>(s: string | null | undefined, fallback: T): T => {
+// ---------- Migrations ----------
+
+const hasColumn = (table: string, col: string) =>
+  (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === col);
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS milestones (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'sprint',   -- sprint | release
+  start_date TEXT,
+  end_date TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (project_id, name)
+);`);
+
+// Freeze what a manual result looked like when the run started, so later case edits don't rewrite history.
+if (!hasColumn("results", "snapshot")) db.exec("ALTER TABLE results ADD COLUMN snapshot TEXT");
+
+// step_results used to cascade-delete with case_steps, losing history when a step was removed from a case.
+const stepFks = db.prepare("PRAGMA foreign_key_list(step_results)").all() as { table: string }[];
+if (stepFks.some((f) => f.table === "case_steps")) {
+  db.pragma("foreign_keys = OFF");
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE step_results_new (
+        result_id INTEGER NOT NULL REFERENCES results(id) ON DELETE CASCADE,
+        step_id INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        actual TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (result_id, step_id)
+      );
+      INSERT INTO step_results_new SELECT result_id, step_id, status, actual FROM step_results;
+      DROP TABLE step_results;
+      ALTER TABLE step_results_new RENAME TO step_results;`);
+  })();
+  db.pragma("foreign_keys = ON");
+}
+
+export interface CaseSnapshot {
+  number: number;
+  title: string;
+  priority: string;
+  description: string;
+  preconditions: string;
+  steps: { id: number; action: string; expected: string }[];
+}
+
+export function snapshotCase(caseId: number): CaseSnapshot | null {
+  const c = db.prepare("SELECT number, title, priority, description, preconditions FROM cases WHERE id = ?").get(caseId) as
+    | Omit<CaseSnapshot, "steps">
+    | undefined;
+  if (!c) return null;
+  const steps = db.prepare("SELECT id, action, expected FROM case_steps WHERE case_id = ? ORDER BY position").all(caseId) as CaseSnapshot["steps"];
+  return { ...c, steps };
+}
+
+// Backfill snapshots for manual results created before this existed (best effort: current state).
+{
+  const rows = db
+    .prepare(`SELECT r.id, r.case_id FROM results r JOIN runs ru ON ru.id = r.run_id
+              WHERE ru.kind = 'manual' AND r.snapshot IS NULL AND r.case_id IS NOT NULL`)
+    .all() as { id: number; case_id: number }[];
+  const set = db.prepare("UPDATE results SET snapshot = ? WHERE id = ?");
+  db.transaction(() => {
+    for (const r of rows) {
+      const s = snapshotCase(r.case_id);
+      if (s) set.run(JSON.stringify(s), r.id);
+    }
+  })();
+}
+
+/** Sprints/releases are created on first use; dates and kind are edited afterwards. */
+export function ensureMilestone(projectId: number, name: string) {
+  const n = name.trim();
+  if (n) db.prepare("INSERT OR IGNORE INTO milestones (project_id, name) VALUES (?, ?)").run(projectId, n);
+}
+{
+  const rows = db.prepare("SELECT DISTINCT project_id, milestone FROM runs WHERE milestone != ''").all() as { project_id: number; milestone: string }[];
+  for (const r of rows) ensureMilestone(r.project_id, r.milestone);
+}
+
+export const parseJson =<T>(s: string | null | undefined, fallback: T): T => {
   if (!s) return fallback;
   try {
     return JSON.parse(s) as T;

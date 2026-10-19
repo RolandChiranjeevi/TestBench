@@ -1,4 +1,4 @@
-import { db } from "../db.ts";
+import { db, ensureMilestone } from "../db.ts";
 import { extractCaseRefs, type ParsedReport } from "./parse.ts";
 
 export interface ImportOptions {
@@ -96,6 +96,7 @@ export function importReport(report: ParsedReport, opts: ImportOptions): ImportR
       if (test.case_id) linked++;
       insertResult.run(run.id, test.case_id, test.id, t.status, t.flaky ? 1 : 0, t.durationMs, t.error, i, startedAt);
     });
+    ensureMilestone(project.id, opts.milestone ?? "");
     return { runId: run.id, duplicate: false, total: report.tests.length, linked };
   })();
 }
