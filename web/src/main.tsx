@@ -2,8 +2,8 @@ import { StrictMode, useEffect, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, ChevronDown, Download, FileBarChart, FlaskConical, LayoutDashboard, ListChecks, Play, Plus, Sparkles } from "lucide-react";
-import { api, type Project } from "./api";
+import { Archive, Bot, ChevronDown, Download, FileBarChart, FlaskConical, LayoutDashboard, ListChecks, Play, Plus, Sparkles } from "lucide-react";
+import { api, timeAgo, type BackupInfo, type Project } from "./api";
 import { Empty, Modal, ToastProvider, useHotkeys, useToast } from "./components/ui";
 import { CasesPage } from "./pages/Cases";
 import { RunsPage } from "./pages/Runs";
@@ -12,6 +12,7 @@ import { AutomatedPage } from "./pages/Automated";
 import { ImportPage } from "./pages/Import";
 import { DashboardPage } from "./pages/Dashboard";
 import { ReportsPage } from "./pages/Reports";
+import { BackupPage } from "./pages/Backup";
 import "./styles.css";
 
 const LAST_PROJECT = "testbench:lastProject";
@@ -144,6 +145,7 @@ function ProjectLayout() {
   const project = projects?.find((p) => p.id === Number(pid));
   const navigate = useNavigate();
   const [menu, setMenu] = useState(false);
+  const { data: backup } = useQuery({ queryKey: ["backup-info"], queryFn: () => api.get<BackupInfo>("/api/backup/info"), staleTime: 60_000 });
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
@@ -157,6 +159,7 @@ function ProjectLayout() {
     "4": () => navigate(`/p/${pid}/automated`),
     "5": () => navigate(`/p/${pid}/import`),
     "6": () => navigate(`/p/${pid}/reports`),
+    "7": () => navigate(`/p/${pid}/backup`),
   });
 
   if (isLoading) return null;
@@ -206,8 +209,20 @@ function ProjectLayout() {
         {link("import", <Download size={15} />, "Import results", "5")}
         <div className="sidebar-section">Reporting</div>
         {link("reports", <FileBarChart size={15} />, "Sprint reports", "6")}
+        <div className="sidebar-section">Data</div>
+        {link("backup", <Archive size={15} />, "Backup & restore", "7")}
 
         <div className="sidebar-footer">
+          {/* Nudge when there is no recent backup: the data lives only on this computer. */}
+          {backup && (
+            <NavLink
+              to={`/p/${project.id}/backup`}
+              className="row"
+              style={{ gap: 6, marginBottom: 4, color: !backup.lastBackupAt || Date.now() - new Date(backup.lastBackupAt).getTime() > 7 * 864e5 ? "var(--blocked)" : undefined }}
+            >
+              <Archive size={12} /> {backup.lastBackupAt ? `Backed up ${timeAgo(backup.lastBackupAt)}` : "Not backed up yet"}
+            </NavLink>
+          )}
           {project.case_count} cases · {project.run_count} runs
         </div>
       </aside>
@@ -231,6 +246,7 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/p/:pid" element={<ProjectLayout />}>
               <Route index element={<Navigate to="dashboard" replace />} />
               <Route path="dashboard" element={<DashboardPage />} />
+              <Route path="backup" element={<BackupPage />} />
               <Route path="reports" element={<ReportsPage />} />
               <Route path="reports/:mid" element={<ReportsPage />} />
               <Route path="cases" element={<CasesPage />} />

@@ -17,7 +17,7 @@ export interface FileBag {
 const norm = (p: string) => p.replace(/\\/g, "/").replace(/^\/+/, "");
 
 /** Lists a zip's entries up front and decompresses single files on demand, so big videos are only read if needed. */
-export function bagFromZip(bytes: Uint8Array): FileBag {
+export function bagFromZip(bytes: Uint8Array, maxFile = MAX_FILE_BYTES): FileBag {
   const sizes = new Map<string, number>();
   unzipSync(bytes, {
     filter: (f) => {
@@ -29,7 +29,7 @@ export function bagFromZip(bytes: Uint8Array): FileBag {
     names: [...sizes.keys()],
     size: (n) => sizes.get(n) ?? 0,
     read: (name) => {
-      if ((sizes.get(name) ?? Infinity) > MAX_FILE_BYTES) return null;
+      if ((sizes.get(name) ?? Infinity) > maxFile) return null;
       const out = unzipSync(bytes, { filter: (f) => norm(f.name) === name });
       const key = Object.keys(out)[0];
       return key ? out[key] : null;

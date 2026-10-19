@@ -57,6 +57,11 @@ export interface WorkflowRun {
   id: number; name: string; display_title: string; run_number: number; head_branch: string; event: string;
   status: string; conclusion: string | null; created_at: string; html_url: string; imported_run_id: number | null;
 }
+export interface BackupInfo {
+  projects: number; cases: number; runs: number; dbBytes: number; uploadFiles: number; uploadBytes: number;
+  lastBackupAt: string | null; previousCopies: string[];
+}
+export interface RestoreSummary { projects: number; cases: number; runs: number; uploadFiles: number; previous: string }
 export interface ImportResult { runId: number; duplicate: boolean; total: number; linked: number; attachments: number; artifacts?: string[] }
 
 export interface Milestone {

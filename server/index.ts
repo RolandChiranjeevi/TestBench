@@ -2,12 +2,14 @@ import Fastify, { type FastifyRequest } from "fastify";
 import multipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { createWriteStream, existsSync, rmSync } from "node:fs";
+import { pipeline } from "node:stream/promises";
 import { readFile, unlink, writeFile } from "node:fs/promises";
 import { zipSync } from "fflate";
 import { extname, join } from "node:path";
 import { z } from "zod";
-import { db, ensureMilestone, parseJson, snapshotCase, UPLOAD_DIR } from "./db.ts";
+import { backupInfo, restoreFromZip, streamBackup } from "./backup.ts";
+import { DATA_DIR, db, ensureMilestone, parseJson, snapshotCase, UPLOAD_DIR } from "./db.ts";
 import { seedDemo } from "./demo.ts";
 import { getToken, importRun, listRuns, type GithubSource } from "./importers/github.ts";
 import { bagFromFiles, bagFromZip, dedupeReports, mergeBags, readReports, type FileBag } from "./importers/bag.ts";
@@ -744,6 +746,42 @@ app.patch("/api/templates/:id", (req) => {
 app.delete("/api/templates/:id", (req) => {
   db.prepare("DELETE FROM run_templates WHERE id = ?").run(idParam(req));
   return { ok: true };
+});
+
+// ---------------- Backup & restore ----------------
+
+app.get("/api/backup/info", () => backupInfo());
+
+app.get("/api/backup", async (_req, reply) => {
+  const stamp = new Date().toISOString().slice(0, 16).replace("T", "-").replace(":", "");
+  reply.hijack(); // the zip is streamed straight to the socket
+  reply.raw.writeHead(200, {
+    "Content-Type": "application/zip",
+    "Content-Disposition": `attachment; filename="testbench-backup-${stamp}.zip"`,
+    "Cache-Control": "no-store",
+  });
+  try {
+    await streamBackup(reply.raw);
+  } catch (e) {
+    app.log.error(e);
+    reply.raw.destroy(e as Error);
+  }
+});
+
+// Replaces ALL data with a backup. The current data is moved to data/previous/<time>, never deleted.
+app.post("/api/restore", async (req) => {
+  const part = await req.file({ limits: { fileSize: 2 * 1024 ** 3 } });
+  if (!part) throw new HttpError(400, "Choose a backup .zip file");
+  const tmp = join(DATA_DIR, `.upload-${Date.now()}.zip`);
+  try {
+    await pipeline(part.file, createWriteStream(tmp));
+    if (part.file.truncated) throw new HttpError(400, "That file is too large to restore from the app");
+    return await restoreFromZip(tmp);
+  } catch (e) {
+    throw e instanceof HttpError ? e : new HttpError(400, (e as Error).message);
+  } finally {
+    rmSync(tmp, { force: true });
+  }
 });
 
 // ---------------- Dashboard ----------------
