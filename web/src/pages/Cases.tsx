@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Folder, FolderOpen, Inbox, ListChecks, MoreHorizontal, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
+import { Bot, ClipboardList, Folder, FolderOpen, Inbox, ListChecks, MoreHorizontal, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
 import { api, type CaseDetail, type CaseSummary, type Project, type Suite } from "../api";
 import { Empty, Kbd, Modal, PriorityIcon, StatusIcon, useHotkeys, useToast } from "../components/ui";
 import { CaseEditor } from "./CaseEditor";
 import { NewRunModal } from "./Runs";
+import { TemplateModal } from "./Templates";
 
 type Filter = "all" | "manual" | "automated" | "failing";
 
@@ -33,6 +34,7 @@ export function CasesPage() {
   const [newCase, setNewCase] = useState(false);
   const [suiteModal, setSuiteModal] = useState<{ suite?: Suite; parentId?: number | null } | null>(null);
   const [runModal, setRunModal] = useState(false);
+  const [templateModal, setTemplateModal] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -194,6 +196,9 @@ export function CasesPage() {
               <button className="btn sm" onClick={() => setRunModal(true)}>
                 <Play size={12} /> Start run <Kbd>R</Kbd>
               </button>
+              <button className="btn sm" onClick={() => setTemplateModal(true)}>
+                <ClipboardList size={12} /> Save as template
+              </button>
               <button className="btn ghost sm" onClick={() => setChecked(new Set(visible.map((c) => c.id)))}>Select all {visible.length}</button>
               <button className="btn ghost sm" onClick={() => setChecked(new Set())}>
                 <X size={12} /> Clear
@@ -301,6 +306,7 @@ export function CasesPage() {
       )}
       {suiteModal && <SuiteModal projectId={projectId} suites={suites} {...suiteModal} onClose={() => setSuiteModal(null)} />}
       {runModal && <NewRunModal initialCaseIds={[...checked]} onClose={() => setRunModal(false)} onCreated={() => setChecked(new Set())} />}
+      {templateModal && <TemplateModal initialCaseIds={[...checked]} onClose={() => setTemplateModal(false)} />}
     </div>
   );
 }

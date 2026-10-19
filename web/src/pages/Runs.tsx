@@ -1,23 +1,28 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Download, GitBranch, Hand, Play, Plus, Search } from "lucide-react";
-import { api, formatDuration, passRate, timeAgo, type CaseSummary, type Milestone, type Project, type RunSummary, type Suite } from "../api";
-import { Empty, FrameworkBadge, Github, Kbd, Modal, PriorityIcon, ProgressBar, useHotkeys, useToast } from "../components/ui";
+import { Bot, Download, GitBranch, Hand, Play, Plus } from "lucide-react";
+import { api, formatDuration, passRate, timeAgo, type Milestone, type RunSummary, type RunTemplate } from "../api";
+import { CasePicker, useRunnableCases } from "../components/CasePicker";
+import { Empty, FrameworkBadge, Github, Kbd, Modal, ProgressBar, useHotkeys, useToast } from "../components/ui";
+import { TemplateModal, TemplatesPanel, useTemplates } from "./Templates";
 
-type Kind = "all" | "manual" | "automated";
+type Kind = "all" | "manual" | "automated" | "templates";
 
 export function RunsPage() {
   const { pid } = useParams();
   const navigate = useNavigate();
   const [kind, setKind] = useState<Kind>("all");
   const [creating, setCreating] = useState(false);
+  const [startFrom, setStartFrom] = useState<RunTemplate | null>(null);
+  const [editing, setEditing] = useState<RunTemplate | "new" | null>(null);
   const { data: runs, isLoading } = useQuery({ queryKey: ["runs", pid], queryFn: () => api.get<RunSummary[]>(`/api/projects/${pid}/runs`) });
+  const { data: templates = [] } = useTemplates();
 
   useHotkeys({ c: () => setCreating(true) });
 
   const visible = (runs ?? []).filter((r) => kind === "all" || r.kind === kind);
-  const count = (k: Kind) => (runs ?? []).filter((r) => k === "all" || r.kind === k).length;
+  const count = (k: Kind) => (k === "templates" ? templates.length : (runs ?? []).filter((r) => k === "all" || r.kind === k).length);
 
   return (
     <>
@@ -33,15 +38,21 @@ export function RunsPage() {
       </div>
       <div className="toolbar">
         <div className="tabs" role="tablist">
-          {(["all", "manual", "automated"] as const).map((k) => (
+          {(["all", "manual", "automated", "templates"] as const).map((k) => (
             <button key={k} role="tab" aria-selected={kind === k} className={`tab${kind === k ? " active" : ""}`} onClick={() => setKind(k)}>
-              {{ all: "All runs", manual: "Manual", automated: "Automated" }[k]} <span className="count">{count(k)}</span>
+              {{ all: "All runs", manual: "Manual", automated: "Automated", templates: "Templates" }[k]} <span className="count">{count(k)}</span>
             </button>
           ))}
         </div>
+        <span className="spacer" />
+        {kind === "templates" && templates.length > 0 && (
+          <button className="btn sm" onClick={() => setEditing("new")}><Plus size={13} /> New template</button>
+        )}
       </div>
       <div className="content">
-        {isLoading ? null : visible.length === 0 ? (
+        {kind === "templates" ? (
+          <TemplatesPanel templates={templates} onStart={setStartFrom} onEdit={setEditing} onNew={() => setEditing("new")} />
+        ) : isLoading ? null : visible.length === 0 ? (
           <Empty
             icon={<Play size={20} />}
             title="No runs yet"
@@ -59,6 +70,8 @@ export function RunsPage() {
         )}
       </div>
       {creating && <NewRunModal onClose={() => setCreating(false)} />}
+      {startFrom && <NewRunModal template={startFrom} onClose={() => setStartFrom(null)} />}
+      {editing && <TemplateModal template={editing === "new" ? undefined : editing} onClose={() => setEditing(null)} />}
     </>
   );
 }
@@ -110,45 +123,55 @@ function RunRow({ run }: { run: RunSummary }) {
   );
 }
 
-export function NewRunModal({ initialCaseIds = [], onClose, onCreated }: { initialCaseIds?: number[]; onClose: () => void; onCreated?: () => void }) {
+/** Start a manual run. Cases can be picked by hand, taken from a template, or both; the selection can be saved as a new template. */
+export function NewRunModal({ initialCaseIds = [], template, onClose, onCreated }: { initialCaseIds?: number[]; template?: RunTemplate; onClose: () => void; onCreated?: () => void }) {
   const { pid } = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const toast = useToast();
-  const { data: projects } = useQuery({ queryKey: ["projects"], queryFn: () => api.get<Project[]>("/api/projects") });
-  const key = projects?.find((p) => p.id === Number(pid))?.key;
-  const { data: suites = [] } = useQuery({ queryKey: ["suites", pid], queryFn: () => api.get<Suite[]>(`/api/projects/${pid}/suites`) });
-  const { data: cases = [] } = useQuery({ queryKey: ["cases", pid], queryFn: () => api.get<CaseSummary[]>(`/api/projects/${pid}/cases`) });
   const { data: milestones = [] } = useQuery({ queryKey: ["milestones", pid], queryFn: () => api.get<Milestone[]>(`/api/projects/${pid}/milestones`) });
+  const { data: templates = [] } = useTemplates();
+  const runnable = useRunnableCases();
 
   const today = new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  const [title, setTitle] = useState(`Regression · ${today}`);
-  const [environment, setEnvironment] = useState("");
+  const defaultTitle = (name?: string) => `${name ?? "Regression"} · ${today}`;
+  const [templateId, setTemplateId] = useState<number | null>(template?.id ?? null);
+  const [title, setTitle] = useState(defaultTitle(template?.name));
+  const [titleEdited, setTitleEdited] = useState(false);
+  const [environment, setEnvironment] = useState(template?.environment ?? "");
   const [milestone, setMilestone] = useState("");
-  const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<Set<number>>(() => new Set(initialCaseIds));
+  const [selected, setSelected] = useState<Set<number>>(() => new Set(template ? template.caseIds : initialCaseIds));
+  const [saveAs, setSaveAs] = useState(false);
+  const [saveName, setSaveName] = useState("");
 
-  const runnable = useMemo(() => cases.filter((c) => c.status !== "deprecated"), [cases]);
-  const q = search.trim().toLowerCase();
-  const shown = runnable.filter((c) => !q || `${key}-${c.number} ${c.title} ${c.tags.join(" ")}`.toLowerCase().includes(q));
-  const groups = [...suites.map((s) => ({ id: s.id as number | null, name: s.name })), { id: null, name: "No suite" }]
-    .map((g) => ({ ...g, items: shown.filter((c) => c.suite_id === g.id) }))
-    .filter((g) => g.items.length);
+  // Deprecated cases can't be run, even if a template still lists them.
+  const runnableIds = new Set(runnable.map((c) => c.id));
+  const caseIds = [...selected].filter((id) => runnableIds.has(id));
 
-  const setMany = (ids: number[], on: boolean) =>
-    setSelected((s) => {
-      const n = new Set(s);
-      ids.forEach((id) => (on ? n.add(id) : n.delete(id)));
-      return n;
-    });
+  const applyTemplate = (id: number | null) => {
+    setTemplateId(id);
+    const t = templates.find((x) => x.id === id);
+    if (!t) return;
+    setSelected(new Set(t.caseIds));
+    if (t.environment) setEnvironment(t.environment);
+    if (!titleEdited) setTitle(defaultTitle(t.name));
+  };
 
   const create = useMutation({
-    mutationFn: () => api.post<{ id: number }>(`/api/projects/${pid}/runs`, { title, environment, milestone, caseIds: [...selected] }),
+    mutationFn: async () => {
+      let tid = templateId;
+      if (saveAs && saveName.trim()) {
+        const t = await api.post<RunTemplate>(`/api/projects/${pid}/templates`, { name: saveName, environment, caseIds });
+        tid = t.id;
+        // If starting the run fails below, a retry must not try to create the template again.
+        setTemplateId(t.id);
+        setSaveAs(false);
+      }
+      return api.post<{ id: number }>(`/api/projects/${pid}/runs`, { title, environment, milestone, caseIds, templateId: tid });
+    },
     onSuccess: (run) => {
-      qc.invalidateQueries({ queryKey: ["runs", pid] });
+      for (const k of ["runs", "milestones", "dashboard", "templates"]) qc.invalidateQueries({ queryKey: [k, pid] });
       qc.invalidateQueries({ queryKey: ["projects"] });
-      qc.invalidateQueries({ queryKey: ["milestones", pid] });
-      qc.invalidateQueries({ queryKey: ["dashboard", pid] });
       onCreated?.();
       onClose();
       navigate(`/p/${pid}/runs/${run.id}`);
@@ -163,15 +186,30 @@ export function NewRunModal({ initialCaseIds = [], onClose, onCreated }: { initi
       width={680}
       footer={
         <>
-          <span className="muted" style={{ marginRight: "auto" }}>{selected.size} of {runnable.length} cases</span>
+          <span className="muted" style={{ marginRight: "auto" }}>{caseIds.length} of {runnable.length} cases</span>
           <button className="btn ghost" onClick={onClose}>Cancel</button>
-          <button className="btn primary" disabled={!selected.size || !title.trim() || create.isPending} onClick={() => create.mutate()}>
+          <button
+            className="btn primary"
+            disabled={!caseIds.length || !title.trim() || (saveAs && !saveName.trim()) || create.isPending}
+            onClick={() => create.mutate()}
+          >
             <Play size={13} /> Start run
           </button>
         </>
       }
     >
-      <input className="bare title-input" value={title} onChange={(e) => setTitle(e.target.value)} aria-label="Run title" autoFocus />
+      <input className="bare title-input" value={title} onChange={(e) => { setTitle(e.target.value); setTitleEdited(true); }} aria-label="Run title" autoFocus />
+      {templates.length > 0 && (
+        <div className="field">
+          <label htmlFor="tpl">Template</label>
+          <select id="tpl" className="select" value={templateId ?? ""} onChange={(e) => applyTemplate(e.target.value ? Number(e.target.value) : null)}>
+            <option value="">None: pick cases below</option>
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>{t.name} ({t.caseIds.filter((id) => runnableIds.has(id)).length} cases)</option>
+            ))}
+          </select>
+        </div>
+      )}
       <div className="row" style={{ gap: 10 }}>
         <div className="field grow">
           <label htmlFor="env">Environment</label>
@@ -183,38 +221,14 @@ export function NewRunModal({ initialCaseIds = [], onClose, onCreated }: { initi
           <datalist id="milestone-options">{milestones.map((m) => <option key={m.id} value={m.name} />)}</datalist>
         </div>
       </div>
-      <div className="row">
-        <div className="search grow">
-          <Search size={13} />
-          <input className="input" placeholder="Filter cases" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Filter cases" />
-        </div>
-        <button className="btn sm" onClick={() => setMany(shown.map((c) => c.id), true)}>Select {q ? "shown" : "all"}</button>
-        <button className="btn ghost sm" onClick={() => setSelected(new Set())}>Clear</button>
-      </div>
-      <div className="card" style={{ maxHeight: 300, overflow: "auto" }}>
-        {groups.length === 0 && <div className="muted" style={{ padding: 16 }}>No cases to run. Create test cases first.</div>}
-        {groups.map((g) => {
-          const ids = g.items.map((c) => c.id);
-          const all = ids.every((id) => selected.has(id));
-          const some = !all && ids.some((id) => selected.has(id));
-          return (
-            <div key={g.id ?? "none"}>
-              <label className="group-header" style={{ cursor: "pointer", padding: "0 12px" }}>
-                <input type="checkbox" className="checkbox" checked={all} ref={(el) => { if (el) el.indeterminate = some; }} onChange={() => setMany(ids, !all)} />
-                {g.name} <span className="count">{g.items.length}</span>
-              </label>
-              {g.items.map((c) => (
-                <label key={c.id} className="list-row" style={{ height: 32, padding: "0 12px" }}>
-                  <input type="checkbox" className="checkbox" checked={selected.has(c.id)} onChange={() => setMany([c.id], !selected.has(c.id))} />
-                  <PriorityIcon priority={c.priority} />
-                  <span className="mono muted" style={{ width: 62 }}>{key}-{c.number}</span>
-                  <span className="title">{c.title}</span>
-                  {c.automated_count > 0 && <Bot size={12} className="faint" />}
-                </label>
-              ))}
-            </div>
-          );
-        })}
+      <CasePicker selected={selected} onChange={setSelected} />
+      <div className="row" style={{ gap: 10 }}>
+        <label className="row muted" style={{ fontSize: 12.5, cursor: "pointer" }}>
+          <input type="checkbox" className="checkbox" checked={saveAs} onChange={(e) => setSaveAs(e.target.checked)} /> Save this selection as a template
+        </label>
+        {saveAs && (
+          <input className="input grow" style={{ height: 28 }} placeholder="Template name, e.g. Smoke test" value={saveName} onChange={(e) => setSaveName(e.target.value)} aria-label="Template name" />
+        )}
       </div>
     </Modal>
   );

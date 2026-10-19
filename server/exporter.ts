@@ -31,6 +31,11 @@ export function exportJson(projectId: number) {
     updatedAt: c.updated_at,
   }));
   const milestones = db.prepare("SELECT name, kind, start_date AS startDate, end_date AS endDate FROM milestones WHERE project_id = ? ORDER BY id").all(projectId);
+  const templates = (db.prepare("SELECT id, name, environment FROM run_templates WHERE project_id = ? ORDER BY name").all(projectId) as { id: number; name: string; environment: string }[]).map((t) => ({
+    name: t.name,
+    environment: t.environment,
+    cases: (db.prepare("SELECT c.number FROM run_template_cases x JOIN cases c ON c.id = x.case_id WHERE x.template_id = ? ORDER BY c.number").all(t.id) as { number: number }[]).map((c) => `${p.key}-${c.number}`),
+  }));
   const runs = (db.prepare("SELECT * FROM runs WHERE project_id = ? ORDER BY id").all(projectId) as Record<string, any>[]).map((r) => ({
     title: r.title, kind: r.kind, source: r.source, status: r.status, framework: r.framework, environment: r.environment, milestone: r.milestone,
     startedAt: r.started_at, finishedAt: r.finished_at, meta: parseJson(r.meta, {}),
@@ -46,7 +51,7 @@ export function exportJson(projectId: number) {
       status: x.status, flaky: !!x.flaky, durationMs: x.durationMs, error: x.error || undefined, notes: x.notes || undefined, executedAt: x.executedAt,
     })),
   }));
-  return { exportedAt: new Date().toISOString(), format: "testbench-export/1", project: { name: p.name, key: p.key }, suites, milestones, cases, runs };
+  return { exportedAt: new Date().toISOString(), format: "testbench-export/1", project: { name: p.name, key: p.key }, suites, milestones, templates, cases, runs };
 }
 
 /** Spreadsheet apps run cells that start with = + - @ as formulas, so neutralise them. */

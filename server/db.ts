@@ -202,6 +202,24 @@ export function snapshotCase(caseId: number): CaseSnapshot | null {
   })();
 }
 
+// Run templates: a named, reusable selection of cases. Deleting a case or template removes it from the link table.
+db.exec(`
+CREATE TABLE IF NOT EXISTS run_templates (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  environment TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (project_id, name)
+);
+CREATE TABLE IF NOT EXISTS run_template_cases (
+  template_id INTEGER NOT NULL REFERENCES run_templates(id) ON DELETE CASCADE,
+  case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+  PRIMARY KEY (template_id, case_id)
+);`);
+if (!hasColumn("runs", "template_id")) db.exec("ALTER TABLE runs ADD COLUMN template_id INTEGER REFERENCES run_templates(id) ON DELETE SET NULL");
+
 /** Sprints/releases are created on first use; dates and kind are edited afterwards. */
 export function ensureMilestone(projectId: number, name: string) {
   const n = name.trim();

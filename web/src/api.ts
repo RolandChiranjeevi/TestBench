@@ -46,6 +46,10 @@ export interface ImportResult { runId: number; duplicate: boolean; total: number
 export interface Milestone {
   id: number; project_id: number; name: string; kind: "sprint" | "release"; start_date: string | null; end_date: string | null; run_count: number;
 }
+export interface RunTemplate {
+  id: number; project_id: number; name: string; environment: string; created_at: string; updated_at: string;
+  run_count: number; last_used: string | null; caseIds: number[];
+}
 export interface DashboardRun extends Counts {
   id: number; title: string; started_at: string; framework: string | null; milestone: string; run_status: string; rate: number | null;
 }

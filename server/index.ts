@@ -284,17 +284,21 @@ const manualRunBody = z.object({
   environment: z.string().max(200).optional(),
   milestone: z.string().max(200).optional(),
   caseIds: z.array(z.number().int()).min(1, "Pick at least one case"),
+  templateId: z.number().int().nullable().optional(),
 });
 
 app.post("/api/projects/:id/runs", (req) => {
   const projectId = idParam(req);
   const body = manualRunBody.parse(req.body);
+  if (body.templateId && !db.prepare("SELECT 1 FROM run_templates WHERE id = ? AND project_id = ?").get(body.templateId, projectId)) {
+    throw new HttpError(400, "Template belongs to another project");
+  }
   return db.transaction(() => {
     const run = db
       .prepare(`
-        INSERT INTO runs (project_id, title, kind, source, environment, milestone)
-        VALUES (?, ?, 'manual', 'manual', ?, ?) RETURNING *`)
-      .get(projectId, body.title, body.environment ?? "", body.milestone ?? "") as { id: number };
+        INSERT INTO runs (project_id, title, kind, source, environment, milestone, template_id)
+        VALUES (?, ?, 'manual', 'manual', ?, ?, ?) RETURNING *`)
+      .get(projectId, body.title, body.environment ?? "", body.milestone ?? "", body.templateId ?? null) as { id: number };
     // Keep the same order as the case list, not the order of selection.
     const placeholders = body.caseIds.map(() => "?").join(",");
     const cases = db
@@ -575,6 +579,69 @@ app.post("/api/github-sources/:id/runs/:runId/import", async (req) => {
   } catch (e) {
     throw new HttpError(400, (e as Error).message);
   }
+});
+
+// ---------------- Run templates ----------------
+
+const templateBody = z.object({
+  name: z.string().trim().min(1).max(100),
+  environment: z.string().max(200).optional(),
+  caseIds: z.array(z.number().int()).max(5000),
+});
+
+function listTemplates(projectId: number, onlyId?: number) {
+  const rows = db
+    .prepare(`
+      SELECT t.id, t.project_id, t.name, t.environment, t.created_at, t.updated_at,
+        (SELECT COUNT(*) FROM runs r WHERE r.template_id = t.id) AS run_count,
+        (SELECT MAX(r.started_at) FROM runs r WHERE r.template_id = t.id) AS last_used
+      FROM run_templates t WHERE t.project_id = ? ${onlyId ? "AND t.id = ?" : ""} ORDER BY t.name COLLATE NOCASE`)
+    .all(...(onlyId ? [projectId, onlyId] : [projectId])) as Record<string, any>[];
+  const cases = db.prepare(`
+    SELECT x.case_id FROM run_template_cases x JOIN cases c ON c.id = x.case_id
+    WHERE x.template_id = ? ORDER BY c.position, c.number`);
+  return rows.map((t) => ({ ...t, caseIds: (cases.all(t.id) as { case_id: number }[]).map((c) => c.case_id) }));
+}
+
+function setTemplateCases(templateId: number, projectId: number, caseIds: number[]) {
+  const valid = caseIds.length
+    ? (db.prepare(`SELECT id FROM cases WHERE project_id = ? AND id IN (${caseIds.map(() => "?").join(",")})`).all(projectId, ...caseIds) as { id: number }[])
+    : [];
+  db.prepare("DELETE FROM run_template_cases WHERE template_id = ?").run(templateId);
+  const ins = db.prepare("INSERT OR IGNORE INTO run_template_cases (template_id, case_id) VALUES (?, ?)");
+  for (const c of valid) ins.run(templateId, c.id);
+}
+
+app.get("/api/projects/:id/templates", (req) => listTemplates(idParam(req)));
+
+app.post("/api/projects/:id/templates", (req) => {
+  const projectId = idParam(req);
+  const body = templateBody.parse(req.body);
+  if (db.prepare("SELECT 1 FROM run_templates WHERE project_id = ? AND name = ?").get(projectId, body.name)) throw new HttpError(409, `A template named "${body.name}" already exists`);
+  const id = db.transaction(() => {
+    const t = db.prepare("INSERT INTO run_templates (project_id, name, environment) VALUES (?, ?, ?) RETURNING id").get(projectId, body.name, body.environment ?? "") as { id: number };
+    setTemplateCases(t.id, projectId, body.caseIds);
+    return t.id;
+  })();
+  return listTemplates(projectId, id)[0];
+});
+
+app.patch("/api/templates/:id", (req) => {
+  const id = idParam(req);
+  const body = templateBody.partial().parse(req.body);
+  const cur = must(db.prepare("SELECT * FROM run_templates WHERE id = ?").get(id) as Record<string, any> | undefined, "Template");
+  const name = body.name ?? cur.name;
+  if (name !== cur.name && db.prepare("SELECT 1 FROM run_templates WHERE project_id = ? AND name = ?").get(cur.project_id, name)) throw new HttpError(409, `A template named "${name}" already exists`);
+  db.transaction(() => {
+    db.prepare("UPDATE run_templates SET name = ?, environment = ?, updated_at = datetime('now') WHERE id = ?").run(name, body.environment ?? cur.environment, id);
+    if (body.caseIds) setTemplateCases(id, cur.project_id, body.caseIds);
+  })();
+  return listTemplates(cur.project_id, id)[0];
+});
+
+app.delete("/api/templates/:id", (req) => {
+  db.prepare("DELETE FROM run_templates WHERE id = ?").run(idParam(req));
+  return { ok: true };
 });
 
 // ---------------- Dashboard ----------------

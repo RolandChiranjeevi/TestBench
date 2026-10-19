@@ -147,6 +147,15 @@ export function seedDemo() {
     .prepare("INSERT INTO runs (project_id, title, kind, source, environment, milestone) VALUES (?, 'Sprint 42 regression', 'manual', 'manual', 'staging', 'Sprint 42') RETURNING id")
     .get(project.id) as { id: number };
   ensureMilestone(project.id, "Sprint 42");
+
+  // Two reusable selections: smoke-tagged cases, and everything.
+  const mkTemplate = db.prepare("INSERT INTO run_templates (project_id, name, environment) VALUES (?, ?, ?) RETURNING id");
+  const link = db.prepare("INSERT INTO run_template_cases (template_id, case_id) VALUES (?, ?)");
+  const smoke = mkTemplate.get(project.id, "Smoke test", "staging") as { id: number };
+  const all = mkTemplate.get(project.id, "Full regression", "staging") as { id: number };
+  const smokeIds = (db.prepare("SELECT id, tags FROM cases WHERE project_id = ?").all(project.id) as { id: number; tags: string }[]).filter((c) => (JSON.parse(c.tags) as string[]).includes("smoke"));
+  for (const c of smokeIds) link.run(smoke.id, c.id);
+  for (const id of caseIds) link.run(all.id, id);
   const statuses = ["passed", "passed", "failed", "passed", "untested", "untested", "blocked", "untested", "untested"];
   const now = new Date().toISOString().slice(0, 19).replace("T", " ");
   caseIds.forEach((caseId, i) =>
