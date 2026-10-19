@@ -1,11 +1,10 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { strFromU8, unzipSync } from "fflate";
+import { bagFromZip, dedupeReports, mergeBags, readReports, type FileBag } from "./bag.ts";
 import { importReport, mergeReports, type ImportResult } from "./import.ts";
-import { parseReport, type ParsedReport } from "./parse.ts";
+import type { ParsedReport } from "./parse.ts";
 
 const MAX_ARTIFACT_BYTES = 200 * 1024 * 1024;
-const MAX_FILE_BYTES = 50 * 1024 * 1024;
 
 export interface GithubSource {
   id: number;
@@ -83,43 +82,41 @@ export async function importRun(src: GithubSource, runId: number): Promise<Impor
 
   const token = await getToken();
   const reports: ParsedReport[] = [];
+  const bags: FileBag[] = [];
   for (const artifact of usable) {
     // GitHub redirects to a signed blob URL; fetch drops the auth header on the cross-origin hop.
     const res = await fetch(`https://api.github.com${repoPath(src)}/actions/artifacts/${artifact.id}/zip`, {
       headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
     });
     if (!res.ok) throw new Error(`Downloading artifact "${artifact.name}" failed: ${res.status}`);
-    const files = unzipSync(new Uint8Array(await res.arrayBuffer()), {
-      filter: (f) => /\.(xml|json)$/i.test(f.name) && f.originalSize <= MAX_FILE_BYTES,
-    });
-    for (const bytes of Object.values(files)) {
-      try {
-        const report = parseReport(strFromU8(bytes));
-        if (report.tests.length) reports.push(report);
-      } catch {
-        // Not a test report (package.json, coverage, ...): skip it.
-      }
-    }
+    // Keep the whole artifact (lazily read) so screenshots, videos and traces can be matched to their tests.
+    const bag = bagFromZip(new Uint8Array(await res.arrayBuffer()));
+    bags.push(bag);
+    reports.push(...readReports(bag));
   }
   if (!reports.length) {
     throw new Error("No JUnit XML or Playwright JSON reports found in the artifacts. Upload them with actions/upload-artifact.");
   }
 
-  const result = importReport(mergeReports(reports), {
-    projectId: src.project_id,
-    source: "github",
-    externalId: `${src.owner}/${src.repo}#${run.id}`,
-    title: `${run.name} #${run.run_number}`,
-    environment: run.head_branch,
-    meta: {
-      url: run.html_url,
-      repo: `${src.owner}/${src.repo}`,
-      branch: run.head_branch,
-      sha: run.head_sha,
-      event: run.event,
-      conclusion: run.conclusion,
-      commit: run.display_title,
+  const result = importReport(
+    mergeReports(dedupeReports(reports)),
+    {
+      projectId: src.project_id,
+      source: "github",
+      externalId: `${src.owner}/${src.repo}#${run.id}`,
+      title: `${run.name} #${run.run_number}`,
+      environment: run.head_branch,
+      meta: {
+        url: run.html_url,
+        repo: `${src.owner}/${src.repo}`,
+        branch: run.head_branch,
+        sha: run.head_sha,
+        event: run.event,
+        conclusion: run.conclusion,
+        commit: run.display_title,
+      },
     },
-  });
+    mergeBags(bags),
+  );
   return { ...result, artifacts: usable.map((a) => a.name) };
 }

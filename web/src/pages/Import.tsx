@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Download, FileUp, GitBranch, Loader2, Plus, RefreshCw, Trash2, Upload, XCircle } from "lucide-react";
+import { CheckCircle2, Download, FileUp, FolderOpen, GitBranch, Loader2, Paperclip, Plus, RefreshCw, Trash2, Upload, XCircle } from "lucide-react";
 import { api, timeAgo, type GithubSource, type ImportResult, type Milestone, type Project, type WorkflowRun } from "../api";
 import { Github, Modal, useToast } from "../components/ui";
 
@@ -36,16 +36,23 @@ function useImportDone() {
     qc.invalidateQueries({ queryKey: ["milestones", pid] });
     qc.invalidateQueries({ queryKey: ["dashboard", pid] });
     if (r.duplicate) toast("success", "Already imported, opening the existing run");
-    else toast("success", `Imported ${r.total} tests, ${r.linked} linked to cases`);
+    else toast("success", `Imported ${r.total} tests, ${r.linked} linked to cases${r.attachments ? `, ${r.attachments} evidence files` : ""}`);
     navigate(`/p/${pid}/runs/${r.runId}`);
   };
 }
+
+/** A file chosen for upload. `path` is its location inside a picked folder, which the server uses to match evidence to tests. */
+interface Picked { file: File; path: string; fromFolder: boolean; evidence: boolean }
+const REPORT_OR_ZIP = /\.(xml|json|zip)$/i;
+const EVIDENCE = /\.(png|jpe?g|gif|webp|webm|mp4|zip|md|txt|log|pdf)$/i;
+const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 
 function UploadCard() {
   const { pid } = useParams();
   const toast = useToast();
   const done = useImportDone();
-  const [files, setFiles] = useState<File[]>([]);
+  const [files, setFiles] = useState<Picked[]>([]);
+  const folderInput = useRef<HTMLInputElement>(null);
   const [framework, setFramework] = useState("");
   const [title, setTitle] = useState("");
   const [environment, setEnvironment] = useState("");
@@ -62,14 +69,35 @@ function UploadCard() {
       fd.append("title", title);
       fd.append("environment", environment);
       fd.append("milestone", milestone);
-      files.forEach((f) => fd.append("file", f, f.name));
+      for (const p of files) {
+        if (p.fromFolder) fd.append("relpath", p.path); // must come right before its file
+        fd.append("file", p.file, p.file.name);
+      }
       return api.post<ImportResult>(`/api/projects/${pid}/import`, fd);
     },
     onSuccess: done,
     onError: (e: Error) => toast("error", e.message),
   });
 
-  const add = (list: FileList | null) => list && setFiles((f) => [...f, ...[...list].filter((x) => /\.(xml|json)$/i.test(x.name))]);
+  const add = (list: FileList | null, fromFolder = false) => {
+    if (!list) return;
+    let tooBig = 0;
+    const picked: Picked[] = [];
+    for (const file of [...list]) {
+      const path = (fromFolder && file.webkitRelativePath) || file.name;
+      if (path.includes("node_modules/")) continue;
+      // From a folder we want the reports plus the evidence beside them; on their own only reports and artifact zips make sense.
+      const wanted = fromFolder ? REPORT_OR_ZIP.test(file.name) || EVIDENCE.test(file.name) : REPORT_OR_ZIP.test(file.name);
+      if (!wanted) continue;
+      if (file.size > MAX_UPLOAD_BYTES) { tooBig++; continue; }
+      const evidence = fromFolder && !/\.(xml|json)$/i.test(file.name);
+      picked.push({ file, path, fromFolder, evidence });
+    }
+    if (tooBig) toast("error", `${tooBig} ${tooBig === 1 ? "file was" : "files were"} skipped because they are over 100 MB`);
+    setFiles((f) => [...f, ...picked]);
+  };
+  const reports = files.filter((p) => !p.evidence);
+  const evidenceCount = files.length - reports.length;
 
   return (
     <div className="card">
@@ -86,20 +114,38 @@ function UploadCard() {
           onKeyDown={(e) => e.key === "Enter" && input.current?.click()}
         >
           <Upload size={18} />
-          <div style={{ marginTop: 6, color: "var(--text)" }}>Drop JUnit XML or Playwright JSON files</div>
-          <div style={{ fontSize: 12 }}>Several files are merged into one run (e.g. one per browser)</div>
-          <input ref={input} type="file" multiple hidden accept=".xml,.json" onChange={(e) => add(e.target.files)} />
+          <div style={{ marginTop: 6, color: "var(--text)" }}>Drop a Playwright artifact (.zip), or JUnit XML / JSON files</div>
+          <div style={{ fontSize: 12 }}>An artifact zip brings its screenshots, videos and traces along. Several files are merged into one run.</div>
+          <input ref={input} type="file" multiple hidden accept=".xml,.json,.zip" onChange={(e) => { add(e.target.files); e.target.value = ""; }} />
+        </div>
+        <div className="row" style={{ gap: 8 }}>
+          <button className="btn sm" onClick={() => folderInput.current?.click()}><FolderOpen size={13} /> Choose a test-results folder</button>
+          <span className="faint" style={{ fontSize: 12 }}>Include the folder with your screenshots, videos and traces next to results.json.</span>
+          {/* webkitdirectory is not in React's input typings. */}
+          <input
+            ref={folderInput}
+            type="file"
+            hidden
+            {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
+            onChange={(e) => { add(e.target.files, true); e.target.value = ""; }}
+          />
         </div>
         {files.length > 0 && (
           <div className="col" style={{ gap: 4 }}>
-            {files.map((f, i) => (
+            {reports.map((p, i) => (
               <div key={i} className="row" style={{ fontSize: 12.5 }}>
                 <FileUp size={13} className="faint" />
-                <span className="mono truncate grow">{f.name}</span>
-                <span className="faint">{Math.max(1, Math.round(f.size / 1024))} KB</span>
-                <button className="btn ghost icon sm" onClick={() => setFiles(files.filter((_, j) => j !== i))} aria-label={`Remove ${f.name}`}><Trash2 size={12} /></button>
+                <span className="mono truncate grow">{p.path}</span>
+                <span className="faint">{Math.max(1, Math.round(p.file.size / 1024))} KB</span>
+                <button className="btn ghost icon sm" onClick={() => setFiles(files.filter((x) => x !== p))} aria-label={`Remove ${p.path}`}><Trash2 size={12} /></button>
               </div>
             ))}
+            {evidenceCount > 0 && (
+              <div className="row faint" style={{ fontSize: 12.5 }}>
+                <Paperclip size={13} /> + {evidenceCount} evidence {evidenceCount === 1 ? "file" : "files"} (screenshots, videos, traces)
+                <button className="btn ghost sm" onClick={() => setFiles(reports)}>Clear</button>
+              </div>
+            )}
           </div>
         )}
         <div className="row" style={{ gap: 10 }}>
@@ -327,8 +373,10 @@ function SetupGuide() {
     playwright: `// playwright.config.ts
 reporter: [
   ["html"],
-  ["json", { outputFile: "test-results/results.json" }],
+  ["json", { outputFile: "results.json" }],
 ],
+// Evidence shown in Testbench next to a failing test:
+use: { trace: "retain-on-failure", screenshot: "only-on-failure", video: "retain-on-failure" },
 
 // tests/login.spec.ts — the @${key}-1 tag links the test to case ${key}-1
 test("@${key}-1 logs in with valid credentials", async ({ page }) => { … });
@@ -351,7 +399,9 @@ mvn test
   if: \${{ !cancelled() }}
   with:
     name: test-results
-    path: test-results/`;
+    path: |
+      results.json
+      test-results/`;
   return (
     <div className="card">
       <div className="card-header">Setup</div>

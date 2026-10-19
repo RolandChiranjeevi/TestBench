@@ -10,6 +10,7 @@ import { z } from "zod";
 import { db, ensureMilestone, parseJson, snapshotCase, UPLOAD_DIR } from "./db.ts";
 import { seedDemo } from "./demo.ts";
 import { getToken, importRun, listRuns, type GithubSource } from "./importers/github.ts";
+import { bagFromFiles, bagFromZip, dedupeReports, mergeBags, readReports, type FileBag } from "./importers/bag.ts";
 import { importReport, mergeReports } from "./importers/import.ts";
 import type { CaseSnapshot } from "./db.ts";
 import { exportCasesCsv, exportJson, exportMarkdownZip, exportResultsCsv } from "./exporter.ts";
@@ -30,8 +31,13 @@ app.addHook("onRequest", async (req, reply) => {
     return reply.code(403).send({ error: "Missing X-Testbench header" });
   }
 });
-await app.register(multipart, { limits: { fileSize: 100 * 1024 * 1024, files: 20 } });
+// Folder uploads send one file per screenshot/video, so the file count limit is generous.
+await app.register(multipart, { limits: { fileSize: 100 * 1024 * 1024, files: 1000 } });
 await app.register(fastifyStatic, { root: UPLOAD_DIR, prefix: "/uploads/", decorateReply: false });
+
+// Playwright's own trace viewer, served locally so traces open in one click without leaving the machine.
+const traceViewerDir = join(process.cwd(), "node_modules/playwright-core/lib/vite/traceViewer");
+if (existsSync(traceViewerDir)) await app.register(fastifyStatic, { root: traceViewerDir, prefix: "/trace-viewer/", decorateReply: false });
 
 const distDir = join(process.cwd(), "dist");
 if (process.env.NODE_ENV === "production" && existsSync(distDir)) {
@@ -324,6 +330,7 @@ app.get("/api/runs/:id", (req) => {
   const results = db
     .prepare(`
       SELECT r.id, r.run_id, r.case_id, r.automated_test_id, r.status, r.flaky, r.duration_ms, r.error, r.notes, r.position, r.executed_at, r.jira_key,
+        (SELECT COUNT(*) FROM attachments att WHERE att.result_id = r.id) AS attachment_count, r.detail IS NOT NULL AS has_detail,
         COALESCE(json_extract(r.snapshot, '$.number'), c.number) AS case_number,
         COALESCE(json_extract(r.snapshot, '$.title'), c.title) AS case_title,
         COALESCE(json_extract(r.snapshot, '$.priority'), c.priority) AS case_priority,
@@ -399,6 +406,43 @@ app.get("/api/results/:id", (req) => {
     case: frozen,
     stepResults: db.prepare("SELECT * FROM step_results WHERE result_id = ?").all(id),
     attachments: db.prepare("SELECT * FROM attachments WHERE result_id = ? ORDER BY id").all(id),
+  };
+});
+
+// Everything known about one automated result: attempts, errors, evidence files and how the same test did in earlier runs.
+app.get("/api/results/:id/automated", (req) => {
+  const id = idParam(req);
+  const row = must(
+    db
+      .prepare(`
+        SELECT r.id, r.run_id, r.case_id, r.automated_test_id, r.status, r.flaky, r.duration_ms, r.error, r.jira_key, r.detail,
+          a.title AS test_title, a.full_name AS test_full_name, a.file AS test_file, a.suite_path AS test_suite_path, a.framework,
+          ru.title AS run_title, ru.environment, ru.milestone, ru.meta, ru.started_at, p.key AS project_key, c.number AS case_number
+        FROM results r
+        JOIN runs ru ON ru.id = r.run_id
+        JOIN projects p ON p.id = ru.project_id
+        LEFT JOIN automated_tests a ON a.id = r.automated_test_id
+        LEFT JOIN cases c ON c.id = r.case_id
+        WHERE r.id = ?`)
+      .get(id) as Record<string, any> | undefined,
+    "Result",
+  );
+  const history = row.automated_test_id
+    ? (db
+        .prepare(`
+          SELECT r.id, r.status, r.flaky, r.duration_ms, ru.id AS run_id, ru.title AS run_title, ru.started_at
+          FROM results r JOIN runs ru ON ru.id = r.run_id
+          WHERE r.automated_test_id = ? ORDER BY ru.started_at DESC, r.id DESC LIMIT 20`)
+        .all(row.automated_test_id) as unknown[])
+        .reverse()
+    : [];
+  const { detail, meta, ...rest } = row;
+  return {
+    ...rest,
+    detail: parseJson(detail, null),
+    meta: parseJson(meta, {}),
+    attachments: db.prepare("SELECT id, filename, stored_name, mime, attempt, label FROM attachments WHERE result_id = ? ORDER BY attempt, id").all(id),
+    history,
   };
 });
 
@@ -528,32 +572,56 @@ const FRAMEWORKS = ["playwright", "testcafe", "selenium", "junit"] as const;
 app.post("/api/projects/:id/import", async (req) => {
   const projectId = idParam(req);
   const fields: Record<string, string> = {};
-  const reports: ParsedReport[] = [];
+  const parsed: ParsedReport[] = [];
   const names: string[] = [];
+  const bags: FileBag[] = [];
+  const loose = new Map<string, Uint8Array>();
+  let relpath = "";
   for await (const part of req.parts()) {
     if (part.type === "field") {
-      fields[part.fieldname] = String(part.value ?? "");
+      // A folder upload sends each file's path inside the chosen folder in a "relpath" field, just before the file itself.
+      if (part.fieldname === "relpath") relpath = String(part.value ?? "");
+      else fields[part.fieldname] = String(part.value ?? "");
       continue;
     }
-    const content = (await part.toBuffer()).toString("utf8");
+    const fromFolder = !!relpath;
+    const name = relpath || part.filename;
+    relpath = "";
+    const bytes = new Uint8Array(await part.toBuffer());
     const hint = (FRAMEWORKS as readonly string[]).includes(fields.framework) ? (fields.framework as Framework) : undefined;
-    try {
-      reports.push(parseReport(content, hint));
-      names.push(part.filename);
-    } catch (e) {
-      throw new HttpError(400, `${part.filename}: ${(e as Error).message}`);
+    // Inside a picked folder a .zip is a trace to keep as evidence; a zip picked on its own is a downloaded artifact to unpack.
+    if (!fromFolder && /\.zip$/i.test(name)) {
+      // A downloaded artifact: the reports plus the screenshots, videos and traces next to them.
+      try {
+        const bag = bagFromZip(bytes);
+        bags.push(bag);
+        parsed.push(...readReports(bag));
+        names.push(part.filename);
+      } catch {
+        throw new HttpError(400, `${part.filename}: not a readable zip file`);
+      }
+    } else if (/\.(xml|json)$/i.test(name) && !/(^|\/)(package(-lock)?|tsconfig)\.json$/i.test(name)) {
+      try {
+        parsed.push(parseReport(Buffer.from(bytes).toString("utf8"), hint));
+        names.push(part.filename);
+      } catch (e) {
+        // A file you picked on its own must be a report; inside a folder, other JSON/XML files (.last-run.json...) are just skipped.
+        if (!fromFolder) throw new HttpError(400, `${part.filename}: ${(e as Error).message}`);
+      }
+    } else {
+      loose.set(name, bytes); // evidence (screenshot, video, trace) that belongs to a report in this upload
     }
   }
+  const reports = dedupeReports(parsed);
+  if (!reports.length) throw new HttpError(400, "No test reports found. Add a JUnit XML or Playwright JSON file, or a zip containing one.");
+  bags.push(bagFromFiles(loose));
   const merged = mergeReports(reports);
   const title = fields.title?.trim() || `${merged.framework} · ${names.join(", ")}`.slice(0, 200);
-  return importReport(merged, {
-    projectId,
-    source: "upload",
-    title,
-    environment: fields.environment ?? "",
-    milestone: fields.milestone ?? "",
-    meta: { files: names },
-  });
+  return importReport(
+    merged,
+    { projectId, source: "upload", title, environment: fields.environment ?? "", milestone: fields.milestone ?? "", meta: { files: names } },
+    mergeBags(bags),
+  );
 });
 
 // ---------------- GitHub ----------------

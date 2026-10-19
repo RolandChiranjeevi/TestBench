@@ -202,6 +202,11 @@ export function snapshotCase(caseId: number): CaseSnapshot | null {
   })();
 }
 
+// Playwright evidence: per-attempt details on an automated result, and which attempt/kind each attachment belongs to.
+if (!hasColumn("results", "detail")) db.exec("ALTER TABLE results ADD COLUMN detail TEXT");
+if (!hasColumn("attachments", "attempt")) db.exec("ALTER TABLE attachments ADD COLUMN attempt INTEGER");
+if (!hasColumn("attachments", "label")) db.exec("ALTER TABLE attachments ADD COLUMN label TEXT");
+
 // A Jira issue (key like PROJ-123, or a pasted URL) linked to a failed result.
 if (!hasColumn("results", "jira_key")) db.exec("ALTER TABLE results ADD COLUMN jira_key TEXT");
 

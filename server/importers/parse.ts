@@ -3,6 +3,30 @@ import { XMLParser } from "fast-xml-parser";
 export type Framework = "playwright" | "testcafe" | "selenium" | "junit";
 export type TestStatus = "passed" | "failed" | "skipped";
 
+export interface SourceLocation { file: string; line: number; column: number }
+
+/** One try of a test. Playwright retries produce several attempts per test. */
+export interface AttemptDetail {
+  retry: number;
+  status: string;
+  durationMs: number | null;
+  startTime: string | null;
+  errors: { message: string; location?: SourceLocation }[];
+  stdout: string;
+  stderr: string;
+}
+
+/** Extra Playwright information shown when a test is expanded. */
+export interface TestDetail {
+  attempts: AttemptDetail[];
+  annotations: { type: string; description?: string }[];
+  location?: SourceLocation;
+  projectName?: string;
+}
+
+/** A file Playwright attached to an attempt (screenshot, video, trace...). `path` is where it was on the machine that ran the tests. */
+export interface AttachmentRef { attempt: number; name: string; contentType: string; path: string }
+
 export interface ParsedTest {
   file: string;
   suitePath: string;
@@ -13,6 +37,8 @@ export interface ParsedTest {
   durationMs: number | null;
   error: string;
   tags: string[];
+  detail?: TestDetail;
+  attachments?: AttachmentRef[];
 }
 
 export interface ParsedReport {
@@ -50,14 +76,29 @@ export function isPlaywrightJson(v: unknown): boolean {
 
 // ---------- Playwright JSON reporter ----------
 
-interface PwResult { status: string; duration: number; retry: number; error?: { message?: string }; errors?: { message?: string }[] }
-interface PwTest { projectName?: string; status: string; results: PwResult[] }
-interface PwSpec { title: string; file: string; tags?: string[]; tests: PwTest[] }
+interface PwError { message?: string; location?: SourceLocation }
+interface PwResult {
+  status: string; duration: number; retry: number; startTime?: string; error?: PwError; errors?: PwError[];
+  stdout?: { text?: string; buffer?: string }[]; stderr?: { text?: string; buffer?: string }[];
+  attachments?: { name: string; contentType: string; path?: string }[];
+}
+interface PwTest { projectName?: string; status: string; results: PwResult[]; annotations?: { type: string; description?: string }[] }
+interface PwSpec { title: string; file: string; line?: number; column?: number; tags?: string[]; tests: PwTest[] }
 interface PwSuite { title: string; file?: string; specs?: PwSpec[]; suites?: PwSuite[] }
 
-function parsePlaywrightJson(json: { suites?: PwSuite[]; stats?: { startTime?: string } }): ParsedReport {
+const ATTACHMENT_LIMIT_PER_TEST = 20;
+
+function parsePlaywrightJson(json: { suites?: PwSuite[]; stats?: { startTime?: string }; config?: { rootDir?: string } }): ParsedReport {
   if (!isPlaywrightJson(json)) throw new Error("JSON file is not a Playwright JSON report");
   const tests: ParsedTest[] = [];
+  // Reports carry absolute paths from the machine that ran the tests; show them relative to the project root.
+  const rootDir = (json.config?.rootDir ?? "").replace(/\\/g, "/").replace(/\/$/, "");
+  const rel = (p: string) => {
+    const n = p.replace(/\\/g, "/");
+    return rootDir && n.startsWith(rootDir + "/") ? n.slice(rootDir.length + 1) : n;
+  };
+  const relLoc = (l?: SourceLocation): SourceLocation | undefined => (l ? { ...l, file: rel(l.file) } : undefined);
+  const text = (chunks?: { text?: string }[]) => (chunks ?? []).map((c) => c.text ?? "").join("");
 
   const walk = (suite: PwSuite, path: string[], file: string) => {
     const f = suite.file ?? file;
@@ -81,6 +122,23 @@ function parsePlaywrightJson(json: { suites?: PwSuite[]; stats?: { startTime?: s
           durationMs: t.results.length ? total : null,
           error: status === "failed" ? clean(failing?.error?.message ?? failing?.errors?.[0]?.message) : "",
           tags: spec.tags ?? [],
+          detail: {
+            attempts: t.results.map((r) => ({
+              retry: r.retry,
+              status: r.status,
+              durationMs: r.duration ?? null,
+              startTime: r.startTime ?? null,
+              errors: (r.errors?.length ? r.errors : r.error ? [r.error] : []).map((e) => ({ message: clean(e.message), location: relLoc(e.location) })).filter((e) => e.message),
+              stdout: clean(text(r.stdout)),
+              stderr: clean(text(r.stderr)),
+            })),
+            annotations: (t.annotations ?? []).filter((a) => a.type !== "skip").map((a) => ({ type: a.type, description: a.description })),
+            location: spec.line ? { file: rel(spec.file ?? f), line: spec.line, column: spec.column ?? 0 } : undefined,
+            projectName: t.projectName || undefined,
+          },
+          attachments: t.results
+            .flatMap((r) => (r.attachments ?? []).flatMap((a) => (a.path ? [{ attempt: r.retry, name: a.name, contentType: a.contentType, path: a.path }] : [])))
+            .slice(0, ATTACHMENT_LIMIT_PER_TEST),
         });
       }
     }

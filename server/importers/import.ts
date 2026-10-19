@@ -1,5 +1,13 @@
-import { db, ensureMilestone } from "../db.ts";
-import { extractCaseRefs, type ParsedReport } from "./parse.ts";
+import { randomUUID } from "node:crypto";
+import { unlinkSync, writeFileSync } from "node:fs";
+import { extname, join } from "node:path";
+import { db, ensureMilestone, UPLOAD_DIR } from "../db.ts";
+import { resolveEntry, type FileBag } from "./bag.ts";
+import { extractCaseRefs, type AttachmentRef, type ParsedReport } from "./parse.ts";
+
+/** Evidence types worth keeping. Anything else in an artifact (html reports, node_modules...) is ignored. */
+const ATTACHMENT_EXT = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".webm", ".mp4", ".zip", ".md", ".txt", ".log", ".pdf"]);
+const MAX_TOTAL_ATTACHMENT_BYTES = 500 * 1024 * 1024;
 
 export interface ImportOptions {
   projectId: number;
@@ -16,6 +24,8 @@ export interface ImportResult {
   duplicate: boolean;
   total: number;
   linked: number;
+  /** Evidence files (screenshots, videos, traces) stored with the results. */
+  attachments: number;
 }
 
 /** Merge several reports (e.g. one JUnit file per browser) into a single report. */
@@ -25,7 +35,8 @@ export function mergeReports(reports: ParsedReport[]): ParsedReport {
   return { ...reports[0], startedAt, tests: reports.flatMap((r) => r.tests) };
 }
 
-export function importReport(report: ParsedReport, opts: ImportOptions): ImportResult {
+/** `files` holds the screenshots/videos/traces that came with the report; when given, they are stored and linked to their attempts. */
+export function importReport(report: ParsedReport, opts: ImportOptions, files?: FileBag): ImportResult {
   const project = db.prepare("SELECT id, key FROM projects WHERE id = ?").get(opts.projectId) as
     | { id: number; key: string }
     | undefined;
@@ -35,7 +46,7 @@ export function importReport(report: ParsedReport, opts: ImportOptions): ImportR
     const existing = db
       .prepare("SELECT id FROM runs WHERE project_id = ? AND source = ? AND external_id = ?")
       .get(opts.projectId, opts.source, opts.externalId) as { id: number } | undefined;
-    if (existing) return { runId: existing.id, duplicate: true, total: 0, linked: 0 };
+    if (existing) return { runId: existing.id, duplicate: true, total: 0, linked: 0, attachments: 0 };
   }
 
   const findCase = db.prepare("SELECT id FROM cases WHERE project_id = ? AND number = ?");
@@ -48,8 +59,30 @@ export function importReport(report: ParsedReport, opts: ImportOptions): ImportR
       last_status = excluded.last_status, last_seen = datetime('now')
     RETURNING id, case_id`);
   const insertResult = db.prepare(`
-    INSERT INTO results (run_id, case_id, automated_test_id, status, flaky, duration_ms, error, position, executed_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    INSERT INTO results (run_id, case_id, automated_test_id, status, flaky, duration_ms, error, position, executed_at, detail)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`);
+  const insertAttachment = db.prepare("INSERT INTO attachments (result_id, filename, stored_name, mime, attempt, label) VALUES (?, ?, ?, ?, ?, ?)");
+
+  // Files are written as we go; if the import fails half way they are removed again.
+  const written: string[] = [];
+  let attachmentCount = 0;
+  let attachmentBytes = 0;
+  const storeAttachments = (resultId: number, refs: AttachmentRef[]) => {
+    if (!files) return;
+    for (const ref of refs) {
+      const ext = extname(ref.path).toLowerCase();
+      if (!ATTACHMENT_EXT.has(ext)) continue;
+      const entry = resolveEntry(files, ref.path);
+      const bytes = entry ? files.read(entry) : null;
+      if (!bytes || attachmentBytes + bytes.length > MAX_TOTAL_ATTACHMENT_BYTES) continue;
+      const stored = `${randomUUID()}${ext}`;
+      writeFileSync(join(UPLOAD_DIR, stored), bytes);
+      written.push(stored);
+      attachmentBytes += bytes.length;
+      insertAttachment.run(resultId, ref.path.replace(/\\/g, "/").split("/").pop(), stored, ref.contentType || "application/octet-stream", ref.attempt, ref.name);
+      attachmentCount++;
+    }
+  };
 
   // A tag like @TC-42 links the test to case #42 of the project whose key is "TC".
   const resolveCase = (refs: string[]): number | null => {
@@ -63,7 +96,8 @@ export function importReport(report: ParsedReport, opts: ImportOptions): ImportR
   };
 
   const startedAt = toSqlDate(report.startedAt);
-  return db.transaction((): ImportResult => {
+  try {
+    return db.transaction((): ImportResult => {
     const run = db
       .prepare(`
         INSERT INTO runs (project_id, title, kind, source, status, environment, milestone, framework, external_id, meta, started_at, finished_at)
@@ -94,11 +128,24 @@ export function importReport(report: ParsedReport, opts: ImportOptions): ImportR
         status: t.status,
       }) as { id: number; case_id: number | null };
       if (test.case_id) linked++;
-      insertResult.run(run.id, test.case_id, test.id, t.status, t.flaky ? 1 : 0, t.durationMs, t.error, i, startedAt);
+      const row = insertResult.get(
+        run.id, test.case_id, test.id, t.status, t.flaky ? 1 : 0, t.durationMs, t.error, i, startedAt, t.detail ? JSON.stringify(t.detail) : null,
+      ) as { id: number };
+      if (t.attachments?.length) storeAttachments(row.id, t.attachments);
     });
     ensureMilestone(project.id, opts.milestone ?? "");
-    return { runId: run.id, duplicate: false, total: report.tests.length, linked };
-  })();
+    return { runId: run.id, duplicate: false, total: report.tests.length, linked, attachments: attachmentCount };
+    })();
+  } catch (e) {
+    for (const f of written) {
+      try {
+        unlinkSync(join(UPLOAD_DIR, f));
+      } catch {
+        /* already gone */
+      }
+    }
+    throw e;
+  }
 }
 
 function toSqlDate(iso: string | null): string | null {

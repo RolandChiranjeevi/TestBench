@@ -26,7 +26,7 @@ export interface RunSummary extends Counts {
 }
 export interface RunResult {
   id: number; case_id: number | null; automated_test_id: number | null; status: Status; flaky: number; duration_ms: number | null;
-  error: string; notes: string; jira_key: string | null; executed_at: string | null; case_number: number | null; case_title: string | null; case_priority: Priority | null;
+  error: string; notes: string; jira_key: string | null; attachment_count: number; has_detail: number; executed_at: string | null; case_number: number | null; case_title: string | null; case_priority: Priority | null;
   suite_name: string | null; test_title: string | null; test_file: string | null; test_suite_path: string | null; test_full_name: string | null; step_count: number;
 }
 export interface RunDetail extends Omit<RunSummary, keyof Counts> { project_key: string; counts: Counts; results: RunResult[] }
@@ -36,12 +36,28 @@ export interface ResultDetail extends RunResult {
   stepResults: { step_id: number; status: Status; actual: string }[];
   attachments: Attachment[];
 }
+export interface SourceLocation { file: string; line: number; column: number }
+export interface AttemptDetail {
+  retry: number; status: string; durationMs: number | null; startTime: string | null;
+  errors: { message: string; location?: SourceLocation }[]; stdout: string; stderr: string;
+}
+export interface EvidenceFile { id: number; filename: string; stored_name: string; mime: string; attempt: number | null; label: string | null }
+/** Everything known about one automated result: attempts, evidence files and how the same test did in earlier runs. */
+export interface AutomatedResultDetail {
+  id: number; run_id: number; case_id: number | null; case_number: number | null; automated_test_id: number | null; status: Status; flaky: number;
+  duration_ms: number | null; error: string; jira_key: string | null; project_key: string;
+  test_title: string | null; test_full_name: string | null; test_file: string | null; test_suite_path: string | null; framework: string | null;
+  run_title: string; environment: string; milestone: string; started_at: string; meta: Record<string, any>;
+  detail: { attempts: AttemptDetail[]; annotations: { type: string; description?: string }[]; location?: SourceLocation; projectName?: string } | null;
+  attachments: EvidenceFile[];
+  history: { id: number; status: Status; flaky: number; duration_ms: number | null; run_id: number; run_title: string; started_at: string }[];
+}
 export interface GithubSource { id: number; owner: string; repo: string; workflow: string; artifact_pattern: string }
 export interface WorkflowRun {
   id: number; name: string; display_title: string; run_number: number; head_branch: string; event: string;
   status: string; conclusion: string | null; created_at: string; html_url: string; imported_run_id: number | null;
 }
-export interface ImportResult { runId: number; duplicate: boolean; total: number; linked: number; artifacts?: string[] }
+export interface ImportResult { runId: number; duplicate: boolean; total: number; linked: number; attachments: number; artifacts?: string[] }
 
 export interface Milestone {
   id: number; project_id: number; name: string; kind: "sprint" | "release"; start_date: string | null; end_date: string | null; run_count: number;

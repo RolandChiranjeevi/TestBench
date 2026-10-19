@@ -8,7 +8,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
-    proxy: { "/api": api, "/uploads": api },
+    proxy: { "/api": api, "/uploads": api, "/trace-viewer": api },
   },
   build: { outDir: "../dist", emptyOutDir: true },
 });

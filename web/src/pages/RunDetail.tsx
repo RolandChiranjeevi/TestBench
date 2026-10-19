@@ -11,6 +11,7 @@ import {
 } from "../api";
 import { Bug } from "lucide-react";
 import { Empty, FrameworkBadge, Github, Kbd, PriorityIcon, ProgressBar, StatusIcon, STATUS_LABEL, useHotkeys, useToast } from "../components/ui";
+import { AutomatedDetail } from "./AutomatedDetail";
 import { BugReportModal, jiraLabel, jiraUrl } from "./BugReport";
 
 export function RunDetailPage() {
@@ -552,7 +553,7 @@ function AutomatedRun({ run }: { run: RunDetail }) {
                 <FileCode2 size={13} /> <span className="mono" style={{ fontSize: 12 }}>{file}</span> <span className="count">{items.length}</span>
               </div>
               {items.map((r) => {
-                const expandable = !!r.error;
+                const expandable = !!r.error || !!r.has_detail || r.attachment_count > 0;
                 const isOpen = open.has(r.id);
                 return (
                   <div key={r.id}>
@@ -565,6 +566,8 @@ function AutomatedRun({ run }: { run: RunDetail }) {
                       <span className="meta">
                         {r.test_suite_path && r.test_suite_path !== file && <span className="faint truncate" style={{ maxWidth: 220 }}>{r.test_suite_path}</span>}
                         {r.flaky ? <span className="chip" style={{ color: "var(--flaky)" }}>flaky</span> : null}
+                        {r.attachment_count > 0 && <span className="chip" title="Screenshots, videos and traces"><Paperclip size={10} /> {r.attachment_count}</span>}
+                        {r.jira_key && <span className="chip accent" title="Linked Jira issue"><Bug size={10} /> {jiraLabel(r.jira_key)}</span>}
                         {r.case_id ? (
                           <Link to={`/p/${pid}/cases?case=${r.case_id}`} className="chip accent" onClick={(e) => e.stopPropagation()} title={r.case_title ?? ""}>
                             {run.project_key}-{r.case_number}
@@ -573,11 +576,7 @@ function AutomatedRun({ run }: { run: RunDetail }) {
                         <span className="tabular faint" style={{ width: 56, textAlign: "right" }}>{formatDuration(r.duration_ms)}</span>
                       </span>
                     </div>
-                    {isOpen && (
-                      <div style={{ padding: "10px 20px 14px 52px", borderBottom: "1px solid var(--border)" }}>
-                        <pre className="error">{r.error}</pre>
-                      </div>
-                    )}
+                    {isOpen && <AutomatedDetail resultId={r.id} />}
                   </div>
                 );
               })}
