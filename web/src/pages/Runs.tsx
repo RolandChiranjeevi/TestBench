@@ -124,7 +124,14 @@ function RunRow({ run }: { run: RunSummary }) {
 }
 
 /** Start a manual run. Cases can be picked by hand, taken from a template, or both; the selection can be saved as a new template. */
-export function NewRunModal({ initialCaseIds = [], template, onClose, onCreated }: { initialCaseIds?: number[]; template?: RunTemplate; onClose: () => void; onCreated?: () => void }) {
+export function NewRunModal({ initialCaseIds = [], template, rerunOf, onClose, onCreated }: {
+  initialCaseIds?: number[];
+  template?: RunTemplate;
+  /** Re-test the failures of this run: its title, environment and sprint are carried over. */
+  rerunOf?: { id: number; title: string; environment: string; milestone: string };
+  onClose: () => void;
+  onCreated?: () => void;
+}) {
   const { pid } = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -136,10 +143,10 @@ export function NewRunModal({ initialCaseIds = [], template, onClose, onCreated 
   const today = new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" });
   const defaultTitle = (name?: string) => `${name ?? "Regression"} · ${today}`;
   const [templateId, setTemplateId] = useState<number | null>(template?.id ?? null);
-  const [title, setTitle] = useState(defaultTitle(template?.name));
+  const [title, setTitle] = useState(rerunOf ? `Re-run: ${rerunOf.title}` : defaultTitle(template?.name));
   const [titleEdited, setTitleEdited] = useState(false);
-  const [environment, setEnvironment] = useState(template?.environment ?? "");
-  const [milestone, setMilestone] = useState("");
+  const [environment, setEnvironment] = useState(template?.environment ?? rerunOf?.environment ?? "");
+  const [milestone, setMilestone] = useState(rerunOf?.milestone ?? "");
   const [selected, setSelected] = useState<Set<number>>(() => new Set(template ? template.caseIds : initialCaseIds));
   const [saveAs, setSaveAs] = useState(false);
   const [saveName, setSaveName] = useState("");
@@ -167,7 +174,7 @@ export function NewRunModal({ initialCaseIds = [], template, onClose, onCreated 
         setTemplateId(t.id);
         setSaveAs(false);
       }
-      return api.post<{ id: number }>(`/api/projects/${pid}/runs`, { title, environment, milestone, caseIds, templateId: tid });
+      return api.post<{ id: number }>(`/api/projects/${pid}/runs`, { title, environment, milestone, caseIds, templateId: tid, rerunOf: rerunOf?.id });
     },
     onSuccess: (run) => {
       for (const k of ["runs", "milestones", "dashboard", "templates"]) qc.invalidateQueries({ queryKey: [k, pid] });
@@ -181,7 +188,7 @@ export function NewRunModal({ initialCaseIds = [], template, onClose, onCreated 
 
   return (
     <Modal
-      title="New manual run"
+      title={rerunOf ? "Re-run failed cases" : "New manual run"}
       onClose={onClose}
       width={680}
       footer={

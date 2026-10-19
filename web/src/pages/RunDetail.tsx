@@ -12,6 +12,7 @@ import {
 import { Bug } from "lucide-react";
 import { Empty, FrameworkBadge, Github, Kbd, PriorityIcon, ProgressBar, StatusIcon, STATUS_LABEL, useHotkeys, useToast } from "../components/ui";
 import { AutomatedDetail } from "./AutomatedDetail";
+import { NewRunModal } from "./Runs";
 import { BugReportModal, jiraLabel, jiraUrl } from "./BugReport";
 
 export function RunDetailPage() {
@@ -32,6 +33,12 @@ function RunHeader({ run, children }: { run: RunDetail; children?: ReactNode }) 
   const { pid } = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const [rerun, setRerun] = useState(false);
+  // Failed or blocked results whose case still exists can be re-tested manually (for automated runs, via the case each test is linked to).
+  const failing = run.results.filter((r) => r.status === "failed" || r.status === "blocked");
+  const caseIds = [...new Set(failing.map((r) => r.case_id).filter((id): id is number => id != null))];
+  const unlinked = failing.filter((r) => r.case_id == null).length;
+  const rerunOf = (run.meta as { rerunOf?: { id: number; title: string } }).rerunOf;
   const remove = async () => {
     if (!confirm(`Delete run "${run.title}" and all its results?`)) return;
     await api.del(`/api/runs/${run.id}`);
@@ -48,10 +55,28 @@ function RunHeader({ run, children }: { run: RunDetail; children?: ReactNode }) 
         <span className="truncate">{run.title}</span>
       </h1>
       <span className="spacer" />
+      {rerunOf && <Link className="chip" to={`/p/${pid}/runs/${rerunOf.id}`} title="The run this one re-tests">Re-run of {rerunOf.title}</Link>}
+      {failing.length > 0 && (
+        <button
+          className="btn sm"
+          disabled={!caseIds.length}
+          onClick={() => setRerun(true)}
+          title={caseIds.length ? `Start a manual run with the ${caseIds.length} failed or blocked ${caseIds.length === 1 ? "case" : "cases"}${unlinked ? `. ${unlinked} failing ${unlinked === 1 ? "test isn't" : "tests aren't"} linked to a case and can't be included` : ""}` : "None of the failing tests are linked to a case"}
+        >
+          <RotateCcw size={12} /> Re-run failed ({caseIds.length})
+        </button>
+      )}
       {children}
       <button className="btn ghost icon sm danger" onClick={remove} title="Delete run" aria-label="Delete run">
         <Trash2 size={14} />
       </button>
+      {rerun && (
+        <NewRunModal
+          initialCaseIds={caseIds}
+          rerunOf={{ id: run.id, title: run.title, environment: run.environment, milestone: run.milestone }}
+          onClose={() => setRerun(false)}
+        />
+      )}
     </div>
   );
 }

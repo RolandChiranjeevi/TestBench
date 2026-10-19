@@ -294,6 +294,8 @@ const manualRunBody = z.object({
   milestone: z.string().max(200).optional(),
   caseIds: z.array(z.number().int()).min(1, "Pick at least one case"),
   templateId: z.number().int().nullable().optional(),
+  /** The run this one re-tests, e.g. the failures of last night's run. */
+  rerunOf: z.number().int().nullable().optional(),
 });
 
 app.post("/api/projects/:id/runs", (req) => {
@@ -302,12 +304,16 @@ app.post("/api/projects/:id/runs", (req) => {
   if (body.templateId && !db.prepare("SELECT 1 FROM run_templates WHERE id = ? AND project_id = ?").get(body.templateId, projectId)) {
     throw new HttpError(400, "Template belongs to another project");
   }
+  const source = body.rerunOf
+    ? (db.prepare("SELECT id, title FROM runs WHERE id = ? AND project_id = ?").get(body.rerunOf, projectId) as { id: number; title: string } | undefined)
+    : undefined;
+  if (body.rerunOf && !source) throw new HttpError(400, "The run to re-test belongs to another project");
   return db.transaction(() => {
     const run = db
       .prepare(`
-        INSERT INTO runs (project_id, title, kind, source, environment, milestone, template_id)
-        VALUES (?, ?, 'manual', 'manual', ?, ?, ?) RETURNING *`)
-      .get(projectId, body.title, body.environment ?? "", body.milestone ?? "", body.templateId ?? null) as { id: number };
+        INSERT INTO runs (project_id, title, kind, source, environment, milestone, template_id, meta)
+        VALUES (?, ?, 'manual', 'manual', ?, ?, ?, ?) RETURNING *`)
+      .get(projectId, body.title, body.environment ?? "", body.milestone ?? "", body.templateId ?? null, JSON.stringify(source ? { rerunOf: source } : {})) as { id: number };
     // Keep the same order as the case list, not the order of selection.
     const placeholders = body.caseIds.map(() => "?").join(",");
     const cases = db
