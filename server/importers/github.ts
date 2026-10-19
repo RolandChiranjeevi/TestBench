@@ -13,6 +13,15 @@ export interface GithubSource {
   repo: string;
   workflow: string;
   artifact_pattern: string;
+  /** Automatic import: 1 when on, and the moment it was switched on (older runs are left alone). */
+  auto_import: number;
+  auto_since: string | null;
+  /** Comma-separated branch names or patterns such as `main, release/*`; empty means all branches. */
+  branch_filter: string;
+  /** Sprint or release given to runs imported from this source. */
+  default_milestone: string;
+  last_checked_at: string | null;
+  last_error: string;
 }
 
 let cachedToken: string | null = null;
@@ -106,6 +115,7 @@ export async function importRun(src: GithubSource, runId: number): Promise<Impor
       externalId: `${src.owner}/${src.repo}#${run.id}`,
       title: `${run.name} #${run.run_number}`,
       environment: run.head_branch,
+      milestone: src.default_milestone,
       meta: {
         url: run.html_url,
         repo: `${src.owner}/${src.repo}`,

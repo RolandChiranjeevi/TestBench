@@ -52,7 +52,11 @@ export interface AutomatedResultDetail {
   attachments: EvidenceFile[];
   history: { id: number; status: Status; flaky: number; duration_ms: number | null; run_id: number; run_title: string; started_at: string }[];
 }
-export interface GithubSource { id: number; owner: string; repo: string; workflow: string; artifact_pattern: string }
+export interface GithubSource {
+  id: number; owner: string; repo: string; workflow: string; artifact_pattern: string;
+  auto_import: number; auto_since: string | null; branch_filter: string; default_milestone: string; last_checked_at: string | null; last_error: string;
+}
+export interface CheckResult { imported: number; skipped: number; waiting: number; error: string | null; source: GithubSource }
 export interface WorkflowRun {
   id: number; name: string; display_title: string; run_number: number; head_branch: string; event: string;
   status: string; conclusion: string | null; created_at: string; html_url: string; imported_run_id: number | null;

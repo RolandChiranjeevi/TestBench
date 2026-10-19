@@ -15,6 +15,28 @@ Data lives in `data/testbench.db` (SQLite) and `data/uploads/`. Back up that fol
 Each case gets an ID like `SHOP-12`. Put `@SHOP-12` in a test title (or a Playwright tag) and imports
 link the test to the case automatically. You can also link by hand on **Automated tests**.
 
+## Backup and restore
+
+**Backup & restore** (sidebar, key `7`) downloads one zip with all projects: the database and every uploaded file. Restore it on this or
+another computer, without restarting. A restore validates the zip first and moves your current data to `data/previous/<time>` instead
+of deleting it. The sidebar footer turns amber when there is no backup from the last 7 days. `data/` is git-ignored, so this is how
+your data is kept safe.
+
+## Re-run, insights and automation candidates
+
+- **Re-run failed** (button in any run): starts a manual run with the failed and blocked cases, carrying over title, environment and
+  sprint. For an automated run it uses the cases its failing tests are linked to.
+- **Automated tests → Insights**: flaky tests (needed a retry, or keep flipping between pass and fail) with a per-run strip, test time per
+  run, tests that are getting slower, and **Automate next**: manual cases without an automated test, ranked by priority, how often they
+  are run by hand, how often they fail and whether they are smoke/regression cases. The top few also show on the dashboard.
+
+## Automatic GitHub imports
+
+On the Import page, switch on **Import new runs automatically** for a connected repository. TestBench checks every 5 minutes while it
+is running (`TESTBENCH_POLL_MINUTES=2` changes it, `0` turns it off) and imports finished workflow runs that were created after you
+switched it on. Optionally limit it to branches (`main, release/*`) and give the imported runs a sprint. Runs without test artifacts
+are skipped and remembered, and a run is never imported twice. **Check now** does it immediately.
+
 ## Playwright evidence
 
 Turn on evidence in `playwright.config.ts` and write a JSON report:

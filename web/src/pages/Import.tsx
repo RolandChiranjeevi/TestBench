@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Download, FileUp, FolderOpen, GitBranch, Loader2, Paperclip, Plus, RefreshCw, Trash2, Upload, XCircle } from "lucide-react";
-import { api, timeAgo, type GithubSource, type ImportResult, type Milestone, type Project, type WorkflowRun } from "../api";
+import { api, timeAgo, type CheckResult, type GithubSource, type ImportResult, type Milestone, type Project, type WorkflowRun } from "../api";
 import { Github, Modal, useToast } from "../components/ui";
 
 export function ImportPage() {
@@ -230,6 +230,7 @@ function GithubCard() {
         </div>
         {current ? (
           <>
+            <AutoImport key={current.id} source={current} />
             <WorkflowRuns key={current.id} source={current} />
             <div className="row faint" style={{ fontSize: 12 }}>
               <span>
@@ -248,6 +249,82 @@ function GithubCard() {
         )}
       </div>
       {adding && <AddSourceModal onClose={() => setAdding(false)} onAdded={(id) => setActive(id)} />}
+    </div>
+  );
+}
+
+/** Imports new workflow runs by itself, so nobody has to click Import after every CI run. */
+function AutoImport({ source }: { source: GithubSource }) {
+  const { pid } = useParams();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [filter, setFilter] = useState(source.branch_filter);
+  const [sprint, setSprint] = useState(source.default_milestone);
+  const { data: milestones = [] } = useQuery({ queryKey: ["milestones", pid], queryFn: () => api.get<Milestone[]>(`/api/projects/${pid}/milestones`) });
+  const on = !!source.auto_import;
+
+  const refresh = () => {
+    for (const k of ["gh-sources", "gh-runs", "runs", "automated", "dashboard", "milestones", "insights"]) qc.invalidateQueries({ queryKey: [k] });
+    qc.invalidateQueries({ queryKey: ["projects"] });
+  };
+  const save = useMutation({
+    mutationFn: (body: Partial<{ autoImport: boolean; branchFilter: string; defaultMilestone: string }>) => api.patch<GithubSource>(`/api/github-sources/${source.id}`, body),
+    onSuccess: refresh,
+    onError: (e: Error) => toast("error", e.message),
+  });
+  const check = useMutation({
+    mutationFn: () => api.post<CheckResult>(`/api/github-sources/${source.id}/check`),
+    onSuccess: (r) => {
+      refresh();
+      if (r.error) toast("error", r.error);
+      else toast("success", r.imported ? `Imported ${r.imported} new ${r.imported === 1 ? "run" : "runs"}` : "No new runs");
+    },
+    onError: (e: Error) => toast("error", e.message),
+  });
+
+  return (
+    <div className="card" style={{ background: "var(--bg)", padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+      <label className="row" style={{ cursor: "pointer" }}>
+        <input type="checkbox" className="checkbox" checked={on} onChange={(e) => save.mutate({ autoImport: e.target.checked })} />
+        <span style={{ fontWeight: 500 }}>Import new runs automatically</span>
+        <span className="spacer" />
+        {on && (
+          <span className="faint" style={{ fontSize: 12, color: source.last_error ? "var(--failed)" : undefined }} title={source.last_error || undefined}>
+            {source.last_error ? "Last check failed" : source.last_checked_at ? `Checked ${timeAgo(source.last_checked_at)}` : "Waiting for the first check"}
+          </span>
+        )}
+      </label>
+      {on && (
+        <>
+          <div className="row" style={{ gap: 10 }}>
+            <div className="field grow">
+              <label htmlFor="af">Only these branches</label>
+              <input
+                id="af" className="input" placeholder="All branches, or e.g. main, release/*" value={filter}
+                onChange={(e) => setFilter(e.target.value)} onBlur={() => filter.trim() !== source.branch_filter && save.mutate({ branchFilter: filter })}
+              />
+            </div>
+            <div className="field grow">
+              <label htmlFor="as">Sprint / release for these runs</label>
+              <input
+                id="as" className="input" list="auto-milestones" placeholder="Optional" value={sprint}
+                onChange={(e) => setSprint(e.target.value)} onBlur={() => sprint.trim() !== source.default_milestone && save.mutate({ defaultMilestone: sprint })}
+              />
+              <datalist id="auto-milestones">{milestones.map((m) => <option key={m.id} value={m.name} />)}</datalist>
+            </div>
+          </div>
+          <div className="row">
+            <span className="faint" style={{ fontSize: 12 }}>
+              Checked every 5 minutes while TestBench is running. Only runs created after you switched this on are imported, never older history.
+            </span>
+            <span className="spacer" />
+            <button className="btn sm" disabled={check.isPending} onClick={() => check.mutate()}>
+              {check.isPending ? <Loader2 size={12} className="spin" /> : <RefreshCw size={12} />} Check now
+            </button>
+          </div>
+          {source.last_error && <div style={{ color: "var(--failed)", fontSize: 12.5 }}>{source.last_error}</div>}
+        </>
+      )}
     </div>
   );
 }

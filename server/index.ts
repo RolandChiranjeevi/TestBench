@@ -8,6 +8,7 @@ import { readFile, unlink, writeFile } from "node:fs/promises";
 import { zipSync } from "fflate";
 import { extname, join } from "node:path";
 import { z } from "zod";
+import { checkSource, startAutoImport } from "./autoimport.ts";
 import { backupInfo, restoreFromZip, streamBackup } from "./backup.ts";
 import { DATA_DIR, db, ensureMilestone, parseJson, snapshotCase, UPLOAD_DIR } from "./db.ts";
 import { seedDemo } from "./demo.ts";
@@ -906,6 +907,37 @@ app.get("/api/projects/:id/export-markdown.zip", (req, reply) => {
   const id = idParam(req);
   return download(reply, `${projectKey(id)}-cases-markdown.zip`, "application/zip", exportMarkdownZip(id));
 });
+
+// Settings for importing new workflow runs automatically.
+app.patch("/api/github-sources/:id", (req) => {
+  const id = idParam(req);
+  const body = z
+    .object({
+      autoImport: z.boolean().optional(),
+      branchFilter: z.string().trim().max(200).optional(),
+      defaultMilestone: z.string().trim().max(100).optional(),
+    })
+    .parse(req.body);
+  const cur = getSource(id);
+  const on = body.autoImport ?? !!cur.auto_import;
+  // Only runs created after it is switched on are imported, so turning it on never floods the app with old runs.
+  const since = on ? (cur.auto_import ? cur.auto_since : new Date().toISOString().slice(0, 19).replace("T", " ")) : null;
+  const milestone = body.defaultMilestone ?? cur.default_milestone;
+  if (milestone) ensureMilestone(cur.project_id, milestone);
+  return db
+    .prepare("UPDATE github_sources SET auto_import = ?, auto_since = ?, branch_filter = ?, default_milestone = ? WHERE id = ? RETURNING *")
+    .get(on ? 1 : 0, since, body.branchFilter ?? cur.branch_filter, milestone, id);
+});
+
+// Look for new runs right now instead of waiting for the next scheduled check.
+app.post("/api/github-sources/:id/check", async (req) => {
+  const src = getSource(idParam(req));
+  if (!src.auto_import) throw new HttpError(400, "Turn on automatic import first");
+  const result = await checkSource(src);
+  return { ...result, source: getSource(src.id) };
+});
+
+startAutoImport();
 
 await app.listen({ port: PORT, host: "127.0.0.1" });
 console.log(`Testbench API on http://127.0.0.1:${PORT}`);

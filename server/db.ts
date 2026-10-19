@@ -268,6 +268,28 @@ CREATE TABLE IF NOT EXISTS run_template_cases (
 );`);
   if (!hasColumn("runs", "template_id")) d.exec("ALTER TABLE runs ADD COLUMN template_id INTEGER REFERENCES run_templates(id) ON DELETE SET NULL");
 
+  // Automatic import of new GitHub workflow runs. auto_since is when it was switched on: older runs are never pulled in.
+  for (const [col, def] of [
+    ["auto_import", "INTEGER NOT NULL DEFAULT 0"],
+    ["auto_since", "TEXT"],
+    ["branch_filter", "TEXT NOT NULL DEFAULT ''"],
+    ["default_milestone", "TEXT NOT NULL DEFAULT ''"],
+    ["last_checked_at", "TEXT"],
+    ["last_error", "TEXT NOT NULL DEFAULT ''"],
+  ] as const) {
+    if (!hasColumn("github_sources", col)) d.exec(`ALTER TABLE github_sources ADD COLUMN ${col} ${def}`);
+  }
+  // Runs the checker has dealt with, so ones that can never be imported (no test artifacts) aren't retried forever.
+  d.exec(`
+CREATE TABLE IF NOT EXISTS github_seen (
+  source_id INTEGER NOT NULL REFERENCES github_sources(id) ON DELETE CASCADE,
+  run_id INTEGER NOT NULL,
+  outcome TEXT NOT NULL,            -- imported | skipped
+  note TEXT NOT NULL DEFAULT '',
+  seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (source_id, run_id)
+);`);
+
   // Make sure every sprint named on a run has a sprint record.
   const named = d.prepare("SELECT DISTINCT project_id, milestone FROM runs WHERE milestone != ''").all() as { project_id: number; milestone: string }[];
   for (const r of named) ensureMilestone(r.project_id, r.milestone, d);
