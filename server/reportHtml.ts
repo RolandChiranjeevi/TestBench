@@ -144,6 +144,37 @@ export function renderReport(r: MilestoneReport): string {
        </tbody></table>`
     : "";
 
+  const reqs = r.requirements;
+  const REQ_LABEL: Record<string, string> = { failing: "Failing", partial: "Partly tested", untested: "Not run" };
+  const REQ_BADGE: Record<string, string> = { failing: "failed", partial: "blocked", untested: "untested" };
+  const requirementsSection = reqs.total
+    ? `<h2>Requirements</h2>
+       <p class="mut">${reqs.total} ${reqs.total === 1 ? "requirement" : "requirements"}: ${[
+         `${reqs.byState.passing} passing`,
+         `${reqs.byState.failing} failing`,
+         ...(reqs.byState.partial ? [`${reqs.byState.partial} partly tested`] : []),
+         ...(reqs.byState.untested ? [`${reqs.byState.untested} not run in this ${m.kind}`] : []),
+         ...(reqs.byState.uncovered ? [`${reqs.byState.uncovered} without test cases`] : []),
+       ].join(" · ")}.</p>
+       ${
+         reqs.attention.length
+           ? `<table class="t"><tbody>${reqs.attention
+               .map(
+                 (q) => `<tr><td style="width:70px" class="mono">REQ-${q.number}</td>
+                   <td>${esc(q.title)}<div class="mut">${
+                     q.state === "failing"
+                       ? `Failing: ${q.failingCases.map((c) => `${esc(key)}-${c.number} ${esc(c.title)}`).join(", ")}`
+                       : q.state === "partial"
+                         ? `${q.passing} of ${q.cases} test cases passed; the rest weren't run`
+                         : `${q.cases} linked ${q.cases === 1 ? "test case" : "test cases"}, none run in this ${esc(m.kind)}`
+                   }</div></td>
+                   <td class="num"><span class="badge ${REQ_BADGE[q.state]}">${REQ_LABEL[q.state]}</span></td></tr>`,
+               )
+               .join("")}</tbody></table>`
+           : `<p class="mut">Every requirement with test cases passed.</p>`
+       }`
+    : "";
+
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(r.project.name)} – ${esc(m.name)} test report</title>
 <style>
@@ -188,7 +219,7 @@ export function renderReport(r: MilestoneReport): string {
   .fm { font-size: 9pt; color: #6b707a; margin-top: 1px; }
   .fs { font-size: 9.5pt; margin-top: 5px; }
   .badge { font-size: 8pt; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; padding: 1px 6px; border-radius: 3px; color: #fff; }
-  .badge.failed { background: ${COLORS.failed}; } .badge.blocked { background: ${COLORS.blocked}; }
+  .badge.failed { background: ${COLORS.failed}; } .badge.blocked { background: ${COLORS.blocked}; } .badge.untested { background: ${COLORS.skipped}; }
   .pri { font-size: 8.5pt; color: #6b707a; }
   .jira { font: 600 8.5pt ui-monospace, Menlo, monospace; color: #0052cc; background: #eef4ff; border: 1px solid #b3d0ff; border-radius: 3px; padding: 0 5px; }
   pre { margin: 6px 0 0; padding: 7px 9px; background: #f4f5f7; border-radius: 4px; white-space: pre-wrap; word-break: break-word; font: 8.5pt/1.4 ui-monospace, Menlo, monospace; }
@@ -217,6 +248,7 @@ export function renderReport(r: MilestoneReport): string {
 
 ${comparison}
 ${suites}
+${requirementsSection}
 ${failures}
 ${flaky}
 ${runs}

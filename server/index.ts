@@ -16,10 +16,11 @@ import { artifactsByRun, getToken, importRun, listRuns, type GithubSource } from
 import { bagFromFiles, bagFromZip, dedupeReports, mergeBags, readReports, type FileBag } from "./importers/bag.ts";
 import { importReport, mergeReports } from "./importers/import.ts";
 import type { CaseSnapshot } from "./db.ts";
-import { exportCasesCsv, exportJson, exportMarkdownZip, exportResultsCsv } from "./exporter.ts";
+import { exportCasesCsv, exportJson, exportMarkdownZip, exportRequirementsCsv, exportResultsCsv } from "./exporter.ts";
 import { htmlToPdf } from "./pdf.ts";
 import { renderReport } from "./reportHtml.ts";
 import { automationCandidates, insightsData } from "./insights.ts";
+import { createRequirement, getRequirement, listRequirements, requirementsForCase, requirementSummary, setCaseRequirements, setRequirementCases } from "./requirements.ts";
 import { dashboardData, listMilestones, milestoneReport } from "./stats.ts";
 import { parseReport, type Framework, type ParsedReport } from "./importers/parse.ts";
 
@@ -159,6 +160,7 @@ app.get("/api/projects/:id/cases", (req) => {
       SELECT c.*, s.name AS suite_name,
         (SELECT COUNT(*) FROM automated_tests a WHERE a.case_id = c.id) AS automated_count,
         (SELECT COUNT(*) FROM case_steps st WHERE st.case_id = c.id) AS step_count,
+        (SELECT COUNT(*) FROM requirement_cases rc WHERE rc.case_id = c.id) AS requirement_count,
         (SELECT r.status FROM results r JOIN runs ru ON ru.id = r.run_id
           WHERE r.case_id = c.id AND r.status != 'untested'
           ORDER BY COALESCE(r.executed_at, ru.started_at) DESC, r.id DESC LIMIT 1) AS last_status
@@ -204,6 +206,7 @@ function getCase(id: number) {
   return {
     ...caseRow(row),
     steps: db.prepare("SELECT * FROM case_steps WHERE case_id = ? ORDER BY position").all(id),
+    requirements: requirementsForCase(id),
     automated: db.prepare("SELECT * FROM automated_tests WHERE case_id = ? ORDER BY title").all(id),
     history: db
       .prepare(`
@@ -769,6 +772,56 @@ app.delete("/api/templates/:id", (req) => {
   return { ok: true };
 });
 
+// ---------------- Requirements ----------------
+
+const requirementBody = z.object({
+  title: z.string().trim().min(1).max(300),
+  description: z.string().max(50000).optional(),
+  priority: z.enum(["low", "medium", "high", "critical"]).optional(),
+  status: z.enum(["draft", "approved", "deprecated"]).optional(),
+  /** Free text: a Jira story key, a link, a document name. */
+  source: z.string().trim().max(300).optional(),
+  caseIds: z.array(z.number().int()).max(5000).optional(),
+});
+
+app.get("/api/projects/:id/requirements", (req) => listRequirements(idParam(req)));
+
+app.post("/api/projects/:id/requirements", (req) => {
+  const projectId = idParam(req);
+  const { caseIds, ...input } = requirementBody.parse(req.body);
+  must(db.prepare("SELECT id FROM projects WHERE id = ?").get(projectId), "Project");
+  const id = createRequirement(projectId, input);
+  if (caseIds?.length) setRequirementCases(id, projectId, caseIds);
+  return getRequirement(id);
+});
+
+app.get("/api/requirements/:id", (req) => must(getRequirement(idParam(req)) ?? undefined, "Requirement"));
+
+app.patch("/api/requirements/:id", (req) => {
+  const id = idParam(req);
+  const body = requirementBody.partial().parse(req.body);
+  const cur = must(db.prepare("SELECT * FROM requirements WHERE id = ?").get(id) as Record<string, any> | undefined, "Requirement");
+  db.prepare("UPDATE requirements SET title = ?, description = ?, priority = ?, status = ?, source = ?, updated_at = datetime('now') WHERE id = ?").run(
+    body.title ?? cur.title, body.description ?? cur.description, body.priority ?? cur.priority, body.status ?? cur.status, body.source ?? cur.source, id,
+  );
+  if (body.caseIds) setRequirementCases(id, cur.project_id, body.caseIds);
+  return getRequirement(id);
+});
+
+app.delete("/api/requirements/:id", (req) => {
+  db.prepare("DELETE FROM requirements WHERE id = ?").run(idParam(req));
+  return { ok: true };
+});
+
+// Set the requirements a test case covers (the same links, edited from the case's side).
+app.put("/api/cases/:id/requirements", (req) => {
+  const id = idParam(req);
+  const { requirementIds } = z.object({ requirementIds: z.array(z.number().int()).max(1000) }).parse(req.body);
+  const c = must(db.prepare("SELECT project_id FROM cases WHERE id = ?").get(id) as { project_id: number } | undefined, "Case");
+  setCaseRequirements(id, c.project_id, requirementIds);
+  return requirementsForCase(id);
+});
+
 // ---------------- Backup & restore ----------------
 
 app.get("/api/backup/info", () => backupInfo());
@@ -809,7 +862,7 @@ app.post("/api/restore", async (req) => {
 
 app.get("/api/projects/:id/dashboard", (req) => {
   const id = idParam(req);
-  return { ...must(dashboardData(id) ?? undefined, "Project"), ...automationCandidates(id, 5) };
+  return { ...must(dashboardData(id) ?? undefined, "Project"), ...automationCandidates(id, 5), requirements: requirementSummary(id) };
 });
 
 // Flaky tests, test-time trend, slowdowns and manual cases worth automating next.
@@ -911,6 +964,10 @@ app.get("/api/projects/:id/export.json", (req, reply) => {
 app.get("/api/projects/:id/export-cases.csv", (req, reply) => {
   const id = idParam(req);
   return download(reply, `${projectKey(id)}-cases.csv`, "text/csv; charset=utf-8", exportCasesCsv(id));
+});
+app.get("/api/projects/:id/export-requirements.csv", (req, reply) => {
+  const id = idParam(req);
+  return download(reply, `${projectKey(id)}-requirements.csv`, "text/csv; charset=utf-8", exportRequirementsCsv(id));
 });
 app.get("/api/projects/:id/export-results.csv", (req, reply) => {
   const id = idParam(req);

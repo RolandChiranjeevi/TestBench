@@ -15,9 +15,18 @@ Data lives in `data/testbench.db` (SQLite) and `data/uploads/`. Back up that fol
 Each case gets an ID like `SHOP-12`. Put `@SHOP-12` in a test title (or a Playwright tag) and imports
 link the test to the case automatically. You can also link by hand on **Automated tests**.
 
+## Requirements
+
+**Requirements** (sidebar, key `2`) is where you write down what the system should do: a title, description, priority, status
+(draft, approved, deprecated) and a source such as a Jira story key or link. Link any number of test cases to a requirement,
+from the requirement ("Link test cases") or from the case ("Requirements" section), and one case can cover several requirements.
+Each requirement shows how well it is covered, from the latest result of its linked cases: **Passing**, **Failing**, **Partly tested**,
+**Not run yet** or **No test cases**. Deprecated cases don't count. The dashboard shows requirement coverage, sprint reports list the
+requirements that are failing or weren't run, and exports include them (JSON and a requirements CSV).
+
 ## Backup and restore
 
-**Backup & restore** (sidebar, key `7`) downloads one zip with all projects: the database and every uploaded file. Restore it on this or
+**Backup & restore** (sidebar, key `8`) downloads one zip with all projects: the database and every uploaded file. Restore it on this or
 another computer, without restarting. A restore validates the zip first and moves your current data to `data/previous/<time>` instead
 of deleting it. The sidebar footer turns amber when there is no backup from the last 7 days. `data/` is git-ignored, so this is how
 your data is kept safe.
@@ -79,7 +88,7 @@ and is never stored.
   headline, pass rate, comparison with the previous sprint, results per suite and open failures. Download it as **PDF**
   (rendered with your installed Google Chrome; set `TESTBENCH_CHROME_CHANNEL=msedge` to use Edge) or as standalone HTML.
   Sprint dates are set on the Reports page and decide which sprint counts as "previous".
-- **Export** (Reports page): full JSON backup, one Markdown file per case (zip), cases CSV, results CSV.
+- **Export** (Reports page): full JSON backup, one Markdown file per case (zip), cases CSV, requirements CSV, results CSV.
 - **Run templates** (Runs → Templates): a saved set of cases, like "Smoke test", with an optional default environment. Start a run
   from one in a click, or pick it in the New run dialog. Make one from ticked cases on Test cases ("Save as template"), or tick
   "Save this selection as a template" when starting a run. Templates follow your cases: deleted cases drop out, deprecated ones are skipped.
@@ -92,5 +101,5 @@ and is never stored.
 
 ## Keyboard
 
-`1`–`6` switch pages · `C` new case/run · `J`/`K` move · `X` select · `R` run selected ·
+`1`–`8` switch pages · `C` new case/run · `J`/`K` move · `X` select · `R` run selected ·
 `P`/`F`/`B`/`S` pass/fail/block/skip while executing · `⌘V` paste a screenshot.

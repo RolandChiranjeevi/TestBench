@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, Bot, Check, ChevronsUpDown, CircleDot, Folder, Loader2, Plus, Trash2, X } from "lucide-react";
-import { api, timeAgo, type CaseDetail, type Priority, type Suite } from "../api";
-import { FrameworkBadge, PriorityIcon, PRIORITY_LABEL, StatusIcon, useToast } from "../components/ui";
+import { ArrowDown, ArrowUp, BookOpenCheck, Bot, Link2, Check, ChevronsUpDown, CircleDot, Folder, Loader2, Plus, Trash2, X } from "lucide-react";
+import { api, timeAgo, type CaseDetail, type Priority, type Requirement, type Suite } from "../api";
+import { FrameworkBadge, Modal, PriorityIcon, PRIORITY_LABEL, StatusIcon, useToast } from "../components/ui";
 
 interface DraftStep { uid: string; id?: number; action: string; expected: string }
 interface Draft {
@@ -39,6 +39,7 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted }: { caseId: num
   const toast = useToast();
   const { data } = useQuery({ queryKey: ["case", caseId], queryFn: () => api.get<CaseDetail>(`/api/cases/${caseId}`) });
 
+  const [linkingReqs, setLinkingReqs] = useState(false);
   const [draft, setDraftState] = useState<Draft | null>(null);
   const draftRef = useRef<Draft | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -295,6 +296,21 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted }: { caseId: num
 
         <section>
           <div className="section-label">
+            <BookOpenCheck size={13} /> Requirements <span className="faint">{data.requirements.length}</span>
+          </div>
+          <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
+            {data.requirements.length === 0 && <span className="muted" style={{ fontSize: 12.5 }}>Not linked to a requirement.</span>}
+            {data.requirements.map((r) => (
+              <Link key={r.id} to={`/p/${pid}/requirements?req=${r.id}`} className="chip" title={r.title} style={{ textDecoration: r.status === "deprecated" ? "line-through" : undefined }}>
+                REQ-{r.number} <span className="truncate" style={{ maxWidth: 200 }}>{r.title}</span>
+              </Link>
+            ))}
+            <button className="btn ghost sm" onClick={() => setLinkingReqs(true)}><Link2 size={13} /> Link</button>
+          </div>
+        </section>
+
+        <section>
+          <div className="section-label">
             <Bot size={13} /> Automation <span className="faint">{data.automated.length}</span>
           </div>
           {data.automated.length === 0 ? (
@@ -334,7 +350,47 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted }: { caseId: num
           )}
         </section>
       </div>
+      {linkingReqs && <LinkRequirementsModal caseId={caseId} projectId={Number(pid)} current={data.requirements.map((r) => r.id)} onClose={() => setLinkingReqs(false)} />}
     </div>
+  );
+}
+
+/** Pick the requirements a case covers. Saved as a whole list, like the link editor on the requirement side. */
+function LinkRequirementsModal({ caseId, projectId, current, onClose }: { caseId: number; projectId: number; current: number[]; onClose: () => void }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const { data: reqs = [] } = useQuery({ queryKey: ["requirements", String(projectId)], queryFn: () => api.get<Requirement[]>(`/api/projects/${projectId}/requirements`) });
+  const [selected, setSelected] = useState(new Set(current));
+  const [saving, setSaving] = useState(false);
+  const toggle = (id: number) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/api/cases/${caseId}/requirements`, { requirementIds: [...selected] });
+      for (const k of ["case", "cases", "requirements", "requirement", "dashboard"]) qc.invalidateQueries({ queryKey: [k] });
+      onClose();
+    } catch (e) {
+      toast("error", (e as Error).message);
+      setSaving(false);
+    }
+  };
+  return (
+    <Modal title="Link requirements" onClose={onClose} width={520} footer={<button className="btn primary" disabled={saving} onClick={save}>Save {selected.size} linked</button>}>
+      {reqs.length === 0 ? (
+        <div className="muted">No requirements yet. Add some on the Requirements page first.</div>
+      ) : (
+        <div className="card" style={{ maxHeight: 340, overflow: "auto" }}>
+          {reqs.filter((r) => r.status !== "deprecated" || selected.has(r.id)).map((r) => (
+            <label key={r.id} className="list-row" style={{ height: 32, padding: "0 12px" }}>
+              <input type="checkbox" className="checkbox" checked={selected.has(r.id)} onChange={() => toggle(r.id)} />
+              <PriorityIcon priority={r.priority} />
+              <span className="mono muted" style={{ width: 62 }}>REQ-{r.number}</span>
+              <span className="title">{r.title}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </Modal>
   );
 }
 

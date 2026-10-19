@@ -2,10 +2,11 @@ import { StrictMode, useEffect, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, Bot, ChevronDown, Download, FileBarChart, FlaskConical, LayoutDashboard, ListChecks, Play, Plus, Sparkles } from "lucide-react";
+import { Archive, BookOpenCheck, Bot, ChevronDown, Download, FileBarChart, FlaskConical, LayoutDashboard, ListChecks, Play, Plus, Sparkles } from "lucide-react";
 import { api, timeAgo, type BackupInfo, type Project } from "./api";
 import { Empty, Modal, ToastProvider, useHotkeys, useToast } from "./components/ui";
 import { CasesPage } from "./pages/Cases";
+import { RequirementsPage } from "./pages/Requirements";
 import { RunsPage } from "./pages/Runs";
 import { RunDetailPage } from "./pages/RunDetail";
 import { AutomatedPage } from "./pages/Automated";
@@ -154,12 +155,13 @@ function ProjectLayout() {
 
   useHotkeys({
     "1": () => navigate(`/p/${pid}/dashboard`),
-    "2": () => navigate(`/p/${pid}/cases`),
-    "3": () => navigate(`/p/${pid}/runs`),
-    "4": () => navigate(`/p/${pid}/automated`),
-    "5": () => navigate(`/p/${pid}/import`),
-    "6": () => navigate(`/p/${pid}/reports`),
-    "7": () => navigate(`/p/${pid}/backup`),
+    "2": () => navigate(`/p/${pid}/requirements`),
+    "3": () => navigate(`/p/${pid}/cases`),
+    "4": () => navigate(`/p/${pid}/runs`),
+    "5": () => navigate(`/p/${pid}/automated`),
+    "6": () => navigate(`/p/${pid}/import`),
+    "7": () => navigate(`/p/${pid}/reports`),
+    "8": () => navigate(`/p/${pid}/backup`),
   });
 
   if (isLoading) return null;
@@ -203,14 +205,15 @@ function ProjectLayout() {
 
         <div className="sidebar-section">Workspace</div>
         {link("dashboard", <LayoutDashboard size={15} />, "Dashboard", "1")}
-        {link("cases", <ListChecks size={15} />, "Test cases", "2")}
-        {link("runs", <Play size={15} />, "Runs", "3")}
-        {link("automated", <Bot size={15} />, "Automated tests", "4")}
-        {link("import", <Download size={15} />, "Import results", "5")}
+        {link("requirements", <BookOpenCheck size={15} />, "Requirements", "2")}
+        {link("cases", <ListChecks size={15} />, "Test cases", "3")}
+        {link("runs", <Play size={15} />, "Runs", "4")}
+        {link("automated", <Bot size={15} />, "Automated tests", "5")}
+        {link("import", <Download size={15} />, "Import results", "6")}
         <div className="sidebar-section">Reporting</div>
-        {link("reports", <FileBarChart size={15} />, "Sprint reports", "6")}
+        {link("reports", <FileBarChart size={15} />, "Sprint reports", "7")}
         <div className="sidebar-section">Data</div>
-        {link("backup", <Archive size={15} />, "Backup & restore", "7")}
+        {link("backup", <Archive size={15} />, "Backup & restore", "8")}
 
         <div className="sidebar-footer">
           {/* Nudge when there is no recent backup: the data lives only on this computer. */}
@@ -249,6 +252,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="backup" element={<BackupPage />} />
               <Route path="reports" element={<ReportsPage />} />
               <Route path="reports/:mid" element={<ReportsPage />} />
+              <Route path="requirements" element={<RequirementsPage />} />
               <Route path="cases" element={<CasesPage />} />
               <Route path="runs" element={<RunsPage />} />
               <Route path="runs/:runId" element={<RunDetailPage />} />

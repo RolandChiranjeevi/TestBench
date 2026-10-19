@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, ClipboardList, Folder, FolderOpen, Inbox, ListChecks, MoreHorizontal, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
-import { api, type CaseDetail, type CaseSummary, type Project, type Suite } from "../api";
+import { BookOpenCheck, Bot, ClipboardList, Folder, FolderOpen, Inbox, ListChecks, MoreHorizontal, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
+import { api, type CaseDetail, type CaseSummary, type Project, type RequirementDetail, type Suite } from "../api";
 import { Empty, Kbd, Modal, PriorityIcon, StatusIcon, useHotkeys, useToast } from "../components/ui";
 import { CaseEditor } from "./CaseEditor";
 import { NewRunModal } from "./Runs";
@@ -31,7 +31,8 @@ export function CasesPage() {
   const [filter, setFilter] = useState<Filter>("all");
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [focus, setFocus] = useState(0);
-  const [newCase, setNewCase] = useState(false);
+  const newFor = params.get("newFor") ? Number(params.get("newFor")) : null;
+  const [newCase, setNewCase] = useState(newFor != null);
   const [suiteModal, setSuiteModal] = useState<{ suite?: Suite; parentId?: number | null } | null>(null);
   const [runModal, setRunModal] = useState(false);
   const [templateModal, setTemplateModal] = useState(false);
@@ -267,6 +268,9 @@ export function CasesPage() {
                       <span className="meta">
                         {!compact && c.status === "draft" && <span className="chip">Draft</span>}
                         {!compact && c.tags.slice(0, 3).map((t) => <span key={t} className="chip">{t}</span>)}
+                        {!!c.requirement_count && (
+                          <span className="chip" title={`${c.requirement_count} requirement(s)`}><BookOpenCheck size={11} /> {c.requirement_count}</span>
+                        )}
                         {c.automated_count > 0 && (
                           <span className="chip accent" title={`${c.automated_count} automated test(s)`}>
                             <Bot size={11} /> {c.automated_count}
@@ -300,7 +304,8 @@ export function CasesPage() {
           projectId={projectId}
           suites={suites}
           defaultSuite={typeof suiteFilter === "number" ? suiteFilter : null}
-          onClose={() => setNewCase(false)}
+          requirementId={newFor}
+          onClose={() => { setNewCase(false); setParam("newFor", null); }}
           onCreated={(id) => select(id)}
         />
       )}
@@ -366,8 +371,8 @@ function SuiteTree(props: {
   );
 }
 
-function NewCaseModal({ projectId, suites, defaultSuite, onClose, onCreated }: {
-  projectId: number; suites: Suite[]; defaultSuite: number | null; onClose: () => void; onCreated: (id: number) => void;
+function NewCaseModal({ projectId, suites, defaultSuite, requirementId, onClose, onCreated }: {
+  projectId: number; suites: Suite[]; defaultSuite: number | null; requirementId?: number | null; onClose: () => void; onCreated: (id: number) => void;
 }) {
   const [title, setTitle] = useState("");
   const [suiteId, setSuiteId] = useState<number | null>(defaultSuite ?? suites[0]?.id ?? null);
@@ -375,7 +380,17 @@ function NewCaseModal({ projectId, suites, defaultSuite, onClose, onCreated }: {
   const qc = useQueryClient();
   const toast = useToast();
   const create = useMutation({
-    mutationFn: () => api.post<CaseDetail>(`/api/projects/${projectId}/cases`, { title, suiteId }),
+    mutationFn: async () => {
+      const created = await api.post<CaseDetail>(`/api/projects/${projectId}/cases`, { title, suiteId });
+      // Started from a requirement: link the new case to it straight away.
+      if (requirementId) {
+        const req = await api.get<RequirementDetail>(`/api/requirements/${requirementId}`);
+        await api.patch(`/api/requirements/${requirementId}`, { caseIds: [...req.cases.map((x) => x.id), created.id] });
+        qc.invalidateQueries({ queryKey: ["requirements"] });
+        qc.invalidateQueries({ queryKey: ["requirement"] });
+      }
+      return created;
+    },
     onSuccess: (c) => {
       qc.invalidateQueries({ queryKey: ["cases", String(projectId)] });
       qc.invalidateQueries({ queryKey: ["suites", String(projectId)] });

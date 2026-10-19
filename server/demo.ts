@@ -1,4 +1,5 @@
 import { db, ensureMilestone } from "./db.ts";
+import { createRequirement, setRequirementCases } from "./requirements.ts";
 import { importReport } from "./importers/import.ts";
 import { parseReport } from "./importers/parse.ts";
 
@@ -170,6 +171,18 @@ export function seedDemo() {
         statuses[i] === "untested" ? null : now,
       ),
   );
+
+  // A few requirements linked to cases by their order above (login 1-2, reset 3, cart 4-5, ...).
+  const REQS: { title: string; priority: string; source: string; description: string; cases: number[] }[] = [
+    { title: "A customer can log in with email and password", priority: "critical", source: "SHOP-101", description: "Valid credentials sign the customer in; invalid ones show a clear error without revealing which part was wrong.", cases: [0, 1] },
+    { title: "A customer can reset a forgotten password by email", priority: "high", source: "SHOP-102", description: "The reset link is valid for 30 minutes and can be used once.", cases: [2] },
+    { title: "A customer can manage items in the cart", priority: "high", source: "SHOP-110", description: "Add, change quantity and remove items; totals update immediately.", cases: [3, 4] },
+    { title: "Prices are shown including VAT for EU customers", priority: "medium", source: "SHOP-125", description: "", cases: [] },
+  ];
+  for (const r of REQS) {
+    const id = createRequirement(project.id, { title: r.title, priority: r.priority, source: r.source, description: r.description });
+    setRequirementCases(id, project.id, r.cases.map((i) => caseIds[i]).filter((x) => x != null));
+  }
   return project;
 }
 

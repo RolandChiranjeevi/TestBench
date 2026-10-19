@@ -7,7 +7,18 @@ export interface Step { id?: number; action: string; expected: string }
 export interface CaseSummary {
   id: number; project_id: number; suite_id: number | null; number: number; title: string; priority: Priority;
   status: "draft" | "ready" | "deprecated"; tags: string[]; suite_name: string | null; automated_count: number;
-  step_count: number; last_status: Status | null; updated_at: string;
+  step_count: number; last_status: Status | null; updated_at: string; requirement_count?: number;
+}
+export type CoverageState = "uncovered" | "failing" | "passing" | "partial" | "untested";
+export interface Coverage { state: CoverageState; cases: number; passing: number; failing: number; notRun: number }
+export type RequirementStatus = "draft" | "approved" | "deprecated";
+export interface RequirementRef { id: number; number: number; title: string; status: RequirementStatus; priority: Priority }
+export interface Requirement {
+  id: number; project_id: number; number: number; title: string; description: string; priority: Priority; status: RequirementStatus;
+  source: string; created_at: string; updated_at: string; caseIds: number[]; activeCaseIds: number[]; coverage: Coverage;
+}
+export interface RequirementDetail extends Omit<Requirement, "caseIds" | "activeCaseIds"> {
+  cases: { id: number; number: number; title: string; priority: Priority; status: CaseSummary["status"]; suite_name: string | null; last_status: Status | null }[];
 }
 export interface AutomatedTest {
   id: number; framework: string; file: string; suite_path: string; title: string; full_name: string; case_id: number | null;
@@ -17,7 +28,7 @@ export interface AutomatedTest {
 export interface HistoryEntry { id: number; status: Status; flaky: number; duration_ms: number | null; executed_at: string | null; run_id: number; run_title: string; kind: string; started_at: string }
 export interface CaseDetail extends CaseSummary {
   description: string; preconditions: string; project_key: string; steps: Required<Step>[]; automated: AutomatedTest[]; history: HistoryEntry[];
-  edited_since?: boolean;
+  edited_since?: boolean; requirements: RequirementRef[];
 }
 export interface Counts { total: number; passed: number; failed: number; blocked: number; skipped: number; untested: number; flaky: number; duration_ms: number }
 export interface RunSummary extends Counts {
@@ -98,6 +109,7 @@ export interface Insights {
   flaky: FlakyTest[]; flakyTotal: number; slowdowns: Slowdown[]; candidates: Candidate[]; candidatesTotal: number;
 }
 export interface Dashboard {
+  requirements: { total: number; covered: number; passing: number; failing: number; uncovered: number };
   candidates: Candidate[];
   candidatesTotal: number;
   project: { id: number; name: string; key: string };

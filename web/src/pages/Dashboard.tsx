@@ -83,6 +83,19 @@ export function DashboardPage() {
                 sub={<Delta cur={s.latestRate} prev={s.previousRate} />}
               />
               <Stat label="Automation coverage" value={`${s.coverage}%`} sub={`${s.automatedCases} of ${s.cases} cases have an automated test`} />
+              {d.requirements.total > 0 && (
+                <Stat
+                  label="Requirement coverage"
+                  value={`${Math.round((d.requirements.covered / d.requirements.total) * 100)}%`}
+                  color={d.requirements.failing ? "var(--failed)" : undefined}
+                  sub={
+                    <Link to={`/p/${pid}/requirements`} style={{ color: "var(--accent)" }}>
+                      {d.requirements.covered} of {d.requirements.total} have test cases
+                      {d.requirements.failing ? `, ${d.requirements.failing} failing` : ""}
+                    </Link>
+                  }
+                />
+              )}
               <Stat label="Failing cases" value={s.failingCases} color={s.failingCases ? "var(--failed)" : undefined} sub="Latest result failed or blocked" />
               <Stat label="Flaky tests" value={s.flakyTests} color={s.flakyTests ? "var(--flaky)" : undefined} sub="In the last 10 automated runs" />
               <Stat

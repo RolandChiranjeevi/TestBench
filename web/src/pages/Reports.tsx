@@ -108,6 +108,7 @@ export function ReportsPage() {
               <a className="btn sm" href={`/api/projects/${pid}/export.json`}><FileJson size={13} /> Everything (JSON backup)</a>
               <a className="btn sm" href={`/api/projects/${pid}/export-markdown.zip`}><FileText size={13} /> Cases as Markdown (zip)</a>
               <a className="btn sm" href={`/api/projects/${pid}/export-cases.csv`}><FileSpreadsheet size={13} /> Cases (CSV)</a>
+              <a className="btn sm" href={`/api/projects/${pid}/export-requirements.csv`}><FileSpreadsheet size={13} /> Requirements (CSV)</a>
               <a className="btn sm" href={`/api/projects/${pid}/export-results.csv`}><FileSpreadsheet size={13} /> Results (CSV)</a>
             </div>
           </div>

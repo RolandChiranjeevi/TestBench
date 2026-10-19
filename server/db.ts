@@ -268,6 +268,29 @@ CREATE TABLE IF NOT EXISTS run_template_cases (
 );`);
   if (!hasColumn("runs", "template_id")) d.exec("ALTER TABLE runs ADD COLUMN template_id INTEGER REFERENCES run_templates(id) ON DELETE SET NULL");
 
+  // Requirements, linked many-to-many to test cases. Numbers (REQ-1, REQ-2...) are per project.
+  d.exec(`
+CREATE TABLE IF NOT EXISTS requirements (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  number INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  priority TEXT NOT NULL DEFAULT 'medium',
+  status TEXT NOT NULL DEFAULT 'approved',   -- draft | approved | deprecated
+  source TEXT NOT NULL DEFAULT '',            -- free text, e.g. a Jira story key or link
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (project_id, number)
+);
+CREATE TABLE IF NOT EXISTS requirement_cases (
+  requirement_id INTEGER NOT NULL REFERENCES requirements(id) ON DELETE CASCADE,
+  case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+  PRIMARY KEY (requirement_id, case_id)
+);
+CREATE INDEX IF NOT EXISTS requirement_cases_case ON requirement_cases(case_id);`);
+  if (!hasColumn("projects", "next_requirement_number")) d.exec("ALTER TABLE projects ADD COLUMN next_requirement_number INTEGER NOT NULL DEFAULT 1");
+
   // Automatic import of new GitHub workflow runs. auto_since is when it was switched on: older runs are never pulled in.
   for (const [col, def] of [
     ["auto_import", "INTEGER NOT NULL DEFAULT 0"],

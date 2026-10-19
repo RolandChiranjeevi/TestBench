@@ -1,4 +1,5 @@
 import { db, parseJson, type CaseSnapshot } from "./db.ts";
+import { classify, listRequirements } from "./requirements.ts";
 
 export interface Totals {
   total: number;
@@ -235,6 +236,41 @@ export function milestoneReport(milestoneId: number) {
   const autoLatest = latestBy(rows.filter((r) => r.kind === "automated"), (r) => r.automated_test_id);
   const totals = milestoneTotals(project.id, milestone.name);
 
+  // Requirements as seen through this sprint's results: a case counts as failed if any of its latest results failed.
+  const caseStatus = new Map<number, "passed" | "failed">();
+  for (const r of [...manualLatest, ...autoLatest]) {
+    if (r.case_id == null || r.status === "untested" || r.status === "skipped") continue;
+    if (r.status === "failed" || r.status === "blocked") caseStatus.set(r.case_id, "failed");
+    else if (caseStatus.get(r.case_id) !== "failed") caseStatus.set(r.case_id, "passed");
+  }
+  const reqCoverage = listRequirements(project.id)
+    .filter((r) => r.status !== "deprecated")
+    .map((r) => ({ r, cov: classify(r.activeCaseIds.map((id) => caseStatus.get(id))) }));
+  const failingCaseIds = [...new Set(reqCoverage.flatMap((x) => (x.cov.state === "failing" ? x.r.activeCaseIds.filter((id) => caseStatus.get(id) === "failed") : [])))];
+  const caseInfo = new Map(
+    (failingCaseIds.length ? (db.prepare(`SELECT id, number, title FROM cases WHERE id IN (${failingCaseIds.join(",")})`).all() as { id: number; number: number; title: string }[]) : []).map((c) => [c.id, c]),
+  );
+  const stateOrder = ["failing", "partial", "untested"];
+  const requirements = {
+    total: reqCoverage.length,
+    byState: {
+      passing: reqCoverage.filter((x) => x.cov.state === "passing").length,
+      failing: reqCoverage.filter((x) => x.cov.state === "failing").length,
+      partial: reqCoverage.filter((x) => x.cov.state === "partial").length,
+      untested: reqCoverage.filter((x) => x.cov.state === "untested").length,
+      uncovered: reqCoverage.filter((x) => x.cov.state === "uncovered").length,
+    },
+    /** Requirements that need a look: failing first, then ones not fully tested in this sprint. */
+    attention: reqCoverage
+      .filter((x) => stateOrder.includes(x.cov.state))
+      .sort((a, b) => stateOrder.indexOf(a.cov.state) - stateOrder.indexOf(b.cov.state) || PRIORITY_ORDER.indexOf(a.r.priority) - PRIORITY_ORDER.indexOf(b.r.priority) || a.r.number - b.r.number)
+      .slice(0, 20)
+      .map((x) => ({
+        number: x.r.number, title: x.r.title, priority: x.r.priority, state: x.cov.state, cases: x.cov.cases, passing: x.cov.passing,
+        failingCases: x.r.activeCaseIds.filter((id) => caseStatus.get(id) === "failed").map((id) => caseInfo.get(id)).filter((c): c is { id: number; number: number; title: string } => !!c),
+      })),
+  };
+
   // Failing steps for failed/blocked manual results.
   const stepResults = db.prepare("SELECT step_id, status, actual FROM step_results WHERE result_id = ? AND status IN ('failed', 'blocked')");
   const manualFailures = manualLatest
@@ -300,6 +336,7 @@ export function milestoneReport(milestoneId: number) {
     milestone: { ...milestone, firstRun: runs[0]?.started_at ?? null, lastRun: runs.at(-1)?.started_at ?? null },
     totals,
     previous,
+    requirements,
     openManualRuns: runs.filter((r) => r.kind === "manual" && r.run_status === "in_progress").length,
     coverage: { cases: cases.n, automated: automatedCases.n, percent: cases.n ? Math.round((automatedCases.n / cases.n) * 100) : 0 },
     manualFailures,

@@ -1,5 +1,6 @@
 import { strToU8, zipSync } from "fflate";
 import { db, parseJson } from "./db.ts";
+import { listRequirements } from "./requirements.ts";
 
 interface CaseRow {
   id: number; number: number; title: string; description: string; preconditions: string; priority: string; status: string;
@@ -51,7 +52,13 @@ export function exportJson(projectId: number) {
       status: x.status, flaky: !!x.flaky, durationMs: x.durationMs, error: x.error || undefined, notes: x.notes || undefined, jira: x.jiraKey || undefined, executedAt: x.executedAt,
     })),
   }));
-  return { exportedAt: new Date().toISOString(), format: "testbench-export/1", project: { name: p.name, key: p.key }, suites, milestones, templates, cases, runs };
+  const keyOf = new Map((db.prepare("SELECT id, number FROM cases WHERE project_id = ?").all(projectId) as { id: number; number: number }[]).map((c) => [c.id, `${p.key}-${c.number}`]));
+  const requirements = listRequirements(projectId).map((q) => ({
+    id: `REQ-${q.number}`, title: q.title, description: q.description, priority: q.priority, status: q.status, source: q.source,
+    cases: q.caseIds.map((id) => keyOf.get(id)).filter(Boolean),
+    createdAt: q.created_at, updatedAt: q.updated_at,
+  }));
+  return { exportedAt: new Date().toISOString(), format: "testbench-export/1", project: { name: p.name, key: p.key }, suites, milestones, templates, requirements, cases, runs };
 }
 
 /** Spreadsheet apps run cells that start with = + - @ as formulas, so neutralise them. */
@@ -75,6 +82,19 @@ export function exportCasesCsv(projectId: number) {
   return csv([
     ["ID", "Title", "Suite", "Priority", "Status", "Tags", "Steps", "Automated tests", "Preconditions", "Description", "Updated"],
     ...rows.map((c) => [`${p.key}-${c.number}`, c.title, c.suite ?? "", c.priority, c.status, parseJson<string[]>(c.tags, []).join("; "), c.steps, c.automated, c.preconditions, c.description, c.updated_at]),
+  ]);
+}
+
+export function exportRequirementsCsv(projectId: number) {
+  const p = project(projectId);
+  if (!p) return null;
+  const keyOf = new Map((db.prepare("SELECT id, number FROM cases WHERE project_id = ?").all(projectId) as { id: number; number: number }[]).map((c) => [c.id, `${p.key}-${c.number}`]));
+  return csv([
+    ["ID", "Title", "Priority", "Status", "Source", "Coverage", "Test cases", "Passing", "Failing", "Not run", "Description"],
+    ...listRequirements(projectId).map((q) => [
+      `REQ-${q.number}`, q.title, q.priority, q.status, q.source, q.coverage.state,
+      q.caseIds.map((id) => keyOf.get(id)).join("; "), q.coverage.passing, q.coverage.failing, q.coverage.notRun, q.description,
+    ]),
   ]);
 }
 
