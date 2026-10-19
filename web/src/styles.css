@@ -170,6 +170,9 @@ a { color: inherit; text-decoration: none; }
 /* Borderless "Linear" inputs used in the editor */
 .bare { background: none; border: 0; outline: none; width: 100%; padding: 0; resize: none; }
 .bare::placeholder { color: var(--text-4); }
+/* In a dialog the title is the main thing to fill in, so it needs to look like a field and not like a heading. */
+.modal .title-input { border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 8px 10px; background: var(--bg-input); font-size: 16px; transition: border-color 120ms, box-shadow 120ms; }
+.modal .title-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .title-input { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.3; field-sizing: content; }
 
 /* Property pills (Linear's issue properties) */

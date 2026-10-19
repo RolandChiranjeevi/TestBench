@@ -205,7 +205,17 @@ export function NewRunModal({ initialCaseIds = [], template, rerunOf, onClose, o
         </>
       }
     >
-      <input className="bare title-input" value={title} onChange={(e) => { setTitle(e.target.value); setTitleEdited(true); }} aria-label="Run title" autoFocus />
+      <div className="field">
+        <label htmlFor="run-title">Run name</label>
+        <input
+          id="run-title"
+          className="bare title-input"
+          value={title}
+          onChange={(e) => { setTitle(e.target.value); setTitleEdited(true); }}
+          onFocus={(e) => e.currentTarget.select()} /* the suggested name is selected, so typing replaces it */
+          autoFocus
+        />
+      </div>
       {templates.length > 0 && (
         <div className="field">
           <label htmlFor="tpl">Template</label>

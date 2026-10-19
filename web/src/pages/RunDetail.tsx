@@ -9,7 +9,7 @@ import {
   api, formatDateTime, formatDuration, passRate, timeAgo,
   type Attachment, type ResultDetail, type RunDetail, type RunResult, type Status,
 } from "../api";
-import { Bug } from "lucide-react";
+import { Bug, Pencil } from "lucide-react";
 import { Empty, FrameworkBadge, Github, Kbd, PriorityIcon, ProgressBar, StatusIcon, STATUS_LABEL, useHotkeys, useToast } from "../components/ui";
 import { AutomatedDetail } from "./AutomatedDetail";
 import { NewRunModal } from "./Runs";
@@ -27,6 +27,52 @@ export function RunDetailPage() {
     );
   }
   return run.kind === "manual" ? <ManualRun run={run} /> : <AutomatedRun run={run} />;
+}
+
+/** The run's name in the header. Click the pencil (or double-click the name) to rename it. */
+function RunTitle({ run }: { run: RunDetail }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(run.title);
+  const rename = useMutation({
+    mutationFn: (title: string) => api.patch(`/api/runs/${run.id}`, { title }),
+    onSuccess: () => {
+      for (const k of ["run", "runs", "dashboard", "milestones"]) qc.invalidateQueries({ queryKey: [k] });
+    },
+    onError: (e: Error) => toast("error", e.message),
+  });
+  const commit = () => {
+    const title = value.trim();
+    setEditing(false);
+    if (title && title !== run.title) rename.mutate(title);
+    else setValue(run.title);
+  };
+
+  if (editing) {
+    return (
+      <input
+        className="input"
+        style={{ height: 28, maxWidth: 420, fontWeight: 600 }}
+        value={value}
+        autoFocus
+        aria-label="Run name"
+        onChange={(e) => setValue(e.target.value)}
+        onFocus={(e) => e.currentTarget.select()}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Escape") { setValue(run.title); setEditing(false); }
+        }}
+      />
+    );
+  }
+  return (
+    <>
+      <span className="truncate" onDoubleClick={() => { setValue(run.title); setEditing(true); }} title="Double-click to rename">{run.title}</span>
+      <button className="btn ghost icon sm" onClick={() => { setValue(run.title); setEditing(true); }} aria-label="Rename run" title="Rename run"><Pencil size={12} /></button>
+    </>
+  );
 }
 
 function RunHeader({ run, children }: { run: RunDetail; children?: ReactNode }) {
@@ -52,7 +98,7 @@ function RunHeader({ run, children }: { run: RunDetail; children?: ReactNode }) 
       <h1>
         <Link to={`/p/${pid}/runs`} className="crumb">Runs</Link>
         <ChevronRight size={13} className="faint" />
-        <span className="truncate">{run.title}</span>
+        <RunTitle run={run} />
       </h1>
       <span className="spacer" />
       {rerunOf && <Link className="chip" to={`/p/${pid}/runs/${rerunOf.id}`} title="The run this one re-tests">Re-run of {rerunOf.title}</Link>}
