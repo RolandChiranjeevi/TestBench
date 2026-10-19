@@ -1,11 +1,12 @@
 import { useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpenCheck, ExternalLink, Link2, Plus, Search, Trash2, X } from "lucide-react";
-import { api, type CoverageState, type Priority, type Project, type Requirement, type RequirementDetail, type RequirementStatus } from "../api";
+import { BookOpenCheck, Check, ExternalLink, History, Link2, Play, Plus, Search, Trash2, X } from "lucide-react";
+import { api, timeAgo, type CoverageState, type Priority, type Project, type Requirement, type RequirementDetail, type RequirementRevision, type RequirementStatus } from "../api";
 import { Empty, Kbd, Modal, PriorityIcon, PRIORITY_LABEL, StatusIcon, useHotkeys, useToast } from "../components/ui";
 import { CasePicker } from "../components/CasePicker";
 import { jiraLabel, jiraUrl } from "./BugReport";
+import { NewRunModal } from "./Runs";
 
 export const COVERAGE_LABEL: Record<CoverageState, string> = {
   uncovered: "No test cases", failing: "Failing", passing: "Passing", partial: "Partly tested", untested: "Not run yet",
@@ -26,7 +27,7 @@ export function CoverageChip({ coverage }: { coverage: Requirement["coverage"] }
 }
 
 const STATUS_LABEL: Record<RequirementStatus, string> = { draft: "Draft", approved: "Approved", deprecated: "Deprecated" };
-type Filter = "all" | CoverageState;
+type Filter = "all" | "review" | CoverageState;
 
 export function RequirementsPage() {
   const { pid } = useParams();
@@ -54,6 +55,7 @@ export function RequirementsPage() {
   const active = reqs.filter((r) => r.status !== "deprecated");
   const counts: Record<Filter, number> = {
     all: reqs.length,
+    review: active.filter((r) => r.reviewCount > 0).length,
     uncovered: active.filter((r) => r.coverage.state === "uncovered").length,
     failing: active.filter((r) => r.coverage.state === "failing").length,
     passing: active.filter((r) => r.coverage.state === "passing").length,
@@ -63,12 +65,12 @@ export function RequirementsPage() {
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     return reqs.filter((r) => {
-      if (filter !== "all" && (r.status === "deprecated" || r.coverage.state !== filter)) return false;
+      if (filter === "review" ? r.status === "deprecated" || r.reviewCount === 0 : filter !== "all" && (r.status === "deprecated" || r.coverage.state !== filter)) return false;
       return !q || `REQ-${r.number} ${r.title} ${r.source} ${r.description}`.toLowerCase().includes(q);
     });
   }, [reqs, search, filter]);
   const compact = selectedId != null;
-  const tabs: Filter[] = ["all", "uncovered", "failing", "passing"];
+  const tabs: Filter[] = ["all", "uncovered", "failing", "passing", "review"];
 
   return (
     <div className="split">
@@ -86,7 +88,7 @@ export function RequirementsPage() {
           <div className="tabs" role="tablist">
             {tabs.map((f) => (
               <button key={f} role="tab" aria-selected={filter === f} className={`tab${filter === f ? " active" : ""}`} onClick={() => setFilter(f)}>
-                {f === "all" ? "All" : f === "uncovered" ? "No test cases" : COVERAGE_LABEL[f]}
+                {f === "all" ? "All" : f === "uncovered" ? "No test cases" : f === "review" ? "Needs review" : COVERAGE_LABEL[f]}
                 <span className="count">{counts[f]}</span>
               </button>
             ))}
@@ -110,6 +112,11 @@ export function RequirementsPage() {
                 <span className="meta">
                   {!compact && r.source && <span className="chip">{jiraLabel(r.source)}</span>}
                   {r.status === "draft" && <span className="chip">Draft</span>}
+                  {r.status !== "deprecated" && r.reviewCount > 0 && (
+                    <span className="chip" style={{ borderColor: "var(--blocked)" }} title={`${r.reviewCount} linked case(s) to check after the wording changed`}>
+                      <span className="dot" style={{ background: "var(--blocked)" }} />{r.reviewCount} to review
+                    </span>
+                  )}
                   {r.status !== "deprecated" && <CoverageChip coverage={r.coverage} />}
                 </span>
               </div>
@@ -167,10 +174,16 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
   const invalidate = useInvalidate();
   const { data } = useQuery({ queryKey: ["requirement", id], queryFn: () => api.get<RequirementDetail>(`/api/requirements/${id}`) });
   const [linking, setLinking] = useState(false);
+  const [running, setRunning] = useState(false);
   const [edits, setEdits] = useState<Partial<Pick<RequirementDetail, "title" | "description" | "source">>>({});
 
   const save = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.patch<RequirementDetail>(`/api/requirements/${id}`, body),
+    onSuccess: invalidate,
+    onError: (e: Error) => toast("error", e.message),
+  });
+  const review = useMutation({
+    mutationFn: (caseIds?: number[]) => api.post<RequirementDetail>(`/api/requirements/${id}/review`, caseIds ? { caseIds } : {}),
     onSuccess: invalidate,
     onError: (e: Error) => toast("error", e.message),
   });
@@ -231,6 +244,14 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
             {link && <a className="btn sm" href={link} target="_blank" rel="noreferrer"><ExternalLink size={12} /> {jiraLabel(data.source)}</a>}
           </div>
         </section>
+        {data.cases.some((c) => c.review_needed) && (
+          <div className="card" style={{ padding: "10px 12px", borderColor: "var(--blocked)", display: "flex", gap: 10, alignItems: "center" }}>
+            <span className="grow" style={{ fontSize: 12.5 }}>
+              The wording changed after {data.cases.filter((c) => c.review_needed).length} linked {data.cases.filter((c) => c.review_needed).length === 1 ? "case was" : "cases were"} written or last checked. Make sure they still test the right thing.
+            </span>
+            <button className="btn sm" onClick={() => review.mutate(undefined)} disabled={review.isPending}><Check size={12} /> All still correct</button>
+          </div>
+        )}
         <section>
           <div className="section-label">Test cases <span className="faint">{data.cases.length}</span></div>
           {data.cases.length === 0 ? (
@@ -243,6 +264,9 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
                   <span className="mono muted" style={{ width: 62 }}>{caseKey}-{c.number}</span>
                   <span className="truncate grow">{c.title}</span>
                   {c.status === "deprecated" && <span className="chip">Deprecated</span>}
+                  {c.review_needed && (
+                    <button className="btn sm" title="Mark as still matching the requirement" onClick={(e) => { e.preventDefault(); e.stopPropagation(); review.mutate([c.id]); }}>Review</button>
+                  )}
                 </Link>
               ))}
             </div>
@@ -250,9 +274,24 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
           <div className="row" style={{ marginTop: 8 }}>
             <button className="btn sm" onClick={() => setLinking(true)}><Link2 size={13} /> Link test cases</button>
             <Link className="btn ghost sm" to={`/p/${pid}/cases?newFor=${data.id}`}>Write a new case</Link>
+            <span className="spacer" />
+            <button className="btn sm" disabled={!data.cases.some((c) => c.status !== "deprecated")} onClick={() => setRunning(true)}><Play size={12} /> Start run</button>
+          </div>
+        </section>
+        <section>
+          <div className="section-label"><History size={13} /> History <span className="faint">{data.history.length}</span></div>
+          <div className="col" style={{ gap: 8 }}>
+            {data.history.map((h) => <RevisionRow key={h.id} rev={h} caseKey={caseKey} />)}
           </div>
         </section>
       </div>
+      {running && (
+        <NewRunModal
+          initialCaseIds={data.cases.filter((c) => c.status !== "deprecated").map((c) => c.id)}
+          initialTitle={`REQ-${data.number}: ${data.title}`.slice(0, 120)}
+          onClose={() => setRunning(false)}
+        />
+      )}
       {linking && (
         <LinkCasesModal
           initial={data.cases.map((c) => c.id)}
@@ -271,6 +310,72 @@ function LinkCasesModal({ initial, onClose, onSave, saving }: { initial: number[
     <Modal title="Link test cases" onClose={onClose} width={560}
       footer={<button className="btn primary" disabled={saving} onClick={() => onSave([...selected])}>Save {selected.size} linked</button>}>
       <CasePicker selected={selected} onChange={setSelected} />
+    </Modal>
+  );
+}
+
+const FIELD_LABEL: Record<string, string> = { title: "Title", description: "Description", priority: "Priority", status: "Status", source: "Source" };
+
+function RevisionRow({ rev, caseKey }: { rev: RequirementRevision; caseKey: string }) {
+  const keys = (nums: number[]) => nums.map((n) => `${caseKey}-${n}`).join(", ");
+  return (
+    <div style={{ fontSize: 12.5 }}>
+      <div className="faint" style={{ fontSize: 11.5 }}>{timeAgo(rev.at.replace(" ", "T") + "Z")}{rev.material && " · wording changed"}</div>
+      {rev.changes.map((c, i) => (
+        <div key={i}>
+          {c.field === "created" && "Created"}
+          {c.field === "cases" && (
+            <>
+              {!!c.added?.length && <>Linked {keys(c.added)}. </>}
+              {!!c.removed?.length && <>Unlinked {keys(c.removed)}.</>}
+            </>
+          )}
+          {c.field === "description" && (
+            <details>
+              <summary style={{ cursor: "pointer" }}>Description edited</summary>
+              <div className="muted" style={{ whiteSpace: "pre-wrap" }}>Before: {c.from || "(empty)"}</div>
+              <div style={{ whiteSpace: "pre-wrap" }}>After: {c.to || "(empty)"}</div>
+            </details>
+          )}
+          {c.field in FIELD_LABEL && c.field !== "description" && (
+            <>{FIELD_LABEL[c.field]}: <span className="muted">{c.from || "(empty)"}</span> → {c.to || "(empty)"}</>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Link ticked cases to one requirement, keeping whatever is already linked. */
+export function LinkToRequirementModal({ caseIds, onClose, onDone }: { caseIds: number[]; onClose: () => void; onDone: () => void }) {
+  const { pid } = useParams();
+  const toast = useToast();
+  const invalidate = useInvalidate();
+  const { data: reqs = [] } = useQuery({ queryKey: ["requirements", pid], queryFn: () => api.get<Requirement[]>(`/api/projects/${pid}/requirements`) });
+  const [picked, setPicked] = useState<number | null>(null);
+  const link = useMutation({
+    mutationFn: () => api.post<RequirementDetail>(`/api/requirements/${picked}/cases`, { caseIds }),
+    onSuccess: (r) => { invalidate(); toast("success", `Linked ${caseIds.length} ${caseIds.length === 1 ? "case" : "cases"} to REQ-${r.number}`); onDone(); onClose(); },
+    onError: (e: Error) => toast("error", e.message),
+  });
+  const open = reqs.filter((r) => r.status !== "deprecated");
+  return (
+    <Modal title={`Link ${caseIds.length} ${caseIds.length === 1 ? "case" : "cases"} to a requirement`} onClose={onClose} width={520}
+      footer={<button className="btn primary" disabled={picked == null || link.isPending} onClick={() => link.mutate()}>Link</button>}>
+      {open.length === 0 ? (
+        <div className="muted">No requirements yet. Add some on the Requirements page first.</div>
+      ) : (
+        <div className="card" style={{ maxHeight: 340, overflow: "auto" }}>
+          {open.map((r) => (
+            <label key={r.id} className="list-row" style={{ height: 32, padding: "0 12px" }}>
+              <input type="radio" name="req" checked={picked === r.id} onChange={() => setPicked(r.id)} />
+              <PriorityIcon priority={r.priority} />
+              <span className="mono muted" style={{ width: 62 }}>REQ-{r.number}</span>
+              <span className="title">{r.title}</span>
+            </label>
+          ))}
+        </div>
+      )}
     </Modal>
   );
 }

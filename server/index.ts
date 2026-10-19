@@ -20,7 +20,7 @@ import { exportCasesCsv, exportJson, exportMarkdownZip, exportRequirementsCsv, e
 import { htmlToPdf } from "./pdf.ts";
 import { renderReport } from "./reportHtml.ts";
 import { automationCandidates, insightsData } from "./insights.ts";
-import { createRequirement, getRequirement, listRequirements, requirementsForCase, requirementSummary, setCaseRequirements, setRequirementCases } from "./requirements.ts";
+import { addRequirementCases, createRequirement, getRequirement, linkCaseByTags, listRequirements, markReviewed, recordRevision, requirementsForCase, requirementSummary, setCaseRequirements, setRequirementCases, type RevisionChange } from "./requirements.ts";
 import { dashboardData, listMilestones, milestoneReport } from "./stats.ts";
 import { parseReport, type Framework, type ParsedReport } from "./importers/parse.ts";
 
@@ -246,6 +246,7 @@ app.post("/api/projects/:id/cases", (req) => {
         pos.p,
       ) as { id: number };
     if (body.steps) saveSteps(row.id, body.steps);
+    linkCaseByTags(row.id);
     return row.id;
   })();
   return getCase(id);
@@ -271,6 +272,7 @@ app.patch("/api/cases/:id", (req) => {
       id,
     );
     if (body.steps) saveSteps(id, body.steps);
+    linkCaseByTags(id);
   })();
   return getCase(id);
 });
@@ -801,10 +803,36 @@ app.patch("/api/requirements/:id", (req) => {
   const id = idParam(req);
   const body = requirementBody.partial().parse(req.body);
   const cur = must(db.prepare("SELECT * FROM requirements WHERE id = ?").get(id) as Record<string, any> | undefined, "Requirement");
-  db.prepare("UPDATE requirements SET title = ?, description = ?, priority = ?, status = ?, source = ?, updated_at = datetime('now') WHERE id = ?").run(
-    body.title ?? cur.title, body.description ?? cur.description, body.priority ?? cur.priority, body.status ?? cur.status, body.source ?? cur.source, id,
-  );
-  if (body.caseIds) setRequirementCases(id, cur.project_id, body.caseIds);
+  db.transaction(() => {
+    const next = { title: body.title ?? cur.title, description: body.description ?? cur.description, priority: body.priority ?? cur.priority, status: body.status ?? cur.status, source: body.source ?? cur.source };
+    db.prepare("UPDATE requirements SET title = ?, description = ?, priority = ?, status = ?, source = ?, updated_at = datetime('now') WHERE id = ?").run(
+      next.title, next.description, next.priority, next.status, next.source, id,
+    );
+    // Wording changes ask for a second look at the linked cases; the rest is just recorded.
+    const changes: RevisionChange[] = (["title", "description", "priority", "status", "source"] as const)
+      .filter((f) => next[f] !== cur[f])
+      .map((f) => ({ field: f, from: cur[f], to: next[f] }));
+    recordRevision(id, changes, changes.some((c) => c.field === "title" || c.field === "description"));
+    if (body.caseIds) setRequirementCases(id, cur.project_id, body.caseIds);
+  })();
+  return getRequirement(id);
+});
+
+// Add cases to a requirement without replacing the ones already linked (bulk link from the case list).
+app.post("/api/requirements/:id/cases", (req) => {
+  const id = idParam(req);
+  const { caseIds } = z.object({ caseIds: z.array(z.number().int()).min(1).max(5000) }).parse(req.body);
+  const cur = must(db.prepare("SELECT project_id FROM requirements WHERE id = ?").get(id) as { project_id: number } | undefined, "Requirement");
+  addRequirementCases(id, cur.project_id, caseIds);
+  return getRequirement(id);
+});
+
+// Confirm linked cases still match the requirement's current wording (all of them unless caseIds is given).
+app.post("/api/requirements/:id/review", (req) => {
+  const id = idParam(req);
+  const { caseIds } = z.object({ caseIds: z.array(z.number().int()).max(5000).optional() }).parse(req.body ?? {});
+  must(db.prepare("SELECT id FROM requirements WHERE id = ?").get(id), "Requirement");
+  markReviewed(id, caseIds);
   return getRequirement(id);
 });
 

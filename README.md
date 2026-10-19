@@ -24,6 +24,15 @@ Each requirement shows how well it is covered, from the latest result of its lin
 **Not run yet** or **No test cases**. Deprecated cases don't count. The dashboard shows requirement coverage, sprint reports list the
 requirements that are failing or weren't run, and exports include them (JSON and a requirements CSV).
 
+- **Auto-link with `@REQ-4`**: put it in a case's title, description or tag, or in an automated test's title or tag, and the case
+  (for a test: the case it is linked to) is linked to requirement 4. This only ever adds links.
+- **Bulk link**: tick cases on Test cases and choose **Link to requirement**. The **No requirement** tab lists cases nobody covers.
+- **Start run**: on a requirement, runs all its linked cases as a manual run named after it.
+- **Change history**: every edit to a requirement (wording, priority, status, source, linked cases) is recorded on the page.
+  When the title or description changes, the linked cases are flagged **to review** (on the requirement, in its list, in the case
+  editor and under the **Needs review** tab) until you confirm them with **Still correct**. Cases linked afterwards start confirmed.
+- Manual bug drafts list the requirements the failed case covers.
+
 ## Backup and restore
 
 **Backup & restore** (sidebar, key `8`) downloads one zip with all projects: the database and every uploaded file. Restore it on this or

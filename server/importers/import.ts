@@ -1,3 +1,4 @@
+import { linkCaseByText } from "../requirements.ts";
 import { randomUUID } from "node:crypto";
 import { unlinkSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
@@ -127,7 +128,11 @@ export function importReport(report: ParsedReport, opts: ImportOptions, files?: 
         caseId: resolveCase(extractCaseRefs(t.title, t.suitePath, ...t.tags)),
         status: t.status,
       }) as { id: number; case_id: number | null };
-      if (test.case_id) linked++;
+      if (test.case_id) {
+        linked++;
+        // `@REQ-n` on an automated test covers requirement n through the case it is linked to.
+        linkCaseByText(test.case_id, project.id, [t.title, t.suitePath, ...t.tags].join("\n"));
+      }
       const row = insertResult.get(
         run.id, test.case_id, test.id, t.status, t.flaky ? 1 : 0, t.durationMs, t.error, i, startedAt, t.detail ? JSON.stringify(t.detail) : null,
       ) as { id: number };

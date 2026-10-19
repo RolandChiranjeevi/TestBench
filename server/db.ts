@@ -289,6 +289,18 @@ CREATE TABLE IF NOT EXISTS requirement_cases (
   PRIMARY KEY (requirement_id, case_id)
 );
 CREATE INDEX IF NOT EXISTS requirement_cases_case ON requirement_cases(case_id);`);
+  // Edits to a requirement, newest last. `material` marks a change to the title or description: linked cases then need a second look.
+  d.exec(`
+CREATE TABLE IF NOT EXISTS requirement_revisions (
+  id INTEGER PRIMARY KEY,
+  requirement_id INTEGER NOT NULL REFERENCES requirements(id) ON DELETE CASCADE,
+  changed_at TEXT NOT NULL DEFAULT (datetime('now')),
+  material INTEGER NOT NULL DEFAULT 0,
+  changes TEXT NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS requirement_revisions_req ON requirement_revisions(requirement_id);`);
+  // The newest material revision a case was linked or last confirmed against; a later one means the case may be out of date.
+  if (!hasColumn("requirement_cases", "reviewed_rev")) d.exec("ALTER TABLE requirement_cases ADD COLUMN reviewed_rev INTEGER NOT NULL DEFAULT 0");
   if (!hasColumn("projects", "next_requirement_number")) d.exec("ALTER TABLE projects ADD COLUMN next_requirement_number INTEGER NOT NULL DEFAULT 1");
 
   // Automatic import of new GitHub workflow runs. auto_since is when it was switched on: older runs are never pulled in.

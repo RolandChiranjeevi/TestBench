@@ -12,13 +12,16 @@ export interface CaseSummary {
 export type CoverageState = "uncovered" | "failing" | "passing" | "partial" | "untested";
 export interface Coverage { state: CoverageState; cases: number; passing: number; failing: number; notRun: number }
 export type RequirementStatus = "draft" | "approved" | "deprecated";
-export interface RequirementRef { id: number; number: number; title: string; status: RequirementStatus; priority: Priority }
+export interface RequirementRef { id: number; number: number; title: string; status: RequirementStatus; priority: Priority; review_needed: boolean }
+export interface RevisionChange { field: string; from?: string; to?: string; added?: number[]; removed?: number[] }
+export interface RequirementRevision { id: number; at: string; material: boolean; changes: RevisionChange[] }
 export interface Requirement {
   id: number; project_id: number; number: number; title: string; description: string; priority: Priority; status: RequirementStatus;
-  source: string; created_at: string; updated_at: string; caseIds: number[]; activeCaseIds: number[]; coverage: Coverage;
+  source: string; created_at: string; updated_at: string; caseIds: number[]; activeCaseIds: number[]; coverage: Coverage; reviewCount: number;
 }
-export interface RequirementDetail extends Omit<Requirement, "caseIds" | "activeCaseIds"> {
-  cases: { id: number; number: number; title: string; priority: Priority; status: CaseSummary["status"]; suite_name: string | null; last_status: Status | null }[];
+export interface RequirementDetail extends Omit<Requirement, "caseIds" | "activeCaseIds" | "reviewCount"> {
+  cases: { id: number; number: number; title: string; priority: Priority; status: CaseSummary["status"]; suite_name: string | null; last_status: Status | null; review_needed: boolean }[];
+  history: RequirementRevision[];
 }
 export interface AutomatedTest {
   id: number; framework: string; file: string; suite_path: string; title: string; full_name: string; case_id: number | null;

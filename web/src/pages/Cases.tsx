@@ -7,8 +7,9 @@ import { Empty, Kbd, Modal, PriorityIcon, StatusIcon, useHotkeys, useToast } fro
 import { CaseEditor } from "./CaseEditor";
 import { NewRunModal } from "./Runs";
 import { TemplateModal } from "./Templates";
+import { LinkToRequirementModal } from "./Requirements";
 
-type Filter = "all" | "manual" | "automated" | "failing";
+type Filter = "all" | "manual" | "automated" | "failing" | "unlinked";
 
 export function CasesPage() {
   const { pid } = useParams();
@@ -36,6 +37,7 @@ export function CasesPage() {
   const [suiteModal, setSuiteModal] = useState<{ suite?: Suite; parentId?: number | null } | null>(null);
   const [runModal, setRunModal] = useState(false);
   const [templateModal, setTemplateModal] = useState(false);
+  const [linkModal, setLinkModal] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -68,6 +70,7 @@ export function CasesPage() {
       if (filter === "manual" && c.automated_count > 0) return false;
       if (filter === "automated" && c.automated_count === 0) return false;
       if (filter === "failing" && c.last_status !== "failed" && c.last_status !== "blocked") return false;
+      if (filter === "unlinked" && (c.requirement_count || c.status === "deprecated")) return false;
       if (!q) return true;
       return `${project?.key}-${c.number} ${c.title} ${c.tags.join(" ")}`.toLowerCase().includes(q);
     });
@@ -125,6 +128,7 @@ export function CasesPage() {
 
   const counts = {
     all: cases?.length ?? 0,
+    unlinked: cases?.filter((c) => !c.requirement_count && c.status !== "deprecated").length ?? 0,
     manual: cases?.filter((c) => c.automated_count === 0).length ?? 0,
     automated: cases?.filter((c) => c.automated_count > 0).length ?? 0,
     failing: cases?.filter((c) => c.last_status === "failed" || c.last_status === "blocked").length ?? 0,
@@ -197,6 +201,9 @@ export function CasesPage() {
               <button className="btn sm" onClick={() => setRunModal(true)}>
                 <Play size={12} /> Start run <Kbd>R</Kbd>
               </button>
+              <button className="btn sm" onClick={() => setLinkModal(true)}>
+                <BookOpenCheck size={12} /> Link to requirement
+              </button>
               <button className="btn sm" onClick={() => setTemplateModal(true)}>
                 <ClipboardList size={12} /> Save as template
               </button>
@@ -207,9 +214,9 @@ export function CasesPage() {
             </>
           ) : (
             <div className="tabs" role="tablist">
-              {(["all", "manual", "automated", "failing"] as const).map((f) => (
+              {(["all", "manual", "automated", "failing", "unlinked"] as const).map((f) => (
                 <button key={f} role="tab" aria-selected={filter === f} className={`tab${filter === f ? " active" : ""}`} onClick={() => setFilter(f)}>
-                  {{ all: "All", manual: "Manual only", automated: "Automated", failing: "Failing" }[f]}
+                  {{ all: "All", manual: "Manual only", automated: "Automated", failing: "Failing", unlinked: "No requirement" }[f]}
                   <span className="count">{counts[f]}</span>
                 </button>
               ))}
@@ -311,6 +318,7 @@ export function CasesPage() {
       )}
       {suiteModal && <SuiteModal projectId={projectId} suites={suites} {...suiteModal} onClose={() => setSuiteModal(null)} />}
       {runModal && <NewRunModal initialCaseIds={[...checked]} onClose={() => setRunModal(false)} onCreated={() => setChecked(new Set())} />}
+      {linkModal && <LinkToRequirementModal caseIds={[...checked]} onClose={() => setLinkModal(false)} onDone={() => setChecked(new Set())} />}
       {templateModal && <TemplateModal initialCaseIds={[...checked]} onClose={() => setTemplateModal(false)} />}
     </div>
   );

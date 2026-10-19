@@ -301,12 +301,21 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted }: { caseId: num
           <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
             {data.requirements.length === 0 && <span className="muted" style={{ fontSize: 12.5 }}>Not linked to a requirement.</span>}
             {data.requirements.map((r) => (
-              <Link key={r.id} to={`/p/${pid}/requirements?req=${r.id}`} className="chip" title={r.title} style={{ textDecoration: r.status === "deprecated" ? "line-through" : undefined }}>
-                REQ-{r.number} <span className="truncate" style={{ maxWidth: 200 }}>{r.title}</span>
+              <Link key={r.id} to={`/p/${pid}/requirements?req=${r.id}`} className="chip" title={r.review_needed ? `${r.title} (reworded, review needed)` : r.title} style={{ textDecoration: r.status === "deprecated" ? "line-through" : undefined, borderColor: r.review_needed ? "var(--blocked)" : undefined }}>
+                {r.review_needed && <span className="dot" style={{ background: "var(--blocked)" }} />}REQ-{r.number} <span className="truncate" style={{ maxWidth: 200 }}>{r.title}</span>
               </Link>
             ))}
             <button className="btn ghost sm" onClick={() => setLinkingReqs(true)}><Link2 size={13} /> Link</button>
           </div>
+          {data.requirements.filter((r) => r.review_needed).map((r) => (
+            <div key={r.id} className="row" style={{ marginTop: 8, fontSize: 12.5, color: "var(--blocked)" }}>
+              <span className="grow">REQ-{r.number} was reworded after this case was linked. Check the case still fits.</span>
+              <button className="btn sm" onClick={async () => {
+                await api.post(`/api/requirements/${r.id}/review`, { caseIds: [caseId] });
+                for (const k of ["case", "requirements", "requirement"]) qc.invalidateQueries({ queryKey: [k] });
+              }}>Still correct</button>
+            </div>
+          ))}
         </section>
 
         <section>

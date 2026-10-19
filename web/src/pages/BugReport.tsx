@@ -84,6 +84,7 @@ function manualDraft(result: ResultDetail, projectKey: string, run: { title: str
       facts: [
         ["Environment", [run.environment, run.milestone, `Run: ${run.title}`].filter(Boolean).join(" · ")],
         ["Test case", `${caseId} ${c.title}`],
+        ...((c.requirements ?? []).length ? [["Requirements", c.requirements.map((r) => `REQ-${r.number} ${r.title}`).join("; ")] as [string, string]] : []),
       ],
       preconditions: c.preconditions,
       stepsTitle: "Steps to reproduce",
