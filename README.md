@@ -37,6 +37,9 @@ and is never stored.
   (rendered with your installed Google Chrome; set `TESTBENCH_CHROME_CHANNEL=msedge` to use Edge) or as standalone HTML.
   Sprint dates are set on the Reports page and decide which sprint counts as "previous".
 - **Export** (Reports page): full JSON backup, one Markdown file per case (zip), cases CSV, results CSV.
+- **Run templates** (Runs → Templates): a saved set of cases, like "Smoke test", with an optional default environment. Start a run
+  from one in a click, or pick it in the New run dialog. Make one from ticked cases on Test cases ("Save as template"), or tick
+  "Save this selection as a template" when starting a run. Templates follow your cases: deleted cases drop out, deprecated ones are skipped.
 - Manual runs freeze each case's title and steps when the run starts, so editing a case later doesn't rewrite old runs.
 
 ## Keyboard

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, Calendar, ExternalLink, FileDown, FileJson, FileSpreadsheet, FileText, Loader2, Plus, Rocket, Zap } from "lucide-react";
+import { Archive, Calendar, ExternalLink, FileDown, FileJson, FileSpreadsheet, FileText, Loader2, Plus, Rocket, Trash2, Zap } from "lucide-react";
 import { api, type Milestone } from "../api";
 import { Empty, Modal, useToast } from "../components/ui";
 
@@ -34,6 +34,15 @@ export function ReportsPage() {
     onSuccess: () => {
       for (const k of ["milestones", "runs", "dashboard"]) qc.invalidateQueries({ queryKey: [k, pid] });
       setNonce((n) => n + 1);
+    },
+    onError: (e: Error) => toast("error", e.message),
+  });
+
+  const remove = useMutation({
+    mutationFn: () => api.del(`/api/milestones/${mid}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["milestones", pid] });
+      navigate(`/p/${pid}/reports`, { replace: true });
     },
     onError: (e: Error) => toast("error", e.message),
   });
@@ -111,7 +120,7 @@ export function ReportsPage() {
             </Empty>
           ) : current ? (
             <>
-              <MilestoneBar key={current.id} m={current} onChange={(b) => update.mutate(b)} />
+              <MilestoneBar key={current.id} m={current} onChange={(b) => update.mutate(b)} onDelete={() => confirm(`Delete "${current.name}"? It has no runs.`) && remove.mutate()} />
               <div style={{ flex: 1, minHeight: 0, padding: 16, display: "flex", justifyContent: "center" }}>
                 {current.run_count === 0 ? (
                   <Empty icon={<FileText size={20} />} title="No runs in this sprint yet">Start a manual run or import results and set “{current.name}” as the sprint/release.</Empty>
@@ -134,7 +143,7 @@ export function ReportsPage() {
   );
 }
 
-function MilestoneBar({ m, onChange }: { m: Milestone; onChange: (b: MilestoneEdit) => void }) {
+function MilestoneBar({ m, onChange, onDelete }: { m: Milestone; onChange: (b: MilestoneEdit) => void; onDelete: () => void }) {
   const [name, setName] = useState(m.name);
   const [start, setStart] = useState(m.start_date ?? "");
   const [end, setEnd] = useState(m.end_date ?? "");
@@ -153,6 +162,11 @@ function MilestoneBar({ m, onChange }: { m: Milestone; onChange: (b: MilestoneEd
         To <input type="date" className="input" style={{ width: 140, height: 28 }} value={end} min={start || undefined} onChange={(e) => { setEnd(e.target.value); onChange({ endDate: e.target.value || null }); }} />
       </label>
       <span className="faint" style={{ fontSize: 12 }}>Dates label the report and order sprints for comparison.</span>
+      {m.run_count === 0 && (
+        <button className="btn ghost sm danger" style={{ marginLeft: "auto" }} onClick={onDelete}>
+          <Trash2 size={13} /> Delete empty {m.kind}
+        </button>
+      )}
     </div>
   );
 }

@@ -691,6 +691,16 @@ app.patch("/api/milestones/:id", (req) => {
   })();
 });
 
+// Only empty sprints can go: runs reference a sprint by name, so deleting a used one would orphan them.
+app.delete("/api/milestones/:id", (req) => {
+  const id = idParam(req);
+  const m = must(db.prepare("SELECT * FROM milestones WHERE id = ?").get(id) as Record<string, any> | undefined, "Milestone");
+  const used = db.prepare("SELECT COUNT(*) AS n FROM runs WHERE project_id = ? AND milestone = ?").get(m.project_id, m.name) as { n: number };
+  if (used.n) throw new HttpError(409, `"${m.name}" has ${used.n} ${used.n === 1 ? "run" : "runs"}. Delete or move those runs first.`);
+  db.prepare("DELETE FROM milestones WHERE id = ?").run(id);
+  return { ok: true };
+});
+
 // ---------------- Reports ----------------
 
 const reportFor = (req: FastifyRequest) => must(milestoneReport(idParam(req)) ?? undefined, "Milestone");
