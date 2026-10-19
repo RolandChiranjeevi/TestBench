@@ -55,11 +55,14 @@ export interface AutomatedResultDetail {
 export interface GithubSource {
   id: number; owner: string; repo: string; workflow: string; artifact_pattern: string;
   auto_import: number; auto_since: string | null; branch_filter: string; default_milestone: string; last_checked_at: string | null; last_error: string;
+  imported_count?: number; skipped_count?: number; last_skip_note?: string | null;
 }
 export interface CheckResult { imported: number; skipped: number; waiting: number; error: string | null; source: GithubSource }
 export interface WorkflowRun {
   id: number; name: string; display_title: string; run_number: number; head_branch: string; event: string;
   status: string; conclusion: string | null; created_at: string; html_url: string; imported_run_id: number | null;
+  /** Test artifacts this run uploaded (null = unknown). 0 means there is nothing to import. */
+  artifact_count: number | null;
 }
 export interface BackupInfo {
   projects: number; cases: number; runs: number; dbBytes: number; uploadFiles: number; uploadBytes: number;

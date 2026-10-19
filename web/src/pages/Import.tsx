@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Download, FileUp, FolderOpen, GitBranch, Loader2, Paperclip, Plus, RefreshCw, Trash2, Upload, XCircle } from "lucide-react";
-import { api, timeAgo, type CheckResult, type GithubSource, type ImportResult, type Milestone, type Project, type WorkflowRun } from "../api";
+import { api, formatDateTime, timeAgo, type CheckResult, type GithubSource, type ImportResult, type Milestone, type Project, type WorkflowRun } from "../api";
 import { Github, Modal, useToast } from "../components/ui";
 
 export function ImportPage() {
@@ -315,7 +315,8 @@ function AutoImport({ source }: { source: GithubSource }) {
           </div>
           <div className="row">
             <span className="faint" style={{ fontSize: 12 }}>
-              Checked every 5 minutes while TestBench is running. Only runs created after you switched this on are imported, never older history.
+              Checked every 5 minutes while TestBench is running. Only runs created after {source.auto_since ? formatDateTime(source.auto_since) : "you switched this on"} are
+              imported automatically; older runs need Import below.
             </span>
             <span className="spacer" />
             <button className="btn sm" disabled={check.isPending} onClick={() => check.mutate()}>
@@ -323,6 +324,11 @@ function AutoImport({ source }: { source: GithubSource }) {
             </button>
           </div>
           {source.last_error && <div style={{ color: "var(--failed)", fontSize: 12.5 }}>{source.last_error}</div>}
+          <div className="faint" style={{ fontSize: 12 }} title={source.last_skip_note || undefined}>
+            {source.imported_count || source.skipped_count
+              ? `Imported ${source.imported_count ?? 0} automatically${source.skipped_count ? ` · skipped ${source.skipped_count} with no test reports (hover for why)` : ""}`
+              : "Nothing imported automatically yet."}
+          </div>
         </>
       )}
     </div>
@@ -357,7 +363,7 @@ function WorkflowRuns({ source }: { source: GithubSource }) {
   return (
     <div className="card" style={{ background: "var(--bg)", maxHeight: 420, overflow: "auto" }}>
       <div className="group-header" style={{ padding: "0 12px" }}>
-        Recent runs <span className="count">{runs.length}</span>
+        Workflow runs on GitHub <span className="count">{runs.length}</span>
         <span className="spacer" />
         <button className="btn ghost icon sm" onClick={() => refetch()} aria-label="Refresh"><RefreshCw size={12} className={isFetching ? "spin" : ""} /></button>
       </div>
@@ -369,6 +375,7 @@ function WorkflowRuns({ source }: { source: GithubSource }) {
             <span className="row faint" style={{ fontSize: 11.5, gap: 6, whiteSpace: "nowrap", overflow: "hidden" }}>
               <span>{r.name} #{r.run_number}</span>·<GitBranch size={10} style={{ flexShrink: 0 }} />
               <span className="truncate" style={{ maxWidth: 180 }}>{r.head_branch}</span>·<span>{timeAgo(r.created_at)}</span>
+              {r.artifact_count === 0 && <span style={{ color: "var(--blocked)" }} title="This run uploaded no test artifacts, so there is nothing to import">· no test artifacts</span>}
             </span>
           </div>
           {r.imported_run_id ? (
@@ -376,9 +383,9 @@ function WorkflowRuns({ source }: { source: GithubSource }) {
           ) : (
             <button
               className="btn sm"
-              disabled={r.status !== "completed" || importing != null}
+              disabled={r.status !== "completed" || importing != null || r.artifact_count === 0}
               onClick={() => importRun(r.id)}
-              title={r.status !== "completed" ? "Still running" : undefined}
+              title={r.status !== "completed" ? "Still running" : r.artifact_count === 0 ? "No test artifacts on this run. Add an upload-artifact step to the workflow (see Setup below)." : undefined}
             >
               {importing === r.id ? <Loader2 size={12} className="spin" /> : <Download size={12} />} Import
             </button>

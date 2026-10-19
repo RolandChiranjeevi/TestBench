@@ -83,6 +83,20 @@ function matchesPattern(name: string, pattern: string) {
   });
 }
 
+/**
+ * How many usable (unexpired, matching the artifact pattern) artifacts each recent workflow run uploaded, keyed by run id.
+ * One API call covers the latest 100 artifacts, which is enough for the runs the Import page lists.
+ */
+export async function artifactsByRun(src: GithubSource): Promise<Map<number, number>> {
+  const { artifacts } = await gh<{ artifacts: (Artifact & { workflow_run?: { id: number } })[] }>(`${repoPath(src)}/actions/artifacts?per_page=100`);
+  const counts = new Map<number, number>();
+  for (const a of artifacts) {
+    if (a.expired || !a.workflow_run || !matchesPattern(a.name, src.artifact_pattern)) continue;
+    counts.set(a.workflow_run.id, (counts.get(a.workflow_run.id) ?? 0) + 1);
+  }
+  return counts;
+}
+
 export async function importRun(src: GithubSource, runId: number): Promise<ImportResult & { artifacts: string[] }> {
   const run = await gh<WorkflowRun>(`${repoPath(src)}/actions/runs/${runId}`);
   const { artifacts } = await gh<{ artifacts: Artifact[] }>(`${repoPath(src)}/actions/runs/${runId}/artifacts?per_page=100`);

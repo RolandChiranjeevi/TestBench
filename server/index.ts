@@ -12,7 +12,7 @@ import { checkSource, startAutoImport } from "./autoimport.ts";
 import { backupInfo, restoreFromZip, streamBackup } from "./backup.ts";
 import { DATA_DIR, db, ensureMilestone, parseJson, snapshotCase, UPLOAD_DIR } from "./db.ts";
 import { seedDemo } from "./demo.ts";
-import { getToken, importRun, listRuns, type GithubSource } from "./importers/github.ts";
+import { artifactsByRun, getToken, importRun, listRuns, type GithubSource } from "./importers/github.ts";
 import { bagFromFiles, bagFromZip, dedupeReports, mergeBags, readReports, type FileBag } from "./importers/bag.ts";
 import { importReport, mergeReports } from "./importers/import.ts";
 import type { CaseSnapshot } from "./db.ts";
@@ -642,7 +642,14 @@ app.get("/api/github/status", async () => {
 });
 
 app.get("/api/projects/:id/github-sources", (req) =>
-  db.prepare("SELECT * FROM github_sources WHERE project_id = ? ORDER BY id").all(idParam(req)),
+  db
+    .prepare(`
+      SELECT gs.*,
+        (SELECT COUNT(*) FROM github_seen s WHERE s.source_id = gs.id AND s.outcome = 'imported') AS imported_count,
+        (SELECT COUNT(*) FROM github_seen s WHERE s.source_id = gs.id AND s.outcome = 'skipped') AS skipped_count,
+        (SELECT s.note FROM github_seen s WHERE s.source_id = gs.id AND s.outcome = 'skipped' ORDER BY s.seen_at DESC LIMIT 1) AS last_skip_note
+      FROM github_sources gs WHERE gs.project_id = ? ORDER BY gs.id`)
+    .all(idParam(req)),
 );
 
 app.post("/api/projects/:id/github-sources", (req) => {
@@ -674,6 +681,8 @@ const getSource = (id: number) => must(db.prepare("SELECT * FROM github_sources 
 app.get("/api/github-sources/:id/runs", async (req) => {
   const src = getSource(idParam(req));
   const runs = await listRuns(src);
+  // null = couldn't find out (the run list still works without it)
+  const artifacts = await artifactsByRun(src).catch(() => null);
   const imported = new Map(
     (
       db
@@ -681,7 +690,11 @@ app.get("/api/github-sources/:id/runs", async (req) => {
         .all(src.project_id, `${src.owner}/${src.repo}#%`) as { id: number; external_id: string }[]
     ).map((r) => [r.external_id, r.id]),
   );
-  return runs.map((r) => ({ ...r, imported_run_id: imported.get(`${src.owner}/${src.repo}#${r.id}`) ?? null }));
+  return runs.map((r) => ({
+    ...r,
+    imported_run_id: imported.get(`${src.owner}/${src.repo}#${r.id}`) ?? null,
+    artifact_count: artifacts ? (artifacts.get(r.id) ?? 0) : null,
+  }));
 });
 
 app.post("/api/github-sources/:id/runs/:runId/import", async (req) => {
