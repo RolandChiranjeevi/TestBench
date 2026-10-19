@@ -120,7 +120,7 @@ export function ReportsPage() {
                     key={`${current.id}-${nonce}`}
                     title={`${current.name} report`}
                     src={`/api/milestones/${current.id}/report.html?v=${nonce}`}
-                    sandbox=""
+                    sandbox="allow-same-origin" /* no allow-scripts: the report has none, and its CSP forbids them */
                     style={{ width: "min(900px, 100%)", height: "100%", border: "1px solid var(--border-strong)", borderRadius: 6, background: "#fff", boxShadow: "var(--shadow)" }}
                   />
                 )}

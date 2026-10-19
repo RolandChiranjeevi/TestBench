@@ -78,9 +78,10 @@ export function dashboardData(projectId: number) {
         GROUP BY a.id ${having} ${order} LIMIT 8`)
       .all(projectId) as { id: number; title: string; file: string; framework: string; last_status: string; case_number: number | null; runs: number; failures: number; flaky: number; avg_ms: number }[];
 
-  const mostFailing = testStats("HAVING failures > 0", "ORDER BY failures DESC, runs ASC");
-  const flaky = testStats("HAVING flaky > 0", "ORDER BY flaky DESC");
-  const slowest = testStats("", "ORDER BY avg_ms DESC");
+  // Spell out the aggregates: in SQLite a bare `flaky` in HAVING/ORDER BY resolves to the results.flaky column, not the alias.
+  const mostFailing = testStats("HAVING SUM(r.status = 'failed') > 0", "ORDER BY SUM(r.status = 'failed') DESC, COUNT(r.id) ASC");
+  const flaky = testStats("HAVING SUM(r.flaky) > 0", "ORDER BY SUM(r.flaky) DESC");
+  const slowest = testStats("", "ORDER BY AVG(r.duration_ms) DESC");
 
   const failingCases = db
     .prepare(`

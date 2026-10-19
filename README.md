@@ -29,7 +29,17 @@ Upload the report folder with `actions/upload-artifact`, connect the repo under 
 and click **Import** on a workflow run. The token comes from `GITHUB_TOKEN` or a logged-in `gh` CLI
 and is never stored.
 
+## Dashboard, sprint reports and export
+
+- **Dashboard**: automated pass-rate trend, automation coverage, failing and flaky tests, slowest tests.
+- **Sprint reports**: give runs a sprint or release name (a dropdown suggests existing ones). Each name gets a report with a
+  headline, pass rate, comparison with the previous sprint, results per suite and open failures. Download it as **PDF**
+  (rendered with your installed Google Chrome; set `TESTBENCH_CHROME_CHANNEL=msedge` to use Edge) or as standalone HTML.
+  Sprint dates are set on the Reports page and decide which sprint counts as "previous".
+- **Export** (Reports page): full JSON backup, one Markdown file per case (zip), cases CSV, results CSV.
+- Manual runs freeze each case's title and steps when the run starts, so editing a case later doesn't rewrite old runs.
+
 ## Keyboard
 
-`1`–`4` switch pages · `C` new case/run · `J`/`K` move · `X` select · `R` run selected ·
+`1`–`6` switch pages · `C` new case/run · `J`/`K` move · `X` select · `R` run selected ·
 `P`/`F`/`B`/`S` pass/fail/block/skip while executing · `⌘V` paste a screenshot.
