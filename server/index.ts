@@ -20,6 +20,7 @@ import { exportCasesCsv, exportJson, exportMarkdownZip, exportRequirementsCsv, e
 import { htmlToPdf } from "./pdf.ts";
 import { renderReport } from "./reportHtml.ts";
 import { automationCandidates, insightsData } from "./insights.ts";
+import { addRequirementAttachment, removeRequirementAttachment, requirementAttachmentFiles } from "./requirements.ts";
 import { addChecklistItem, copyChecklist, listChecklist } from "./checklist.ts";
 import { addRequirementCases, createRequirement, getRequirement, linkCaseByTags, listRequirements, markReviewed, recordRevision, requirementsForCase, requirementSummary, setCaseRequirements, setRequirementCases, type RevisionChange } from "./requirements.ts";
 import { dashboardData, listMilestones, milestoneReport } from "./stats.ts";
@@ -837,8 +838,38 @@ app.post("/api/requirements/:id/review", (req) => {
   return getRequirement(id);
 });
 
-app.delete("/api/requirements/:id", (req) => {
-  db.prepare("DELETE FROM requirements WHERE id = ?").run(idParam(req));
+// Specs, mockups, mails and the like. SVG and HTML are left out: they would run scripts when opened from /uploads.
+const REQUIREMENT_ATTACHMENT_EXT = new Set([
+  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+  ".csv", ".txt", ".md", ".log", ".zip", ".mp4", ".webm", ".eml", ".msg",
+]);
+
+app.post("/api/requirements/:id/attachments", async (req) => {
+  const id = idParam(req);
+  must(db.prepare("SELECT id FROM requirements WHERE id = ?").get(id), "Requirement");
+  const saved = [];
+  for await (const part of req.files()) {
+    const ext = extname(part.filename).toLowerCase();
+    if (!REQUIREMENT_ATTACHMENT_EXT.has(ext)) throw new HttpError(400, `File type ${ext || "(none)"} is not allowed`);
+    const buf = await part.toBuffer();
+    const stored = `${randomUUID()}${ext}`;
+    await writeFile(join(UPLOAD_DIR, stored), buf);
+    saved.push(addRequirementAttachment(id, { filename: part.filename, storedName: stored, mime: part.mimetype, size: buf.length }));
+  }
+  return saved;
+});
+
+app.delete("/api/requirement-attachments/:id", async (req) => {
+  const row = removeRequirementAttachment(idParam(req));
+  if (row) await unlink(join(UPLOAD_DIR, row.stored_name)).catch(() => {});
+  return { ok: true };
+});
+
+app.delete("/api/requirements/:id", async (req) => {
+  const id = idParam(req);
+  const files = requirementAttachmentFiles(id);
+  db.prepare("DELETE FROM requirements WHERE id = ?").run(id);
+  await Promise.all(files.map((f) => unlink(join(UPLOAD_DIR, f)).catch(() => {})));
   return { ok: true };
 });
 

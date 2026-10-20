@@ -59,6 +59,7 @@ export function exportJson(projectId: number) {
   const requirements = listRequirements(projectId).map((q) => ({
     id: `REQ-${q.number}`, title: q.title, description: q.description, priority: q.priority, status: q.status, source: q.source,
     cases: q.caseIds.map((id) => keyOf.get(id)).filter(Boolean),
+    attachments: (db.prepare("SELECT filename FROM requirement_attachments WHERE requirement_id = ? ORDER BY id").all(q.id) as { filename: string }[]).map((a) => a.filename),
     createdAt: q.created_at, updatedAt: q.updated_at,
   }));
   return { exportedAt: new Date().toISOString(), format: "testbench-export/1", project: { name: p.name, key: p.key }, suites, milestones, templates, requirements, cases, runs };

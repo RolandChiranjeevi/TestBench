@@ -67,6 +67,9 @@ export function listRequirements(projectId: number) {
       WHERE r.project_id = ?`)
     .all(projectId) as { requirement_id: number; case_id: number; case_status: string; review: number }[];
   const latest = latestStatusByCase(projectId);
+  const attachmentCounts = new Map(
+    (db.prepare("SELECT a.requirement_id, COUNT(*) AS n FROM requirement_attachments a JOIN requirements r ON r.id = a.requirement_id WHERE r.project_id = ? GROUP BY a.requirement_id").all(projectId) as { requirement_id: number; n: number }[]).map((x) => [x.requirement_id, x.n]),
+  );
 
   const byReq = new Map<number, { id: number; active: boolean; review: boolean }[]>();
   for (const l of links) {
@@ -83,6 +86,7 @@ export function listRequirements(projectId: number) {
       coverage: classify(linked.filter((l) => l.active).map((l) => latest.get(l.id))),
       /** Active linked cases that haven't been confirmed since the requirement's wording last changed. */
       reviewCount: linked.filter((l) => l.active && l.review).length,
+      attachmentCount: attachmentCounts.get(r.id) ?? 0,
     };
   });
 }
@@ -102,7 +106,8 @@ export function getRequirement(id: number) {
   const history = (db.prepare("SELECT id, changed_at, material, changes FROM requirement_revisions WHERE requirement_id = ? ORDER BY id DESC LIMIT 100").all(id) as { id: number; changed_at: string; material: number; changes: string }[]).map(
     (h) => ({ id: h.id, at: h.changed_at, material: !!h.material, changes: parseJson<RevisionChange[]>(h.changes, []) }),
   );
-  return { ...row, cases, history, coverage: classify(cases.filter((c) => c.status !== "deprecated").map((c) => c.last_status ?? undefined)) };
+  const attachments = db.prepare("SELECT id, filename, stored_name, mime, size, created_at FROM requirement_attachments WHERE requirement_id = ? ORDER BY id").all(id);
+  return { ...row, cases, history, attachments, coverage: classify(cases.filter((c) => c.status !== "deprecated").map((c) => c.last_status ?? undefined)) };
 }
 
 export function requirementsForCase(caseId: number) {
@@ -139,6 +144,30 @@ export function createRequirement(projectId: number, input: RequirementInput): n
     return row.id;
   })();
 }
+
+export interface RequirementAttachmentRow { id: number; requirement_id: number; filename: string; stored_name: string; mime: string; size: number }
+
+export function addRequirementAttachment(requirementId: number, a: { filename: string; storedName: string; mime: string; size: number }) {
+  return db.transaction(() => {
+    const row = db
+      .prepare("INSERT INTO requirement_attachments (requirement_id, filename, stored_name, mime, size) VALUES (?, ?, ?, ?, ?) RETURNING *")
+      .get(requirementId, a.filename, a.storedName, a.mime, a.size) as RequirementAttachmentRow;
+    recordRevision(requirementId, [{ field: "attachments", to: a.filename }], false);
+    return row;
+  })();
+}
+
+/** Removes the row and returns it so the caller can delete the stored file. */
+export function removeRequirementAttachment(id: number) {
+  return db.transaction(() => {
+    const row = db.prepare("DELETE FROM requirement_attachments WHERE id = ? RETURNING *").get(id) as RequirementAttachmentRow | undefined;
+    if (row) recordRevision(row.requirement_id, [{ field: "attachments", from: row.filename }], false);
+    return row;
+  })();
+}
+
+export const requirementAttachmentFiles = (requirementId: number) =>
+  (db.prepare("SELECT stored_name FROM requirement_attachments WHERE requirement_id = ?").all(requirementId) as { stored_name: string }[]).map((r) => r.stored_name);
 
 export interface RevisionChange { field: string; from?: string; to?: string; added?: number[]; removed?: number[] }
 

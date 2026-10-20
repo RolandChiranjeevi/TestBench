@@ -34,6 +34,9 @@ requirements that are failing or weren't run, and exports include them (JSON and
   When the title or description changes, the linked cases are flagged **to review** (on the requirement, in its list, in the case
   editor and under the **Needs review** tab) until you confirm them with **Still correct**. Cases linked afterwards start confirmed.
 - Manual bug drafts list the requirements the failed case covers.
+- **Attachments**: attach specs, mockups, mails and other files to a requirement (drop, browse, or paste a screenshot with ⌘V). PDF, Word,
+  Excel, PowerPoint, images, CSV, text, `.eml`, zip and video are accepted, up to 100 MB each. Attaching or removing a file shows in the
+  history. The files live in `data/uploads/`, so the backup zip includes them; the JSON export lists their names.
 
 ## Backup and restore
 

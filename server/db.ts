@@ -313,6 +313,18 @@ CREATE TABLE IF NOT EXISTS requirement_revisions (
   changes TEXT NOT NULL DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS requirement_revisions_req ON requirement_revisions(requirement_id);`);
+  // Files attached to a requirement (specs, mockups, emails). Stored in the uploads folder like result attachments.
+  d.exec(`
+CREATE TABLE IF NOT EXISTS requirement_attachments (
+  id INTEGER PRIMARY KEY,
+  requirement_id INTEGER NOT NULL REFERENCES requirements(id) ON DELETE CASCADE,
+  filename TEXT NOT NULL,
+  stored_name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS requirement_attachments_req ON requirement_attachments(requirement_id);`);
   // The newest material revision a case was linked or last confirmed against; a later one means the case may be out of date.
   if (!hasColumn("requirement_cases", "reviewed_rev")) d.exec("ALTER TABLE requirement_cases ADD COLUMN reviewed_rev INTEGER NOT NULL DEFAULT 0");
   if (!hasColumn("projects", "next_requirement_number")) d.exec("ALTER TABLE projects ADD COLUMN next_requirement_number INTEGER NOT NULL DEFAULT 1");

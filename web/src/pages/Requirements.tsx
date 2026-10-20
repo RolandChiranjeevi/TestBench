@@ -1,8 +1,8 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpenCheck, Check, ExternalLink, History, Link2, Play, Plus, Search, Trash2, X } from "lucide-react";
-import { api, timeAgo, type CoverageState, type Priority, type Project, type Requirement, type RequirementDetail, type RequirementRevision, type RequirementStatus } from "../api";
+import { BookOpenCheck, Check, ExternalLink, FileText, History, ImagePlus, Link2, Loader2, Paperclip, Play, Plus, Search, Trash2, X } from "lucide-react";
+import { api, timeAgo, type CoverageState, type Priority, type Project, type Requirement, type RequirementAttachment, type RequirementDetail, type RequirementRevision, type RequirementStatus } from "../api";
 import { Empty, Kbd, Modal, PriorityIcon, PRIORITY_LABEL, StatusIcon, useHotkeys, useToast } from "../components/ui";
 import { CasePicker } from "../components/CasePicker";
 import { jiraLabel, jiraUrl } from "./BugReport";
@@ -112,6 +112,7 @@ export function RequirementsPage() {
                 <span className="meta">
                   {!compact && r.source && <span className="chip">{jiraLabel(r.source)}</span>}
                   {r.status === "draft" && <span className="chip">Draft</span>}
+                  {r.attachmentCount > 0 && <span className="chip" title={`${r.attachmentCount} attachment(s)`}><Paperclip size={11} /> {r.attachmentCount}</span>}
                   {r.status !== "deprecated" && r.reviewCount > 0 && (
                     <span className="chip" style={{ borderColor: "var(--blocked)" }} title={`${r.reviewCount} linked case(s) to check after the wording changed`}>
                       <span className="dot" style={{ background: "var(--blocked)" }} />{r.reviewCount} to review
@@ -244,6 +245,10 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
             {link && <a className="btn sm" href={link} target="_blank" rel="noreferrer"><ExternalLink size={12} /> {jiraLabel(data.source)}</a>}
           </div>
         </section>
+        <section>
+          <div className="section-label"><Paperclip size={13} /> Attachments <span className="faint">{data.attachments.length}</span></div>
+          <AttachmentsSection requirementId={data.id} attachments={data.attachments} />
+        </section>
         {data.cases.some((c) => c.review_needed) && (
           <div className="card" style={{ padding: "10px 12px", borderColor: "var(--blocked)", display: "flex", gap: 10, alignItems: "center" }}>
             <span className="grow" style={{ fontSize: 12.5 }}>
@@ -330,6 +335,7 @@ function RevisionRow({ rev, caseKey }: { rev: RequirementRevision; caseKey: stri
               {!!c.removed?.length && <>Unlinked {keys(c.removed)}.</>}
             </>
           )}
+          {c.field === "attachments" && (c.to ? <>Attached {c.to}</> : <>Removed attachment {c.from}</>)}
           {c.field === "description" && (
             <details>
               <summary style={{ cursor: "pointer" }}>Description edited</summary>
@@ -377,5 +383,90 @@ export function LinkToRequirementModal({ caseIds, onClose, onDone }: { caseIds: 
         </div>
       )}
     </Modal>
+  );
+}
+
+const fmtSize = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
+
+/** Files that belong to a requirement: specs, mockups, mails. Drop, browse or paste (screenshots) to add. */
+function AttachmentsSection({ requirementId, attachments }: { requirementId: number; attachments: RequirementAttachment[] }) {
+  const invalidate = useInvalidate();
+  const toast = useToast();
+  const [over, setOver] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const upload = async (files: FileList | File[]) => {
+    const list = [...files];
+    if (!list.length) return;
+    const fd = new FormData();
+    list.forEach((f, i) => fd.append("file", f, f.name || `screenshot-${Date.now()}-${i}.png`));
+    setUploading(true);
+    try {
+      await api.post(`/api/requirements/${requirementId}/attachments`, fd);
+      invalidate();
+    } catch (e) {
+      toast("error", (e as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  };
+  const uploadRef = useRef(upload);
+  uploadRef.current = upload;
+
+  // A pasted screenshot or file goes straight in. Pasted text is left alone.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const files = [...(e.clipboardData?.files ?? [])];
+      if (files.length) {
+        e.preventDefault();
+        uploadRef.current(files);
+      }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, []);
+
+  return (
+    <>
+      {attachments.length > 0 && (
+        <div className="card" style={{ marginBottom: 10 }}>
+          {attachments.map((a) => {
+            const url = `/uploads/${a.stored_name}`;
+            return (
+              <div key={a.id} className="row" style={{ padding: "6px 12px", borderBottom: "1px solid var(--border)", minHeight: 40 }}>
+                {a.mime.startsWith("image/") ? <img src={url} alt="" style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4 }} /> : <FileText size={16} className="faint" />}
+                <a className="truncate grow" href={url} target="_blank" rel="noreferrer" download={a.filename} title={`Open ${a.filename}`}>{a.filename}</a>
+                <span className="faint" style={{ fontSize: 12 }}>{fmtSize(a.size)}</span>
+                <button
+                  className="btn ghost icon sm danger"
+                  aria-label={`Remove ${a.filename}`}
+                  onClick={async () => {
+                    if (!confirm(`Remove ${a.filename}?`)) return;
+                    try { await api.del(`/api/requirement-attachments/${a.id}`); invalidate(); } catch (e) { toast("error", (e as Error).message); }
+                  }}
+                ><Trash2 size={12} /></button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div
+        className={`dropzone${over ? " over" : ""}`}
+        style={{ padding: 14 }}
+        onClick={() => fileRef.current?.click()}
+        onDragOver={(e) => { e.preventDefault(); setOver(true); }}
+        onDragLeave={() => setOver(false)}
+        onDrop={(e) => { e.preventDefault(); setOver(false); upload(e.dataTransfer.files); }}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => e.key === "Enter" && fileRef.current?.click()}
+      >
+        {uploading ? <Loader2 size={16} className="spin" /> : <ImagePlus size={16} />}
+        <div style={{ marginTop: 4 }}>Drop files here, click to browse, or paste a screenshot with <Kbd>⌘V</Kbd></div>
+        <div className="faint" style={{ fontSize: 11.5 }}>PDF, Word, Excel, PowerPoint, images, CSV, text, mail (.eml), zip</div>
+        <input ref={fileRef} type="file" multiple hidden onChange={(e) => { if (e.target.files) upload(e.target.files); e.target.value = ""; }} />
+      </div>
+    </>
   );
 }
