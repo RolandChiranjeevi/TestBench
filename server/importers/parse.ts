@@ -52,11 +52,11 @@ const ANSI = /\u001b\[[0-9;]*m/g;
 const clean = (s: unknown) => (typeof s === "string" ? s.replace(ANSI, "").trim() : "");
 const arr = <T>(v: T | T[] | undefined | null): T[] => (v == null ? [] : Array.isArray(v) ? v : [v]);
 
-/** Case IDs referenced in a title or tag list, e.g. "@TC-42 login works" -> ["TC-42"]. */
+/** Case IDs referenced in a title or tag list, e.g. "@TC-42 login works" or "TC-42: login works" -> ["TC-42"]. */
 export function extractCaseRefs(...sources: string[]): string[] {
   const refs = new Set<string>();
   for (const s of sources) {
-    for (const m of s.matchAll(/(?:^|[\s\[(])@?([A-Za-z][A-Za-z0-9]*-\d+)(?=$|[\s\]),])/g)) {
+    for (const m of s.matchAll(/(?:^|[\s\[(])@?([A-Za-z][A-Za-z0-9]*-\d+)(?=$|[\s\]),:;])/g)) {
       refs.add(m[1].toUpperCase());
     }
   }

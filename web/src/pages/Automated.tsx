@@ -23,6 +23,14 @@ export function AutomatedPage() {
   const { data: tests, isLoading } = useQuery({ queryKey: ["automated", pid], queryFn: () => api.get<AutomatedTest[]>(`/api/projects/${pid}/automated`) });
   const { data: cases = [] } = useQuery({ queryKey: ["cases", pid], queryFn: () => api.get<CaseSummary[]>(`/api/projects/${pid}/cases`) });
 
+  const relink = useMutation({
+    mutationFn: () => api.post<{ linked: number }>(`/api/projects/${pid}/automated/relink`),
+    onSuccess: (r) => {
+      for (const k of ["automated", "cases", "case", "run", "dashboard", "requirements"]) qc.invalidateQueries({ queryKey: [k] });
+      toast("success", r.linked ? `Linked ${r.linked} ${r.linked === 1 ? "test" : "tests"} by the case ID in the name` : "No more tests matched a case ID in their name");
+    },
+    onError: (e: Error) => toast("error", e.message),
+  });
   const link = useMutation({
     mutationFn: ({ id, caseId }: { id: number; caseId: number | null }) => api.patch(`/api/automated/${id}`, { caseId }),
     onSuccess: () => {
@@ -59,6 +67,11 @@ export function AutomatedPage() {
           <Search size={13} />
           <input className="input" placeholder="Search tests" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search tests" />
         </div>
+        {tests?.some((t) => !t.case_id) && (
+          <button className="btn" onClick={() => relink.mutate()} disabled={relink.isPending} title={`Link tests whose name contains a case ID like ${key}-12`}>
+            <Link2 size={14} /> Re-link by name
+          </button>
+        )}
         <button className="btn" onClick={() => navigate(`/p/${pid}/import`)}><Download size={14} /> Import results</button>
       </div>
       <div className="toolbar">

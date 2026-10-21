@@ -37,6 +37,35 @@ export function mergeReports(reports: ParsedReport[]): ParsedReport {
 }
 
 /** `files` holds the screenshots/videos/traces that came with the report; when given, they are stored and linked to their attempts. */
+/**
+ * Link automated tests that have no case yet by the case ID in their name, for tests imported earlier (before the ID was in the name,
+ * or before the case existed). Also fills in the case on their old results. Only unlinked tests are touched.
+ */
+export function relinkAutomatedTests(projectId: number): number {
+  const project = db.prepare("SELECT id, key FROM projects WHERE id = ?").get(projectId) as { id: number; key: string } | undefined;
+  if (!project) return 0;
+  const findCase = db.prepare("SELECT id FROM cases WHERE project_id = ? AND number = ?");
+  const tests = db.prepare("SELECT id, title, suite_path FROM automated_tests WHERE project_id = ? AND case_id IS NULL").all(projectId) as { id: number; title: string; suite_path: string }[];
+  let linked = 0;
+  db.transaction(() => {
+    for (const t of tests) {
+      let caseId: number | null = null;
+      for (const ref of extractCaseRefs(t.title, t.suite_path)) {
+        const dash = ref.lastIndexOf("-");
+        if (ref.slice(0, dash) !== project.key) continue;
+        const row = findCase.get(projectId, Number(ref.slice(dash + 1))) as { id: number } | undefined;
+        if (row) { caseId = row.id; break; }
+      }
+      if (caseId == null) continue;
+      db.prepare("UPDATE automated_tests SET case_id = ? WHERE id = ?").run(caseId, t.id);
+      db.prepare("UPDATE results SET case_id = ? WHERE automated_test_id = ? AND case_id IS NULL").run(caseId, t.id);
+      linkCaseByText(caseId, projectId, `${t.title}\n${t.suite_path}`);
+      linked++;
+    }
+  })();
+  return linked;
+}
+
 export function importReport(report: ParsedReport, opts: ImportOptions, files?: FileBag): ImportResult {
   const project = db.prepare("SELECT id, key FROM projects WHERE id = ?").get(opts.projectId) as
     | { id: number; key: string }
@@ -139,6 +168,7 @@ export function importReport(report: ParsedReport, opts: ImportOptions, files?: 
       if (t.attachments?.length) storeAttachments(row.id, t.attachments);
     });
     ensureMilestone(project.id, opts.milestone ?? "");
+    linked += relinkAutomatedTests(project.id);
     return { runId: run.id, duplicate: false, total: report.tests.length, linked, attachments: attachmentCount };
     })();
   } catch (e) {

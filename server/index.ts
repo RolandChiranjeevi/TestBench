@@ -14,7 +14,7 @@ import { DATA_DIR, db, ensureMilestone, parseJson, snapshotCase, UPLOAD_DIR } fr
 import { seedDemo } from "./demo.ts";
 import { artifactsByRun, getToken, importRun, listRuns, type GithubSource } from "./importers/github.ts";
 import { bagFromFiles, bagFromZip, dedupeReports, mergeBags, readReports, type FileBag } from "./importers/bag.ts";
-import { importReport, mergeReports } from "./importers/import.ts";
+import { importReport, mergeReports, relinkAutomatedTests } from "./importers/import.ts";
 import type { CaseSnapshot } from "./db.ts";
 import { exportCasesCsv, exportJson, exportMarkdownZip, exportRequirementsCsv, exportResultsCsv } from "./exporter.ts";
 import { htmlToPdf } from "./pdf.ts";
@@ -589,6 +589,9 @@ app.get("/api/projects/:id/automated", (req) =>
       WHERE a.project_id = ? ORDER BY a.file, a.suite_path, a.title`)
     .all(idParam(req)),
 );
+
+// Re-check unlinked automated tests against the case IDs in their names.
+app.post("/api/projects/:id/automated/relink", (req) => ({ linked: relinkAutomatedTests(idParam(req)) }));
 
 app.patch("/api/automated/:id", (req) => {
   const id = idParam(req);

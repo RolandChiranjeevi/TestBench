@@ -20,8 +20,10 @@ after it, or in the middle to nest it inside. Drop below the last suite to move 
 
 ## Linking automated tests to cases
 
-Each case gets an ID like `SHOP-12`. Put `@SHOP-12` in a test title (or a Playwright tag) and imports
-link the test to the case automatically. You can also link by hand on **Automated tests**.
+Each case gets an ID like `SHOP-12`. Put it in a test title, a `describe` title or a Playwright tag and imports link the test to the
+case automatically. These all work: `@SHOP-12 login`, `[SHOP-12] login`, `SHOP-12 login`, `SHOP-12: login`. The key must match the project's
+key and the case must exist. Tests imported before their case existed (or before the ID was in the name) are linked by **Re-link by name** on
+**Automated tests**, and automatically after every import. You can also link by hand there.
 
 ## Requirements
 
