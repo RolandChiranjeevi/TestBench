@@ -12,6 +12,12 @@ Rename a project from the project menu at the top of the sidebar ("Rename this p
 
 Data lives in `data/testbench.db` (SQLite) and `data/uploads/`. Back up that folder to keep everything.
 
+## Ordering suites
+
+On **Test cases**, drag a suite in the left tree to reorder it: drop on the top or bottom edge of another suite to place it before or
+after it, or in the middle to nest it inside. Drop below the last suite to move it to the end of the top level. The suite's `⋯` menu also has
+**Move up** / **Move down**. The case list, the case pickers and exports follow the same order.
+
 ## Linking automated tests to cases
 
 Each case gets an ID like `SHOP-12`. Put `@SHOP-12` in a test title (or a Playwright tag) and imports

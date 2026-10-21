@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpenCheck, Bot, ClipboardList, Folder, FolderOpen, Inbox, ListChecks, MoreHorizontal, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
-import { api, type CaseDetail, type CaseSummary, type Project, type RequirementDetail, type Suite } from "../api";
+import { ArrowDown, ArrowUp, BookOpenCheck, Bot, ClipboardList, Folder, FolderOpen, Inbox, ListChecks, MoreHorizontal, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
+import { api, orderSuites, type CaseDetail, type CaseSummary, type Project, type RequirementDetail, type Suite } from "../api";
 import { Empty, Kbd, Modal, PriorityIcon, StatusIcon, useHotkeys, useToast } from "../components/ui";
 import { CaseEditor } from "./CaseEditor";
 import { NewRunModal } from "./Runs";
@@ -34,6 +34,16 @@ export function CasesPage() {
   const [focus, setFocus] = useState(0);
   const newFor = params.get("newFor") ? Number(params.get("newFor")) : null;
   const [newCase, setNewCase] = useState(newFor != null);
+  const [dragId, setDragId] = useState<number | null>(null);
+  const [drop, setDrop] = useState<{ id: number | "end"; zone: "before" | "after" | "into" } | null>(null);
+  const moveSuite = useMutation({
+    mutationFn: (v: { id: number; parentId: number | null; beforeId: number | null }) => api.post(`/api/suites/${v.id}/move`, { parentId: v.parentId, beforeId: v.beforeId }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["suites", pid] });
+      qc.invalidateQueries({ queryKey: ["cases", pid] });
+    },
+    onError: (e: Error) => toast("error", e.message),
+  });
   const [suiteModal, setSuiteModal] = useState<{ suite?: Suite; parentId?: number | null } | null>(null);
   const [runModal, setRunModal] = useState(false);
   const [templateModal, setTemplateModal] = useState(false);
@@ -78,7 +88,7 @@ export function CasesPage() {
 
   // Group by suite in tree order, with "No suite" last.
   const groups = useMemo(() => {
-    const order = new Map(suites.map((s, i) => [s.id, i]));
+    const order = new Map(orderSuites(suites).map((s, i) => [s.id, i]));
     const map = new Map<number | null, CaseSummary[]>();
     for (const c of visible) {
       if (!map.has(c.suite_id)) map.set(c.suite_id, []);
@@ -159,7 +169,20 @@ export function CasesPage() {
             onAdd={(parentId) => setSuiteModal({ parentId })}
             onEdit={(suite) => setSuiteModal({ suite })}
             onDelete={(s) => confirm(`Delete suite "${s.name}" and its sub-suites? Cases are kept and moved to "No suite".`) && deleteSuite.mutate(s.id)}
+            dragId={dragId}
+            setDragId={setDragId}
+            drop={drop}
+            setDrop={setDrop}
+            onMove={(id, parentId, beforeId) => moveSuite.mutate({ id, parentId, beforeId })}
           />
+          {/* Dropping below the last suite moves it to the end of the top level. */}
+          {dragId != null && (
+            <div
+              style={{ height: 24, borderRadius: 4, ...(drop?.id === "end" ? { boxShadow: "inset 0 2px 0 var(--accent)" } : {}) }}
+              onDragOver={(e) => { e.preventDefault(); setDrop({ id: "end", zone: "after" }); }}
+              onDrop={(e) => { e.preventDefault(); const id = dragId; setDragId(null); setDrop(null); if (id != null) moveSuite.mutate({ id, parentId: null, beforeId: null }); }}
+            />
+          )}
           {noSuiteCount > 0 && (
             <button className={`tree-item${suiteFilter === "none" ? " active" : ""}`} onClick={() => setParam("suite", "none")}>
               <Inbox size={14} /> No suite <span className="count">{noSuiteCount}</span>
@@ -333,8 +356,39 @@ function SuiteTree(props: {
   onAdd: (parentId: number) => void;
   onEdit: (s: Suite) => void;
   onDelete: (s: Suite) => void;
+  dragId: number | null;
+  setDragId: (id: number | null) => void;
+  drop: { id: number | "end"; zone: "before" | "after" | "into" } | null;
+  setDrop: (d: { id: number | "end"; zone: "before" | "after" | "into" } | null) => void;
+  onMove: (id: number, parentId: number | null, beforeId: number | null) => void;
 }) {
   const children = props.suites.filter((s) => s.parent_id === props.parentId);
+  const { dragId, setDragId, drop, setDrop, onMove, suites } = props;
+
+  // A suite can't be dropped on itself or anything inside it.
+  const insideDragged = (id: number) => {
+    for (let a: number | null = id; a != null; a = suites.find((x) => x.id === a)?.parent_id ?? null) if (a === dragId) return true;
+    return false;
+  };
+  const zoneFor = (e: React.DragEvent<HTMLElement>): "before" | "after" | "into" => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const y = (e.clientY - r.top) / r.height;
+    return y < 0.28 ? "before" : y > 0.72 ? "after" : "into";
+  };
+  const dropOn = (target: Suite, zone: "before" | "after" | "into") => {
+    if (dragId == null) return;
+    if (zone === "into") return onMove(dragId, target.id, null);
+    const sibs = suites.filter((x) => x.parent_id === target.parent_id && x.id !== dragId);
+    const i = sibs.findIndex((x) => x.id === target.id);
+    onMove(dragId, target.parent_id, zone === "before" ? target.id : sibs[i + 1]?.id ?? null);
+  };
+  // Menu alternative to dragging: swap places with the neighbouring suite.
+  const nudge = (s: Suite, dir: -1 | 1) => {
+    const sibs = suites.filter((x) => x.parent_id === s.parent_id);
+    const i = sibs.findIndex((x) => x.id === s.id);
+    if (dir === -1) onMove(s.id, s.parent_id, sibs[i - 1]?.id ?? null);
+    else onMove(s.id, s.parent_id, sibs[i + 2]?.id ?? null);
+  };
   const [menu, setMenu] = useState<number | null>(null);
   return (
     <>
@@ -343,8 +397,27 @@ function SuiteTree(props: {
           <div
             role="button"
             tabIndex={0}
-            className={`tree-item${props.active === s.id ? " active" : ""}`}
+            className={`tree-item${props.active === s.id ? " active" : ""}${dragId === s.id ? " dragging" : ""}${drop?.id === s.id ? ` drop-${drop.zone}` : ""}`}
             style={{ paddingLeft: 8 + props.depth * 14 }}
+            draggable
+            onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", s.name); setDragId(s.id); }}
+            onDragEnd={() => { setDragId(null); setDrop(null); }}
+            onDragOver={(e) => {
+              if (dragId == null || insideDragged(s.id)) return;
+              e.preventDefault();
+              e.stopPropagation();
+              const zone = zoneFor(e);
+              if (drop?.id !== s.id || drop.zone !== zone) setDrop({ id: s.id, zone });
+            }}
+            onDrop={(e) => {
+              if (dragId == null || insideDragged(s.id)) return;
+              e.preventDefault();
+              e.stopPropagation();
+              const zone = zoneFor(e);
+              setDrop(null);
+              dropOn(s, zone);
+              setDragId(null);
+            }}
             onClick={() => props.onSelect(s.id)}
             onKeyDown={(e) => e.key === "Enter" && props.onSelect(s.id)}
           >
@@ -368,6 +441,8 @@ function SuiteTree(props: {
               <div className="card" style={{ position: "absolute", right: 0, top: 28, zIndex: 10, padding: 4, boxShadow: "var(--shadow)", background: "var(--bg-elev)", width: 170 }}>
                 <button className="nav-item" onClick={() => { setMenu(null); props.onAdd(s.id); }}><Plus size={13} /> Add sub-suite</button>
                 <button className="nav-item" onClick={() => { setMenu(null); props.onEdit(s); }}><Pencil size={13} /> Rename</button>
+                <button className="nav-item" disabled={children[0] === s} onClick={() => { setMenu(null); nudge(s, -1); }}><ArrowUp size={13} /> Move up</button>
+                <button className="nav-item" disabled={children.at(-1) === s} onClick={() => { setMenu(null); nudge(s, 1); }}><ArrowDown size={13} /> Move down</button>
                 <button className="nav-item" onClick={() => { setMenu(null); props.onDelete(s); }} style={{ color: "var(--failed)" }}><Trash2 size={13} /> Delete</button>
               </div>
             </>

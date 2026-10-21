@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Bot, Search } from "lucide-react";
-import { api, type CaseSummary, type Project, type Suite } from "../api";
+import { api, orderSuites, type CaseSummary, type Project, type Suite } from "../api";
 import { PriorityIcon } from "./ui";
 
 /** Cases that can be put in a run: everything except deprecated ones. */
@@ -23,7 +23,7 @@ export function CasePicker({ selected, onChange, maxHeight = 300 }: { selected: 
 
   const q = search.trim().toLowerCase();
   const shown = runnable.filter((c) => !q || `${key}-${c.number} ${c.title} ${c.tags.join(" ")}`.toLowerCase().includes(q));
-  const groups = [...suites.map((s) => ({ id: s.id as number | null, name: s.name })), { id: null, name: "No suite" }]
+  const groups = [...orderSuites(suites).map((s) => ({ id: s.id as number | null, name: s.name })), { id: null, name: "No suite" }]
     .map((g) => ({ ...g, items: shown.filter((c) => c.suite_id === g.id) }))
     .filter((g) => g.items.length);
 

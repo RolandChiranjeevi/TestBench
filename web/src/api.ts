@@ -3,6 +3,16 @@ export type Priority = "low" | "medium" | "high" | "critical";
 
 export interface Project { id: number; name: string; key: string; case_count: number; run_count: number }
 export interface Suite { id: number; project_id: number; parent_id: number | null; name: string; description: string; position: number; case_count: number }
+/** Suites in the order the tree shows them: each suite followed by its children, siblings by position. */
+export function orderSuites<T extends { id: number; parent_id: number | null }>(suites: T[]): T[] {
+  const out: T[] = [];
+  const walk = (parent: number | null) => {
+    for (const s of suites) if (s.parent_id === parent) { out.push(s); walk(s.id); }
+  };
+  walk(null);
+  for (const s of suites) if (!out.includes(s)) out.push(s);
+  return out;
+}
 export interface Step { id?: number; action: string; expected: string }
 export interface CaseSummary {
   id: number; project_id: number; suite_id: number | null; number: number; title: string; priority: Priority;
