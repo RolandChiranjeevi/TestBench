@@ -180,9 +180,9 @@ export function CasesPage() {
   const noSuiteCount = cases?.filter((c) => c.suite_id == null).length ?? 0;
 
   return (
-    <div className="split">
+    <div className="split has-tree">
       {/* Suite tree */}
-      <div className="pane" style={{ width: 220, flexShrink: 0, borderRight: "1px solid var(--border)", background: "var(--bg-panel)", position: "relative" }}>
+      <div className="pane suite-pane" style={{ width: 220, flexShrink: 0, borderRight: "1px solid var(--border)", background: "var(--bg-panel)", position: "relative" }}>
         <div className="topbar" style={{ padding: "0 8px 0 16px" }}>
           <h1 style={{ fontSize: 12.5, color: "var(--text-3)", fontWeight: 500 }}>Suites</h1>
           <span className="spacer" />
@@ -236,8 +236,18 @@ export function CasesPage() {
       <div className="pane grow" style={{ display: "flex", flexDirection: "column" }}>
         <div className="topbar">
           <h1>Test cases</h1>
+          {/* On narrow screens the suite tree is hidden and this takes its place. */}
+          <select className="select suite-select" aria-label="Suite" value={suiteParam ?? ""} onChange={(e) => setParam("suite", e.target.value || null)}>
+            <option value="">All cases ({cases?.length ?? 0})</option>
+            {orderSuites(suites).map((s) => {
+              let depth = 0;
+              for (let p = s.parent_id; p != null; p = suites.find((x) => x.id === p)?.parent_id ?? null) depth++;
+              return <option key={s.id} value={s.id}>{"\u00a0\u00a0".repeat(depth)}{s.name} ({s.case_count})</option>;
+            })}
+            {noSuiteCount > 0 && <option value="none">No suite ({noSuiteCount})</option>}
+          </select>
           <span className="spacer" />
-          <div className="search" style={{ width: compact ? 160 : 220 }}>
+          <div className="search">
             <Search size={13} />
             <input
               ref={searchRef}
@@ -380,9 +390,12 @@ export function CasesPage() {
 
       {/* Editor */}
       {selectedId != null && (
-        <div className="detail-pane" style={{ width: "min(600px, 48vw)" }}>
+        <>
+          <div className="detail-backdrop" onClick={() => select(null)} />
+          <div className="detail-pane">
           <CaseEditor key={selectedId} caseId={selectedId} suites={suites} onClose={() => select(null)} onDeleted={() => select(null)} onDuplicated={(id) => select(id)} />
         </div>
+        </>
       )}
 
       {newCase && (

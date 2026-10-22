@@ -12,7 +12,7 @@ export function ImportPage() {
         <h1>Import results</h1>
       </div>
       <div className="content">
-        <div style={{ padding: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))", gap: 16, alignItems: "start", maxWidth: 1400 }}>
+        <div style={{ padding: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(420px, 100%), 1fr))", gap: 16, alignItems: "start", maxWidth: 1400 }}>
           <UploadCard />
           <GithubCard />
         </div>
@@ -489,7 +489,7 @@ mvn test
   return (
     <div className="card">
       <div className="card-header">Setup</div>
-      <div className="card-body" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: 16 }}>
+      <div className="card-body" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(380px, 100%), 1fr))", gap: 16 }}>
         <div className="col">
           <div className="row">
             <span className="section-label" style={{ margin: 0 }}>1. Write a machine-readable report</span>

@@ -32,9 +32,10 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
         continue-on-error: true
 
-  # Text contrast on the real pages, in dark and light (WCAG AA). Uses the Chrome that GitHub's runners already have.
+  # What the pages look like in a real browser: text contrast in dark and light (WCAG AA), and the layout at different screen
+  # widths. Uses the Chrome that GitHub's runners already have.
   contrast:
-    name: Contrast (WCAG AA, dark and light)
+    name: UI checks (contrast and layout)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -52,6 +53,9 @@ jobs:
           cat "$RUNNER_TEMP/server.log"; exit 1
       - name: Check the app pages
         run: CONTRAST_SEED=1 npm run check:contrast -- http://127.0.0.1:4100
+      # Laptop, tablet and phone widths: no sideways scrolling, a readable list, no overlapping top bars, a working menu on phones.
+      - name: Check the layout at different screen widths
+        run: npm run check:layout -- http://127.0.0.1:4100
       - name: Start a second instance with a password
         run: |
           NODE_ENV=production TESTBENCH_DATA="$RUNNER_TEMP/data2" TESTBENCH_AUTO_BACKUP=0 TESTBENCH_PORT=4101 TESTBENCH_PASSWORD="ci-password-1234" \

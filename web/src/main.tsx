@@ -1,8 +1,8 @@
 import { StrictMode, useEffect, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, BookOpenCheck, Bot, ChevronDown, Download, FileBarChart, FlaskConical, LayoutDashboard, ListChecks, Pencil, Play, Plus, Sparkles } from "lucide-react";
+import { Archive, BookOpenCheck, Bot, ChevronDown, Download, FileBarChart, FlaskConical, LayoutDashboard, ListChecks, LogOut, Menu, Pencil, Play, Plus, Sparkles } from "lucide-react";
 import { api, timeAgo, type BackupInfo, type Project } from "./api";
 import { Empty, Modal, ToastProvider, useHotkeys, useToast } from "./components/ui";
 import { CasesPage } from "./pages/Cases";
@@ -184,6 +184,16 @@ function ProjectLayout() {
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const { data: auth } = useQuery({ queryKey: ["auth"], queryFn: () => api.get<{ enabled: boolean; authenticated: boolean }>("/api/auth/status"), staleTime: 60_000 });
+  // On phone-sized screens the sidebar is a menu that slides over the page. Any navigation or Escape closes it.
+  const loc = useLocation();
+  const [navOpen, setNavOpen] = useState(false);
+  useEffect(() => setNavOpen(false), [loc.pathname]);
+  useEffect(() => {
+    if (!navOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setNavOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [navOpen]);
 
   useEffect(() => {
     if (pid) storage.set(LAST_PROJECT, pid);
@@ -204,16 +214,24 @@ function ProjectLayout() {
   if (!project) return <Navigate to="/" replace />;
 
   const link = (to: string, icon: ReactNode, label: string, shortcut: string) => (
-    <NavLink to={`/p/${project.id}/${to}`} className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}>
+    <NavLink to={`/p/${project.id}/${to}`} className={({ isActive }) => `nav-item${isActive ? " active" : ""}`} title={label}>
       {icon}
-      {label}
+      <span className="nav-label">{label}</span>
       <span className="count"><kbd className="kbd">{shortcut}</kbd></span>
     </NavLink>
   );
 
   return (
     <div className="app">
-      <aside className="sidebar">
+      <header className="mobile-bar">
+        <button className="btn ghost icon" aria-label="Open navigation menu" aria-expanded={navOpen} onClick={() => setNavOpen(true)}>
+          <Menu size={18} />
+        </button>
+        <span className="project-badge">{project.key.slice(0, 2)}</span>
+        <span className="truncate" style={{ fontWeight: 600 }}>{project.name}</span>
+      </header>
+      {navOpen && <div className="nav-backdrop" onClick={() => setNavOpen(false)} />}
+      <aside className={`sidebar${navOpen ? " open" : ""}`}>
         <div style={{ position: "relative" }}>
           <button className="project-switch" onClick={() => setMenu((m) => !m)} aria-expanded={menu}>
             <span className="project-badge">{project.key.slice(0, 2)}</span>
@@ -223,7 +241,7 @@ function ProjectLayout() {
           {menu && (
             <>
               <div style={{ position: "fixed", inset: 0, zIndex: 9 }} onClick={() => setMenu(false)} />
-              <div className="card" style={{ position: "absolute", top: 38, left: 0, right: 0, zIndex: 10, padding: 4, boxShadow: "var(--shadow)", background: "var(--bg-elev)" }}>
+              <div className="card project-menu" style={{ position: "absolute", top: 38, left: 0, right: 0, zIndex: 10, padding: 4, boxShadow: "var(--shadow)", background: "var(--bg-elev)" }}>
                 {projects?.map((p) => (
                   <button key={p.id} className={`nav-item${p.id === project.id ? " active" : ""}`} onClick={() => { setMenu(false); navigate(`/p/${p.id}/cases`); }}>
                     <span className="project-badge">{p.key.slice(0, 2)}</span>
@@ -260,15 +278,16 @@ function ProjectLayout() {
             <NavLink
               to={`/p/${project.id}/backup`}
               className="row"
+              title={backup.lastBackupAt ? `Backed up ${timeAgo(backup.lastBackupAt)}` : "Not backed up yet"}
               style={{ gap: 6, marginBottom: 4, color: !backup.lastBackupAt || Date.now() - new Date(backup.lastBackupAt).getTime() > 7 * 864e5 ? "var(--blocked-fg)" : undefined }}
             >
-              <Archive size={12} /> {backup.lastBackupAt ? `Backed up ${timeAgo(backup.lastBackupAt)}` : "Not backed up yet"}
+              <Archive size={12} /> <span className="nav-label">{backup.lastBackupAt ? `Backed up ${timeAgo(backup.lastBackupAt)}` : "Not backed up yet"}</span>
             </NavLink>
           )}
-          {project.case_count} cases · {project.run_count} runs
+          <span className="footer-text">{project.case_count} cases · {project.run_count} runs</span>
           {auth?.enabled && (
-            <button className="btn ghost sm" style={{ marginTop: 6 }} onClick={async () => { await api.post("/api/logout"); window.location.href = "/login"; }}>
-              Sign out
+            <button className="btn ghost sm signout" title="Sign out" style={{ marginTop: 6 }} onClick={async () => { await api.post("/api/logout"); window.location.href = "/login"; }}>
+              <LogOut size={13} /> <span className="nav-label">Sign out</span>
             </button>
           )}
         </div>

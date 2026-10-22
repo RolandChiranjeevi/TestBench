@@ -98,7 +98,7 @@ export function InsightsPage() {
             </div>
 
             {/* ---- Time ---- */}
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 3fr) minmax(280px, 2fr)", gap: 16 }}>
+            <div className="two-col two-col-3-2">
               <div className="card">
                 <div className="card-header" style={{ fontSize: 13 }}><Gauge size={14} /> Test time per run</div>
                 <div className="card-body">

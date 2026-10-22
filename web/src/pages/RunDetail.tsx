@@ -251,8 +251,8 @@ function ManualRun({ run }: { run: RunDetail }) {
         {rate != null && <span className="tabular" style={{ fontWeight: 600 }}>{rate}% pass rate</span>}
         {run.status === "completed" && <span className="faint">Completed {timeAgo(run.finished_at)}</span>}
       </div>
-      <div className="split" style={{ flex: 1, minHeight: 0 }}>
-        <div className="pane" style={{ width: 380, flexShrink: 0, borderRight: "1px solid var(--border)" }} ref={listRef}>
+      <div className="split run-split" style={{ flex: 1, minHeight: 0 }}>
+        <div className="pane run-list" ref={listRef}>
           <div style={{ padding: 8, borderBottom: "1px solid var(--border)" }}>
             <div className="search">
               <Search size={13} />
@@ -610,7 +610,7 @@ function AutomatedRun({ run }: { run: RunDetail }) {
             ))}
           </div>
           <span className="spacer" />
-          <div className="search" style={{ width: 240 }}>
+          <div className="search">
             <Search size={13} />
             <input className="input" placeholder="Search tests or errors" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search tests" />
           </div>

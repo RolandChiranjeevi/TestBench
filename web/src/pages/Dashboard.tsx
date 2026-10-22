@@ -75,7 +75,7 @@ export function DashboardPage() {
           <Empty icon={<FlaskConical size={20} />} title="Nothing to show yet">Write some test cases and run them, or import automated results, and the dashboard fills in.</Empty>
         ) : (
           <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16, maxWidth: 1400 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12 }}>
+            <div className="dash-tiles">
               <Stat
                 label="Automated pass rate"
                 value={s.latestRate == null ? "—" : `${s.latestRate}%`}
@@ -105,7 +105,7 @@ export function DashboardPage() {
               />
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(280px, 1fr)", gap: 16 }}>
+            <div className="two-col two-col-2-1">
               <div className="card">
                 <div className="card-header" style={{ fontSize: 13 }}>
                   Automated pass rate <span className="faint" style={{ fontWeight: 400 }}>last {d.automatedRuns.length} runs</span>
@@ -140,13 +140,13 @@ export function DashboardPage() {
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))", gap: 16 }}>
               <TestTable title="Most failing" rows={d.mostFailing} empty="No failing tests in the last 10 runs." metric={(t) => <span style={{ color: "var(--failed-fg)" }}>{t.failures}/{t.runs} failed</span>} />
               <TestTable title="Flaky" rows={d.flaky} empty="No flaky tests. Playwright's JSON report is needed to detect them." metric={(t) => <span style={{ color: "var(--flaky-fg)" }}>{t.flaky}× flaky</span>} />
               <TestTable title="Slowest" rows={d.slowest} empty="No timing data yet." metric={(t) => formatDuration(t.avg_ms)} />
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(380px, 100%), 1fr))", gap: 16 }}>
               <div className="card">
                 <div className="card-header" style={{ fontSize: 13 }}>Failing cases</div>
                 {d.failingCases.length === 0 ? (

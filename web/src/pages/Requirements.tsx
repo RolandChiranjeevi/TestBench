@@ -78,7 +78,7 @@ export function RequirementsPage() {
         <div className="topbar">
           <h1>Requirements</h1>
           <span className="spacer" />
-          <div className="search" style={{ width: compact ? 160 : 220 }}>
+          <div className="search">
             <Search size={13} />
             <input ref={searchRef} className="input" placeholder="Search requirements" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search requirements" />
           </div>
@@ -126,9 +126,12 @@ export function RequirementsPage() {
         </div>
       </div>
       {selectedId != null && (
-        <div className="detail-pane" style={{ width: "min(600px, 48vw)" }}>
+        <>
+          <div className="detail-backdrop" onClick={() => select(null)} />
+          <div className="detail-pane">
           <RequirementEditor key={selectedId} id={selectedId} caseKey={key} onClose={() => select(null)} />
         </div>
+        </>
       )}
       {creating && <NewRequirementModal projectId={projectId} onClose={() => setCreating(false)} onCreated={select} />}
     </div>

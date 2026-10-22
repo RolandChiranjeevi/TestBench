@@ -5,59 +5,10 @@
 // Usage:  node scripts/check-contrast.mjs <baseUrl>        e.g. http://127.0.0.1:4100
 // Point it at a THROWAWAY instance: the address is required on purpose, and with CONTRAST_SEED=1 it creates the demo project in an
 // empty instance. It only reads otherwise. Needs Chrome: TESTBENCH_CHROME_PATH or TESTBENCH_CHROME_CHANNEL (default "chrome") pick it.
-import { chromium } from "playwright-core";
+import { baseUrlFromArgs, discoverPages, launchBrowser } from "./lib/pages.mjs";
 
-if (!process.argv[2]) {
-  console.error("Usage: node scripts/check-contrast.mjs <baseUrl>   (a throwaway instance, e.g. http://127.0.0.1:4100)");
-  process.exit(2);
-}
-const BASE = process.argv[2].replace(/\/$/, "");
-const HDR = { "X-Testbench": "1", "Content-Type": "application/json" };
-
-async function api(path, init) {
-  const res = await fetch(BASE + path, init);
-  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
-  return res.json();
-}
-
-// CONTRAST_ONLY=/login,/other audits just those paths and touches no API (used for the sign-in page of a password-protected instance).
-const ONLY = (process.env.CONTRAST_ONLY ?? "").split(",").map((p) => p.trim()).filter(Boolean);
-
-let PAGES;
-if (ONLY.length) {
-  PAGES = ONLY.map((p) => [p, p]);
-} else {
-  // Make sure there is something to look at.
-  let projects = await api("/api/projects");
-  if (!projects.length) {
-    if (process.env.CONTRAST_SEED !== "1") {
-      console.error(`${BASE} has no projects. Use a throwaway instance with CONTRAST_SEED=1 to create the demo project there.`);
-      process.exit(2);
-    }
-    await api("/api/demo", { method: "POST", headers: HDR, body: "{}" });
-    projects = await api("/api/projects");
-  }
-  const pid = projects[0].id;
-  const runs = await api(`/api/projects/${pid}/runs`);
-  const milestones = await api(`/api/projects/${pid}/milestones`);
-  const requirements = await api(`/api/projects/${pid}/requirements`);
-  const cases = await api(`/api/projects/${pid}/cases`);
-  const manualRun = runs.find((r) => r.kind === "manual");
-  const autoRun = runs.find((r) => r.kind === "automated");
-
-  PAGES = [
-    ["Dashboard", `/p/${pid}/dashboard`],
-    ["Requirements", `/p/${pid}/requirements${requirements[0] ? `?req=${requirements[0].id}` : ""}`],
-    ["Test cases", `/p/${pid}/cases${cases[0] ? `?case=${cases[0].id}` : ""}`],
-    ["Runs", `/p/${pid}/runs`],
-    ...(manualRun ? [["Manual run", `/p/${pid}/runs/${manualRun.id}`]] : []),
-    ...(autoRun ? [["Automated run", `/p/${pid}/runs/${autoRun.id}`]] : []),
-    ["Automated tests", `/p/${pid}/automated`],
-    ["Import results", `/p/${pid}/import`],
-    ["Sprint reports", `/p/${pid}/reports${milestones[0] ? `/${milestones[0].id}` : ""}`],
-    ["Backup & restore", `/p/${pid}/backup`],
-  ];
-}
+const BASE = baseUrlFromArgs("check-contrast.mjs");
+const PAGES = await discoverPages(BASE);
 
 // Runs inside the page. Returns the text elements that fall short.
 function auditPage() {
@@ -141,10 +92,7 @@ function auditPage() {
   return fails;
 }
 
-const launch = process.env.TESTBENCH_CHROME_PATH
-  ? { executablePath: process.env.TESTBENCH_CHROME_PATH, args: process.env.TESTBENCH_CHROME_NO_SANDBOX === "1" ? ["--no-sandbox"] : [] }
-  : { channel: process.env.TESTBENCH_CHROME_CHANNEL ?? "chrome" };
-const browser = await chromium.launch(launch);
+const browser = await launchBrowser();
 
 const groups = new Map();
 let checked = 0;

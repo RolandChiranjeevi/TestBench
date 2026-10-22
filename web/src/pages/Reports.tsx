@@ -79,14 +79,14 @@ export function ReportsPage() {
           </>
         )}
       </div>
-      <div className="split" style={{ flex: 1, minHeight: 0 }}>
-        <div className="pane" style={{ width: 290, flexShrink: 0, borderRight: "1px solid var(--border)", background: "var(--bg-panel)", display: "flex", flexDirection: "column" }}>
+      <div className="split reports" style={{ flex: 1, minHeight: 0 }}>
+        <div className="pane reports-list">
           <div className="toolbar" style={{ padding: "0 8px 0 16px" }}>
             <span className="muted" style={{ fontWeight: 500 }}>Sprints &amp; releases</span>
             <span className="spacer" />
             <button className="btn ghost icon sm" onClick={() => setCreating(true)} title="New sprint or release" aria-label="New sprint or release"><Plus size={14} /></button>
           </div>
-          <div style={{ flex: 1, overflow: "auto" }}>
+          <div className="reports-sprints">
             {milestones?.map((m) => (
               <button
                 key={m.id}

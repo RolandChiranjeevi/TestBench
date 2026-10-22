@@ -64,7 +64,7 @@ export function AutomatedPage() {
         <ViewTabs view="tests" />
         {tests && tests.length > 0 && <span className="faint" style={{ fontSize: 12.5 }}>{linkedPct}% linked to cases</span>}
         <span className="spacer" />
-        <div className="search" style={{ width: 240 }}>
+        <div className="search">
           <Search size={13} />
           <input className="input" placeholder="Search tests" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search tests" />
         </div>

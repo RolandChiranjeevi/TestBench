@@ -141,6 +141,11 @@ coverage and review flags, moving suites, the release checklist, the database in
 temporary database, so your real `data/` is never touched. `npm run typecheck` checks the types, and `npm run build` typechecks and then bundles the web app. GitHub Actions runs the typecheck, the
 tests, the build and a Docker smoke test (`scripts/docker-smoke.sh`, which you can also run yourself) on every push and pull request.
 
+**Layout check.** `npm run check:layout -- <url>` opens every page at 1440, 1100, 1024, 820, 600 and 390px and fails when a page scrolls sideways,
+the case or requirement list is squeezed below 300px, top-bar items overlap, a control is pushed off screen, or a phone has no way to open the
+menu. CI runs it on every push, and it takes about two minutes. Same rule as below: point it at a throwaway instance (`CHECK_SEED=1` fills an
+empty one with the demo project).
+
 **Contrast check.** `npm run check:contrast -- <url>` opens every page in Chrome, in dark and light, and measures the real contrast of
 all text against its background (WCAG AA: 4.5:1, or 3:1 for large text). CI runs it on every push. Point it at a throwaway instance, not your
 own data (`CONTRAST_SEED=1` creates the demo project in an empty one; `CONTRAST_ONLY=/login` checks just the sign-in page). When it fails, use

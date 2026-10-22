@@ -345,6 +345,78 @@ table.table { width: 100%; border-collapse: collapse; }
 .spin { animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ---------- Responsive ----------
+   Full sidebar from 1100px, a 56px icon rail from 700px, and a menu button below that.
+   The case and requirement editors sit beside the list on wide screens and slide over it on narrower ones. */
+.mobile-bar, .nav-backdrop, .detail-backdrop, .suite-select { display: none; }
+
+.topbar { height: auto; min-height: 46px; flex-wrap: wrap; row-gap: 6px; padding-top: 6px; padding-bottom: 6px; }
+.topbar .search, .toolbar .search { flex: 0 1 220px; min-width: 130px; }
+.toolbar { overflow-x: auto; scrollbar-width: none; }
+.toolbar::-webkit-scrollbar { display: none; }
+.suite-select { max-width: 190px; height: 28px; }
+
+.detail-pane { width: min(560px, 44vw); }
+.reports-list { width: 290px; flex-shrink: 0; border-right: 1px solid var(--border); background: var(--bg-panel); display: flex; flex-direction: column; }
+.run-list { width: 380px; flex-shrink: 0; border-right: 1px solid var(--border); }
+.reports-sprints { flex: 1; overflow: auto; }
+.dash-tiles { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.two-col { display: grid; gap: 16px; }
+.two-col-2-1 { grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); }
+.two-col-3-2 { grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr); }
+.project-menu { min-width: 220px; }
+
+/* The editor slides over the list. Pages with a suite tree need the extra room, so they switch earlier. */
+@media (max-width: 1099px) {
+  .split > .detail-pane { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100vw); z-index: 30; box-shadow: var(--shadow); }
+  .split > .detail-backdrop { display: block; position: fixed; inset: 0; z-index: 29; background: rgba(0, 0, 0, 0.4); }
+  .run-split { flex-direction: column; }
+  .run-list { width: 100%; max-height: 38%; border-right: 0; border-bottom: 1px solid var(--border); }
+}
+@media (max-width: 1359px) {
+  .split.has-tree > .detail-pane { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100vw); z-index: 30; box-shadow: var(--shadow); }
+  .split.has-tree > .detail-backdrop { display: block; position: fixed; inset: 0; z-index: 29; background: rgba(0, 0, 0, 0.4); }
+}
+
+@media (max-width: 899px) {
+  .suite-pane { display: none; }
+  .suite-select { display: inline-block; }
+  .two-col-2-1, .two-col-3-2 { grid-template-columns: minmax(0, 1fr); }
+  .split.reports { flex-direction: column; }
+  .reports-list { width: 100%; max-height: 200px; border-right: 0; border-bottom: 1px solid var(--border); }
+  /* The sprints come first and the whole panel scrolls, so the export buttons below can never push them out of view. */
+  .reports-sprints { flex: none; overflow: visible; }
+}
+
+/* Icon rail */
+@media (min-width: 700px) and (max-width: 1099px) {
+  .app { grid-template-columns: 56px 1fr; }
+  .sidebar { padding: 10px 6px; align-items: center; }
+  .sidebar .nav-label, .sidebar .nav-item .count, .project-switch .truncate, .project-switch > svg, .sidebar .footer-text { display: none; }
+  .sidebar > .sidebar-section { height: 1px; width: 28px; padding: 0; margin: 8px 0; background: var(--border); font-size: 0; }
+  .sidebar > .nav-item { width: 40px; height: 34px; padding: 0; justify-content: center; }
+  .sidebar > div:first-child { width: 100%; display: flex; justify-content: center; }
+  .project-switch { width: 40px; padding: 0; justify-content: center; }
+  .sidebar-footer { padding: 8px 0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .sidebar-footer .signout { width: 34px; padding: 0; margin: 0; }
+}
+
+/* Phones: the sidebar becomes a menu that slides over the page */
+@media (max-width: 699px) {
+  .app { display: flex; flex-direction: column; }
+  .mobile-bar { display: flex; align-items: center; gap: 10px; height: 46px; flex-shrink: 0; padding: 0 12px; background: var(--bg-sidebar); border-bottom: 1px solid var(--border); }
+  .main { flex: 1; height: auto; }
+  .sidebar {
+    position: fixed; top: 0; bottom: 0; left: 0; width: min(280px, 86vw); z-index: 50; overflow-y: auto; box-shadow: var(--shadow);
+    transform: translateX(-102%); visibility: hidden; transition: transform 0.18s ease, visibility 0.18s;
+  }
+  .sidebar.open { transform: none; visibility: visible; }
+  .nav-backdrop { display: block; position: fixed; inset: 0; z-index: 45; background: rgba(0, 0, 0, 0.5); }
+  .sidebar > .nav-item { height: 40px; }
+  .sidebar .nav-item .count, .btn .kbd { display: none; }
+  .split > .detail-pane { width: 100vw; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
 }
