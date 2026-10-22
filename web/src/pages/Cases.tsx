@@ -29,7 +29,11 @@ export function CasesPage() {
   const { data: cases, isLoading } = useQuery({ queryKey: ["cases", pid], queryFn: () => api.get<CaseSummary[]>(`/api/projects/${pid}/cases`) });
 
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
+  // The dashboard tiles link here with ?filter=failing, ?filter=manual and so on.
+  const [filter, setFilter] = useState<Filter>(() => {
+    const f = params.get("filter");
+    return f === "manual" || f === "automated" || f === "failing" || f === "unlinked" ? f : "all";
+  });
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [focus, setFocus] = useState(0);
   const newFor = params.get("newFor") ? Number(params.get("newFor")) : null;

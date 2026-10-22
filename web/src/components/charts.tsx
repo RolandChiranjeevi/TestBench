@@ -6,15 +6,18 @@ interface Point { id: number; label: string; date: string; rate: number | null; 
 /** Pass rate per run as a line chart. Hover or focus a point for details; click opens the run. */
 export function TrendChart({ points, onOpen }: { points: Point[]; onOpen?: (id: number) => void }) {
   const [hover, setHover] = useState<number | null>(null);
-  const W = 640, H = 200, L = 34, R = 12, T = 12, B = 22;
+  const W = 640, H = 200, L = 34, R = 12, T = 24, B = 22;
   const usable = points.filter((p) => p.rate != null);
   if (usable.length < 1) return <div className="muted" style={{ padding: 24 }}>No executed runs yet.</div>;
 
   const x = (i: number) => (points.length === 1 ? (L + W - R) / 2 : L + (i * (W - L - R)) / (points.length - 1));
-  const y = (v: number) => T + ((100 - v) * (H - T - B)) / 100;
+  // Zoom the axis to the data (to the nearest 10 below the lowest rate, at most 0..100) so a few runs don't sit in the top corner of an empty 0-100 box.
+  const lo = Math.max(0, Math.min(80, Math.floor((Math.min(...usable.map((p) => p.rate!)) - 10) / 10) * 10));
+  const ticks = [lo, Math.round((lo + 100) / 2), 100];
+  const y = (v: number) => T + ((100 - v) * (H - T - B)) / (100 - lo);
   const path = points.flatMap((p, i) => (p.rate == null ? [] : [`${x(i)},${y(p.rate)}`]));
   const line = path.length > 1 ? `M${path.join("L")}` : "";
-  const area = path.length > 1 ? `${line}L${x(points.length - 1)},${y(0)}L${x(0)},${y(0)}Z` : "";
+  const area = path.length > 1 ? `${line}L${x(points.length - 1)},${y(lo)}L${x(0)},${y(lo)}Z` : "";
   const summary = `Pass rate over ${points.length} runs, latest ${usable.at(-1)!.rate}%`;
   const shown = hover != null ? points[hover] : null;
 
@@ -27,9 +30,9 @@ export function TrendChart({ points, onOpen }: { points: Point[]; onOpen?: (id: 
             <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
           </linearGradient>
         </defs>
-        {[0, 50, 100].map((v) => (
+        {ticks.map((v, i) => (
           <g key={v}>
-            <line x1={L} x2={W - R} y1={y(v)} y2={y(v)} stroke="var(--border)" strokeDasharray={v === 50 ? "3 4" : undefined} />
+            <line x1={L} x2={W - R} y1={y(v)} y2={y(v)} stroke="var(--border)" strokeDasharray={i === 1 ? "3 4" : undefined} />
             <text x={L - 8} y={y(v) + 4} textAnchor="end" fontSize="10.5" fill="var(--text-4)">{v}%</text>
           </g>
         ))}
@@ -42,6 +45,10 @@ export function TrendChart({ points, onOpen }: { points: Point[]; onOpen?: (id: 
                 cx={x(i)} cy={y(p.rate)} r={hover === i ? 5 : 3.5}
                 fill={p.rate >= 90 ? "var(--passed)" : p.rate >= 70 ? "var(--blocked)" : "var(--failed)"} stroke="var(--bg-panel)" strokeWidth="1.5"
               />
+              {/* The value, so the line can be read without hovering (a long series would be crowded: then only the tooltip). */}
+              {points.length <= 12 && (
+                <text x={x(i)} y={y(p.rate) - 9} textAnchor="middle" fontSize="10.5" fill="var(--text-3)">{p.rate}%</text>
+              )}
               {/* Larger invisible hit target */}
               <circle
                 cx={x(i)} cy={y(p.rate)} r={12} fill="transparent" tabIndex={0} style={{ cursor: onOpen ? "pointer" : "default", outline: "none" }}

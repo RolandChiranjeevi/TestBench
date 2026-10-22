@@ -17,27 +17,37 @@ function Delta({ cur, prev }: { cur: number | null; prev: number | null }) {
   );
 }
 
-function Stat({ label, value, sub, color }: { label: string; value: ReactNode; sub?: ReactNode; color?: string }) {
-  return (
-    <div className="card" style={{ padding: "14px 16px" }}>
-      <div className="stat">
-        <span className="label">{label}</span>
-        <span className="value" style={{ color }}>{value}</span>
-        <span style={{ minHeight: 18, fontSize: 12 }} className="muted">{sub}</span>
-      </div>
+/** A figure tile. With `to` the whole tile is a link to the list the number counts. */
+function Stat({ label, value, sub, color, to }: { label: string; value: ReactNode; sub?: ReactNode; color?: string; to?: string }) {
+  const body = (
+    <div className="stat">
+      <span className="label">{label}</span>
+      <span className="value" style={{ color }}>{value}</span>
+      <span style={{ minHeight: 18, fontSize: 12 }} className="muted">{sub}</span>
     </div>
+  );
+  return to ? (
+    <Link to={to} className="card tile-link" style={{ padding: "14px 16px" }}>{body}</Link>
+  ) : (
+    <div className="card" style={{ padding: "14px 16px" }}>{body}</div>
   );
 }
 
-function TestTable({ title, rows, metric, empty }: { title: string; rows: TestStat[]; metric: (t: TestStat) => ReactNode; empty: string }) {
+function TestTable({ title, rows, metric, empty, limit }: { title: string; rows: TestStat[]; metric: (t: TestStat) => ReactNode; empty: string; limit?: number }) {
   const { pid } = useParams();
+  const shown = limit ? rows.slice(0, limit) : rows;
   return (
     <div className="card" style={{ minWidth: 0 }}>
-      <div className="card-header" style={{ fontSize: 13 }}>{title}</div>
+      <div className="card-header" style={{ fontSize: 13 }}>
+        {title}
+        {shown.length < rows.length && (
+          <Link to={`/p/${pid}/automated`} style={{ marginLeft: "auto", color: "var(--accent-text)", fontSize: 12, fontWeight: 400 }}>All {rows.length}</Link>
+        )}
+      </div>
       {rows.length === 0 ? (
         <div className="muted" style={{ padding: 16 }}>{empty}</div>
       ) : (
-        rows.map((t) => (
+        shown.map((t) => (
           <Link key={t.id} to={`/p/${pid}/automated?q=${encodeURIComponent(t.title)}`} className="row" style={{ padding: "8px 16px", borderBottom: "1px solid var(--border)", minHeight: 42 }}>
             <StatusIcon status={t.last_status} />
             <div className="grow col" style={{ gap: 0 }}>
@@ -79,29 +89,32 @@ export function DashboardPage() {
               <Stat
                 label="Automated pass rate"
                 value={s.latestRate == null ? "—" : `${s.latestRate}%`}
-                color={s.latestRate == null ? undefined : s.latestRate >= 90 ? "var(--passed-fg)" : s.latestRate >= 70 ? "var(--blocked-fg)" : "var(--failed-fg)"}
+                // Red only when it got worse than the previous run: a low but steady number is not news.
+                color={s.latestRate != null && s.previousRate != null && s.latestRate < s.previousRate ? "var(--failed-fg)" : undefined}
                 sub={<Delta cur={s.latestRate} prev={s.previousRate} />}
+                to={`/p/${pid}/runs`}
               />
-              <Stat label="Automation coverage" value={`${s.coverage}%`} sub={`${s.automatedCases} of ${s.cases} cases have an automated test`} />
+              <Stat label="Automation coverage" value={`${s.coverage}%`} sub={`${s.automatedCases} of ${s.cases} cases have an automated test`} to={`/p/${pid}/cases?filter=manual`} />
               {d.requirements.total > 0 && (
                 <Stat
                   label="Requirement coverage"
                   value={`${Math.round((d.requirements.covered / d.requirements.total) * 100)}%`}
-                  color={d.requirements.failing ? "var(--failed-fg)" : undefined}
+                  to={`/p/${pid}/requirements`}
                   sub={
-                    <Link to={`/p/${pid}/requirements`} style={{ color: "var(--accent-text)" }}>
+                    <>
                       {d.requirements.covered} of {d.requirements.total} have test cases
-                      {d.requirements.failing ? `, ${d.requirements.failing} failing` : ""}
-                    </Link>
+                      {d.requirements.failing ? <span style={{ color: "var(--failed-fg)" }}>, {d.requirements.failing} failing</span> : ""}
+                    </>
                   }
                 />
               )}
-              <Stat label="Failing cases" value={s.failingCases} color={s.failingCases ? "var(--failed-fg)" : undefined} sub="Latest result failed or blocked" />
-              <Stat label="Flaky tests" value={s.flakyTests} color={s.flakyTests ? "var(--flaky-fg)" : undefined} sub="In the last 10 automated runs" />
+              <Stat label="Failing cases" value={s.failingCases} color={s.failingCases ? "var(--failed-fg)" : undefined} sub="Latest result failed or blocked" to={`/p/${pid}/cases?filter=failing`} />
+              <Stat label="Flaky tests" value={s.flakyTests} color={s.flakyTests ? "var(--flaky-fg)" : undefined} sub="In the last 10 automated runs" to={`/p/${pid}/automated?filter=flaky`} />
               <Stat
                 label="Unlinked tests"
                 value={s.unlinkedTests}
-                sub={s.unlinkedTests ? <Link to={`/p/${pid}/automated?filter=unlinked`} style={{ color: "var(--accent-text)" }}>Link them to cases</Link> : "All linked"}
+                sub={s.unlinkedTests ? "Link them to cases" : "All linked"}
+                to={`/p/${pid}/automated?filter=unlinked`}
               />
             </div>
 
@@ -140,10 +153,10 @@ export function DashboardPage() {
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))", gap: 16 }}>
-              <TestTable title="Most failing" rows={d.mostFailing} empty="No failing tests in the last 10 runs." metric={(t) => <span style={{ color: "var(--failed-fg)" }}>{t.failures}/{t.runs} failed</span>} />
-              <TestTable title="Flaky" rows={d.flaky} empty="No flaky tests. Playwright's JSON report is needed to detect them." metric={(t) => <span style={{ color: "var(--flaky-fg)" }}>{t.flaky}× flaky</span>} />
-              <TestTable title="Slowest" rows={d.slowest} empty="No timing data yet." metric={(t) => formatDuration(t.avg_ms)} />
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))", gap: 16, alignItems: "start" }}>
+              <TestTable title="Most failing" rows={d.mostFailing} empty="No failing tests in the last 10 runs." metric={(t) => <>{t.failures}/{t.runs} failed</>} />
+              <TestTable title="Flaky" rows={d.flaky} empty="No flaky tests. Playwright's JSON report is needed to detect them." metric={(t) => <>{t.flaky}× flaky</>} />
+              <TestTable title="Slowest" rows={d.slowest} empty="No timing data yet." limit={5} metric={(t) => formatDuration(t.avg_ms)} />
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(380px, 100%), 1fr))", gap: 16 }}>
