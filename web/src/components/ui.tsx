@@ -250,3 +250,18 @@ export function ConfirmModal({ title, children, confirmLabel = "Delete", require
     </Modal>
   );
 }
+
+/** Placeholder rows shown while a list loads, instead of an empty page. */
+export function ListSkeleton({ rows = 6 }: { rows?: number }) {
+  return (
+    <div role="status" aria-label="Loading">
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="skeleton-row">
+          <span className="skeleton" style={{ width: 16 }} />
+          <span className="skeleton" style={{ width: 56 }} />
+          <span className="skeleton" style={{ width: `${40 + ((i * 13) % 35)}%` }} />
+        </div>
+      ))}
+    </div>
+  );
+}

@@ -25,7 +25,7 @@ export function AutomatedDetail({ resultId }: { resultId: number }) {
   const [picked, setPicked] = useState<number | null>(null);
   const [bugOpen, setBugOpen] = useState(false);
 
-  const box = { padding: "12px 20px 16px 52px", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 14 } as const;
+  const box = { padding: "12px 20px 16px 52px", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 16 } as const;
   if (!d) return <div className="row muted" style={{ ...box, flexDirection: "row" }}><Loader2 size={14} className="spin" /> Loading…</div>;
 
   const attempts = d.detail?.attempts ?? [];
@@ -65,7 +65,7 @@ export function AutomatedDetail({ resultId }: { resultId: number }) {
       </div>
 
       {d.history.length > 1 && (
-        <div className="row" style={{ gap: 10 }}>
+        <div className="row" style={{ gap: 12 }}>
           <span className="section-label" style={{ margin: 0 }}>History</span>
           <div className="row" style={{ gap: 3 }}>
             {d.history.map((h) => (
@@ -81,7 +81,7 @@ export function AutomatedDetail({ resultId }: { resultId: number }) {
               />
             ))}
           </div>
-          <span className="faint" style={{ fontSize: 12 }}>failed {failedCount} of the last {d.history.length} runs</span>
+          <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>failed {failedCount} of the last {d.history.length} runs</span>
         </div>
       )}
 
@@ -110,7 +110,7 @@ export function AutomatedDetail({ resultId }: { resultId: number }) {
       ) : null}
 
       {(shots.length > 0 || videos.length > 0 || traces.length > 0 || other.length > 0) && (
-        <div className="col" style={{ gap: 10 }}>
+        <div className="col" style={{ gap: 12 }}>
           <span className="section-label" style={{ margin: 0 }}>Evidence</span>
           {shots.length > 0 && (
             <div className="thumbs">
@@ -137,7 +137,7 @@ export function AutomatedDetail({ resultId }: { resultId: number }) {
 
       {(attempt?.stdout || attempt?.stderr) && (
         <details>
-          <summary className="muted" style={{ cursor: "pointer", fontSize: 12.5 }}>Console output</summary>
+          <summary className="muted" style={{ cursor: "pointer", fontSize: "var(--fs-md)" }}>Console output</summary>
           {attempt.stdout && <pre className="snippet" style={{ marginTop: 6 }}>{attempt.stdout}</pre>}
           {attempt.stderr && <pre className="snippet" style={{ marginTop: 6, color: "var(--failed-fg)" }}>{attempt.stderr}</pre>}
         </details>

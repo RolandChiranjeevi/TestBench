@@ -51,7 +51,7 @@ export function TemplatesPanel({ templates, onStart, onEdit, onNew }: { template
                 <span className="truncate" style={{ fontWeight: 500 }}>{t.name}</span>
                 {t.environment && <span className="chip">{t.environment}</span>}
               </div>
-              <span className="faint" style={{ fontSize: 12 }}>
+              <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>
                 {count} {count === 1 ? "case" : "cases"} · {t.last_used ? `last used ${timeAgo(t.last_used)} · ${t.run_count} ${t.run_count === 1 ? "run" : "runs"}` : "never used"}
               </span>
             </div>

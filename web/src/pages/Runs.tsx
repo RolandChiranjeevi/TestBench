@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bot, Download, GitBranch, Hand, Play, Plus } from "lucide-react";
 import { api, formatDuration, passRate, timeAgo, type Milestone, type RunSummary, type RunTemplate } from "../api";
 import { CasePicker, useRunnableCases } from "../components/CasePicker";
-import { Empty, FrameworkBadge, Github, Kbd, Modal, ProgressBar, useHotkeys, useToast } from "../components/ui";
+import { Empty, FrameworkBadge, Github, Kbd, Modal, ProgressBar, useHotkeys, useToast, ListSkeleton } from "../components/ui";
 import { TemplateModal, TemplatesPanel, useTemplates } from "./Templates";
 
 type Kind = "all" | "manual" | "automated" | "templates";
@@ -52,7 +52,7 @@ export function RunsPage() {
       <div className="content">
         {kind === "templates" ? (
           <TemplatesPanel templates={templates} onStart={setStartFrom} onEdit={setEditing} onNew={() => setEditing("new")} />
-        ) : isLoading ? null : visible.length === 0 ? (
+        ) : isLoading ? <ListSkeleton /> : visible.length === 0 ? (
           <Empty
             icon={<Play size={20} />}
             title="No runs yet"
@@ -91,7 +91,7 @@ function RunRow({ run }: { run: RunSummary }) {
           {run.kind === "manual" && run.status === "in_progress" && <span className="chip accent">In progress</span>}
           {run.flaky > 0 && <span className="chip" style={{ color: "var(--flaky-fg)" }}>{run.flaky} flaky</span>}
         </div>
-        <div className="row faint" style={{ gap: 8, fontSize: 12 }}>
+        <div className="row faint" style={{ gap: 8, fontSize: "var(--fs-sm)" }}>
           <span>{timeAgo(run.started_at)}</span>
           {run.environment && (<><span>·</span><span className="row" style={{ gap: 4 }}>{run.source === "github" && <GitBranch size={11} />}{run.environment}</span></>)}
           {run.milestone && (<><span>·</span><span>{run.milestone}</span></>)}
@@ -103,7 +103,7 @@ function RunRow({ run }: { run: RunSummary }) {
       </span>
       <div className="run-counts">
         <ProgressBar counts={run} />
-        <div className="row faint tabular" style={{ fontSize: 11.5, justifyContent: "space-between" }}>
+        <div className="row faint tabular" style={{ fontSize: "var(--fs-sm)", justifyContent: "space-between" }}>
           <span>
             <span style={{ color: "var(--passed-fg)" }}>{run.passed} passed</span> · <span style={{ color: run.failed ? "var(--failed-fg)" : undefined }}>{run.failed} failed</span>
             {run.blocked > 0 && <> · <span style={{ color: "var(--blocked-fg)" }}>{run.blocked} blocked</span></>}
@@ -229,7 +229,7 @@ export function NewRunModal({ initialCaseIds = [], initialTitle, template, rerun
           </select>
         </div>
       )}
-      <div className="row" style={{ gap: 10 }}>
+      <div className="row" style={{ gap: 12 }}>
         <div className="field grow">
           <label htmlFor="env">Environment</label>
           <input id="env" className="input" placeholder="staging, prod, iOS 18…" value={environment} onChange={(e) => setEnvironment(e.target.value)} />
@@ -241,8 +241,8 @@ export function NewRunModal({ initialCaseIds = [], initialTitle, template, rerun
         </div>
       </div>
       <CasePicker selected={selected} onChange={setSelected} />
-      <div className="row" style={{ gap: 10 }}>
-        <label className="row muted" style={{ fontSize: 12.5, cursor: "pointer" }}>
+      <div className="row" style={{ gap: 12 }}>
+        <label className="row muted" style={{ fontSize: "var(--fs-md)", cursor: "pointer" }}>
           <input type="checkbox" className="checkbox" checked={saveAs} onChange={(e) => setSaveAs(e.target.checked)} /> Save this selection as a template
         </label>
         {saveAs && (

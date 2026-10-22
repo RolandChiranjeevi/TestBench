@@ -3,15 +3,15 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Bot, Download, FlaskConical, Play, Sparkles } from "lucide-react";
 import { api, formatDuration, passRate, timeAgo, type Dashboard, type TestStat } from "../api";
-import { Empty, FrameworkBadge, PriorityIcon, ProgressBar, StatusIcon } from "../components/ui";
+import { Empty, FrameworkBadge, PriorityIcon, ProgressBar, StatusIcon, ListSkeleton } from "../components/ui";
 import { CoverageBar, TrendChart } from "../components/charts";
 
 function Delta({ cur, prev }: { cur: number | null; prev: number | null }) {
   if (cur == null || prev == null) return null;
   const d = Math.round((cur - prev) * 10) / 10;
-  if (d === 0) return <span className="faint" style={{ fontSize: 12 }}>no change</span>;
+  if (d === 0) return <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>no change</span>;
   return (
-    <span style={{ fontSize: 12, fontWeight: 500, color: d > 0 ? "var(--passed-fg)" : "var(--failed-fg)" }}>
+    <span style={{ fontSize: "var(--fs-sm)", fontWeight: 500, color: d > 0 ? "var(--passed-fg)" : "var(--failed-fg)" }}>
       {d > 0 ? "▲" : "▼"} {Math.abs(d)} pts vs previous run
     </span>
   );
@@ -23,13 +23,13 @@ function Stat({ label, value, sub, color, to }: { label: string; value: ReactNod
     <div className="stat">
       <span className="label">{label}</span>
       <span className="value" style={{ color }}>{value}</span>
-      <span style={{ minHeight: 18, fontSize: 12 }} className="muted">{sub}</span>
+      <span style={{ minHeight: 18, fontSize: "var(--fs-sm)" }} className="muted">{sub}</span>
     </div>
   );
   return to ? (
-    <Link to={to} className="card tile-link" style={{ padding: "14px 16px" }}>{body}</Link>
+    <Link to={to} className="card tile-link" style={{ padding: "16px 16px" }}>{body}</Link>
   ) : (
-    <div className="card" style={{ padding: "14px 16px" }}>{body}</div>
+    <div className="card" style={{ padding: "16px 16px" }}>{body}</div>
   );
 }
 
@@ -38,10 +38,10 @@ function TestTable({ title, rows, metric, empty, limit }: { title: string; rows:
   const shown = limit ? rows.slice(0, limit) : rows;
   return (
     <div className="card" style={{ minWidth: 0 }}>
-      <div className="card-header" role="heading" aria-level={2} style={{ fontSize: 13 }}>
+      <div className="card-header" role="heading" aria-level={2} style={{ fontSize: "var(--fs-md)" }}>
         {title}
         {shown.length < rows.length && (
-          <Link to={`/p/${pid}/automated`} style={{ margin: "-4px -6px -4px auto", padding: "4px 6px", color: "var(--accent-text)", fontSize: 12, fontWeight: 400 }}>All {rows.length}</Link>
+          <Link to={`/p/${pid}/automated`} style={{ margin: "-4px -6px -4px auto", padding: "4px 6px", color: "var(--accent-text)", fontSize: "var(--fs-sm)", fontWeight: 400 }}>All {rows.length}</Link>
         )}
       </div>
       {rows.length === 0 ? (
@@ -52,9 +52,9 @@ function TestTable({ title, rows, metric, empty, limit }: { title: string; rows:
             <StatusIcon status={t.last_status} />
             <div className="grow col" style={{ gap: 0 }}>
               <span className="truncate" title={t.title}>{t.title}</span>
-              <span className="faint truncate mono" style={{ fontSize: 11 }}>{t.file}</span>
+              <span className="faint truncate mono" style={{ fontSize: "var(--fs-sm)" }}>{t.file}</span>
             </div>
-            <span className="tabular" style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{metric(t)}</span>
+            <span className="tabular" style={{ fontSize: "var(--fs-md)", whiteSpace: "nowrap" }}>{metric(t)}</span>
           </Link>
         ))
       )}
@@ -67,7 +67,7 @@ export function DashboardPage() {
   const navigate = useNavigate();
   const { data: d, isLoading } = useQuery({ queryKey: ["dashboard", pid], queryFn: () => api.get<Dashboard>(`/api/projects/${pid}/dashboard`) });
 
-  if (isLoading || !d) return null;
+  if (isLoading || !d) return <div className="content"><ListSkeleton rows={8} /></div>;
   const s = d.summary;
   const key = d.project.key;
   const hasRuns = d.automatedRuns.length + d.manualRuns.length > 0;
@@ -120,7 +120,7 @@ export function DashboardPage() {
 
             <div className="two-col two-col-2-1">
               <div className="card">
-                <div className="card-header" role="heading" aria-level={2} style={{ fontSize: 13 }}>
+                <div className="card-header" role="heading" aria-level={2} style={{ fontSize: "var(--fs-md)" }}>
                   Automated pass rate <span className="faint" style={{ fontWeight: 400 }}>last {d.automatedRuns.length} runs</span>
                 </div>
                 <div className="card-body">
@@ -131,20 +131,20 @@ export function DashboardPage() {
                 </div>
               </div>
               <div className="card">
-                <div className="card-header" role="heading" aria-level={2} style={{ fontSize: 13 }}>Manual runs</div>
+                <div className="card-header" role="heading" aria-level={2} style={{ fontSize: "var(--fs-md)" }}>Manual runs</div>
                 {d.manualRuns.length === 0 ? (
                   <div className="muted" style={{ padding: 16 }}>No manual runs yet.</div>
                 ) : (
                   [...d.manualRuns].reverse().slice(0, 6).map((r) => (
-                    <Link key={r.id} to={`/p/${pid}/runs/${r.id}`} className="col" style={{ padding: "10px 16px", borderBottom: "1px solid var(--border)", gap: 5 }}>
+                    <Link key={r.id} to={`/p/${pid}/runs/${r.id}`} className="col" style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", gap: 6 }}>
                       <div className="row">
                         <Play size={12} className="faint" />
                         <span className="truncate grow">{r.title}</span>
                         {r.run_status === "in_progress" && <span className="chip accent">In progress</span>}
-                        <span className="tabular muted" style={{ fontSize: 12 }}>{passRate(r) == null ? "—" : `${passRate(r)}%`}</span>
+                        <span className="tabular muted" style={{ fontSize: "var(--fs-sm)" }}>{passRate(r) == null ? "—" : `${passRate(r)}%`}</span>
                       </div>
                       <ProgressBar counts={r} />
-                      <span className="faint" style={{ fontSize: 11.5 }}>
+                      <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>
                         {r.total - r.untested}/{r.total} executed · {timeAgo(r.started_at)}{r.milestone && ` · ${r.milestone}`}
                       </span>
                     </Link>
@@ -161,7 +161,7 @@ export function DashboardPage() {
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(380px, 100%), 1fr))", gap: 16 }}>
               <div className="card">
-                <div className="card-header" role="heading" aria-level={2} style={{ fontSize: 13 }}>Failing cases</div>
+                <div className="card-header" role="heading" aria-level={2} style={{ fontSize: "var(--fs-md)" }}>Failing cases</div>
                 {d.failingCases.length === 0 ? (
                   <div className="muted" style={{ padding: 16 }}>Every case's latest result is passing.</div>
                 ) : (
@@ -171,13 +171,13 @@ export function DashboardPage() {
                       <PriorityIcon priority={c.priority} />
                       <span className="mono muted" style={{ width: 62 }}>{key}-{c.number}</span>
                       <span className="truncate grow">{c.title}</span>
-                      <span className="faint" style={{ fontSize: 12 }}>{timeAgo(c.executed_at)}</span>
+                      <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>{timeAgo(c.executed_at)}</span>
                     </Link>
                   ))
                 )}
               </div>
               <div className="card">
-                <div className="card-header" role="heading" aria-level={2} style={{ fontSize: 13 }}><Bot size={14} /> Automation coverage by suite</div>
+                <div className="card-header" role="heading" aria-level={2} style={{ fontSize: "var(--fs-md)" }}><Bot size={14} /> Automation coverage by suite</div>
                 <div className="card-body">
                   {d.bySuite.length === 0 ? <span className="muted">No suites yet.</span> : d.bySuite.map((x) => <CoverageBar key={x.name} label={x.name} value={x.automated} total={x.cases} />)}
                 </div>
@@ -185,9 +185,9 @@ export function DashboardPage() {
             </div>
 
             <div className="card">
-              <div className="card-header" role="heading" aria-level={2} style={{ fontSize: 13 }}>
+              <div className="card-header" role="heading" aria-level={2} style={{ fontSize: "var(--fs-md)" }}>
                 <Sparkles size={14} /> Automate next
-                <Link to={`/p/${pid}/automated?view=insights`} style={{ margin: "-4px -6px -4px auto", padding: "4px 6px", color: "var(--accent-text)", fontSize: 12, fontWeight: 400 }}>
+                <Link to={`/p/${pid}/automated?view=insights`} style={{ margin: "-4px -6px -4px auto", padding: "4px 6px", color: "var(--accent-text)", fontSize: "var(--fs-sm)", fontWeight: 400 }}>
                   {d.candidatesTotal > d.candidates.length ? `All ${d.candidatesTotal}` : "Insights"}
                 </Link>
               </div>
@@ -199,14 +199,14 @@ export function DashboardPage() {
                     <PriorityIcon priority={c.priority} />
                     <span className="mono muted" style={{ width: 62 }}>{key}-{c.number}</span>
                     <span className="truncate grow">{c.title}</span>
-                    <span className="faint truncate" style={{ fontSize: 12, maxWidth: 220 }}>{c.reasons.join(" · ")}</span>
+                    <span className="faint truncate" style={{ fontSize: "var(--fs-sm)", maxWidth: 220 }}>{c.reasons.join(" · ")}</span>
                   </Link>
                 ))
               )}
             </div>
 
             {d.automatedRuns.length > 0 && (
-              <div className="faint row" style={{ fontSize: 12, gap: 6 }}>
+              <div className="faint row" style={{ fontSize: "var(--fs-sm)", gap: 6 }}>
                 Frameworks: {[...new Set(d.automatedRuns.map((r) => r.framework))].map((f) => <FrameworkBadge key={f} framework={f} />)}
               </div>
             )}

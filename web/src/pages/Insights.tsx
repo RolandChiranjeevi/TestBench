@@ -36,7 +36,7 @@ export function InsightsPage() {
         <h1>Automated tests</h1>
         <ViewTabs view="insights" />
         <span className="spacer" />
-        <label className="row muted" style={{ fontSize: 12.5 }}>
+        <label className="row muted" style={{ fontSize: "var(--fs-md)" }}>
           Based on the last
           <select className="select" style={{ width: 110, height: 28 }} value={windowRuns} onChange={(e) => setWindow(Number(e.target.value))} aria-label="Number of runs">
             <option value={10}>10 runs</option>
@@ -50,10 +50,10 @@ export function InsightsPage() {
           <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16, maxWidth: 1100 }}>
             {/* ---- Flaky ---- */}
             <div className="card">
-              <div className="card-header" role="heading" aria-level={2} style={{ fontSize: 13 }}>
+              <div className="card-header" role="heading" aria-level={2} style={{ fontSize: "var(--fs-md)" }}>
                 <Flame size={14} /> Flaky tests <span className="faint" style={{ fontWeight: 400 }}>{d.flakyTotal ? `${d.flakyTotal} found` : ""}</span>
               </div>
-              <div className="muted" style={{ padding: "10px 16px 0", fontSize: 12.5 }}>
+              <div className="muted" style={{ padding: "12px 16px 0", fontSize: "var(--fs-md)" }}>
                 A test counts as flaky when it needed a retry to pass, or keeps flipping between passing and failing. Retries are shown even when the final result was green,
                 because that is what a passing run hides. Tests that fail every time are broken, not flaky, and are not listed here.
               </div>
@@ -62,7 +62,7 @@ export function InsightsPage() {
                   {d.runs.length === 0 ? "Import some automated runs first." : "No flaky tests in this window. Retries are only visible from Playwright JSON reports."}
                 </div>
               ) : (
-                <div style={{ marginTop: 10 }}>
+                <div style={{ marginTop: 12 }}>
                   {d.flaky.map((f) => (
                     <div
                       key={f.testId}
@@ -73,7 +73,7 @@ export function InsightsPage() {
                     >
                       <div className="grow col" style={{ gap: 1, minWidth: 0 }}>
                         <span className="truncate" title={f.title}>{f.title}</span>
-                        <span className="faint truncate mono" style={{ fontSize: 11 }}>{f.file}</span>
+                        <span className="faint truncate mono" style={{ fontSize: "var(--fs-sm)" }}>{f.file}</span>
                       </div>
                       <div className="row" style={{ gap: 2, flexShrink: 0 }} aria-label="Result of each run, oldest first">
                         {f.strip.map((s, i) => (
@@ -87,7 +87,7 @@ export function InsightsPage() {
                           />
                         ))}
                       </div>
-                      <div className="col tabular" style={{ gap: 1, width: 190, flexShrink: 0, fontSize: 12, alignItems: "flex-end" }}>
+                      <div className="col tabular" style={{ gap: 1, width: 190, flexShrink: 0, fontSize: "var(--fs-sm)", alignItems: "flex-end" }}>
                         <span>failed {f.failures} of {f.runs}{f.failingNow && <span style={{ color: "var(--failed-fg)" }}> · failing now</span>}</span>
                         <span className="faint">{f.retries ? `${f.retries} needed a retry` : ""}{f.retries && f.flips ? " · " : ""}{f.flips ? `flipped ${f.flips}×` : ""}</span>
                       </div>
@@ -100,17 +100,17 @@ export function InsightsPage() {
             {/* ---- Time ---- */}
             <div className="two-col two-col-3-2">
               <div className="card">
-                <div className="card-header" role="heading" aria-level={2} style={{ fontSize: 13 }}><Gauge size={14} /> Test time per run</div>
+                <div className="card-header" role="heading" aria-level={2} style={{ fontSize: "var(--fs-md)" }}><Gauge size={14} /> Test time per run</div>
                 <div className="card-body">
                   <DurationChart
                     bars={d.runs.map((r) => ({ id: r.id, label: r.title, date: r.started_at, ms: r.duration_ms, failed: r.failed }))}
                     onOpen={(id) => navigate(`/p/${pid}/runs/${id}`)}
                   />
-                  <div className="faint" style={{ fontSize: 12, marginTop: 6 }}>Sum of every test's own time, not wall-clock time (tests run in parallel). Red bars had failures.</div>
+                  <div className="faint" style={{ fontSize: "var(--fs-sm)", marginTop: 6 }}>Sum of every test's own time, not wall-clock time (tests run in parallel). Red bars had failures.</div>
                 </div>
               </div>
               <div className="card">
-                <div className="card-header" role="heading" aria-level={2} style={{ fontSize: 13 }}>Getting slower</div>
+                <div className="card-header" role="heading" aria-level={2} style={{ fontSize: "var(--fs-md)" }}>Getting slower</div>
                 {d.slowdowns.length === 0 ? (
                   <div className="muted" style={{ padding: 16 }}>No test has slowed down noticeably. A test needs at least 6 timed runs, and its last 3 must be 25% and 300 ms slower than before.</div>
                 ) : (
@@ -118,7 +118,7 @@ export function InsightsPage() {
                     <Link key={s.testId} to={`/p/${pid}/runs/${s.runId}`} className="row" style={{ padding: "8px 16px", borderBottom: "1px solid var(--border)", minHeight: 46 }}>
                       <div className="grow col" style={{ gap: 0, minWidth: 0 }}>
                         <span className="truncate" title={s.title}>{s.title}</span>
-                        <span className="faint tabular" style={{ fontSize: 12 }}>{formatDuration(s.beforeMs)} → {formatDuration(s.recentMs)}</span>
+                        <span className="faint tabular" style={{ fontSize: "var(--fs-sm)" }}>{formatDuration(s.beforeMs)} → {formatDuration(s.recentMs)}</span>
                       </div>
                       <span className="tabular" style={{ color: "var(--blocked-fg)", fontWeight: 500 }}>+{s.pct}%</span>
                     </Link>
@@ -129,7 +129,7 @@ export function InsightsPage() {
 
             {/* ---- Automate next ---- */}
             <div className="card">
-              <div className="card-header" role="heading" aria-level={2} style={{ fontSize: 13 }}>
+              <div className="card-header" role="heading" aria-level={2} style={{ fontSize: "var(--fs-md)" }}>
                 <Sparkles size={14} /> Automate next <span className="faint" style={{ fontWeight: 400 }}>{d.candidatesTotal} manual {d.candidatesTotal === 1 ? "case has" : "cases have"} no automated test</span>
               </div>
               {d.candidates.length === 0 ? (
@@ -147,7 +147,7 @@ export function InsightsPage() {
                   </Link>
                 ))
               )}
-              <div className="faint" style={{ padding: "10px 16px", fontSize: 12 }}>
+              <div className="faint" style={{ padding: "12px 16px", fontSize: "var(--fs-sm)" }}>
                 Ranked by priority, how often the case is run by hand, how often it fails, and whether it's a smoke or regression case.
                 Put <code className="inline">@{key ?? "KEY"}-n</code> in a new test's title to link it, and it leaves this list.
               </div>

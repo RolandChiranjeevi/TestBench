@@ -130,7 +130,7 @@ function NewProjectModal({ onClose }: { onClose: () => void }) {
             onChange={(e) => { setKeyTouched(true); setKey(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "")); }}
             placeholder="WS"
           />
-          <span className="muted" style={{ fontSize: 12 }}>
+          <span className="muted" style={{ fontSize: "var(--fs-sm)" }}>
             Case IDs look like <code className="inline">{derivedKey || "KEY"}-12</code>. Put <code className="inline">@{derivedKey || "KEY"}-12</code> in an automated test's title to link it.
           </span>
         </div>
@@ -164,7 +164,7 @@ function RenameProjectModal({ project, onClose }: { project: Project; onClose: (
         <div className="field">
           <label htmlFor="rname">Name</label>
           <input id="rname" className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} />
-          <span className="muted" style={{ fontSize: 12 }}>
+          <span className="muted" style={{ fontSize: "var(--fs-sm)" }}>
             The key <code className="inline">{project.key}</code> stays the same, because case IDs and <code className="inline">@{project.key}-12</code> tags in your tests use it.
           </span>
         </div>

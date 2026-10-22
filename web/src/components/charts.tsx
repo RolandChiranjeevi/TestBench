@@ -64,7 +64,7 @@ export function TrendChart({ points, onOpen }: { points: Point[]; onOpen?: (id: 
         <div
           className="card"
           style={{
-            position: "absolute", pointerEvents: "none", padding: "6px 10px", fontSize: 12, boxShadow: "var(--shadow)", background: "var(--bg-elev)", whiteSpace: "nowrap",
+            position: "absolute", pointerEvents: "none", padding: "6px 12px", fontSize: "var(--fs-sm)", boxShadow: "var(--shadow)", background: "var(--bg-elev)", whiteSpace: "nowrap",
             left: `${(x(hover) / W) * 100}%`, top: `${(y(shown.rate) / H) * 100}%`, transform: `translate(${hover > points.length / 2 ? "calc(-100% - 10px)" : "10px"}, -50%)`,
           }}
         >
@@ -118,7 +118,7 @@ export function DurationChart({ bars, onOpen }: { bars: DurationBar[]; onOpen?: 
         <div
           className="card"
           style={{
-            position: "absolute", pointerEvents: "none", padding: "6px 10px", fontSize: 12, boxShadow: "var(--shadow)", background: "var(--bg-elev)", whiteSpace: "nowrap",
+            position: "absolute", pointerEvents: "none", padding: "6px 12px", fontSize: "var(--fs-sm)", boxShadow: "var(--shadow)", background: "var(--bg-elev)", whiteSpace: "nowrap",
             left: `${((L + hover * slot + slot / 2) / W) * 100}%`, top: 0, transform: `translateX(${hover > bars.length / 2 ? "calc(-100% - 8px)" : "8px"})`,
           }}
         >
@@ -134,12 +134,12 @@ export function DurationChart({ bars, onOpen }: { bars: DurationBar[]; onOpen?: 
 export function CoverageBar({ label, value, total }: { label: string; value: number; total: number }) {
   const pct = total ? Math.round((value / total) * 100) : 0;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 110px 80px", gap: 10, alignItems: "center", height: 30 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 110px 80px", gap: 12, alignItems: "center", height: 30 }}>
       <span className="truncate">{label}</span>
       <div className="progress" role="img" aria-label={`${pct}% automated`}>
         <span style={{ width: `${pct}%`, background: "var(--accent)" }} />
       </div>
-      <span className="muted tabular" style={{ textAlign: "right", fontSize: 12 }}>{value}/{total} · {pct}%</span>
+      <span className="muted tabular" style={{ textAlign: "right", fontSize: "var(--fs-sm)" }}>{value}/{total} · {pct}%</span>
     </div>
   );
 }

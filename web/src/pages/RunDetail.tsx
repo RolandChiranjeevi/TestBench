@@ -10,7 +10,7 @@ import {
   type Attachment, type ResultDetail, type RunDetail, type RunResult, type Status,
 } from "../api";
 import { Bug, Pencil } from "lucide-react";
-import { Empty, FrameworkBadge, Github, Kbd, PriorityIcon, ProgressBar, StatusIcon, STATUS_LABEL, useHotkeys, useToast } from "../components/ui";
+import { Empty, FrameworkBadge, Github, Kbd, PriorityIcon, ProgressBar, StatusIcon, STATUS_LABEL, useHotkeys, useToast, ListSkeleton } from "../components/ui";
 import { AutomatedDetail } from "./AutomatedDetail";
 import { NewRunModal } from "./Runs";
 import { BugReportModal, jiraLabel, jiraUrl } from "./BugReport";
@@ -18,7 +18,7 @@ import { BugReportModal, jiraLabel, jiraUrl } from "./BugReport";
 export function RunDetailPage() {
   const { pid, runId } = useParams();
   const { data: run, isLoading, error } = useQuery({ queryKey: ["run", runId], queryFn: () => api.get<RunDetail>(`/api/runs/${runId}`) });
-  if (isLoading) return null;
+  if (isLoading) return <div className="content"><ListSkeleton rows={8} /></div>;
   if (error || !run) {
     return (
       <Empty icon={<X size={20} />} title="Run not found">
@@ -238,10 +238,10 @@ function ManualRun({ run }: { run: RunDetail }) {
           </button>
         )}
       </RunHeader>
-      <div className="toolbar" style={{ gap: 14 }}>
+      <div className="toolbar" style={{ gap: 16 }}>
         <div style={{ width: 240 }}><ProgressBar counts={c} large /></div>
         <span className="tabular muted">{done}/{c.total} executed</span>
-        <span className="row tabular" style={{ gap: 10, fontSize: 12.5 }}>
+        <span className="row tabular" style={{ gap: 12, fontSize: "var(--fs-md)" }}>
           <span className="row" style={{ gap: 4 }}><StatusIcon status="passed" size={12} /> {c.passed}</span>
           <span className="row" style={{ gap: 4 }}><StatusIcon status="failed" size={12} /> {c.failed}</span>
           <span className="row" style={{ gap: 4 }}><StatusIcon status="blocked" size={12} /> {c.blocked}</span>
@@ -261,9 +261,9 @@ function ManualRun({ run }: { run: RunDetail }) {
           </div>
           {groups.map((g, gi) => (
             <div key={gi}>
-              <div className="group-header" style={{ padding: "0 14px" }}>{g.name}<span className="count">{g.items.length}</span></div>
+              <div className="group-header" style={{ padding: "0 16px" }}>{g.name}<span className="count">{g.items.length}</span></div>
               {g.items.map((r) => (
-                <div key={r.id} className={`list-row${r.id === selectedId ? " selected focused" : ""}`} style={{ padding: "0 14px" }} onClick={() => select(r.id)}>
+                <div key={r.id} className={`list-row${r.id === selectedId ? " selected focused" : ""}`} style={{ padding: "0 16px" }} onClick={() => select(r.id)}>
                   <StatusIcon status={r.status} />
                   <span className="mono muted" style={{ width: 58, flexShrink: 0 }}>{run.project_key}-{r.case_number ?? "?"}</span>
                   <span className="title">{r.case_title ?? "Deleted case"}</span>
@@ -390,7 +390,7 @@ function ExecutionPanel({ resultId, projectKey, run, onMark }: { resultId: numbe
           )}
         </div>
         {c.edited_since && (
-          <div className="muted" style={{ fontSize: 12 }}>
+          <div className="muted" style={{ fontSize: "var(--fs-sm)" }}>
             This case was edited after the run started. You're seeing the steps as they were then.
           </div>
         )}
@@ -398,11 +398,11 @@ function ExecutionPanel({ resultId, projectKey, run, onMark }: { resultId: numbe
         {c.description && <p style={{ margin: 0, color: "var(--text-2)", whiteSpace: "pre-wrap" }}>{c.description}</p>}
       </div>
 
-      <div className="card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
         <div className="row">
           <span className="section-label" style={{ margin: 0 }}>Result</span>
           <span className="spacer" />
-          {r.executed_at && r.status !== "untested" && <span className="faint" style={{ fontSize: 12 }}>{formatDateTime(r.executed_at)}</span>}
+          {r.executed_at && r.status !== "untested" && <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>{formatDateTime(r.executed_at)}</span>}
         </div>
         <div className="status-btns">
           {EXEC_STATUSES.map(({ s, key }) => (
@@ -446,7 +446,7 @@ function ExecutionPanel({ resultId, projectKey, run, onMark }: { resultId: numbe
                     <div style={{ whiteSpace: "pre-wrap" }}>{s.action || <span className="faint">No action</span>}</div>
                     {s.expected && (
                       <div className="row" style={{ alignItems: "flex-start", gap: 6, color: "var(--text-3)" }}>
-                        <span style={{ fontSize: 11, fontWeight: 600, paddingTop: 2, letterSpacing: "0.02em" }}>EXPECT</span>
+                        <span style={{ fontSize: "var(--fs-sm)", fontWeight: 600, paddingTop: 2, letterSpacing: "0.02em" }}>EXPECT</span>
                         <span style={{ whiteSpace: "pre-wrap" }}>{s.expected}</span>
                       </div>
                     )}
@@ -482,7 +482,7 @@ function ExecutionPanel({ resultId, projectKey, run, onMark }: { resultId: numbe
       <section>
         <div className="section-label"><Paperclip size={12} /> Attachments <span className="faint">{r.attachments.length}</span></div>
         {r.attachments.length > 0 && (
-          <div className="thumbs" style={{ marginBottom: 10 }}>
+          <div className="thumbs" style={{ marginBottom: 12 }}>
             {r.attachments.map((a) => (
               <Thumb key={a.id} a={a} onDelete={async () => { await api.del(`/api/attachments/${a.id}`); qc.invalidateQueries({ queryKey: ["result", resultId] }); }} />
             ))}
@@ -513,7 +513,7 @@ function StepActual({ initial, onSave }: { initial: string; onSave: (v: string) 
   return (
     <input
       className="input"
-      style={{ height: 28, fontSize: 12.5 }}
+      style={{ height: 28, fontSize: "var(--fs-md)" }}
       placeholder="Actual result"
       value={v}
       onChange={(e) => setV(e.target.value)}
@@ -589,7 +589,7 @@ function AutomatedRun({ run }: { run: RunDetail }) {
           <div className="stat"><span className="value" style={{ color: c.flaky ? "var(--flaky-fg)" : undefined }}>{c.flaky}</span><span className="label">Flaky</span></div>
           <div className="stat"><span className="value">{c.skipped}</span><span className="label">Skipped</span></div>
           <div className="stat"><span className="value">{formatDuration(c.duration_ms)}</span><span className="label">Total test time</span></div>
-          <div className="col" style={{ gap: 4, marginLeft: "auto", fontSize: 12, color: "var(--text-3)", alignItems: "flex-end" }}>
+          <div className="col" style={{ gap: 4, marginLeft: "auto", fontSize: "var(--fs-sm)", color: "var(--text-3)", alignItems: "flex-end" }}>
             <span>{formatDateTime(run.started_at)}</span>
             {meta.branch && (
               <span className="row" style={{ gap: 4 }}>
@@ -621,7 +621,7 @@ function AutomatedRun({ run }: { run: RunDetail }) {
           groups.map(([file, items]) => (
             <div key={file}>
               <div className="group-header" style={{ top: 42 }}>
-                <FileCode2 size={13} /> <span className="mono" style={{ fontSize: 12 }}>{file}</span> <span className="count">{items.length}</span>
+                <FileCode2 size={13} /> <span className="mono" style={{ fontSize: "var(--fs-sm)" }}>{file}</span> <span className="count">{items.length}</span>
               </div>
               {items.map((r) => {
                 const expandable = !!r.error || !!r.has_detail || r.attachment_count > 0;
@@ -655,7 +655,7 @@ function AutomatedRun({ run }: { run: RunDetail }) {
           ))
         )}
         {unlinked > 0 && (
-          <div className="row muted" style={{ padding: "16px 20px", fontSize: 12.5 }}>
+          <div className="row muted" style={{ padding: "16px 20px", fontSize: "var(--fs-md)" }}>
             <Bot size={13} /> {unlinked} {unlinked === 1 ? "test isn't" : "tests aren't"} linked to a case.
             <Link to={`/p/${pid}/automated?filter=unlinked`} style={{ color: "var(--accent-text)" }}>Link them</Link>
           </div>

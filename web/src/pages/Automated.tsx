@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bot, Download, Link2, Search, Sparkles } from "lucide-react";
 import { api, formatDuration, timeAgo, type AutomatedTest, type CaseSummary, type Project } from "../api";
-import { Empty, FrameworkBadge, StatusIcon, useToast } from "../components/ui";
+import { Empty, FrameworkBadge, StatusIcon, useToast, ListSkeleton } from "../components/ui";
 import { InsightsPage, ViewTabs } from "./Insights";
 
 type Filter = "all" | "unlinked" | "failing" | "flaky";
@@ -62,7 +62,7 @@ export function AutomatedPage() {
       <div className="topbar">
         <h1>Automated tests</h1>
         <ViewTabs view="tests" />
-        {tests && tests.length > 0 && <span className="faint" style={{ fontSize: 12.5 }}>{linkedPct}% linked to cases</span>}
+        {tests && tests.length > 0 && <span className="faint" style={{ fontSize: "var(--fs-md)" }}>{linkedPct}% linked to cases</span>}
         <span className="spacer" />
         <div className="search">
           <Search size={13} />
@@ -99,7 +99,7 @@ export function AutomatedPage() {
       </div>
       <div className="content">
         {features?.linkSuggestions && !!tests?.some((t) => !t.case_id) && <SuggestionsPanel />}
-        {isLoading ? null : !tests?.length ? (
+        {isLoading ? <ListSkeleton /> : !tests?.length ? (
           <Empty
             icon={<Bot size={20} />}
             title="No automated tests yet"
@@ -130,7 +130,7 @@ export function AutomatedPage() {
                   <td><StatusIcon status={t.last_status} /></td>
                   <td style={{ maxWidth: 420 }}>
                     <div className="truncate" title={t.full_name}>{t.title}</div>
-                    <div className="faint truncate mono" style={{ fontSize: 11 }}>{[t.file, t.suite_path].filter(Boolean).join(" › ")}</div>
+                    <div className="faint truncate mono" style={{ fontSize: "var(--fs-sm)" }}>{[t.file, t.suite_path].filter(Boolean).join(" › ")}</div>
                   </td>
                   <td><FrameworkBadge framework={t.framework} /></td>
                   <td>
@@ -209,10 +209,10 @@ function SuggestionsPanel() {
   const unjudged = data?.unjudged ?? 0;
   return (
     <div className="card" style={{ margin: "16px 20px 0" }}>
-      <div className="card-header row" style={{ fontSize: 13 }}>
+      <div className="card-header row" style={{ fontSize: "var(--fs-md)" }}>
         <Sparkles size={14} style={{ color: "var(--accent-text)" }} />
         <span style={{ fontWeight: 600 }}>Suggested links</span>
-        <span className="faint" style={{ fontSize: 12 }}>
+        <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>
           Judged by TypeSafe from the test and case text. Titles and steps are sent to their API. Review each one.
         </span>
         <span className="spacer" />
@@ -221,14 +221,14 @@ function SuggestionsPanel() {
         </button>
       </div>
       {data && data.suggestions.length === 0 && (
-        <div className="muted" style={{ padding: 16, fontSize: 12.5 }}>
+        <div className="muted" style={{ padding: 16, fontSize: "var(--fs-md)" }}>
           {unjudged ? "Not checked yet." : `No suggestions at ${Math.round(data.threshold * 100)}% or higher.`}
         </div>
       )}
       {data?.suggestions.map((s) => (
         <div key={s.testId} style={{ padding: "8px 16px", borderTop: "1px solid var(--border)" }}>
           <div className="truncate" title={s.title}>{s.title}</div>
-          <div className="faint truncate mono" style={{ fontSize: 11 }}>{s.file}</div>
+          <div className="faint truncate mono" style={{ fontSize: "var(--fs-sm)" }}>{s.file}</div>
           {s.candidates.map((c) => (
             <div key={c.caseId} className="row" style={{ marginTop: 4 }}>
               <span className="mono muted" style={{ width: 62 }}>{key}-{c.number}</span>

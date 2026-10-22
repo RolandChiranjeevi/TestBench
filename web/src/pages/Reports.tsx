@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, Calendar, Check, ExternalLink, FileDown, FileJson, FileSpreadsheet, FileText, Loader2, Plus, Rocket, Trash2, Zap } from "lucide-react";
 import { api, type ChecklistItem, type Milestone } from "../api";
-import { Empty, Modal, useToast } from "../components/ui";
+import { Empty, Modal, useToast, ListSkeleton } from "../components/ui";
 
 type MilestoneEdit = Partial<{ name: string; kind: string; startDate: string | null; endDate: string | null }>;
 
@@ -97,7 +97,7 @@ export function ReportsPage() {
                 {m.kind === "release" ? <Rocket size={14} className="faint" /> : <Zap size={14} className="faint" />}
                 <div className="grow col" style={{ gap: 0 }}>
                   <span className="truncate" style={{ fontWeight: 500 }}>{m.name}</span>
-                  <span className="faint" style={{ fontSize: 11.5 }}>{fmtRange(m)} · {m.run_count} {m.run_count === 1 ? "run" : "runs"}</span>
+                  <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>{fmtRange(m)} · {m.run_count} {m.run_count === 1 ? "run" : "runs"}</span>
                 </div>
               </button>
             ))}
@@ -115,7 +115,7 @@ export function ReportsPage() {
         </div>
 
         <div className="pane grow" style={{ display: "flex", flexDirection: "column", background: "var(--bg-sidebar)" }}>
-          {isLoading ? null : !milestones?.length ? (
+          {isLoading ? <ListSkeleton /> : !milestones?.length ? (
             <Empty icon={<Calendar size={20} />} title="No sprints or releases yet" action={<button className="btn primary" onClick={() => setCreating(true)}><Plus size={14} /> New sprint</button>}>
               Give a run a sprint or release name when you create it or import results. Each one gets a report here, with a comparison to the one before.
             </Empty>
@@ -151,19 +151,19 @@ function MilestoneBar({ m, onChange, onDelete }: { m: Milestone; onChange: (b: M
   const [end, setEnd] = useState(m.end_date ?? "");
   const commitName = () => name.trim() && name.trim() !== m.name && onChange({ name: name.trim() });
   return (
-    <div className="toolbar" style={{ height: "auto", minHeight: 46, flexWrap: "wrap", padding: "8px 20px", gap: 10, background: "var(--bg)" }}>
+    <div className="toolbar" style={{ height: "auto", minHeight: 46, flexWrap: "wrap", padding: "8px 20px", gap: 12, background: "var(--bg)" }}>
       <input className="bare" style={{ width: 220, fontWeight: 600, fontSize: 14 }} value={name} onChange={(e) => setName(e.target.value)} onBlur={commitName} onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()} aria-label="Name" />
       <select className="select" style={{ width: 110, height: 28 }} value={m.kind} onChange={(e) => onChange({ kind: e.target.value })} aria-label="Type">
         <option value="sprint">Sprint</option>
         <option value="release">Release</option>
       </select>
-      <label className="row muted" style={{ fontSize: 12.5 }}>
+      <label className="row muted" style={{ fontSize: "var(--fs-md)" }}>
         From <input type="date" className="input" style={{ width: 140, height: 28 }} value={start} max={end || undefined} onChange={(e) => { setStart(e.target.value); onChange({ startDate: e.target.value || null }); }} />
       </label>
-      <label className="row muted" style={{ fontSize: 12.5 }}>
+      <label className="row muted" style={{ fontSize: "var(--fs-md)" }}>
         To <input type="date" className="input" style={{ width: 140, height: 28 }} value={end} min={start || undefined} onChange={(e) => { setEnd(e.target.value); onChange({ endDate: e.target.value || null }); }} />
       </label>
-      <span className="faint" style={{ fontSize: 12 }}>Dates label the report and order sprints for comparison.</span>
+      <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>Dates label the report and order sprints for comparison.</span>
       {m.run_count === 0 && (
         <button className="btn ghost sm danger" style={{ marginLeft: "auto" }} onClick={onDelete}>
           <Trash2 size={13} /> Delete empty {m.kind}
@@ -240,11 +240,11 @@ function ChecklistPanel({ milestone, others, onChanged }: { milestone: Milestone
   return (
     <div className="card" style={{ margin: "12px 16px 0", flexShrink: 0, alignSelf: "center", width: "min(900px, calc(100% - 32px))", background: "var(--bg)" }}>
       <button className="card-header row" style={{ width: "100%", cursor: "pointer", background: "none", border: 0, textAlign: "left" }} onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-        <span style={{ fontWeight: 600, fontSize: 13 }}>Release checklist</span>
-        <span className="faint" style={{ fontSize: 12 }}>{items.length ? `${done} of ${items.length} done` : "No tasks yet"}</span>
+        <span style={{ fontWeight: 600, fontSize: "var(--fs-md)" }}>Release checklist</span>
+        <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>{items.length ? `${done} of ${items.length} done` : "No tasks yet"}</span>
         {items.length > 0 && done === items.length && <Check size={13} style={{ color: "var(--passed-fg)" }} />}
         <span className="spacer" />
-        <span className="faint" style={{ fontSize: 12 }}>{open ? "Hide" : "Show"}</span>
+        <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>{open ? "Hide" : "Show"}</span>
       </button>
       {open && (
         <div style={{ maxHeight: 260, overflow: "auto" }}>
@@ -260,9 +260,9 @@ function ChecklistPanel({ milestone, others, onChanged }: { milestone: Milestone
                 <span className="grow" style={{ cursor: "text", textDecoration: i.done_at ? "line-through" : undefined, color: i.done_at ? "var(--text-3)" : undefined }} onClick={() => setEditing(i.id)}>{i.title}</span>
               )}
               {i.done_at && (
-                <label className="row faint" style={{ fontSize: 12, gap: 4 }} title="When it was done. Click to change.">
+                <label className="row faint" style={{ fontSize: "var(--fs-sm)", gap: 4 }} title="When it was done. Click to change.">
                   Done
-                  <input type="datetime-local" className="input" style={{ height: 24, width: 170, fontSize: 12 }} value={toLocalInput(i.done_at)}
+                  <input type="datetime-local" className="input" style={{ height: 24, width: 170, fontSize: "var(--fs-sm)" }} value={toLocalInput(i.done_at)}
                     onChange={(e) => { const v = e.target.value; if (v) run.mutate(() => api.patch<ChecklistItem[]>(`/api/checklist/${i.id}`, { doneAt: new Date(v).toISOString().slice(0, 16) })); }} />
                 </label>
               )}

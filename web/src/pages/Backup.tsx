@@ -65,7 +65,7 @@ export function BackupPage() {
                 <a className="btn primary" href="/api/backup" onClick={() => setTimeout(() => qc.invalidateQueries({ queryKey: ["backup-info"] }), 4000)}>
                   <Download size={14} /> Download backup
                 </a>
-                <span className="faint" style={{ fontSize: 12.5 }}>{info?.lastBackupAt ? `Last backup ${timeAgo(info.lastBackupAt)}` : "No backup made yet"}</span>
+                <span className="faint" style={{ fontSize: "var(--fs-md)" }}>{info?.lastBackupAt ? `Last backup ${timeAgo(info.lastBackupAt)}` : "No backup made yet"}</span>
               </div>
             </div>
           </div>
@@ -84,7 +84,7 @@ export function BackupPage() {
                       <span className="faint">Saved in</span> <code className="inline">{info.auto.dir}</code>
                       <span className="faint">({info.auto.count} {info.auto.count === 1 ? "copy" : "copies"})</span>
                     </div>
-                    <div className="faint" style={{ fontSize: 12.5 }}>
+                    <div className="faint" style={{ fontSize: "var(--fs-md)" }}>
                       This folder is on the same disk as your data, which protects against mistakes and a damaged database but not a lost disk. For an extra copy
                       elsewhere, start Testbench with <code className="inline">TESTBENCH_BACKUP_DIR</code> set to a synced folder such as iCloud Drive or Dropbox.
                       To restore one, use "Choose backup .zip" below.
@@ -100,7 +100,7 @@ export function BackupPage() {
           <div className="card">
             <div className="card-header" role="heading" aria-level={2}><RotateCcw size={15} /> Restore from a backup</div>
             <div className="card-body col" style={{ gap: 12 }}>
-              <div className="row" style={{ alignItems: "flex-start", gap: 10, color: "var(--blocked-fg)" }}>
+              <div className="row" style={{ alignItems: "flex-start", gap: 12, color: "var(--blocked-fg)" }}>
                 <ShieldAlert size={16} style={{ flexShrink: 0, marginTop: 2 }} />
                 <span style={{ color: "var(--text-2)" }}>
                   Restoring replaces <strong>everything</strong> currently in TestBench. Your present data is kept in <code className="inline">data/previous/</code>, not deleted,

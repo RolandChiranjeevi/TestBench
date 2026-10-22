@@ -182,7 +182,7 @@ function BugReportDialog({ draft, resultId, jiraKey, attachmentCount, attachment
 
   return (
     <Modal title="Report bug" onClose={onClose} width={760} footer={<button className="btn" onClick={onClose}>Done</button>}>
-      <div className="muted" style={{ fontSize: 12.5, marginTop: -4 }}>
+      <div className="muted" style={{ fontSize: "var(--fs-md)", marginTop: -4 }}>
         Edit the draft, copy it into a new Jira issue, then paste the issue key back here to link it.
       </div>
 
@@ -194,7 +194,7 @@ function BugReportDialog({ draft, resultId, jiraKey, attachmentCount, attachment
         </div>
       </div>
 
-      <div className="row" style={{ gap: 10, alignItems: "flex-start" }}>
+      <div className="row" style={{ gap: 12, alignItems: "flex-start" }}>
         <div className="field grow">
           <label htmlFor="bug-expected">Expected result</label>
           <textarea id="bug-expected" className="textarea" rows={3} value={fields.expected} onChange={set("expected")} placeholder="What should happen?" />
@@ -211,7 +211,7 @@ function BugReportDialog({ draft, resultId, jiraKey, attachmentCount, attachment
 
       <div className="field">
         <div className="row">
-          <label style={{ fontSize: 12, color: "var(--text-3)", fontWeight: 500 }}>Description preview</label>
+          <label style={{ fontSize: "var(--fs-sm)", color: "var(--text-3)", fontWeight: 500 }}>Description preview</label>
           <span className="spacer" />
           <button className="btn primary sm" onClick={() => doCopy("description")}>
             {copied === "description" ? <Check size={13} /> : <Copy size={13} />} Copy description
@@ -220,16 +220,16 @@ function BugReportDialog({ draft, resultId, jiraKey, attachmentCount, attachment
         {/* The HTML is built from escaped text above, so it is safe to render. */}
         <div
           className="card"
-          style={{ padding: "10px 14px", maxHeight: 220, overflow: "auto", fontSize: 13, lineHeight: 1.55 }}
+          style={{ padding: "12px 16px", maxHeight: 220, overflow: "auto", fontSize: "var(--fs-md)", lineHeight: 1.55 }}
           dangerouslySetInnerHTML={{ __html: html }}
         />
       </div>
 
-      <div className="card" style={{ padding: 12, display: "flex", alignItems: "center", gap: 10 }}>
+      <div className="card" style={{ padding: 12, display: "flex", alignItems: "center", gap: 12 }}>
         <Paperclip size={15} className="faint" />
         <div className="grow">
           <div style={{ fontWeight: 500 }}>{attachmentCount} {attachmentCount === 1 ? "attachment" : "attachments"}</div>
-          <div className="faint" style={{ fontSize: 12 }}>
+          <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>
             {attachmentCount
               ? "Browsers can't paste several files at once. Download them and drag them into the Jira issue."
               : (attachmentHint ?? "Add screenshots on the result first (drop, browse, or paste with ⌘V).")}

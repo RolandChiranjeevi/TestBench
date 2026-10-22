@@ -172,7 +172,7 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}>
       <div className="topbar" style={{ position: "sticky", top: 0, background: "var(--bg)", zIndex: 2 }}>
         <span className="mono muted">{data.project_key}-{data.number}</span>
-        <span className="faint" style={{ fontSize: 12, display: "inline-flex", alignItems: "center", gap: 4 }}>
+        <span className="faint" style={{ fontSize: "var(--fs-sm)", display: "inline-flex", alignItems: "center", gap: 4 }}>
           {saveState === "saving" && <><Loader2 size={12} className="spin" /> Saving</>}
           {saveState === "saved" && <><Check size={12} /> Saved</>}
           {saveState === "error" && <span style={{ color: "var(--failed-fg)" }}>Not saved</span>}
@@ -320,7 +320,7 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
             <BookOpenCheck size={13} /> Requirements <span className="faint">{data.requirements.length}</span>
           </div>
           <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
-            {data.requirements.length === 0 && <span className="muted" style={{ fontSize: 12.5 }}>Not linked to a requirement.</span>}
+            {data.requirements.length === 0 && <span className="muted" style={{ fontSize: "var(--fs-md)" }}>Not linked to a requirement.</span>}
             {data.requirements.map((r) => (
               <Link key={r.id} to={`/p/${pid}/requirements?req=${r.id}`} className="chip" title={r.review_needed ? `${r.title} (reworded, review needed)` : r.title} style={{ textDecoration: r.status === "deprecated" ? "line-through" : undefined, borderColor: r.review_needed ? "var(--blocked)" : undefined }}>
                 {r.review_needed && <span className="dot" style={{ background: "var(--blocked)" }} />}REQ-{r.number} <span className="truncate" style={{ maxWidth: 200 }}>{r.title}</span>
@@ -329,7 +329,7 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
             <button className="btn ghost sm" onClick={() => setLinkingReqs(true)}><Link2 size={13} /> Link</button>
           </div>
           {data.requirements.filter((r) => r.review_needed).map((r) => (
-            <div key={r.id} className="row" style={{ marginTop: 8, fontSize: 12.5, color: "var(--blocked-fg)" }}>
+            <div key={r.id} className="row" style={{ marginTop: 8, fontSize: "var(--fs-md)", color: "var(--blocked-fg)" }}>
               <span className="grow">REQ-{r.number} was reworded after this case was linked. Check the case still fits.</span>
               <button className="btn sm" onClick={async () => {
                 await api.post(`/api/requirements/${r.id}/review`, { caseIds: [caseId] });
@@ -344,7 +344,7 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
             <Bot size={13} /> Automation <span className="faint">{data.automated.length}</span>
           </div>
           {data.automated.length === 0 ? (
-            <div className="muted" style={{ fontSize: 12.5 }}>
+            <div className="muted" style={{ fontSize: "var(--fs-md)" }}>
               Not automated. Put <code className="inline">@{data.project_key}-{data.number}</code> in a test title, or link a test from{" "}
               <Link to={`/p/${pid}/automated`} style={{ color: "var(--accent-text)" }}>Automated tests</Link>.
             </div>
@@ -365,7 +365,7 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
         <section>
           <div className="section-label">History</div>
           {data.history.length === 0 ? (
-            <div className="muted" style={{ fontSize: 12.5 }}>Not executed yet.</div>
+            <div className="muted" style={{ fontSize: "var(--fs-md)" }}>Not executed yet.</div>
           ) : (
             <div className="col" style={{ gap: 0 }}>
               {data.history.map((h) => (
@@ -373,7 +373,7 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
                   <StatusIcon status={h.status} flaky={!!h.flaky} />
                   {h.kind === "automated" ? <Bot size={13} className="faint" /> : null}
                   <span className="truncate grow">{h.run_title}</span>
-                  <span className="faint" style={{ fontSize: 12 }}>{timeAgo(h.executed_at ?? h.started_at)}</span>
+                  <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>{timeAgo(h.executed_at ?? h.started_at)}</span>
                 </Link>
               ))}
             </div>
@@ -454,7 +454,7 @@ function TagInput({ tags, onChange }: { tags: string[]; onChange: (t: string[]) 
       ))}
       <input
         className="bare"
-        style={{ width: 90, height: 26, fontSize: 12.5 }}
+        style={{ width: 90, height: 26, fontSize: "var(--fs-md)" }}
         value={value}
         placeholder="+ Add tag"
         onChange={(e) => setValue(e.target.value)}

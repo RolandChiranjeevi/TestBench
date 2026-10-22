@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, BookOpenCheck, Bot, ClipboardList, Copy, Folder, FolderOpen, Inbox, ListChecks, MoreHorizontal, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
 import { api, orderSuites, type BackupInfo, type CaseDetail, type CaseSummary, type Project, type RequirementDetail, type Suite } from "../api";
-import { ConfirmModal, Empty, Kbd, Modal, PriorityIcon, StatusIcon, useHotkeys, useToast } from "../components/ui";
+import { ConfirmModal, Empty, Kbd, Modal, PriorityIcon, StatusIcon, useHotkeys, useToast, ListSkeleton } from "../components/ui";
 import { CaseEditor } from "./CaseEditor";
 import { NewRunModal } from "./Runs";
 import { TemplateModal } from "./Templates";
@@ -190,7 +190,7 @@ export function CasesPage() {
       {/* Suite tree */}
       <div className="pane suite-pane" style={{ width: 220, flexShrink: 0, borderRight: "1px solid var(--border)", background: "var(--bg-panel)", position: "relative" }}>
         <div className="topbar" style={{ padding: "0 8px 0 16px" }}>
-          <h2 style={{ fontSize: 12.5, color: "var(--text-3)", fontWeight: 500 }}>Suites</h2>
+          <h2 style={{ fontSize: "var(--fs-md)", color: "var(--text-3)", fontWeight: 500 }}>Suites</h2>
           <span className="spacer" />
           <button className="btn ghost icon sm" onClick={() => setSuiteModal({ parentId: null })} title="New suite" aria-label="New suite">
             <Plus size={14} />
@@ -325,13 +325,13 @@ export function CasesPage() {
           )}
           <span className="spacer" />
           {!compact && (
-            <span className="faint kbd-hints" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+            <span className="faint kbd-hints" style={{ fontSize: "var(--fs-sm)", whiteSpace: "nowrap" }}>
               <Kbd>J</Kbd> <Kbd>K</Kbd> move · <Kbd>X</Kbd> select · <Kbd>↵</Kbd> open
             </span>
           )}
         </div>
         <div className="content" ref={listRef}>
-          {isLoading ? null : flat.length === 0 ? (
+          {isLoading ? <ListSkeleton /> : flat.length === 0 ? (
             cases?.length ? (
               <Empty icon={<Search size={20} />} title="No matching cases">Try a different search or filter.</Empty>
             ) : (
@@ -608,7 +608,7 @@ function NewCaseModal({ projectId, suites, defaultSuite, requirementId, onClose,
       onClose={onClose}
       footer={
         <>
-          <label className="row muted" style={{ marginRight: "auto", fontSize: 12.5, cursor: "pointer" }}>
+          <label className="row muted" style={{ marginRight: "auto", fontSize: "var(--fs-md)", cursor: "pointer" }}>
             <input type="checkbox" className="checkbox" checked={another} onChange={(e) => setAnother(e.target.checked)} /> Create more
           </label>
           <button className="btn primary" onClick={submit} disabled={!title.trim() || create.isPending}>
@@ -635,7 +635,7 @@ function NewCaseModal({ projectId, suites, defaultSuite, requirementId, onClose,
             {suites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </label>
-        <span className="faint" style={{ fontSize: 12 }}>Add steps, priority and tags after creating.</span>
+        <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>Add steps, priority and tags after creating.</span>
       </div>
     </Modal>
   );
@@ -749,7 +749,7 @@ function BulkEditModal({ caseIds, suites, allTags, onClose, onDone }: { caseIds:
           <label htmlFor="be-remove">Remove tags</label>
           <input id="be-remove" className="input" list="be-tags" placeholder="old-tag" value={removeTags} onChange={(e) => setRemoveTags(e.target.value)} />
           <datalist id="be-tags">{allTags.map((t) => <option key={t} value={t} />)}</datalist>
-          <span className="muted" style={{ fontSize: 12 }}>Separate several with commas. Existing tags on each case are kept.</span>
+          <span className="muted" style={{ fontSize: "var(--fs-sm)" }}>Separate several with commas. Existing tags on each case are kept.</span>
         </div>
       </div>
     </Modal>

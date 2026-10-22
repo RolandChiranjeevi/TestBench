@@ -115,12 +115,12 @@ function UploadCard() {
         >
           <Upload size={18} />
           <div style={{ marginTop: 6, color: "var(--text)" }}>Drop a Playwright artifact (.zip), or JUnit XML / JSON files</div>
-          <div style={{ fontSize: 12 }}>An artifact zip brings its screenshots, videos and traces along. Several files are merged into one run.</div>
+          <div style={{ fontSize: "var(--fs-sm)" }}>An artifact zip brings its screenshots, videos and traces along. Several files are merged into one run.</div>
           <input ref={input} type="file" multiple hidden accept=".xml,.json,.zip" onChange={(e) => { add(e.target.files); e.target.value = ""; }} />
         </div>
         <div className="row" style={{ gap: 8 }}>
           <button className="btn sm" onClick={() => folderInput.current?.click()}><FolderOpen size={13} /> Choose a test-results folder</button>
-          <span className="faint" style={{ fontSize: 12 }}>Include the folder with your screenshots, videos and traces next to results.json.</span>
+          <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>Include the folder with your screenshots, videos and traces next to results.json.</span>
           {/* webkitdirectory is not in React's input typings. */}
           <input
             ref={folderInput}
@@ -133,7 +133,7 @@ function UploadCard() {
         {files.length > 0 && (
           <div className="col" style={{ gap: 4 }}>
             {reports.map((p, i) => (
-              <div key={i} className="row" style={{ fontSize: 12.5 }}>
+              <div key={i} className="row" style={{ fontSize: "var(--fs-md)" }}>
                 <FileUp size={13} className="faint" />
                 <span className="mono truncate grow">{p.path}</span>
                 <span className="faint">{Math.max(1, Math.round(p.file.size / 1024))} KB</span>
@@ -141,14 +141,14 @@ function UploadCard() {
               </div>
             ))}
             {evidenceCount > 0 && (
-              <div className="row faint" style={{ fontSize: 12.5 }}>
+              <div className="row faint" style={{ fontSize: "var(--fs-md)" }}>
                 <Paperclip size={13} /> + {evidenceCount} evidence {evidenceCount === 1 ? "file" : "files"} (screenshots, videos, traces)
                 <button className="btn ghost sm" onClick={() => setFiles(reports)}>Clear</button>
               </div>
             )}
           </div>
         )}
-        <div className="row" style={{ gap: 10 }}>
+        <div className="row" style={{ gap: 12 }}>
           <div className="field grow">
             <label htmlFor="fw">Framework</label>
             <select id="fw" className="select" value={framework} onChange={(e) => setFramework(e.target.value)}>
@@ -164,7 +164,7 @@ function UploadCard() {
             <input id="rt" className="input" placeholder="Defaults to framework + file name" value={title} onChange={(e) => setTitle(e.target.value)} />
           </div>
         </div>
-        <div className="row" style={{ gap: 10 }}>
+        <div className="row" style={{ gap: 12 }}>
           <div className="field grow">
             <label htmlFor="renv">Environment</label>
             <input id="renv" className="input" placeholder="staging" value={environment} onChange={(e) => setEnvironment(e.target.value)} />
@@ -208,7 +208,7 @@ function GithubCard() {
         <Github size={15} /> GitHub Actions
         <span className="spacer" />
         {status && (
-          <span className="row faint" style={{ fontSize: 12, fontWeight: 400, gap: 4 }}>
+          <span className="row faint" style={{ fontSize: "var(--fs-sm)", fontWeight: 400, gap: 4 }}>
             {status.authenticated ? <CheckCircle2 size={12} style={{ color: "var(--passed-fg)" }} /> : <XCircle size={12} style={{ color: "var(--failed-fg)" }} />}
             {status.authenticated ? `Authenticated via ${status.via}` : "Not authenticated"}
           </span>
@@ -216,7 +216,7 @@ function GithubCard() {
       </div>
       <div className="card-body col" style={{ gap: 12 }}>
         {status && !status.authenticated && (
-          <div className="muted" style={{ fontSize: 12.5 }}>
+          <div className="muted" style={{ fontSize: "var(--fs-md)" }}>
             Run <code className="inline">gh auth login</code>, or start the server with <code className="inline">GITHUB_TOKEN=…</code>. The token is read from there and never stored.
           </div>
         )}
@@ -232,7 +232,7 @@ function GithubCard() {
           <>
             <AutoImport key={current.id} source={current} />
             <WorkflowRuns key={current.id} source={current} />
-            <div className="row faint" style={{ fontSize: 12 }}>
+            <div className="row faint" style={{ fontSize: "var(--fs-sm)" }}>
               <span>
                 {current.artifact_pattern ? <>Artifacts matching <code className="inline">{current.artifact_pattern}</code></> : "All artifacts"} are scanned for .xml and .json reports.
               </span>
@@ -243,7 +243,7 @@ function GithubCard() {
             </div>
           </>
         ) : (
-          <div className="muted" style={{ fontSize: 12.5, padding: "12px 0" }}>
+          <div className="muted" style={{ fontSize: "var(--fs-md)", padding: "12px 0" }}>
             Connect a repository to list its workflow runs and import the test reports they upload as artifacts.
           </div>
         )}
@@ -283,20 +283,20 @@ function AutoImport({ source }: { source: GithubSource }) {
   });
 
   return (
-    <div className="card" style={{ background: "var(--bg)", padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+    <div className="card" style={{ background: "var(--bg)", padding: 12, display: "flex", flexDirection: "column", gap: 12 }}>
       <label className="row" style={{ cursor: "pointer" }}>
         <input type="checkbox" className="checkbox" checked={on} onChange={(e) => save.mutate({ autoImport: e.target.checked })} />
         <span style={{ fontWeight: 500 }}>Import new runs automatically</span>
         <span className="spacer" />
         {on && (
-          <span className="faint" style={{ fontSize: 12, color: source.last_error ? "var(--failed-fg)" : undefined }} title={source.last_error || undefined}>
+          <span className="faint" style={{ fontSize: "var(--fs-sm)", color: source.last_error ? "var(--failed-fg)" : undefined }} title={source.last_error || undefined}>
             {source.last_error ? "Last check failed" : source.last_checked_at ? `Checked ${timeAgo(source.last_checked_at)}` : "Waiting for the first check"}
           </span>
         )}
       </label>
       {on && (
         <>
-          <div className="row" style={{ gap: 10 }}>
+          <div className="row" style={{ gap: 12 }}>
             <div className="field grow">
               <label htmlFor="af">Only these branches</label>
               <input
@@ -314,7 +314,7 @@ function AutoImport({ source }: { source: GithubSource }) {
             </div>
           </div>
           <div className="row">
-            <span className="faint" style={{ fontSize: 12 }}>
+            <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>
               Checked every 5 minutes while TestBench is running. Only runs created after {source.auto_since ? formatDateTime(source.auto_since) : "you switched this on"} are
               imported automatically; older runs need Import below.
             </span>
@@ -323,8 +323,8 @@ function AutoImport({ source }: { source: GithubSource }) {
               {check.isPending ? <Loader2 size={12} className="spin" /> : <RefreshCw size={12} />} Check now
             </button>
           </div>
-          {source.last_error && <div style={{ color: "var(--failed-fg)", fontSize: 12.5 }}>{source.last_error}</div>}
-          <div className="faint" style={{ fontSize: 12 }} title={source.last_skip_note || undefined}>
+          {source.last_error && <div style={{ color: "var(--failed-fg)", fontSize: "var(--fs-md)" }}>{source.last_error}</div>}
+          <div className="faint" style={{ fontSize: "var(--fs-sm)" }} title={source.last_skip_note || undefined}>
             {source.imported_count || source.skipped_count
               ? `Imported ${source.imported_count ?? 0} automatically${source.skipped_count ? ` · skipped ${source.skipped_count} with no test reports (hover for why)` : ""}`
               : "Nothing imported automatically yet."}
@@ -357,7 +357,7 @@ function WorkflowRuns({ source }: { source: GithubSource }) {
   };
 
   if (isLoading) return <div className="row muted"><Loader2 size={14} className="spin" /> Loading workflow runs…</div>;
-  if (error) return <div style={{ color: "var(--failed-fg)", fontSize: 12.5 }}>{(error as Error).message}</div>;
+  if (error) return <div style={{ color: "var(--failed-fg)", fontSize: "var(--fs-md)" }}>{(error as Error).message}</div>;
   if (!runs?.length) return <div className="muted">No workflow runs found.</div>;
 
   return (
@@ -372,7 +372,7 @@ function WorkflowRuns({ source }: { source: GithubSource }) {
           <ConclusionIcon run={r} />
           <div className="grow col" style={{ gap: 1 }}>
             <span className="truncate">{r.display_title}</span>
-            <span className="row faint" style={{ fontSize: 11.5, gap: 6, whiteSpace: "nowrap", overflow: "hidden" }}>
+            <span className="row faint" style={{ fontSize: "var(--fs-sm)", gap: 6, whiteSpace: "nowrap", overflow: "hidden" }}>
               <span>{r.name} #{r.run_number}</span>·<GitBranch size={10} style={{ flexShrink: 0 }} />
               <span className="truncate" style={{ maxWidth: 180 }}>{r.head_branch}</span>·<span>{timeAgo(r.created_at)}</span>
               {r.artifact_count === 0 && <span style={{ color: "var(--blocked-fg)" }} title="This run uploaded no test artifacts, so there is nothing to import">· no test artifacts</span>}
@@ -505,7 +505,7 @@ mvn test
         <div className="col">
           <span className="section-label" style={{ margin: 0, height: 26 }}>2. Upload it as an artifact in GitHub Actions</span>
           <pre className="snippet">{workflow}</pre>
-          <span className="muted" style={{ fontSize: 12 }}>Then connect the repository above and click Import on a run. Artifacts expire after 90 days by default.</span>
+          <span className="muted" style={{ fontSize: "var(--fs-sm)" }}>Then connect the repository above and click Import on a run. Artifacts expire after 90 days by default.</span>
         </div>
       </div>
     </div>

@@ -3,7 +3,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookOpenCheck, Check, ExternalLink, FileText, History, ImagePlus, Link2, Loader2, Paperclip, Play, Plus, Search, Trash2, X } from "lucide-react";
 import { api, timeAgo, type CoverageState, type Priority, type Project, type Requirement, type RequirementAttachment, type RequirementDetail, type RequirementRevision, type RequirementStatus } from "../api";
-import { Empty, Kbd, Modal, PriorityIcon, PRIORITY_LABEL, StatusIcon, useHotkeys, useToast } from "../components/ui";
+import { Empty, Kbd, Modal, PriorityIcon, PRIORITY_LABEL, StatusIcon, useHotkeys, useToast, ListSkeleton } from "../components/ui";
 import { CasePicker } from "../components/CasePicker";
 import { jiraLabel, jiraUrl } from "./BugReport";
 import { NewRunModal } from "./Runs";
@@ -100,7 +100,7 @@ export function RequirementsPage() {
           </div>
         </div>
         <div className="content">
-          {isLoading ? null : visible.length === 0 ? (
+          {isLoading ? <ListSkeleton /> : visible.length === 0 ? (
             reqs.length ? (
               <Empty icon={<Search size={20} />} title="No matching requirements">Try a different search or filter.</Empty>
             ) : (
@@ -115,7 +115,7 @@ export function RequirementsPage() {
                 <span className="id mono" style={{ width: 62 }}>REQ-{r.number}</span>
                 <span className="title" style={r.status === "deprecated" ? { textDecoration: "line-through", color: "var(--text-3)" } : undefined}>{r.title}</span>
                 <span className="meta">
-                  {!compact && r.source && <span className="faint mono" style={{ fontSize: 11.5 }}>{jiraLabel(r.source)}</span>}
+                  {!compact && r.source && <span className="faint mono" style={{ fontSize: "var(--fs-sm)" }}>{jiraLabel(r.source)}</span>}
                   {r.status === "draft" && <span className="chip">Draft</span>}
                   {r.attachmentCount > 0 && <span className="chip" title={`${r.attachmentCount} attachment(s)`}><Paperclip size={11} /> {r.attachmentCount}</span>}
                   {r.status !== "deprecated" && r.reviewCount > 0 && (
@@ -172,7 +172,7 @@ function NewRequirementModal({ projectId, onClose, onCreated }: { projectId: num
       footer={<button className="btn primary" disabled={!title.trim() || create.isPending} onClick={submit}>Create requirement <Kbd>↵</Kbd></button>}
     >
       <input className="bare title-input" autoFocus placeholder="e.g. A customer can pay with a saved card" value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} aria-label="Requirement title" />
-      <span className="faint" style={{ fontSize: 12 }}>Add the description, priority and linked test cases after creating.</span>
+      <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>Add the description, priority and linked test cases after creating.</span>
     </Modal>
   );
 }
@@ -258,8 +258,8 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
           <AttachmentsSection requirementId={data.id} attachments={data.attachments} />
         </section>
         {data.cases.some((c) => c.review_needed) && (
-          <div className="card" style={{ padding: "10px 12px", borderColor: "var(--blocked)", display: "flex", gap: 10, alignItems: "center" }}>
-            <span className="grow" style={{ fontSize: 12.5 }}>
+          <div className="card" style={{ padding: "12px 12px", borderColor: "var(--blocked)", display: "flex", gap: 12, alignItems: "center" }}>
+            <span className="grow" style={{ fontSize: "var(--fs-md)" }}>
               The wording changed after {data.cases.filter((c) => c.review_needed).length} linked {data.cases.filter((c) => c.review_needed).length === 1 ? "case was" : "cases were"} written or last checked. Make sure they still test the right thing.
             </span>
             <button className="btn sm" onClick={() => review.mutate(undefined)} disabled={review.isPending}><Check size={12} /> All still correct</button>
@@ -268,7 +268,7 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
         <section>
           <div className="section-label">Test cases <span className="faint">{data.cases.length}</span></div>
           {data.cases.length === 0 ? (
-            <div className="muted" style={{ fontSize: 12.5, marginBottom: 8 }}>No test cases linked yet. This requirement is not covered.</div>
+            <div className="muted" style={{ fontSize: "var(--fs-md)", marginBottom: 8 }}>No test cases linked yet. This requirement is not covered.</div>
           ) : (
             <div className="card">
               {data.cases.map((c) => (
@@ -332,8 +332,8 @@ const FIELD_LABEL: Record<string, string> = { title: "Title", description: "Desc
 function RevisionRow({ rev, caseKey }: { rev: RequirementRevision; caseKey: string }) {
   const keys = (nums: number[]) => nums.map((n) => `${caseKey}-${n}`).join(", ");
   return (
-    <div style={{ fontSize: 12.5 }}>
-      <div className="faint" style={{ fontSize: 11.5 }}>{timeAgo(rev.at.replace(" ", "T") + "Z")}{rev.material && " · wording changed"}</div>
+    <div style={{ fontSize: "var(--fs-md)" }}>
+      <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>{timeAgo(rev.at.replace(" ", "T") + "Z")}{rev.material && " · wording changed"}</div>
       {rev.changes.map((c, i) => (
         <div key={i}>
           {c.field === "created" && "Created"}
@@ -438,14 +438,14 @@ function AttachmentsSection({ requirementId, attachments }: { requirementId: num
   return (
     <>
       {attachments.length > 0 && (
-        <div className="card" style={{ marginBottom: 10 }}>
+        <div className="card" style={{ marginBottom: 12 }}>
           {attachments.map((a) => {
             const url = `/uploads/${a.stored_name}`;
             return (
               <div key={a.id} className="row" style={{ padding: "6px 12px", borderBottom: "1px solid var(--border)", minHeight: 40 }}>
                 {a.mime.startsWith("image/") ? <img src={url} alt="" style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4 }} /> : <FileText size={16} className="faint" />}
                 <a className="truncate grow" href={url} target="_blank" rel="noreferrer" download={a.filename} title={`Open ${a.filename}`}>{a.filename}</a>
-                <span className="faint" style={{ fontSize: 12 }}>{fmtSize(a.size)}</span>
+                <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>{fmtSize(a.size)}</span>
                 <button
                   className="btn ghost icon sm danger"
                   aria-label={`Remove ${a.filename}`}
@@ -461,7 +461,7 @@ function AttachmentsSection({ requirementId, attachments }: { requirementId: num
       )}
       <div
         className={`dropzone${over ? " over" : ""}`}
-        style={{ padding: 14 }}
+        style={{ padding: 16 }}
         onClick={() => fileRef.current?.click()}
         onDragOver={(e) => { e.preventDefault(); setOver(true); }}
         onDragLeave={() => setOver(false)}
@@ -472,7 +472,7 @@ function AttachmentsSection({ requirementId, attachments }: { requirementId: num
       >
         {uploading ? <Loader2 size={16} className="spin" /> : <ImagePlus size={16} />}
         <div style={{ marginTop: 4 }}>Drop files here, click to browse, or paste a screenshot with <Kbd>⌘V</Kbd></div>
-        <div className="faint" style={{ fontSize: 11.5 }}>PDF, Word, Excel, PowerPoint, images, CSV, text, mail (.eml), zip</div>
+        <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>PDF, Word, Excel, PowerPoint, images, CSV, text, mail (.eml), zip</div>
         <input ref={fileRef} type="file" multiple hidden onChange={(e) => { if (e.target.files) upload(e.target.files); e.target.value = ""; }} />
       </div>
     </>
