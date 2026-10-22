@@ -21,6 +21,7 @@ import { htmlToPdf } from "./pdf.ts";
 import { renderReport } from "./reportHtml.ts";
 import { automationCandidates, insightsData } from "./insights.ts";
 import { addRequirementAttachment, removeRequirementAttachment, requirementAttachmentFiles } from "./requirements.ts";
+import { dismissSuggestion, listSuggestions, SuggestError, suggestLinks, typesafeConfig } from "./linksuggest.ts";
 import { addChecklistItem, copyChecklist, listChecklist } from "./checklist.ts";
 import { addRequirementCases, createRequirement, getRequirement, linkCaseByTags, listRequirements, markReviewed, recordRevision, requirementsForCase, requirementSummary, setCaseRequirements, setRequirementCases, type RevisionChange } from "./requirements.ts";
 import { dashboardData, listMilestones, milestoneReport } from "./stats.ts";
@@ -589,6 +590,29 @@ app.get("/api/projects/:id/automated", (req) =>
       WHERE a.project_id = ? ORDER BY a.file, a.suite_path, a.title`)
     .all(idParam(req)),
 );
+
+// ---- Optional AI link suggestions: on only when TYPESAFE_API_KEY is set ----
+app.get("/api/features", () => ({ linkSuggestions: !!typesafeConfig() }));
+
+app.get("/api/projects/:id/automated/link-suggestions", (req) => listSuggestions(idParam(req)));
+
+app.post("/api/projects/:id/automated/suggest-links", async (req) => {
+  const id = idParam(req);
+  must(db.prepare("SELECT id FROM projects WHERE id = ?").get(id), "Project");
+  const body = z.object({ limit: z.number().int().optional(), force: z.boolean().optional() }).parse(req.body ?? {});
+  try {
+    return await suggestLinks(id, body);
+  } catch (e) {
+    if (e instanceof SuggestError) throw new HttpError(e.status, e.message);
+    throw e;
+  }
+});
+
+app.post("/api/link-suggestions/dismiss", (req) => {
+  const { testId, caseId } = z.object({ testId: z.number().int(), caseId: z.number().int() }).parse(req.body);
+  dismissSuggestion(testId, caseId);
+  return { ok: true };
+});
 
 // Re-check unlinked automated tests against the case IDs in their names.
 app.post("/api/projects/:id/automated/relink", (req) => ({ linked: relinkAutomatedTests(idParam(req)) }));

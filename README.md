@@ -12,6 +12,26 @@ Rename a project from the project menu at the top of the sidebar ("Rename this p
 
 Data lives in `data/testbench.db` (SQLite) and `data/uploads/`. Back up that folder to keep everything.
 
+## Suggested links (optional, TypeSafe)
+
+Off by default. Set an API key from [TypeSafe](https://docs.typesafe.ai) in the environment and restart Testbench:
+
+```bash
+TYPESAFE_API_KEY=... npm run dev
+```
+
+On **Automated tests**, a **Suggested links** panel then appears while tests are unlinked. **Check** shortlists up to 5 candidate cases per
+unlinked test by word overlap (locally), then asks TypeSafe one yes/no question per candidate: "does this test check what that case
+describes?". Suggestions at or above the threshold show with their probability; **Link** or **Dismiss** each one. Nothing is linked
+without your click, and exact IDs in test names still win.
+
+- **What is sent to TypeSafe:** the test's title, suite and file name, and each candidate case's title, suite and first 8 steps. No
+  results, errors, screenshots or traces. Without the key nothing is sent anywhere.
+- **Cost control:** 20 tests per click, one request per test. Every judged pair is stored, so it is never judged (or billed) twice.
+  **Check again** re-judges unlinked tests (dismissed pairs stay dismissed).
+- **Settings:** `TYPESAFE_MODEL` (default `jev-latest`), `TYPESAFE_LINK_THRESHOLD` (default `0.7`), `TYPESAFE_API_URL`.
+- This is a spike: the 0.7 threshold is a starting point to tune on your own data.
+
 ## Ordering suites
 
 On **Test cases**, drag a suite in the left tree to reorder it: drop on the top or bottom edge of another suite to place it before or

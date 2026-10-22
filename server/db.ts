@@ -289,6 +289,24 @@ CREATE TABLE IF NOT EXISTS requirement_cases (
   PRIMARY KEY (requirement_id, case_id)
 );
 CREATE INDEX IF NOT EXISTS requirement_cases_case ON requirement_cases(case_id);`);
+  // Optional AI link suggestions (see linksuggest.ts): one row per judged (test, case) pair, so a pair is never judged twice,
+  // and a marker per test so tests with no candidates are not retried on every click.
+  d.exec(`
+CREATE TABLE IF NOT EXISTS link_suggestions (
+  automated_test_id INTEGER NOT NULL REFERENCES automated_tests(id) ON DELETE CASCADE,
+  case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+  probability REAL NOT NULL,
+  dismissed INTEGER NOT NULL DEFAULT 0,
+  model TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (automated_test_id, case_id)
+);
+CREATE TABLE IF NOT EXISTS link_judged (
+  automated_test_id INTEGER PRIMARY KEY REFERENCES automated_tests(id) ON DELETE CASCADE,
+  judged_at TEXT NOT NULL DEFAULT (datetime('now')),
+  candidates INTEGER NOT NULL DEFAULT 0
+);`);
+
   // Release checklist: manual tasks per sprint/release, ticked off with a timestamp. `source` leaves room for automatic checks later
   // (e.g. 'auto:pass-rate'); today every item is 'manual'.
   d.exec(`

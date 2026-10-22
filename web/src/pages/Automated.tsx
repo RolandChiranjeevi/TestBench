@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Download, Link2, Search } from "lucide-react";
+import { Bot, Download, Link2, Search, Sparkles } from "lucide-react";
 import { api, formatDuration, timeAgo, type AutomatedTest, type CaseSummary, type Project } from "../api";
 import { Empty, FrameworkBadge, StatusIcon, useToast } from "../components/ui";
 import { InsightsPage, ViewTabs } from "./Insights";
@@ -23,6 +23,7 @@ export function AutomatedPage() {
   const { data: tests, isLoading } = useQuery({ queryKey: ["automated", pid], queryFn: () => api.get<AutomatedTest[]>(`/api/projects/${pid}/automated`) });
   const { data: cases = [] } = useQuery({ queryKey: ["cases", pid], queryFn: () => api.get<CaseSummary[]>(`/api/projects/${pid}/cases`) });
 
+  const { data: features } = useQuery({ queryKey: ["features"], queryFn: () => api.get<{ linkSuggestions: boolean }>("/api/features"), staleTime: 60_000 });
   const relink = useMutation({
     mutationFn: () => api.post<{ linked: number }>(`/api/projects/${pid}/automated/relink`),
     onSuccess: (r) => {
@@ -97,6 +98,7 @@ export function AutomatedPage() {
         )}
       </div>
       <div className="content">
+        {features?.linkSuggestions && !!tests?.some((t) => !t.case_id) && <SuggestionsPanel />}
         {isLoading ? null : !tests?.length ? (
           <Empty
             icon={<Bot size={20} />}
@@ -164,5 +166,80 @@ export function AutomatedPage() {
         )}
       </div>
     </>
+  );
+}
+
+interface Suggestions {
+  suggestions: { testId: number; title: string; file: string; framework: string; candidates: { caseId: number; number: number; title: string; probability: number }[] }[];
+  unjudged: number;
+  threshold: number;
+}
+
+/** Optional AI suggestions: tests that probably verify an existing case. Nothing is linked until you accept. */
+function SuggestionsPanel() {
+  const { pid } = useParams();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const { data: projects } = useQuery({ queryKey: ["projects"], queryFn: () => api.get<Project[]>("/api/projects") });
+  const key = projects?.find((p) => p.id === Number(pid))?.key;
+  const queryKey = ["link-suggestions", pid];
+  const { data } = useQuery({ queryKey, queryFn: () => api.get<Suggestions>(`/api/projects/${pid}/automated/link-suggestions`) });
+
+  const check = useMutation({
+    mutationFn: (force: boolean) => api.post<{ judged: number; remaining: number; error: string | null }>(`/api/projects/${pid}/automated/suggest-links`, { force }),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey });
+      if (r.error) toast("error", r.error);
+      else toast("success", `Checked ${r.judged} ${r.judged === 1 ? "test" : "tests"}${r.remaining ? `, ${r.remaining} left` : ""}`);
+    },
+    onError: (e: Error) => toast("error", e.message),
+  });
+  const accept = useMutation({
+    mutationFn: ({ testId, caseId }: { testId: number; caseId: number }) => api.patch(`/api/automated/${testId}`, { caseId }),
+    onSuccess: () => {
+      for (const k of ["automated", "cases", "case", "run", "dashboard", "link-suggestions"]) qc.invalidateQueries({ queryKey: [k] });
+    },
+    onError: (e: Error) => toast("error", e.message),
+  });
+  const dismiss = useMutation({
+    mutationFn: (v: { testId: number; caseId: number }) => api.post("/api/link-suggestions/dismiss", v),
+    onSuccess: () => qc.invalidateQueries({ queryKey }),
+  });
+
+  const unjudged = data?.unjudged ?? 0;
+  return (
+    <div className="card" style={{ margin: "16px 20px 0" }}>
+      <div className="card-header row" style={{ fontSize: 13 }}>
+        <Sparkles size={14} style={{ color: "var(--accent)" }} />
+        <span style={{ fontWeight: 600 }}>Suggested links</span>
+        <span className="faint" style={{ fontSize: 12 }}>
+          Judged by TypeSafe from the test and case text. Titles and steps are sent to their API. Review each one.
+        </span>
+        <span className="spacer" />
+        <button className="btn sm" onClick={() => check.mutate(!unjudged)} disabled={check.isPending}>
+          {check.isPending ? "Checking…" : unjudged ? `Check ${Math.min(unjudged, 20)} of ${unjudged} unlinked tests` : "Check again"}
+        </button>
+      </div>
+      {data && data.suggestions.length === 0 && (
+        <div className="muted" style={{ padding: 16, fontSize: 12.5 }}>
+          {unjudged ? "Not checked yet." : `No suggestions at ${Math.round(data.threshold * 100)}% or higher.`}
+        </div>
+      )}
+      {data?.suggestions.map((s) => (
+        <div key={s.testId} style={{ padding: "8px 16px", borderTop: "1px solid var(--border)" }}>
+          <div className="truncate" title={s.title}>{s.title}</div>
+          <div className="faint truncate mono" style={{ fontSize: 11 }}>{s.file}</div>
+          {s.candidates.map((c) => (
+            <div key={c.caseId} className="row" style={{ marginTop: 4 }}>
+              <span className="mono muted" style={{ width: 62 }}>{key}-{c.number}</span>
+              <span className="truncate grow">{c.title}</span>
+              <span className="chip" title="Probability that the test checks this case">{Math.round(c.probability * 100)}%</span>
+              <button className="btn sm primary" onClick={() => accept.mutate({ testId: s.testId, caseId: c.caseId })} disabled={accept.isPending}>Link</button>
+              <button className="btn ghost sm" onClick={() => dismiss.mutate({ testId: s.testId, caseId: c.caseId })}>Dismiss</button>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
   );
 }
