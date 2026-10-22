@@ -1,5 +1,7 @@
 # Testbench
 
+[![CI](https://github.com/RolandChiranjeevi/TestBench/actions/workflows/ci.yml/badge.svg)](https://github.com/RolandChiranjeevi/TestBench/actions/workflows/ci.yml)
+
 A test management app you run yourself. Write manual test cases and requirements, run them, import automated results from
 Playwright, TestCafe, Selenium or any JUnit report (files or GitHub Actions), and hand managers a PDF report after each sprint or release.
 
@@ -89,7 +91,23 @@ files and reports is behind it; changing the password signs everyone out.
 
 What it does not do: there are no individual users, so nothing records who changed what, and there is no password reset (change the variable
 and restart). It is a small tool and has not been audited. Run one instance per team (the data is a single SQLite file), and if it will face the
-open internet, put it behind a VPN or your own single sign-on proxy as well.
+open internet, put it behind a VPN or your own single sign-on proxy as well. To report a security problem, see [SECURITY.md](SECURITY.md).
+
+## Known limitations
+
+Testbench is young. These are the limits to expect today:
+
+- **One shared password, no users.** Nothing records who changed what, and there is no password reset.
+- **One instance per team.** The data is a single SQLite file: no clustering, no several servers writing at once.
+- **It only works while it runs.** Automatic GitHub imports and the daily backup happen only while the process is up.
+- **Backups stay on the same disk by default.** Point `TESTBENCH_BACKUP_DIR` at a synced folder, or copy them elsewhere.
+- **Automatic import is GitHub only.** For GitLab, Jenkins and others, upload the report files (Playwright JSON or JUnit XML) on **Import results**.
+- **No import of existing cases yet.** You can export cases (CSV, Markdown, JSON) but not bring them in from a spreadsheet or another tool.
+- **Some basics are missing:** deleting or archiving a project, and undo for deletes (deleting asks for confirmation instead).
+- **PDF reports need Chrome or Chromium.** The Docker image includes it.
+- **Large data is untested.** It has not been tried with tens of thousands of cases or hundreds of thousands of results.
+- **Tested mainly** on macOS and Docker, in Chrome. CI builds and smoke-tests the Docker image on Linux (x64). The layout is not designed for phones.
+- **Not independently security-audited.**
 
 
 ## Suggested links (optional, TypeSafe)
@@ -120,7 +138,8 @@ npm test
 
 Runs the automated tests (`test/`, Node's built-in runner through `tsx`). They cover the report parsers, linking tests to cases by ID, requirement
 coverage and review flags, moving suites, the release checklist, the database indexes and the automatic backup. Each test file uses its own
-temporary database, so your real `data/` is never touched. `npm run typecheck` checks the types, and `npm run build` typechecks and then bundles the web app.
+temporary database, so your real `data/` is never touched. `npm run typecheck` checks the types, and `npm run build` typechecks and then bundles the web app. GitHub Actions runs the typecheck, the
+tests, the build and a Docker smoke test (`scripts/docker-smoke.sh`, which you can also run yourself) on every push and pull request.
 
 ## Editing many cases at once
 

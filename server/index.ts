@@ -16,7 +16,7 @@ import { bulkUpdateCases, CaseBulkError, duplicateCase } from "./casebulk.ts";
 import { authConfigFromEnv, registerAuth } from "./auth.ts";
 import { DATA_DIR, db, ensureMilestone, parseJson, snapshotCase, UPLOAD_DIR } from "./db.ts";
 import { seedDemo } from "./demo.ts";
-import { artifactsByRun, getToken, importRun, listRuns, type GithubSource } from "./importers/github.ts";
+import { artifactsByRun, getToken, importRun, listRuns, REPO_SLUG, type GithubSource } from "./importers/github.ts";
 import { bagFromFiles, bagFromZip, dedupeReports, mergeBags, readReports, type FileBag } from "./importers/bag.ts";
 import { importReport, mergeReports, relinkAutomatedTests } from "./importers/import.ts";
 import type { CaseSnapshot } from "./db.ts";
@@ -753,7 +753,7 @@ app.post("/api/projects/:id/github-sources", (req) => {
   const projectId = idParam(req);
   const body = z
     .object({
-      repo: z.string().trim().regex(/^[\w.-]+\/[\w.-]+$/, "Use owner/repo"),
+      repo: z.string().trim().regex(REPO_SLUG, "Use owner/repo"),
       workflow: z.string().trim().max(200).optional(),
       artifactPattern: z.string().trim().max(200).optional(),
     })

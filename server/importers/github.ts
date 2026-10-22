@@ -6,6 +6,9 @@ import type { ParsedReport } from "./parse.ts";
 
 const MAX_ARTIFACT_BYTES = 200 * 1024 * 1024;
 
+/** `owner/repo` as written on GitHub. "." and ".." segments are rejected: URL resolution would turn them into other API paths. */
+export const REPO_SLUG = /^(?!\.{1,2}\/)[\w.-]+\/(?!\.{1,2}$)[\w.-]+$/;
+
 export interface GithubSource {
   id: number;
   project_id: number;
