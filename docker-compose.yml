@@ -10,11 +10,11 @@ services:
     ports:
       - "127.0.0.1:4100:4100"
     environment:
-      # Safe only while the port above is published on 127.0.0.1. Remove this line once you set a password.
-      TESTBENCH_ALLOW_NO_AUTH: "1"
-      # TESTBENCH_PASSWORD: "choose-a-long-password"
-      # TESTBENCH_ALLOWED_HOSTS: "testbench.example.com"
-      # GITHUB_TOKEN: "ghp_..."   # for importing GitHub Actions runs (a token with read access to the repository)
+      # Values come from a git-ignored .env file next to this one (copy .env.example). Never put secrets in this file.
+      TESTBENCH_ALLOW_NO_AUTH: "${TESTBENCH_ALLOW_NO_AUTH:-1}"   # safe only while the port above is published on 127.0.0.1
+      TESTBENCH_PASSWORD: "${TESTBENCH_PASSWORD:-}"
+      TESTBENCH_ALLOWED_HOSTS: "${TESTBENCH_ALLOWED_HOSTS:-}"
+      GITHUB_TOKEN: "${GITHUB_TOKEN:-}"   # for importing GitHub Actions runs
     volumes:
       - testbench-data:/data
     restart: unless-stopped
