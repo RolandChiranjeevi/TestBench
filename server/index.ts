@@ -10,7 +10,8 @@ import { extname, join } from "node:path";
 import { z } from "zod";
 import { checkSource, startAutoImport } from "./autoimport.ts";
 import { backupInfo, restoreFromZip, streamBackup } from "./backup.ts";
-import { autoBackupInfo, startAutoBackup } from "./autobackup.ts";
+import { autoBackupInfo, safetyBackup, startAutoBackup } from "./autobackup.ts";
+import { deleteCases, deleteProject, describeProject, DeletionError } from "./deletion.ts";
 import { moveSuite, SuiteMoveError } from "./suites.ts";
 import { bulkUpdateCases, CaseBulkError, duplicateCase } from "./casebulk.ts";
 import { authConfigFromEnv, registerAuth } from "./auth.ts";
@@ -346,6 +347,62 @@ app.patch("/api/cases/:id", (req) => {
 app.delete("/api/cases/:id", (req) => {
   db.prepare("DELETE FROM cases WHERE id = ?").run(idParam(req));
   return { ok: true };
+});
+
+// ---- Deleting: many cases, and whole projects. Both are irreversible, so a backup is saved first (when automatic backups are on). ----
+const SAFETY_BACKUP_FROM_CASES = 5;
+const asHttp = (e: unknown) => (e instanceof DeletionError ? new HttpError(e.status, e.message) : e);
+
+app.post("/api/projects/:id/cases/delete", async (req) => {
+  const projectId = idParam(req);
+  must(db.prepare("SELECT id FROM projects WHERE id = ?").get(projectId), "Project");
+  const { ids } = z.object({ ids: z.array(z.number().int()).min(1).max(20000) }).parse(req.body);
+  let backup: { created: string | null; dir: string } = { created: null, dir: "" };
+  if (ids.length >= SAFETY_BACKUP_FROM_CASES) {
+    try {
+      backup = await safetyBackup();
+    } catch (e) {
+      throw new HttpError(500, `Could not save a safety backup first, so nothing was deleted: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  try {
+    return { ...deleteCases(projectId, ids), backup: backup.created, backupDir: backup.dir };
+  } catch (e) {
+    throw asHttp(e);
+  }
+});
+
+app.get("/api/projects/:id/deletion-preview", (req) => {
+  try {
+    return describeProject(idParam(req));
+  } catch (e) {
+    throw asHttp(e);
+  }
+});
+
+app.post("/api/projects/:id/delete", async (req) => {
+  const projectId = idParam(req);
+  const { confirm } = z.object({ confirm: z.string().max(100) }).parse(req.body);
+  let info;
+  try {
+    info = describeProject(projectId);
+  } catch (e) {
+    throw asHttp(e);
+  }
+  if (confirm !== info.key) throw new HttpError(400, `To delete "${info.name}", confirm with its key ${info.key}.`);
+  let backup: { created: string | null; dir: string };
+  try {
+    backup = await safetyBackup();
+  } catch (e) {
+    throw new HttpError(500, `Could not save a safety backup first, so nothing was deleted: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  try {
+    const result = deleteProject(projectId, confirm);
+    await Promise.all(result.files.map((f) => unlink(join(UPLOAD_DIR, f)).catch(() => {})));
+    return { ok: true, name: result.name, key: result.key, deleted: result.counts, files: result.files.length, backup: backup.created, backupDir: backup.dir };
+  } catch (e) {
+    throw asHttp(e);
+  }
 });
 
 // ---------------- Runs ----------------

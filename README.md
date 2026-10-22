@@ -197,6 +197,20 @@ requirements that are failing or weren't run, and exports include them (JSON and
   Excel, PowerPoint, images, CSV, text, `.eml`, zip and video are accepted, up to 100 MB each. Attaching or removing a file shows in the
   history. The files live in `data/uploads/`, so the backup zip includes them; the JSON export lists their names.
 
+## Deleting cases and projects
+
+**Cases:** open a case and use the trash icon, or tick cases in the list (the box at the start of the toolbar ticks everything shown, after
+the search and filter) and press Delete. A dialog lists what is affected first. Steps and links to requirements and run templates go with the
+case; results already recorded in past runs stay in their run (so reports and history keep their numbers) but lose the link to the case, and
+automated tests that were linked to it become unlinked.
+
+**Whole project:** project menu, "Delete this project…". You have to type the project key to confirm. Everything in the project goes, including
+runs, requirements, sprints, checklists and the uploaded files.
+
+**Safety net:** deleting a project, or 5 or more cases at once, first saves a backup named `testbench-before-delete-<date>.zip` next to the
+automatic ones (newest 10 kept) and refuses to delete if that backup fails. Restore it from Backup & restore. If you turned automatic backups off
+(`TESTBENCH_AUTO_BACKUP=0`) no backup is taken, and the dialog says so.
+
 ## Backup and restore
 
 **Automatic backups:** while Testbench is running it saves a backup about once a day (the first shortly after start-up, once you have a project) and

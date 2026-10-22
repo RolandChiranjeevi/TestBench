@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, BookOpenCheck, Bot, Copy, Link2, Check, ChevronsUpDown, CircleDot, Folder, Loader2, Plus, Trash2, X } from "lucide-react";
 import { api, timeAgo, type CaseDetail, type Priority, type Requirement, type Suite } from "../api";
-import { FrameworkBadge, Modal, PriorityIcon, PRIORITY_LABEL, StatusIcon, useToast } from "../components/ui";
+import { ConfirmModal, FrameworkBadge, Modal, PriorityIcon, PRIORITY_LABEL, StatusIcon, useToast } from "../components/ui";
 
 interface DraftStep { uid: string; id?: number; action: string; expected: string }
 interface Draft {
@@ -40,6 +40,7 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
   const { data } = useQuery({ queryKey: ["case", caseId], queryFn: () => api.get<CaseDetail>(`/api/cases/${caseId}`) });
 
   const [linkingReqs, setLinkingReqs] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [draft, setDraftState] = useState<Draft | null>(null);
   const draftRef = useRef<Draft | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -153,13 +154,16 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
   };
 
   const remove = async () => {
-    if (!confirm(`Delete ${data.project_key}-${data.number}? Past run results are kept but lose their link to this case.`)) return;
     clearTimeout(timer.current);
     dirty.current = false;
-    await api.del(`/api/cases/${caseId}`);
-    qc.invalidateQueries({ queryKey: ["cases", pid] });
-    qc.invalidateQueries({ queryKey: ["suites", pid] });
-    qc.invalidateQueries({ queryKey: ["projects"] });
+    try {
+      await api.post(`/api/projects/${pid}/cases/delete`, { ids: [caseId] });
+    } catch (e) {
+      toast("error", (e as Error).message);
+      setConfirming(false);
+      return;
+    }
+    for (const k of ["cases", "suites", "projects", "requirements", "automated", "dashboard"]) qc.invalidateQueries({ queryKey: [k] });
     toast("success", `Deleted ${data.project_key}-${data.number}`);
     onDeleted();
   };
@@ -191,7 +195,7 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
         >
           <Copy size={14} />
         </button>
-        <button className="btn ghost icon sm danger" onClick={remove} title="Delete case" aria-label="Delete case">
+        <button className="btn ghost icon sm danger" onClick={() => setConfirming(true)} title="Delete case" aria-label="Delete case">
           <Trash2 size={14} />
         </button>
         <button className="btn ghost icon sm" onClick={onClose} title="Close (Esc)" aria-label="Close">
@@ -376,6 +380,17 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
           )}
         </section>
       </div>
+      {confirming && (
+        <ConfirmModal title={`Delete ${data.project_key}-${data.number}?`} confirmLabel="Delete case" onConfirm={remove} onClose={() => setConfirming(false)}>
+          <p style={{ margin: 0 }}><strong>{data.title}</strong></p>
+          <ul className="muted" style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 4 }}>
+            <li>Its steps and links to requirements and run templates are removed.</li>
+            <li>Results already recorded in past runs are kept, but lose their link to this case.</li>
+            <li>Automated tests linked to it become unlinked.</li>
+            <li>This cannot be undone.</li>
+          </ul>
+        </ConfirmModal>
+      )}
       {linkingReqs && <LinkRequirementsModal caseId={caseId} projectId={Number(pid)} current={data.requirements.map((r) => r.id)} onClose={() => setLinkingReqs(false)} />}
     </div>
   );

@@ -2,9 +2,9 @@ import { StrictMode, useEffect, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, BookOpenCheck, Bot, ChevronDown, Download, FileBarChart, FlaskConical, LayoutDashboard, ListChecks, LogOut, Menu, Pencil, Play, Plus, Sparkles } from "lucide-react";
+import { Archive, BookOpenCheck, Bot, ChevronDown, Download, FileBarChart, FlaskConical, LayoutDashboard, ListChecks, LogOut, Menu, Pencil, Play, Plus, Sparkles, Trash2 } from "lucide-react";
 import { api, timeAgo, type BackupInfo, type Project } from "./api";
-import { Empty, Modal, ToastProvider, useHotkeys, useToast } from "./components/ui";
+import { ConfirmModal, Empty, Modal, ToastProvider, useHotkeys, useToast } from "./components/ui";
 import { CasesPage } from "./pages/Cases";
 import { RequirementsPage } from "./pages/Requirements";
 import { RunsPage } from "./pages/Runs";
@@ -174,6 +174,50 @@ function RenameProjectModal({ project, onClose }: { project: Project; onClose: (
   );
 }
 
+/** Deleting a project is permanent: the key has to be typed, and the server saves a backup first when automatic backups are on. */
+function DeleteProjectModal({ project, onClose }: { project: Project; onClose: () => void }) {
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const toast = useToast();
+  const { data: backup } = useQuery({ queryKey: ["backup-info"], queryFn: () => api.get<BackupInfo>("/api/backup/info"), staleTime: 60_000 });
+  const { data: preview } = useQuery({
+    queryKey: ["deletion-preview", project.id],
+    queryFn: () => api.get<{ counts: { cases: number; runs: number; requirements: number; automatedTests: number } }>(`/api/projects/${project.id}/deletion-preview`),
+  });
+  const del = useMutation({
+    mutationFn: () => api.post<{ name: string; deleted: { cases: number; runs: number }; backup: string | null }>(`/api/projects/${project.id}/delete`, { confirm: project.key }),
+    onSuccess: (r) => {
+      qc.clear();
+      toast("success", `Deleted "${r.name}" (${r.deleted.cases} cases, ${r.deleted.runs} runs).${r.backup ? ` A backup was saved first (${r.backup}).` : ""}`);
+      onClose();
+      navigate("/");
+    },
+    onError: (e: Error) => toast("error", e.message),
+  });
+  const c = preview?.counts;
+  return (
+    <ConfirmModal
+      title={`Delete "${project.name}"?`}
+      confirmLabel="Delete project permanently"
+      requireText={project.key}
+      busy={del.isPending}
+      onConfirm={() => del.mutate()}
+      onClose={onClose}
+    >
+      <p style={{ margin: 0 }}>
+        This permanently deletes the project and everything in it
+        {c ? `: ${c.cases} test cases, ${c.runs} runs, ${c.requirements} requirements and ${c.automatedTests} automated tests` : ""}.
+        Sprints, templates, the release checklists, and all uploaded screenshots, traces and attachments go too.
+      </p>
+      <p className="muted" style={{ margin: 0 }}>
+        {backup?.auto.enabled
+          ? "A backup is saved first. To get the project back, restore that backup from Backup & restore."
+          : "Automatic backups are turned off, so nothing is saved first. This cannot be undone."}
+      </p>
+    </ConfirmModal>
+  );
+}
+
 function ProjectLayout() {
   const { data: projects, isLoading } = useProjects();
   const { pid } = useParams();
@@ -183,6 +227,7 @@ function ProjectLayout() {
   const { data: backup } = useQuery({ queryKey: ["backup-info"], queryFn: () => api.get<BackupInfo>("/api/backup/info"), staleTime: 60_000 });
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const { data: auth } = useQuery({ queryKey: ["auth"], queryFn: () => api.get<{ enabled: boolean; authenticated: boolean }>("/api/auth/status"), staleTime: 60_000 });
   // On phone-sized screens the sidebar is a menu that slides over the page. Any navigation or Escape closes it.
   const loc = useLocation();
@@ -255,6 +300,10 @@ function ProjectLayout() {
                 <button className="nav-item" onClick={() => { setMenu(false); setCreating(true); }}>
                   <Plus size={14} /> New project
                 </button>
+                <div style={{ borderTop: "1px solid var(--border)", margin: "4px 0" }} />
+                <button className="nav-item" style={{ color: "var(--failed-fg)" }} onClick={() => { setMenu(false); setDeleting(true); }}>
+                  <Trash2 size={14} /> Delete this project…
+                </button>
               </div>
             </>
           )}
@@ -297,6 +346,7 @@ function ProjectLayout() {
       </main>
       {creating && <NewProjectModal onClose={() => setCreating(false)} />}
       {renaming && <RenameProjectModal project={project} onClose={() => setRenaming(false)} />}
+      {deleting && <DeleteProjectModal project={project} onClose={() => setDeleting(false)} />}
     </div>
   );
 }

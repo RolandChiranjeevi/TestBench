@@ -215,3 +215,38 @@ export function Github({ size = 14, className, style }: { size?: number; classNa
     </svg>
   );
 }
+
+/**
+ * A confirmation for something that cannot be undone. With `requireText` the button stays disabled until that text is typed
+ * (used for deleting a whole project, so a slip of the mouse is not enough).
+ */
+export function ConfirmModal({ title, children, confirmLabel = "Delete", requireText, busy, onConfirm, onClose }: {
+  title: ReactNode; children: ReactNode; confirmLabel?: string; requireText?: string; busy?: boolean; onConfirm: () => void; onClose: () => void;
+}) {
+  const [typed, setTyped] = useState("");
+  const ok = !requireText || typed === requireText;
+  return (
+    <Modal
+      title={title}
+      onClose={busy ? () => {} : onClose}
+      width={480}
+      footer={
+        <>
+          <button className="btn ghost" onClick={onClose} disabled={busy}>Cancel</button>
+          <button className="btn danger-solid" disabled={!ok || busy} onClick={onConfirm}>{busy ? "Deleting…" : confirmLabel}</button>
+        </>
+      }
+    >
+      <form className="col" style={{ gap: 12 }} onSubmit={(e) => { e.preventDefault(); if (ok && !busy) onConfirm(); }}>
+        {children}
+        {requireText && (
+          <div className="field">
+            <label htmlFor="confirm-text">Type <code className="inline">{requireText}</code> to confirm</label>
+            <input id="confirm-text" className="input mono" autoFocus autoComplete="off" spellCheck={false} value={typed} onChange={(e) => setTyped(e.target.value)} />
+          </div>
+        )}
+        <button type="submit" hidden />
+      </form>
+    </Modal>
+  );
+}

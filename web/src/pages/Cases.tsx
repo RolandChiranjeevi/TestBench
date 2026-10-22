@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, BookOpenCheck, Bot, ClipboardList, Copy, Folder, FolderOpen, Inbox, ListChecks, MoreHorizontal, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
-import { api, orderSuites, type CaseDetail, type CaseSummary, type Project, type RequirementDetail, type Suite } from "../api";
-import { Empty, Kbd, Modal, PriorityIcon, StatusIcon, useHotkeys, useToast } from "../components/ui";
+import { api, orderSuites, type BackupInfo, type CaseDetail, type CaseSummary, type Project, type RequirementDetail, type Suite } from "../api";
+import { ConfirmModal, Empty, Kbd, Modal, PriorityIcon, StatusIcon, useHotkeys, useToast } from "../components/ui";
 import { CaseEditor } from "./CaseEditor";
 import { NewRunModal } from "./Runs";
 import { TemplateModal } from "./Templates";
@@ -38,6 +38,8 @@ export function CasesPage() {
   const [drop, setDrop] = useState<{ id: number | "end" | "none"; zone: "before" | "after" | "into" } | null>(null);
   const [caseDrag, setCaseDrag] = useState<number[] | null>(null);
   const [bulkModal, setBulkModal] = useState(false);
+  const [deleteModal, setDeleteModal] = useState(false);
+  const { data: backupInfo } = useQuery({ queryKey: ["backup-info"], queryFn: () => api.get<BackupInfo>("/api/backup/info"), staleTime: 60_000 });
   const moveCases = useMutation({
     mutationFn: (v: { ids: number[]; suiteId: number | null }) => api.post<{ updated: number }>(`/api/projects/${pid}/cases/bulk`, v),
     onSuccess: (r, v) => {
@@ -269,6 +271,18 @@ export function CasesPage() {
           </button>
         </div>
         <div className="toolbar">
+          {/* Select everything that is shown (after the search and filter). Ticks all, partly ticked when some are selected. */}
+          <input
+            type="checkbox"
+            className="checkbox"
+            aria-label="Select all shown cases"
+            title="Select all shown cases"
+            disabled={visible.length === 0}
+            checked={visible.length > 0 && visible.every((c) => checked.has(c.id))}
+            ref={(el) => { if (el) el.indeterminate = checked.size > 0 && !visible.every((c) => checked.has(c.id)); }}
+            onChange={(e) => setChecked(e.target.checked ? new Set(visible.map((c) => c.id)) : new Set())}
+            style={{ marginRight: 6 }}
+          />
           {checked.size > 0 ? (
             <>
               <span style={{ fontWeight: 500 }}>{checked.size} selected</span>
@@ -286,6 +300,9 @@ export function CasesPage() {
               </button>
               <button className="btn sm" onClick={() => setTemplateModal(true)}>
                 <ClipboardList size={12} /> Save as template
+              </button>
+              <button className="btn sm danger" onClick={() => setDeleteModal(true)}>
+                <Trash2 size={12} /> Delete
               </button>
               <button className="btn ghost sm" onClick={() => setChecked(new Set(visible.map((c) => c.id)))}>Select all {visible.length}</button>
               <button className="btn ghost sm" onClick={() => setChecked(new Set())}>
@@ -410,6 +427,15 @@ export function CasesPage() {
       )}
       {suiteModal && <SuiteModal projectId={projectId} suites={suites} {...suiteModal} onClose={() => setSuiteModal(null)} />}
       {runModal && <NewRunModal initialCaseIds={[...checked]} onClose={() => setRunModal(false)} onCreated={() => setChecked(new Set())} />}
+      {deleteModal && (
+        <DeleteCasesModal
+          cases={(cases ?? []).filter((c) => checked.has(c.id))}
+          projectKey={project?.key ?? ""}
+          backupOn={!!backupInfo?.auto.enabled}
+          onClose={() => setDeleteModal(false)}
+          onDone={(ids) => { setChecked(new Set()); if (selectedId != null && ids.includes(selectedId)) select(null); }}
+        />
+      )}
       {bulkModal && <BulkEditModal caseIds={[...checked]} suites={suites} allTags={[...new Set((cases ?? []).flatMap((c) => c.tags))].sort()} onClose={() => setBulkModal(false)} onDone={() => setChecked(new Set())} />}
       {linkModal && <LinkToRequirementModal caseIds={[...checked]} onClose={() => setLinkModal(false)} onDone={() => setChecked(new Set())} />}
       {templateModal && <TemplateModal initialCaseIds={[...checked]} onClose={() => setTemplateModal(false)} />}
@@ -724,5 +750,40 @@ function BulkEditModal({ caseIds, suites, allTags, onClose, onDone }: { caseIds:
         </div>
       </div>
     </Modal>
+  );
+}
+
+/** Confirms and performs a bulk delete. Five or more cases are saved to a backup first (the server does that when backups are on). */
+function DeleteCasesModal({ cases, projectKey, backupOn, onClose, onDone }: {
+  cases: CaseSummary[]; projectKey: string; backupOn: boolean; onClose: () => void; onDone: (ids: number[]) => void;
+}) {
+  const { pid } = useParams();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const ids = cases.map((c) => c.id);
+  const del = useMutation({
+    mutationFn: () => api.post<{ deleted: number; backup: string | null; backupDir: string }>(`/api/projects/${pid}/cases/delete`, { ids }),
+    onSuccess: (r) => {
+      for (const k of ["cases", "suites", "projects", "requirements", "requirement", "automated", "dashboard", "case"]) qc.invalidateQueries({ queryKey: [k] });
+      toast("success", `Deleted ${r.deleted} ${r.deleted === 1 ? "case" : "cases"}${r.backup ? `. A backup was saved first (${r.backup}).` : ""}`);
+      onDone(ids);
+      onClose();
+    },
+    onError: (e: Error) => toast("error", e.message),
+  });
+  const n = cases.length;
+  return (
+    <ConfirmModal title={`Delete ${n} ${n === 1 ? "case" : "cases"}?`} confirmLabel={`Delete ${n} ${n === 1 ? "case" : "cases"}`} busy={del.isPending} onConfirm={() => del.mutate()} onClose={onClose}>
+      <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 2 }}>
+        {cases.slice(0, 5).map((c) => <li key={c.id}><span className="mono muted">{projectKey}-{c.number}</span> {c.title}</li>)}
+        {n > 5 && <li className="muted">and {n - 5} more</li>}
+      </ul>
+      <ul className="muted" style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 4 }}>
+        <li>Steps and links to requirements and run templates are removed.</li>
+        <li>Results already recorded in past runs are kept, but lose their link to the case.</li>
+        <li>Automated tests linked to them become unlinked.</li>
+        <li><strong>This cannot be undone.</strong> {n >= 5 ? (backupOn ? "A backup is saved first, so you can restore it from Backup & restore." : "Automatic backups are off, so nothing is saved first.") : ""}</li>
+      </ul>
+    </ConfirmModal>
   );
 }
