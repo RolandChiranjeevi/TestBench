@@ -12,6 +12,7 @@ import { checkSource, startAutoImport } from "./autoimport.ts";
 import { backupInfo, restoreFromZip, streamBackup } from "./backup.ts";
 import { autoBackupInfo, startAutoBackup } from "./autobackup.ts";
 import { moveSuite, SuiteMoveError } from "./suites.ts";
+import { bulkUpdateCases, CaseBulkError, duplicateCase } from "./casebulk.ts";
 import { DATA_DIR, db, ensureMilestone, parseJson, snapshotCase, UPLOAD_DIR } from "./db.ts";
 import { seedDemo } from "./demo.ts";
 import { artifactsByRun, getToken, importRun, listRuns, type GithubSource } from "./importers/github.ts";
@@ -266,6 +267,37 @@ app.post("/api/projects/:id/cases", (req) => {
     return row.id;
   })();
   return getCase(id);
+});
+
+const bulkBody = z.object({
+  ids: z.array(z.number().int()).min(1).max(2000),
+  suiteId: z.number().int().nullable().optional(),
+  priority: z.enum(["low", "medium", "high", "critical"]).optional(),
+  status: z.enum(["draft", "ready", "deprecated"]).optional(),
+  addTags: z.array(z.string().trim().min(1).max(50)).max(30).optional(),
+  removeTags: z.array(z.string().trim().min(1).max(50)).max(30).optional(),
+});
+
+// Change many cases at once: move to a suite, set priority/status, add or remove tags.
+app.post("/api/projects/:id/cases/bulk", (req) => {
+  const projectId = idParam(req);
+  must(db.prepare("SELECT id FROM projects WHERE id = ?").get(projectId), "Project");
+  const { ids, ...patch } = bulkBody.parse(req.body);
+  try {
+    return bulkUpdateCases(projectId, ids, patch);
+  } catch (e) {
+    if (e instanceof CaseBulkError) throw new HttpError(e.status, e.message);
+    throw e;
+  }
+});
+
+app.post("/api/cases/:id/duplicate", (req) => {
+  try {
+    return getCase(duplicateCase(idParam(req)));
+  } catch (e) {
+    if (e instanceof CaseBulkError) throw new HttpError(e.status, e.message);
+    throw e;
+  }
 });
 
 app.get("/api/cases/:id", (req) => getCase(idParam(req)));

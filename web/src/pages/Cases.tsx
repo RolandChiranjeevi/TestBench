@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, BookOpenCheck, Bot, ClipboardList, Folder, FolderOpen, Inbox, ListChecks, MoreHorizontal, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, BookOpenCheck, Bot, ClipboardList, Copy, Folder, FolderOpen, Inbox, ListChecks, MoreHorizontal, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
 import { api, orderSuites, type CaseDetail, type CaseSummary, type Project, type RequirementDetail, type Suite } from "../api";
 import { Empty, Kbd, Modal, PriorityIcon, StatusIcon, useHotkeys, useToast } from "../components/ui";
 import { CaseEditor } from "./CaseEditor";
@@ -35,7 +35,41 @@ export function CasesPage() {
   const newFor = params.get("newFor") ? Number(params.get("newFor")) : null;
   const [newCase, setNewCase] = useState(newFor != null);
   const [dragId, setDragId] = useState<number | null>(null);
-  const [drop, setDrop] = useState<{ id: number | "end"; zone: "before" | "after" | "into" } | null>(null);
+  const [drop, setDrop] = useState<{ id: number | "end" | "none"; zone: "before" | "after" | "into" } | null>(null);
+  const [caseDrag, setCaseDrag] = useState<number[] | null>(null);
+  const [bulkModal, setBulkModal] = useState(false);
+  const moveCases = useMutation({
+    mutationFn: (v: { ids: number[]; suiteId: number | null }) => api.post<{ updated: number }>(`/api/projects/${pid}/cases/bulk`, v),
+    onSuccess: (r, v) => {
+      qc.invalidateQueries({ queryKey: ["cases", pid] });
+      qc.invalidateQueries({ queryKey: ["suites", pid] });
+      qc.invalidateQueries({ queryKey: ["case"] });
+      toast("success", `Moved ${r.updated} ${r.updated === 1 ? "case" : "cases"} to ${v.suiteId == null ? "No suite" : suites.find((s) => s.id === v.suiteId)?.name ?? "the suite"}`);
+    },
+    onError: (e: Error) => toast("error", e.message),
+  });
+  const dropCases = (suiteId: number | null) => {
+    const ids = caseDrag;
+    setCaseDrag(null);
+    setDrop(null);
+    if (ids?.length) moveCases.mutate({ ids, suiteId });
+  };
+  const duplicate = useMutation({
+    mutationFn: async (ids: number[]) => {
+      const made: CaseDetail[] = [];
+      for (const id of ids) made.push(await api.post<CaseDetail>(`/api/cases/${id}/duplicate`));
+      return made;
+    },
+    onSuccess: (made) => {
+      qc.invalidateQueries({ queryKey: ["cases", pid] });
+      qc.invalidateQueries({ queryKey: ["suites", pid] });
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      setChecked(new Set());
+      toast("success", made.length === 1 ? `Created ${made[0].project_key}-${made[0].number} as a draft copy` : `Created ${made.length} draft copies`);
+      if (made.length === 1) select(made[0].id);
+    },
+    onError: (e: Error) => toast("error", e.message),
+  });
   const moveSuite = useMutation({
     mutationFn: (v: { id: number; parentId: number | null; beforeId: number | null }) => api.post(`/api/suites/${v.id}/move`, { parentId: v.parentId, beforeId: v.beforeId }),
     onSuccess: () => {
@@ -174,6 +208,8 @@ export function CasesPage() {
             drop={drop}
             setDrop={setDrop}
             onMove={(id, parentId, beforeId) => moveSuite.mutate({ id, parentId, beforeId })}
+            caseDrag={caseDrag}
+            onDropCases={dropCases}
           />
           {/* Dropping below the last suite moves it to the end of the top level. */}
           {dragId != null && (
@@ -183,8 +219,13 @@ export function CasesPage() {
               onDrop={(e) => { e.preventDefault(); const id = dragId; setDragId(null); setDrop(null); if (id != null) moveSuite.mutate({ id, parentId: null, beforeId: null }); }}
             />
           )}
-          {noSuiteCount > 0 && (
-            <button className={`tree-item${suiteFilter === "none" ? " active" : ""}`} onClick={() => setParam("suite", "none")}>
+          {(noSuiteCount > 0 || caseDrag != null) && (
+            <button
+              className={`tree-item${suiteFilter === "none" ? " active" : ""}${drop?.id === "none" ? " drop-into" : ""}`}
+              onClick={() => setParam("suite", "none")}
+              onDragOver={(e) => { if (caseDrag == null) return; e.preventDefault(); if (drop?.id !== "none") setDrop({ id: "none", zone: "into" }); }}
+              onDrop={(e) => { if (caseDrag == null) return; e.preventDefault(); dropCases(null); }}
+            >
               <Inbox size={14} /> No suite <span className="count">{noSuiteCount}</span>
             </button>
           )}
@@ -223,6 +264,12 @@ export function CasesPage() {
               <span style={{ fontWeight: 500 }}>{checked.size} selected</span>
               <button className="btn sm" onClick={() => setRunModal(true)}>
                 <Play size={12} /> Start run <Kbd>R</Kbd>
+              </button>
+              <button className="btn sm" onClick={() => setBulkModal(true)}>
+                <Pencil size={12} /> Edit…
+              </button>
+              <button className="btn sm" onClick={() => duplicate.mutate([...checked])} disabled={duplicate.isPending}>
+                <Copy size={12} /> Duplicate
               </button>
               <button className="btn sm" onClick={() => setLinkModal(true)}>
                 <BookOpenCheck size={12} /> Link to requirement
@@ -278,7 +325,16 @@ export function CasesPage() {
                   return (
                     <div
                       key={c.id}
-                      className={`list-row${selectedId === c.id ? " selected" : ""}${focus === idx ? " focused" : ""}`}
+                      className={`list-row${selectedId === c.id ? " selected" : ""}${focus === idx ? " focused" : ""}${caseDrag?.includes(c.id) ? " dragging" : ""}`}
+                      draggable
+                      onDragStart={(e) => {
+                        // Dragging a ticked case takes every ticked case with it.
+                        const ids = checked.has(c.id) ? [...checked] : [c.id];
+                        e.dataTransfer.effectAllowed = "move";
+                        e.dataTransfer.setData("text/plain", ids.length === 1 ? c.title : `${ids.length} cases`);
+                        setCaseDrag(ids);
+                      }}
+                      onDragEnd={() => { setCaseDrag(null); setDrop(null); }}
                       onClick={() => { setFocus(idx); select(c.id); }}
                     >
                       <input
@@ -325,7 +381,7 @@ export function CasesPage() {
       {/* Editor */}
       {selectedId != null && (
         <div className="detail-pane" style={{ width: "min(600px, 48vw)" }}>
-          <CaseEditor key={selectedId} caseId={selectedId} suites={suites} onClose={() => select(null)} onDeleted={() => select(null)} />
+          <CaseEditor key={selectedId} caseId={selectedId} suites={suites} onClose={() => select(null)} onDeleted={() => select(null)} onDuplicated={(id) => select(id)} />
         </div>
       )}
 
@@ -341,6 +397,7 @@ export function CasesPage() {
       )}
       {suiteModal && <SuiteModal projectId={projectId} suites={suites} {...suiteModal} onClose={() => setSuiteModal(null)} />}
       {runModal && <NewRunModal initialCaseIds={[...checked]} onClose={() => setRunModal(false)} onCreated={() => setChecked(new Set())} />}
+      {bulkModal && <BulkEditModal caseIds={[...checked]} suites={suites} allTags={[...new Set((cases ?? []).flatMap((c) => c.tags))].sort()} onClose={() => setBulkModal(false)} onDone={() => setChecked(new Set())} />}
       {linkModal && <LinkToRequirementModal caseIds={[...checked]} onClose={() => setLinkModal(false)} onDone={() => setChecked(new Set())} />}
       {templateModal && <TemplateModal initialCaseIds={[...checked]} onClose={() => setTemplateModal(false)} />}
     </div>
@@ -358,9 +415,12 @@ function SuiteTree(props: {
   onDelete: (s: Suite) => void;
   dragId: number | null;
   setDragId: (id: number | null) => void;
-  drop: { id: number | "end"; zone: "before" | "after" | "into" } | null;
-  setDrop: (d: { id: number | "end"; zone: "before" | "after" | "into" } | null) => void;
+  drop: { id: number | "end" | "none"; zone: "before" | "after" | "into" } | null;
+  setDrop: (d: { id: number | "end" | "none"; zone: "before" | "after" | "into" } | null) => void;
   onMove: (id: number, parentId: number | null, beforeId: number | null) => void;
+  /** Cases being dragged from the list, if any: suites then accept them as a drop. */
+  caseDrag: number[] | null;
+  onDropCases: (suiteId: number) => void;
 }) {
   const children = props.suites.filter((s) => s.parent_id === props.parentId);
   const { dragId, setDragId, drop, setDrop, onMove, suites } = props;
@@ -403,6 +463,12 @@ function SuiteTree(props: {
             onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", s.name); setDragId(s.id); }}
             onDragEnd={() => { setDragId(null); setDrop(null); }}
             onDragOver={(e) => {
+              if (props.caseDrag != null) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (drop?.id !== s.id || drop.zone !== "into") setDrop({ id: s.id, zone: "into" });
+                return;
+              }
               if (dragId == null || insideDragged(s.id)) return;
               e.preventDefault();
               e.stopPropagation();
@@ -410,6 +476,12 @@ function SuiteTree(props: {
               if (drop?.id !== s.id || drop.zone !== zone) setDrop({ id: s.id, zone });
             }}
             onDrop={(e) => {
+              if (props.caseDrag != null) {
+                e.preventDefault();
+                e.stopPropagation();
+                props.onDropCases(s.id);
+                return;
+              }
               if (dragId == null || insideDragged(s.id)) return;
               e.preventDefault();
               e.stopPropagation();
@@ -558,6 +630,86 @@ function SuiteModal({ projectId, suites, suite, parentId, onClose }: { projectId
         onKeyDown={(e) => e.key === "Enter" && name.trim() && save.mutate()}
         aria-label="Suite name"
       />
+    </Modal>
+  );
+}
+
+/** Change several cases at once. Anything left on "Keep" is untouched; tags are added or removed, never replaced. */
+function BulkEditModal({ caseIds, suites, allTags, onClose, onDone }: { caseIds: number[]; suites: Suite[]; allTags: string[]; onClose: () => void; onDone: () => void }) {
+  const { pid } = useParams();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [suite, setSuite] = useState("keep");
+  const [priority, setPriority] = useState("keep");
+  const [status, setStatus] = useState("keep");
+  const [addTags, setAddTags] = useState("");
+  const [removeTags, setRemoveTags] = useState("");
+  const tags = (v: string) => v.split(",").map((t) => t.trim()).filter(Boolean);
+  const depth = (s: Suite) => { let d = 0; for (let p = s.parent_id; p != null; p = suites.find((x) => x.id === p)?.parent_id ?? null) d++; return d; };
+
+  const body = {
+    ids: caseIds,
+    ...(suite !== "keep" ? { suiteId: suite === "none" ? null : Number(suite) } : {}),
+    ...(priority !== "keep" ? { priority } : {}),
+    ...(status !== "keep" ? { status } : {}),
+    ...(tags(addTags).length ? { addTags: tags(addTags) } : {}),
+    ...(tags(removeTags).length ? { removeTags: tags(removeTags) } : {}),
+  };
+  const changes = Object.keys(body).length - 1;
+  const save = useMutation({
+    mutationFn: () => api.post<{ updated: number }>(`/api/projects/${pid}/cases/bulk`, body),
+    onSuccess: (r) => {
+      for (const k of ["cases", "suites", "case"]) qc.invalidateQueries({ queryKey: [k] });
+      toast("success", `Updated ${r.updated} ${r.updated === 1 ? "case" : "cases"}`);
+      onDone();
+      onClose();
+    },
+    onError: (e: Error) => toast("error", e.message),
+  });
+
+  return (
+    <Modal
+      title={`Edit ${caseIds.length} ${caseIds.length === 1 ? "case" : "cases"}`}
+      onClose={onClose}
+      width={480}
+      footer={<button className="btn primary" disabled={changes === 0 || save.isPending} onClick={() => save.mutate()}>Apply to {caseIds.length}</button>}
+    >
+      <div className="col" style={{ gap: 12 }}>
+        <div className="field">
+          <label htmlFor="be-suite">Suite</label>
+          <select id="be-suite" className="select" value={suite} onChange={(e) => setSuite(e.target.value)}>
+            <option value="keep">Keep</option>
+            <option value="none">No suite</option>
+            {orderSuites(suites).map((s) => <option key={s.id} value={s.id}>{"\u00a0\u00a0".repeat(depth(s))}{s.name}</option>)}
+          </select>
+        </div>
+        <div className="row" style={{ gap: 12 }}>
+          <div className="field grow">
+            <label htmlFor="be-priority">Priority</label>
+            <select id="be-priority" className="select" value={priority} onChange={(e) => setPriority(e.target.value)}>
+              <option value="keep">Keep</option>
+              {["critical", "high", "medium", "low"].map((p) => <option key={p} value={p}>{p[0].toUpperCase() + p.slice(1)}</option>)}
+            </select>
+          </div>
+          <div className="field grow">
+            <label htmlFor="be-status">Status</label>
+            <select id="be-status" className="select" value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="keep">Keep</option>
+              {["draft", "ready", "deprecated"].map((p) => <option key={p} value={p}>{p[0].toUpperCase() + p.slice(1)}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="field">
+          <label htmlFor="be-add">Add tags</label>
+          <input id="be-add" className="input" list="be-tags" placeholder="smoke, regression" value={addTags} onChange={(e) => setAddTags(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="be-remove">Remove tags</label>
+          <input id="be-remove" className="input" list="be-tags" placeholder="old-tag" value={removeTags} onChange={(e) => setRemoveTags(e.target.value)} />
+          <datalist id="be-tags">{allTags.map((t) => <option key={t} value={t} />)}</datalist>
+          <span className="muted" style={{ fontSize: 12 }}>Separate several with commas. Existing tags on each case are kept.</span>
+        </div>
+      </div>
     </Modal>
   );
 }

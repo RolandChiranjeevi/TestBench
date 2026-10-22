@@ -42,6 +42,17 @@ Runs the automated tests (`test/`, Node's built-in runner through `tsx`). They c
 coverage and review flags, moving suites, the release checklist, the database indexes and the automatic backup. Each test file uses its own
 temporary database, so your real `data/` is never touched. `npm run typecheck` checks the types, and `npm run build` typechecks and then bundles the web app.
 
+## Editing many cases at once
+
+On **Test cases**, tick cases (or press `X`) and the toolbar offers:
+- **Edit…**: move them to a suite, set priority or status, and add or remove tags. Anything left on "Keep" is untouched, and tags are added or
+  removed, never replaced.
+- **Duplicate**: makes a draft copy of each, titled "… (copy)", with the same suite, text, tags and steps. A copy does not inherit requirement
+  links or automated tests, because those describe what the original covers.
+- **Drag to a suite**: drag a case onto a suite in the left tree (or onto "No suite") to move it. Dragging a ticked case takes every ticked case along.
+
+A single case also has a **Duplicate** button in its editor.
+
 ## Ordering suites
 
 On **Test cases**, drag a suite in the left tree to reorder it: drop on the top or bottom edge of another suite to place it before or

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, BookOpenCheck, Bot, Link2, Check, ChevronsUpDown, CircleDot, Folder, Loader2, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, BookOpenCheck, Bot, Copy, Link2, Check, ChevronsUpDown, CircleDot, Folder, Loader2, Plus, Trash2, X } from "lucide-react";
 import { api, timeAgo, type CaseDetail, type Priority, type Requirement, type Suite } from "../api";
 import { FrameworkBadge, Modal, PriorityIcon, PRIORITY_LABEL, StatusIcon, useToast } from "../components/ui";
 
@@ -33,7 +33,7 @@ const toDraft = (c: CaseDetail): Draft => ({
 });
 
 /** Autosaving case editor. Saves are serialised so newly created steps get their ids before the next save. */
-export function CaseEditor({ caseId, suites, onClose, onDeleted }: { caseId: number; suites: Suite[]; onClose: () => void; onDeleted: () => void }) {
+export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }: { caseId: number; suites: Suite[]; onClose: () => void; onDeleted: () => void; onDuplicated?: (id: number) => void }) {
   const { pid } = useParams();
   const qc = useQueryClient();
   const toast = useToast();
@@ -174,6 +174,23 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted }: { caseId: num
           {saveState === "error" && <span style={{ color: "var(--failed)" }}>Not saved</span>}
         </span>
         <span className="spacer" />
+        <button
+          className="btn ghost icon sm"
+          title="Duplicate as a draft"
+          aria-label="Duplicate case"
+          onClick={async () => {
+            try {
+              const copy = await api.post<CaseDetail>(`/api/cases/${caseId}/duplicate`);
+              for (const k of ["cases", "suites", "projects"]) qc.invalidateQueries({ queryKey: [k] });
+              toast("success", `Created ${copy.project_key}-${copy.number} as a draft copy`);
+              onDuplicated?.(copy.id);
+            } catch (e) {
+              toast("error", (e as Error).message);
+            }
+          }}
+        >
+          <Copy size={14} />
+        </button>
         <button className="btn ghost icon sm danger" onClick={remove} title="Delete case" aria-label="Delete case">
           <Trash2 size={14} />
         </button>
