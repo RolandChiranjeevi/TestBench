@@ -1,0 +1,23 @@
+# Start Testbench:  docker compose up -d     then open http://localhost:4100
+#
+# As shipped it is reachable only from this computer (the port is published on 127.0.0.1) and has no login.
+# To let other people reach it, see "Running it for a team" in the README: set TESTBENCH_PASSWORD, publish the port
+# without the 127.0.0.1 prefix (or put it behind an HTTPS reverse proxy) and list your domain in TESTBENCH_ALLOWED_HOSTS.
+services:
+  testbench:
+    build: .
+    image: testbench:latest
+    ports:
+      - "127.0.0.1:4100:4100"
+    environment:
+      # Safe only while the port above is published on 127.0.0.1. Remove this line once you set a password.
+      TESTBENCH_ALLOW_NO_AUTH: "1"
+      # TESTBENCH_PASSWORD: "choose-a-long-password"
+      # TESTBENCH_ALLOWED_HOSTS: "testbench.example.com"
+      # GITHUB_TOKEN: "ghp_..."   # for importing GitHub Actions runs (a token with read access to the repository)
+    volumes:
+      - testbench-data:/data
+    restart: unless-stopped
+
+volumes:
+  testbench-data:

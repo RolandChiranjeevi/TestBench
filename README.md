@@ -1,16 +1,96 @@
 # Testbench
 
-A local test management app: write manual test cases, execute them in runs, and import
-Playwright / TestCafe / Selenium results (files or GitHub Actions artifacts).
+A test management app you run yourself. Write manual test cases and requirements, run them, import automated results from
+Playwright, TestCafe, Selenium or any JUnit report (files or GitHub Actions), and hand managers a PDF report after each sprint or release.
+
+- **Cases, suites and requirements** with links between them, coverage, change history and attachments
+- **Manual runs** with step-by-step execution, evidence, and bug drafts you can paste into Jira
+- **Automated results** linked to cases by the ID in the test name, with Playwright traces, screenshots and flaky-test tracking
+- **Sprint and release reports** as PDF, with a release checklist, requirement coverage and trends
+- **Yours:** your data stays in one SQLite file on your own machine or server, with automatic daily backups. No account, no per-seat price.
+
+| | |
+| --- | --- |
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Requirements](docs/screenshots/requirements.png) |
+| ![Test cases](docs/screenshots/test-cases.png) | ![Sprint report](docs/screenshots/sprint-report.png) |
+
+## Quick start
+
+**With Docker** (nothing else to install; PDF export included):
+
+```bash
+git clone https://github.com/RolandChiranjeevi/TestBench.git
+cd TestBench
+docker compose up -d
+```
+
+Open <http://localhost:4100>. On the welcome page, **Load demo project** shows what it looks like. Your data lives in the Docker volume
+`testbench-data`; **Backup & restore** in the app downloads it as one zip. To update: `git pull && docker compose up -d --build`.
+
+**From source** (Node 24):
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173 (API on 127.0.0.1:4100)
+npm run dev              # development: http://localhost:5173
+# or, as a single process:
+npm run build && npm start   # http://localhost:4100
 ```
 
-Rename a project from the project menu at the top of the sidebar ("Rename this project"). Its key stays fixed because case IDs and `@KEY-12` tags use it.
+PDF export uses an installed Google Chrome (`TESTBENCH_CHROME_CHANNEL=msedge` for Edge, or `TESTBENCH_CHROME_PATH` for any Chromium).
+Data lives in `data/testbench.db` (SQLite) and `data/uploads/`; back up that folder, or use **Backup & restore**.
 
-Data lives in `data/testbench.db` (SQLite) and `data/uploads/`. Back up that folder to keep everything.
+By default Testbench only listens on this computer (127.0.0.1) and has no login, which is right for a personal tool.
+To share it with other people, read **Running it for a team** below.
+
+## Configuration
+
+All settings are environment variables. None are required.
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `TESTBENCH_PORT` | `4100` | Port to listen on (`TESTBENCH_API_PORT` also works). |
+| `TESTBENCH_HOST` | `127.0.0.1` | Address to listen on. Anything other than this computer requires a password. |
+| `TESTBENCH_DATA` | `./data` | Where the database, uploads and backups are kept. |
+| `TESTBENCH_PASSWORD` | none | Turns on the login page (at least 8 characters). |
+| `TESTBENCH_SESSION_DAYS` | `7` | How long a sign-in lasts. |
+| `TESTBENCH_ALLOWED_HOSTS` | none | Extra host names the app answers to, e.g. `testbench.example.com`. |
+| `TESTBENCH_TRUST_PROXY` | off | Set to `1` behind a reverse proxy so HTTPS is detected and the secure cookie flag is set. |
+| `TESTBENCH_ALLOW_NO_AUTH` | off | Set to `1` to allow listening beyond localhost without a password. Only for a port that is itself published on localhost only. |
+| `TESTBENCH_AUTO_BACKUP` | on | `0` turns the daily automatic backup off. `TESTBENCH_BACKUP_DIR` and `TESTBENCH_BACKUP_KEEP` (default 7) set where and how many. |
+| `TESTBENCH_POLL_MINUTES` | `5` | How often automatic GitHub imports check for new runs (`0` = off). |
+| `GITHUB_TOKEN` | `gh auth token` | Token for importing GitHub Actions runs. A logged-in `gh` CLI is used when it is not set. |
+| `TESTBENCH_CHROME_CHANNEL` / `_PATH` / `_NO_SANDBOX` | `chrome` | Which browser renders PDFs (see Quick start). |
+| `TYPESAFE_API_KEY` | none | Optional AI link suggestions (see below). |
+
+## Running it for a team
+
+Testbench has one shared password, not user accounts. That is enough for a small team that trusts each other, and it keeps the setup small.
+To host it on a server:
+
+1. **Set a password and the host name** (in `docker-compose.yml`, remove `TESTBENCH_ALLOW_NO_AUTH` and add):
+   ```yaml
+   TESTBENCH_PASSWORD: "a long passphrase"
+   TESTBENCH_ALLOWED_HOSTS: "testbench.example.com"
+   TESTBENCH_TRUST_PROXY: "1"
+   ```
+2. **Put it behind HTTPS.** Without HTTPS the password and every request can be read on the network. A reverse proxy such as
+   [Caddy](https://caddyserver.com) does it in two lines and gets the certificate for you:
+   ```
+   testbench.example.com {
+       reverse_proxy localhost:4100
+   }
+   ```
+   Keep the port published on `127.0.0.1:4100` so only the proxy can reach it.
+3. **Keep a copy of the data elsewhere.** Automatic backups land in `/data/backups` on the same server; copy them off it.
+
+What the login does: the password is checked with scrypt in constant time; a sign-in is a signed, expiring cookie
+(`HttpOnly`, `SameSite=Strict`, `Secure` over HTTPS); five wrong passwords block an address for 15 minutes; everything including uploaded
+files and reports is behind it; changing the password signs everyone out.
+
+What it does not do: there are no individual users, so nothing records who changed what, and there is no password reset (change the variable
+and restart). It is a small tool and has not been audited. Run one instance per team (the data is a single SQLite file), and if it will face the
+open internet, put it behind a VPN or your own single sign-on proxy as well.
+
 
 ## Suggested links (optional, TypeSafe)
 

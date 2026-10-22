@@ -13,6 +13,7 @@ import { backupInfo, restoreFromZip, streamBackup } from "./backup.ts";
 import { autoBackupInfo, startAutoBackup } from "./autobackup.ts";
 import { moveSuite, SuiteMoveError } from "./suites.ts";
 import { bulkUpdateCases, CaseBulkError, duplicateCase } from "./casebulk.ts";
+import { authConfigFromEnv, registerAuth } from "./auth.ts";
 import { DATA_DIR, db, ensureMilestone, parseJson, snapshotCase, UPLOAD_DIR } from "./db.ts";
 import { seedDemo } from "./demo.ts";
 import { artifactsByRun, getToken, importRun, listRuns, type GithubSource } from "./importers/github.ts";
@@ -30,18 +31,35 @@ import { addRequirementCases, createRequirement, getRequirement, linkCaseByTags,
 import { dashboardData, listMilestones, milestoneReport } from "./stats.ts";
 import { parseReport, type Framework, type ParsedReport } from "./importers/parse.ts";
 
-const PORT = Number(process.env.TESTBENCH_API_PORT ?? 4100);
-const app = Fastify({ logger: { level: "warn" } });
+const PORT = Number(process.env.TESTBENCH_PORT ?? process.env.TESTBENCH_API_PORT ?? 4100);
+const HOST = process.env.TESTBENCH_HOST?.trim() || "127.0.0.1";
+const auth = authConfigFromEnv();
+
+// Safe by default: listening beyond this computer without a password would put everyone's test data on the network.
+if (!["127.0.0.1", "::1", "localhost"].includes(HOST) && !auth && process.env.TESTBENCH_ALLOW_NO_AUTH !== "1") {
+  console.error(
+    `Refusing to listen on ${HOST} without a password.\n` +
+      "Set TESTBENCH_PASSWORD (at least 8 characters) to require a login, or keep the default host (127.0.0.1).\n" +
+      "If the port is only published on this computer (for example Docker with 127.0.0.1:4100:4100), TESTBENCH_ALLOW_NO_AUTH=1 skips this check.",
+  );
+  process.exit(1);
+}
+// Host names the app answers to. Behind a reverse proxy add your domain: TESTBENCH_ALLOWED_HOSTS=testbench.example.com
+const ALLOWED_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", ...(process.env.TESTBENCH_ALLOWED_HOSTS ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean)]);
+
+const app = Fastify({ logger: { level: "warn" }, trustProxy: process.env.TESTBENCH_TRUST_PROXY === "1" });
 
 // Any web page can send "simple" cross-site requests to localhost. Reject foreign Host headers
 // (DNS rebinding) and require a custom header on writes, which forces a CORS preflight we never approve.
 app.addHook("onRequest", async (req, reply) => {
-  const host = (req.headers.host ?? "").replace(/:\d+$/, "");
-  if (!["localhost", "127.0.0.1", "[::1]"].includes(host)) return reply.code(403).send({ error: "Forbidden host" });
+  const host = (req.headers.host ?? "").replace(/:\d+$/, "").toLowerCase();
+  if (!ALLOWED_HOSTS.has(host)) return reply.code(403).send({ error: "Forbidden host" });
   if (req.method !== "GET" && req.method !== "HEAD" && req.headers["x-testbench"] !== "1") {
     return reply.code(403).send({ error: "Missing X-Testbench header" });
   }
 });
+// Optional password login (TESTBENCH_PASSWORD). Registered right after the guard above, so it runs before every route and static file.
+registerAuth(app, auth);
 // Folder uploads send one file per screenshot/video, so the file count limit is generous.
 await app.register(multipart, { limits: { fileSize: 100 * 1024 * 1024, files: 1000 } });
 await app.register(fastifyStatic, { root: UPLOAD_DIR, prefix: "/uploads/", decorateReply: false });
@@ -1194,5 +1212,5 @@ app.post("/api/github-sources/:id/check", async (req) => {
 startAutoImport();
 startAutoBackup();
 
-await app.listen({ port: PORT, host: "127.0.0.1" });
-console.log(`Testbench API on http://127.0.0.1:${PORT}`);
+await app.listen({ port: PORT, host: HOST });
+console.log(`Testbench API on http://${HOST}:${PORT}${auth ? " (password login on)" : ""}`);

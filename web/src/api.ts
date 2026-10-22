@@ -152,6 +152,8 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
     headers["Content-Type"] = "application/json";
   }
   const res = await fetch(url, init);
+  // Signed out (or the session expired) on an instance with a password: go to the login page.
+  if (res.status === 401 && !url.startsWith("/api/login")) window.location.href = "/login";
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error ?? `${res.status} ${res.statusText}`);
   return data as T;

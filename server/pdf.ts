@@ -5,10 +5,16 @@ import { chromium } from "playwright-core";
  * The HTML is loaded from memory and external requests are blocked, so a report can never reach out to the network.
  */
 export async function htmlToPdf(html: string, footerLabel: string): Promise<Uint8Array> {
+  // A browser path (TESTBENCH_CHROME_PATH, used by the Docker image) wins over a named channel (chrome, msedge).
+  const executablePath = process.env.TESTBENCH_CHROME_PATH;
   const browser = await chromium
-    .launch({ channel: process.env.TESTBENCH_CHROME_CHANNEL ?? "chrome" })
+    .launch(
+      executablePath
+        ? { executablePath, args: process.env.TESTBENCH_CHROME_NO_SANDBOX === "1" ? ["--no-sandbox"] : [] }
+        : { channel: process.env.TESTBENCH_CHROME_CHANNEL ?? "chrome" },
+    )
     .catch((e: Error) => {
-      throw new Error(`Couldn't start Chrome for PDF export (${e.message.split("\n")[0]}). Install Google Chrome, or set TESTBENCH_CHROME_CHANNEL=msedge.`);
+      throw new Error(`Couldn't start Chrome for PDF export (${e.message.split("\n")[0]}). Install Google Chrome, or set TESTBENCH_CHROME_CHANNEL=msedge or TESTBENCH_CHROME_PATH.`);
     });
   try {
     const page = await browser.newPage();

@@ -183,6 +183,7 @@ function ProjectLayout() {
   const { data: backup } = useQuery({ queryKey: ["backup-info"], queryFn: () => api.get<BackupInfo>("/api/backup/info"), staleTime: 60_000 });
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const { data: auth } = useQuery({ queryKey: ["auth"], queryFn: () => api.get<{ enabled: boolean; authenticated: boolean }>("/api/auth/status"), staleTime: 60_000 });
 
   useEffect(() => {
     if (pid) storage.set(LAST_PROJECT, pid);
@@ -265,6 +266,11 @@ function ProjectLayout() {
             </NavLink>
           )}
           {project.case_count} cases · {project.run_count} runs
+          {auth?.enabled && (
+            <button className="btn ghost sm" style={{ marginTop: 6 }} onClick={async () => { await api.post("/api/logout"); window.location.href = "/login"; }}>
+              Sign out
+            </button>
+          )}
         </div>
       </aside>
       <main className="main">
