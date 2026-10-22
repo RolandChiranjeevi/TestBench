@@ -209,7 +209,7 @@ function GithubCard() {
         <span className="spacer" />
         {status && (
           <span className="row faint" style={{ fontSize: 12, fontWeight: 400, gap: 4 }}>
-            {status.authenticated ? <CheckCircle2 size={12} style={{ color: "var(--passed)" }} /> : <XCircle size={12} style={{ color: "var(--failed)" }} />}
+            {status.authenticated ? <CheckCircle2 size={12} style={{ color: "var(--passed-fg)" }} /> : <XCircle size={12} style={{ color: "var(--failed-fg)" }} />}
             {status.authenticated ? `Authenticated via ${status.via}` : "Not authenticated"}
           </span>
         )}
@@ -289,7 +289,7 @@ function AutoImport({ source }: { source: GithubSource }) {
         <span style={{ fontWeight: 500 }}>Import new runs automatically</span>
         <span className="spacer" />
         {on && (
-          <span className="faint" style={{ fontSize: 12, color: source.last_error ? "var(--failed)" : undefined }} title={source.last_error || undefined}>
+          <span className="faint" style={{ fontSize: 12, color: source.last_error ? "var(--failed-fg)" : undefined }} title={source.last_error || undefined}>
             {source.last_error ? "Last check failed" : source.last_checked_at ? `Checked ${timeAgo(source.last_checked_at)}` : "Waiting for the first check"}
           </span>
         )}
@@ -323,7 +323,7 @@ function AutoImport({ source }: { source: GithubSource }) {
               {check.isPending ? <Loader2 size={12} className="spin" /> : <RefreshCw size={12} />} Check now
             </button>
           </div>
-          {source.last_error && <div style={{ color: "var(--failed)", fontSize: 12.5 }}>{source.last_error}</div>}
+          {source.last_error && <div style={{ color: "var(--failed-fg)", fontSize: 12.5 }}>{source.last_error}</div>}
           <div className="faint" style={{ fontSize: 12 }} title={source.last_skip_note || undefined}>
             {source.imported_count || source.skipped_count
               ? `Imported ${source.imported_count ?? 0} automatically${source.skipped_count ? ` · skipped ${source.skipped_count} with no test reports (hover for why)` : ""}`
@@ -357,7 +357,7 @@ function WorkflowRuns({ source }: { source: GithubSource }) {
   };
 
   if (isLoading) return <div className="row muted"><Loader2 size={14} className="spin" /> Loading workflow runs…</div>;
-  if (error) return <div style={{ color: "var(--failed)", fontSize: 12.5 }}>{(error as Error).message}</div>;
+  if (error) return <div style={{ color: "var(--failed-fg)", fontSize: 12.5 }}>{(error as Error).message}</div>;
   if (!runs?.length) return <div className="muted">No workflow runs found.</div>;
 
   return (
@@ -375,7 +375,7 @@ function WorkflowRuns({ source }: { source: GithubSource }) {
             <span className="row faint" style={{ fontSize: 11.5, gap: 6, whiteSpace: "nowrap", overflow: "hidden" }}>
               <span>{r.name} #{r.run_number}</span>·<GitBranch size={10} style={{ flexShrink: 0 }} />
               <span className="truncate" style={{ maxWidth: 180 }}>{r.head_branch}</span>·<span>{timeAgo(r.created_at)}</span>
-              {r.artifact_count === 0 && <span style={{ color: "var(--blocked)" }} title="This run uploaded no test artifacts, so there is nothing to import">· no test artifacts</span>}
+              {r.artifact_count === 0 && <span style={{ color: "var(--blocked-fg)" }} title="This run uploaded no test artifacts, so there is nothing to import">· no test artifacts</span>}
             </span>
           </div>
           {r.imported_run_id ? (
@@ -398,9 +398,9 @@ function WorkflowRuns({ source }: { source: GithubSource }) {
 
 function ConclusionIcon({ run }: { run: WorkflowRun }) {
   const style = { flexShrink: 0 };
-  if (run.status !== "completed") return <Loader2 size={14} className="spin" style={{ ...style, color: "var(--blocked)" }} />;
-  if (run.conclusion === "success") return <CheckCircle2 size={14} style={{ ...style, color: "var(--passed)" }} />;
-  if (run.conclusion === "failure") return <XCircle size={14} style={{ ...style, color: "var(--failed)" }} />;
+  if (run.status !== "completed") return <Loader2 size={14} className="spin" style={{ ...style, color: "var(--blocked-fg)" }} />;
+  if (run.conclusion === "success") return <CheckCircle2 size={14} style={{ ...style, color: "var(--passed-fg)" }} />;
+  if (run.conclusion === "failure") return <XCircle size={14} style={{ ...style, color: "var(--failed-fg)" }} />;
   return <XCircle size={14} style={{ ...style, color: "var(--skipped)" }} />;
 }
 

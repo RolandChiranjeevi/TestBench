@@ -102,7 +102,7 @@ const LOGIN_PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign in · Testbench</title>
 <style>
-  :root { color-scheme: dark light; --bg:#0f1011; --card:#17181a; --text:#e6e6e6; --muted:#8a8f98; --border:#2a2c30; --accent:#7c83ff; --err:#ef6b6b; }
+  :root { color-scheme: dark light; --bg:#0f1011; --card:#17181a; --text:#e6e6e6; --muted:#8a8f98; --border:#2a2c30; --accent:#5a66d8; --err:#ef6b6b; }
   @media (prefers-color-scheme: light) { :root { --bg:#f7f7f8; --card:#fff; --text:#1d2027; --muted:#6b707a; --border:#dfe2e7; --accent:#5b5fe0; --err:#d23b3b; } }
   * { box-sizing: border-box; }
   body { margin:0; min-height:100vh; display:grid; place-items:center; background:var(--bg); color:var(--text); font:14px/1.45 -apple-system, "Helvetica Neue", Arial, sans-serif; }

@@ -139,7 +139,7 @@ export function AutomatedDetail({ resultId }: { resultId: number }) {
         <details>
           <summary className="muted" style={{ cursor: "pointer", fontSize: 12.5 }}>Console output</summary>
           {attempt.stdout && <pre className="snippet" style={{ marginTop: 6 }}>{attempt.stdout}</pre>}
-          {attempt.stderr && <pre className="snippet" style={{ marginTop: 6, color: "var(--failed)" }}>{attempt.stderr}</pre>}
+          {attempt.stderr && <pre className="snippet" style={{ marginTop: 6, color: "var(--failed-fg)" }}>{attempt.stderr}</pre>}
         </details>
       )}
 

@@ -242,7 +242,7 @@ function ChecklistPanel({ milestone, others, onChanged }: { milestone: Milestone
       <button className="card-header row" style={{ width: "100%", cursor: "pointer", background: "none", border: 0, textAlign: "left" }} onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         <span style={{ fontWeight: 600, fontSize: 13 }}>Release checklist</span>
         <span className="faint" style={{ fontSize: 12 }}>{items.length ? `${done} of ${items.length} done` : "No tasks yet"}</span>
-        {items.length > 0 && done === items.length && <Check size={13} style={{ color: "var(--passed)" }} />}
+        {items.length > 0 && done === items.length && <Check size={13} style={{ color: "var(--passed-fg)" }} />}
         <span className="spacer" />
         <span className="faint" style={{ fontSize: 12 }}>{open ? "Hide" : "Show"}</span>
       </button>

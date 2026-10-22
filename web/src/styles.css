@@ -11,17 +11,25 @@
   --border-strong: #2e3035;
   --text: #e6e7e9;
   --text-2: #b4b6bc;
-  --text-3: #868a93;
-  --text-4: #5d616a;
+  --text-3: #9fa3ab;
+  --text-4: #8a8d94; /* the faintest text that still reads: 4.5:1 on every surface. Not for text: --untested, --border */
   --accent: #6c78e6;
   --accent-hover: #7d88ef;
   --accent-soft: rgba(108, 120, 230, 0.16);
+  --accent-solid: #5a66d8;       /* fill behind white text (4.85:1); --accent stays for rings and icons */
+  --accent-solid-hover: #4f5bc4;
+  --accent-text: #949ced;        /* accent-coloured text: links, chips */
   --passed: #4cb782;
   --failed: #eb5757;
   --blocked: #f2994a;
   --skipped: #8a8f98;
   --untested: #5d616a;
   --flaky: #d9a33f;
+  /* Status colours as text. The plain ones above are for dots, icons and bars. */
+  --passed-fg: #4cb782;
+  --failed-fg: #ef7a7a;
+  --blocked-fg: #f2994a;
+  --flaky-fg: #d9a33f;
   --critical: #eb5757;
   --shadow: 0 8px 30px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--border-strong);
   --radius: 6px;
@@ -44,11 +52,18 @@
     --border-strong: #dcdce0;
     --text: #1b1c1f;
     --text-2: #3d3f45;
-    --text-3: #6b6f78;
-    --text-4: #9a9ea6;
+    --text-3: #585b62;
+    --text-4: #63656a;
     --accent: #5e6ad2;
     --accent-hover: #4f5bc4;
     --accent-soft: rgba(94, 106, 210, 0.1);
+    --accent-solid: #5e6ad2;
+    --accent-solid-hover: #4f5bc4;
+    --accent-text: #4c56aa;
+    --passed-fg: #2e6e4e;
+    --failed-fg: #a23c3c;
+    --blocked-fg: #8a572a;
+    --flaky-fg: #7c5d24;
     --skipped: #9a9ea6;
     --untested: #b8bbc2;
     --shadow: 0 8px 30px rgba(20, 20, 30, 0.12), 0 0 0 1px var(--border-strong);
@@ -57,8 +72,10 @@
 :root[data-theme="light"] {
   color-scheme: light;
   --bg: #ffffff; --bg-sidebar: #f7f7f8; --bg-panel: #fbfbfc; --bg-elev: #ffffff; --bg-hover: #f1f1f3; --bg-active: #e9e9ec;
-  --bg-input: #ffffff; --border: #e8e8eb; --border-strong: #dcdce0; --text: #1b1c1f; --text-2: #3d3f45; --text-3: #6b6f78;
-  --text-4: #9a9ea6; --accent: #5e6ad2; --accent-hover: #4f5bc4; --accent-soft: rgba(94, 106, 210, 0.1); --skipped: #9a9ea6;
+  --bg-input: #ffffff; --border: #e8e8eb; --border-strong: #dcdce0; --text: #1b1c1f; --text-2: #3d3f45; --text-3: #585b62;
+  --text-4: #63656a; --accent: #5e6ad2; --accent-hover: #4f5bc4; --accent-soft: rgba(94, 106, 210, 0.1); --skipped: #9a9ea6;
+  --accent-solid: #5e6ad2; --accent-solid-hover: #4f5bc4; --accent-text: #4c56aa;
+  --passed-fg: #2e6e4e; --failed-fg: #a23c3c; --blocked-fg: #8a572a; --flaky-fg: #7c5d24;
   --untested: #b8bbc2; --shadow: 0 8px 30px rgba(20, 20, 30, 0.12), 0 0 0 1px var(--border-strong);
 }
 
@@ -136,11 +153,11 @@ a { color: inherit; text-decoration: none; }
 .btn:hover { background: var(--bg-hover); }
 .btn:active { transform: scale(0.98); }
 .btn:disabled { opacity: 0.5; cursor: default; transform: none; }
-.btn.primary { background: var(--accent); border-color: transparent; color: #fff; }
-.btn.primary:hover { background: var(--accent-hover); }
+.btn.primary { background: var(--accent-solid); border-color: transparent; color: #fff; }
+.btn.primary:hover { background: var(--accent-solid-hover); }
 .btn.ghost { background: none; border-color: transparent; color: var(--text-2); }
 .btn.ghost:hover { background: var(--bg-hover); color: var(--text); }
-.btn.danger:hover { color: var(--failed); border-color: color-mix(in srgb, var(--failed) 40%, transparent); }
+.btn.danger:hover { color: var(--failed-fg); border-color: color-mix(in srgb, var(--failed) 40%, transparent); }
 .btn.icon { width: 28px; padding: 0; }
 .btn.sm { height: 24px; font-size: 12px; padding: 0 8px; }
 .btn.sm.icon { width: 24px; padding: 0; }
@@ -148,7 +165,7 @@ a { color: inherit; text-decoration: none; }
   display: inline-grid; place-items: center; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 4px;
   font-size: 10.5px; font-family: var(--mono); color: var(--text-3); background: var(--bg-active); border: 1px solid var(--border-strong);
 }
-.btn.primary .kbd { background: rgba(255, 255, 255, 0.16); border-color: transparent; color: rgba(255, 255, 255, 0.85); }
+.btn.primary .kbd { background: rgba(0, 0, 0, 0.2); border-color: transparent; color: #fff; }
 
 .input, .select, .textarea {
   background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: var(--radius);
@@ -187,7 +204,7 @@ a { color: inherit; text-decoration: none; }
   border: 1px solid var(--border-strong); color: var(--text-2); font-size: 11.5px; white-space: nowrap; background: var(--bg);
 }
 .chip .dot { width: 6px; height: 6px; border-radius: 50%; }
-.chip.accent { border-color: transparent; background: var(--accent-soft); color: var(--accent); }
+.chip.accent { border-color: transparent; background: var(--accent-soft); color: var(--accent-text); }
 
 /* ---------- Lists ---------- */
 .group-header {
@@ -247,8 +264,8 @@ pre.error {
 /* ---------- Toasts ---------- */
 .toasts { position: fixed; bottom: 16px; right: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 100; }
 .toast { background: var(--bg-elev); box-shadow: var(--shadow); border-radius: 8px; padding: 10px 14px; display: flex; gap: 8px; align-items: center; max-width: 420px; animation: pop 160ms cubic-bezier(.2,.8,.2,1); }
-.toast.error svg { color: var(--failed); }
-.toast.success svg { color: var(--passed); }
+.toast.error svg { color: var(--failed-fg); }
+.toast.success svg { color: var(--passed-fg); }
 
 /* ---------- Segmented tabs ---------- */
 .tabs { display: inline-flex; gap: 2px; }
@@ -304,9 +321,9 @@ pre.error {
 .mini-status { display: flex; gap: 2px; }
 .mini-status button { width: 26px; height: 24px; border-radius: 5px; border: 1px solid transparent; background: none; cursor: pointer; color: var(--text-4); display: grid; place-items: center; }
 .mini-status button:hover { background: var(--bg-hover); color: var(--text-2); }
-.mini-status button.on.passed { color: var(--passed); background: color-mix(in srgb, var(--passed) 14%, transparent); }
-.mini-status button.on.failed { color: var(--failed); background: color-mix(in srgb, var(--failed) 14%, transparent); }
-.mini-status button.on.blocked { color: var(--blocked); background: color-mix(in srgb, var(--blocked) 14%, transparent); }
+.mini-status button.on.passed { color: var(--passed-fg); background: color-mix(in srgb, var(--passed) 14%, transparent); }
+.mini-status button.on.failed { color: var(--failed-fg); background: color-mix(in srgb, var(--failed) 14%, transparent); }
+.mini-status button.on.blocked { color: var(--blocked-fg); background: color-mix(in srgb, var(--blocked) 14%, transparent); }
 
 .dropzone { border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); padding: 22px; text-align: center; color: var(--text-3); cursor: pointer; transition: all 120ms; }
 .dropzone:hover, .dropzone.over { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }

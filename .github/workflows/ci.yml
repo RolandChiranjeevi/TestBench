@@ -32,6 +32,35 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
         continue-on-error: true
 
+  # Text contrast on the real pages, in dark and light (WCAG AA). Uses the Chrome that GitHub's runners already have.
+  contrast:
+    name: Contrast (WCAG AA, dark and light)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Start Testbench (no password)
+        run: |
+          NODE_ENV=production TESTBENCH_DATA="$RUNNER_TEMP/data" TESTBENCH_AUTO_BACKUP=0 TESTBENCH_PORT=4100 \
+            nohup npx tsx server/index.ts > "$RUNNER_TEMP/server.log" 2>&1 &
+          for _ in $(seq 1 30); do curl -fsS http://127.0.0.1:4100/api/auth/status >/dev/null && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/server.log"; exit 1
+      - name: Check the app pages
+        run: CONTRAST_SEED=1 npm run check:contrast -- http://127.0.0.1:4100
+      - name: Start a second instance with a password
+        run: |
+          NODE_ENV=production TESTBENCH_DATA="$RUNNER_TEMP/data2" TESTBENCH_AUTO_BACKUP=0 TESTBENCH_PORT=4101 TESTBENCH_PASSWORD="ci-password-1234" \
+            nohup npx tsx server/index.ts > "$RUNNER_TEMP/server2.log" 2>&1 &
+          for _ in $(seq 1 30); do curl -fsS http://127.0.0.1:4101/api/auth/status >/dev/null && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/server2.log"; exit 1
+      - name: Check the sign-in page
+        run: CONTRAST_ONLY=/login npm run check:contrast -- http://127.0.0.1:4101
+
   docker:
     name: Docker image (linux/amd64)
     runs-on: ubuntu-latest

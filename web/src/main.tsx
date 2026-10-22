@@ -260,7 +260,7 @@ function ProjectLayout() {
             <NavLink
               to={`/p/${project.id}/backup`}
               className="row"
-              style={{ gap: 6, marginBottom: 4, color: !backup.lastBackupAt || Date.now() - new Date(backup.lastBackupAt).getTime() > 7 * 864e5 ? "var(--blocked)" : undefined }}
+              style={{ gap: 6, marginBottom: 4, color: !backup.lastBackupAt || Date.now() - new Date(backup.lastBackupAt).getTime() > 7 * 864e5 ? "var(--blocked-fg)" : undefined }}
             >
               <Archive size={12} /> {backup.lastBackupAt ? `Backed up ${timeAgo(backup.lastBackupAt)}` : "Not backed up yet"}
             </NavLink>

@@ -155,8 +155,8 @@ export function AutomatedPage() {
                     </div>
                   </td>
                   <td className="tabular" style={{ textAlign: "right" }}>{t.run_count}</td>
-                  <td className="tabular" style={{ textAlign: "right", color: t.fail_count ? "var(--failed)" : "var(--text-4)" }}>{t.fail_count}</td>
-                  <td className="tabular" style={{ textAlign: "right", color: t.flaky_count ? "var(--flaky)" : "var(--text-4)" }}>{t.flaky_count}</td>
+                  <td className="tabular" style={{ textAlign: "right", color: t.fail_count ? "var(--failed-fg)" : "var(--text-4)" }}>{t.fail_count}</td>
+                  <td className="tabular" style={{ textAlign: "right", color: t.flaky_count ? "var(--flaky-fg)" : "var(--text-4)" }}>{t.flaky_count}</td>
                   <td className="tabular muted" style={{ textAlign: "right" }}>{formatDuration(t.avg_duration_ms)}</td>
                   <td className="muted" style={{ textAlign: "right" }}>{timeAgo(t.last_seen)}</td>
                 </tr>
@@ -210,7 +210,7 @@ function SuggestionsPanel() {
   return (
     <div className="card" style={{ margin: "16px 20px 0" }}>
       <div className="card-header row" style={{ fontSize: 13 }}>
-        <Sparkles size={14} style={{ color: "var(--accent)" }} />
+        <Sparkles size={14} style={{ color: "var(--accent-text)" }} />
         <span style={{ fontWeight: 600 }}>Suggested links</span>
         <span className="faint" style={{ fontSize: 12 }}>
           Judged by TypeSafe from the test and case text. Titles and steps are sent to their API. Review each one.

@@ -141,6 +141,12 @@ coverage and review flags, moving suites, the release checklist, the database in
 temporary database, so your real `data/` is never touched. `npm run typecheck` checks the types, and `npm run build` typechecks and then bundles the web app. GitHub Actions runs the typecheck, the
 tests, the build and a Docker smoke test (`scripts/docker-smoke.sh`, which you can also run yourself) on every push and pull request.
 
+**Contrast check.** `npm run check:contrast -- <url>` opens every page in Chrome, in dark and light, and measures the real contrast of
+all text against its background (WCAG AA: 4.5:1, or 3:1 for large text). CI runs it on every push. Point it at a throwaway instance, not your
+own data (`CONTRAST_SEED=1` creates the demo project in an empty one; `CONTRAST_ONLY=/login` checks just the sign-in page). When it fails, use
+the colour tokens in `web/src/styles.css`: `--text-3`/`--text-4` for secondary text, `--accent-text` for links, and the `--passed-fg`,
+`--failed-fg`, `--blocked-fg`, `--flaky-fg` tokens for status colours used as text (the plain status colours are for dots, icons and bars).
+
 ## Editing many cases at once
 
 On **Test cases**, tick cases (or press `X`) and the toolbar offers:

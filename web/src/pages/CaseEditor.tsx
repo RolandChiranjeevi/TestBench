@@ -171,7 +171,7 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
         <span className="faint" style={{ fontSize: 12, display: "inline-flex", alignItems: "center", gap: 4 }}>
           {saveState === "saving" && <><Loader2 size={12} className="spin" /> Saving</>}
           {saveState === "saved" && <><Check size={12} /> Saved</>}
-          {saveState === "error" && <span style={{ color: "var(--failed)" }}>Not saved</span>}
+          {saveState === "error" && <span style={{ color: "var(--failed-fg)" }}>Not saved</span>}
         </span>
         <span className="spacer" />
         <button
@@ -226,7 +226,7 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
             </select>
           </label>
           <label className="pill" title="Status">
-            <CircleDot size={13} style={{ color: draft.status === "ready" ? "var(--passed)" : draft.status === "draft" ? "var(--text-3)" : "var(--failed)" }} />
+            <CircleDot size={13} style={{ color: draft.status === "ready" ? "var(--passed-fg)" : draft.status === "draft" ? "var(--text-3)" : "var(--failed-fg)" }} />
             {draft.status[0].toUpperCase() + draft.status.slice(1)}
             <ChevronsUpDown size={11} className="faint" />
             <select value={draft.status} onChange={(e) => update({ status: e.target.value as Draft["status"] }, true)} aria-label="Status">
@@ -325,7 +325,7 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
             <button className="btn ghost sm" onClick={() => setLinkingReqs(true)}><Link2 size={13} /> Link</button>
           </div>
           {data.requirements.filter((r) => r.review_needed).map((r) => (
-            <div key={r.id} className="row" style={{ marginTop: 8, fontSize: 12.5, color: "var(--blocked)" }}>
+            <div key={r.id} className="row" style={{ marginTop: 8, fontSize: 12.5, color: "var(--blocked-fg)" }}>
               <span className="grow">REQ-{r.number} was reworded after this case was linked. Check the case still fits.</span>
               <button className="btn sm" onClick={async () => {
                 await api.post(`/api/requirements/${r.id}/review`, { caseIds: [caseId] });
@@ -342,7 +342,7 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
           {data.automated.length === 0 ? (
             <div className="muted" style={{ fontSize: 12.5 }}>
               Not automated. Put <code className="inline">@{data.project_key}-{data.number}</code> in a test title, or link a test from{" "}
-              <Link to={`/p/${pid}/automated`} style={{ color: "var(--accent)" }}>Automated tests</Link>.
+              <Link to={`/p/${pid}/automated`} style={{ color: "var(--accent-text)" }}>Automated tests</Link>.
             </div>
           ) : (
             <div className="card">

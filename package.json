@@ -11,7 +11,8 @@
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "start": "NODE_ENV=production tsx server/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test test/*.test.ts",
+    "check:contrast": "node scripts/check-contrast.mjs"
   },
   "dependencies": {
     "@fastify/multipart": "^10.1.4",

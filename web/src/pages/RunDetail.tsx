@@ -22,7 +22,7 @@ export function RunDetailPage() {
   if (error || !run) {
     return (
       <Empty icon={<X size={20} />} title="Run not found">
-        <Link to={`/p/${pid}/runs`} style={{ color: "var(--accent)" }}>Back to runs</Link>
+        <Link to={`/p/${pid}/runs`} style={{ color: "var(--accent-text)" }}>Back to runs</Link>
       </Empty>
     );
   }
@@ -572,7 +572,7 @@ function AutomatedRun({ run }: { run: RunDetail }) {
   const toggle = (id: number) => setOpen((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const tabCount: Record<AutoFilter, number> = { all: c.total, failed: c.failed, flaky: c.flaky, passed: c.passed, skipped: c.skipped };
   const unlinked = run.results.filter((r) => !r.case_id).length;
-  const rateColor = rate == null ? undefined : rate >= 90 ? "var(--passed)" : rate >= 70 ? "var(--blocked)" : "var(--failed)";
+  const rateColor = rate == null ? undefined : rate >= 90 ? "var(--passed-fg)" : rate >= 70 ? "var(--blocked-fg)" : "var(--failed-fg)";
 
   return (
     <>
@@ -584,9 +584,9 @@ function AutomatedRun({ run }: { run: RunDetail }) {
         <div style={{ padding: "18px 20px", display: "flex", gap: 32, alignItems: "flex-end", borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
           <div className="stat"><span className="value" style={{ color: rateColor }}>{rate == null ? "—" : `${rate}%`}</span><span className="label">Pass rate</span></div>
           <div className="stat"><span className="value">{c.total}</span><span className="label">Tests</span></div>
-          <div className="stat"><span className="value" style={{ color: "var(--passed)" }}>{c.passed}</span><span className="label">Passed</span></div>
-          <div className="stat"><span className="value" style={{ color: c.failed ? "var(--failed)" : undefined }}>{c.failed}</span><span className="label">Failed</span></div>
-          <div className="stat"><span className="value" style={{ color: c.flaky ? "var(--flaky)" : undefined }}>{c.flaky}</span><span className="label">Flaky</span></div>
+          <div className="stat"><span className="value" style={{ color: "var(--passed-fg)" }}>{c.passed}</span><span className="label">Passed</span></div>
+          <div className="stat"><span className="value" style={{ color: c.failed ? "var(--failed-fg)" : undefined }}>{c.failed}</span><span className="label">Failed</span></div>
+          <div className="stat"><span className="value" style={{ color: c.flaky ? "var(--flaky-fg)" : undefined }}>{c.flaky}</span><span className="label">Flaky</span></div>
           <div className="stat"><span className="value">{c.skipped}</span><span className="label">Skipped</span></div>
           <div className="stat"><span className="value">{formatDuration(c.duration_ms)}</span><span className="label">Total test time</span></div>
           <div className="col" style={{ gap: 4, marginLeft: "auto", fontSize: 12, color: "var(--text-3)", alignItems: "flex-end" }}>
@@ -636,7 +636,7 @@ function AutomatedRun({ run }: { run: RunDetail }) {
                       <span className="title">{r.test_title}</span>
                       <span className="meta">
                         {r.test_suite_path && r.test_suite_path !== file && <span className="faint truncate" style={{ maxWidth: 220 }}>{r.test_suite_path}</span>}
-                        {r.flaky ? <span className="chip" style={{ color: "var(--flaky)" }}>flaky</span> : null}
+                        {r.flaky ? <span className="chip" style={{ color: "var(--flaky-fg)" }}>flaky</span> : null}
                         {r.attachment_count > 0 && <span className="chip" title="Screenshots, videos and traces"><Paperclip size={10} /> {r.attachment_count}</span>}
                         {r.jira_key && <span className="chip accent" title="Linked Jira issue"><Bug size={10} /> {jiraLabel(r.jira_key)}</span>}
                         {r.case_id ? (
@@ -657,7 +657,7 @@ function AutomatedRun({ run }: { run: RunDetail }) {
         {unlinked > 0 && (
           <div className="row muted" style={{ padding: "16px 20px", fontSize: 12.5 }}>
             <Bot size={13} /> {unlinked} {unlinked === 1 ? "test isn't" : "tests aren't"} linked to a case.
-            <Link to={`/p/${pid}/automated?filter=unlinked`} style={{ color: "var(--accent)" }}>Link them</Link>
+            <Link to={`/p/${pid}/automated?filter=unlinked`} style={{ color: "var(--accent-text)" }}>Link them</Link>
           </div>
         )}
       </div>

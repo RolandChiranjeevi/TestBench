@@ -88,7 +88,7 @@ export function InsightsPage() {
                         ))}
                       </div>
                       <div className="col tabular" style={{ gap: 1, width: 190, flexShrink: 0, fontSize: 12, alignItems: "flex-end" }}>
-                        <span>failed {f.failures} of {f.runs}{f.failingNow && <span style={{ color: "var(--failed)" }}> · failing now</span>}</span>
+                        <span>failed {f.failures} of {f.runs}{f.failingNow && <span style={{ color: "var(--failed-fg)" }}> · failing now</span>}</span>
                         <span className="faint">{f.retries ? `${f.retries} needed a retry` : ""}{f.retries && f.flips ? " · " : ""}{f.flips ? `flipped ${f.flips}×` : ""}</span>
                       </div>
                     </div>
@@ -120,7 +120,7 @@ export function InsightsPage() {
                         <span className="truncate" title={s.title}>{s.title}</span>
                         <span className="faint tabular" style={{ fontSize: 12 }}>{formatDuration(s.beforeMs)} → {formatDuration(s.recentMs)}</span>
                       </div>
-                      <span className="tabular" style={{ color: "var(--blocked)", fontWeight: 500 }}>+{s.pct}%</span>
+                      <span className="tabular" style={{ color: "var(--blocked-fg)", fontWeight: 500 }}>+{s.pct}%</span>
                     </Link>
                   ))
                 )}

@@ -100,7 +100,7 @@ export function BackupPage() {
           <div className="card">
             <div className="card-header"><RotateCcw size={15} /> Restore from a backup</div>
             <div className="card-body col" style={{ gap: 12 }}>
-              <div className="row" style={{ alignItems: "flex-start", gap: 10, color: "var(--blocked)" }}>
+              <div className="row" style={{ alignItems: "flex-start", gap: 10, color: "var(--blocked-fg)" }}>
                 <ShieldAlert size={16} style={{ flexShrink: 0, marginTop: 2 }} />
                 <span style={{ color: "var(--text-2)" }}>
                   Restoring replaces <strong>everything</strong> currently in TestBench. Your present data is kept in <code className="inline">data/previous/</code>, not deleted,

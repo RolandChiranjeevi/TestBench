@@ -89,7 +89,7 @@ function RunRow({ run }: { run: RunSummary }) {
         <div className="row" style={{ gap: 8 }}>
           <span className="truncate" style={{ fontWeight: 500 }}>{run.title}</span>
           {run.kind === "manual" && run.status === "in_progress" && <span className="chip accent">In progress</span>}
-          {run.flaky > 0 && <span className="chip" style={{ color: "var(--flaky)" }}>{run.flaky} flaky</span>}
+          {run.flaky > 0 && <span className="chip" style={{ color: "var(--flaky-fg)" }}>{run.flaky} flaky</span>}
         </div>
         <div className="row faint" style={{ gap: 8, fontSize: 12 }}>
           <span>{timeAgo(run.started_at)}</span>
@@ -105,8 +105,8 @@ function RunRow({ run }: { run: RunSummary }) {
         <ProgressBar counts={run} />
         <div className="row faint tabular" style={{ fontSize: 11.5, justifyContent: "space-between" }}>
           <span>
-            <span style={{ color: "var(--passed)" }}>{run.passed}</span> · <span style={{ color: run.failed ? "var(--failed)" : undefined }}>{run.failed}</span>
-            {run.blocked > 0 && <> · <span style={{ color: "var(--blocked)" }}>{run.blocked}</span></>}
+            <span style={{ color: "var(--passed-fg)" }}>{run.passed}</span> · <span style={{ color: run.failed ? "var(--failed-fg)" : undefined }}>{run.failed}</span>
+            {run.blocked > 0 && <> · <span style={{ color: "var(--blocked-fg)" }}>{run.blocked}</span></>}
             {run.skipped > 0 && <> · {run.skipped}</>}
           </span>
           <span>{run.kind === "manual" ? `${done}/${run.total}` : `${run.total} tests`}</span>
@@ -115,7 +115,7 @@ function RunRow({ run }: { run: RunSummary }) {
       <span
         className="tabular"
         title="Pass rate of executed tests"
-        style={{ width: 44, textAlign: "right", fontWeight: 600, color: rate == null ? "var(--text-4)" : rate >= 90 ? "var(--passed)" : rate >= 70 ? "var(--blocked)" : "var(--failed)" }}
+        style={{ width: 44, textAlign: "right", fontWeight: 600, color: rate == null ? "var(--text-4)" : rate >= 90 ? "var(--passed-fg)" : rate >= 70 ? "var(--blocked-fg)" : "var(--failed-fg)" }}
       >
         {rate == null ? "—" : `${rate}%`}
       </span>

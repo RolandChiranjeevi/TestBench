@@ -11,7 +11,7 @@ function Delta({ cur, prev }: { cur: number | null; prev: number | null }) {
   const d = Math.round((cur - prev) * 10) / 10;
   if (d === 0) return <span className="faint" style={{ fontSize: 12 }}>no change</span>;
   return (
-    <span style={{ fontSize: 12, fontWeight: 500, color: d > 0 ? "var(--passed)" : "var(--failed)" }}>
+    <span style={{ fontSize: 12, fontWeight: 500, color: d > 0 ? "var(--passed-fg)" : "var(--failed-fg)" }}>
       {d > 0 ? "▲" : "▼"} {Math.abs(d)} pts vs previous run
     </span>
   );
@@ -79,7 +79,7 @@ export function DashboardPage() {
               <Stat
                 label="Automated pass rate"
                 value={s.latestRate == null ? "—" : `${s.latestRate}%`}
-                color={s.latestRate == null ? undefined : s.latestRate >= 90 ? "var(--passed)" : s.latestRate >= 70 ? "var(--blocked)" : "var(--failed)"}
+                color={s.latestRate == null ? undefined : s.latestRate >= 90 ? "var(--passed-fg)" : s.latestRate >= 70 ? "var(--blocked-fg)" : "var(--failed-fg)"}
                 sub={<Delta cur={s.latestRate} prev={s.previousRate} />}
               />
               <Stat label="Automation coverage" value={`${s.coverage}%`} sub={`${s.automatedCases} of ${s.cases} cases have an automated test`} />
@@ -87,21 +87,21 @@ export function DashboardPage() {
                 <Stat
                   label="Requirement coverage"
                   value={`${Math.round((d.requirements.covered / d.requirements.total) * 100)}%`}
-                  color={d.requirements.failing ? "var(--failed)" : undefined}
+                  color={d.requirements.failing ? "var(--failed-fg)" : undefined}
                   sub={
-                    <Link to={`/p/${pid}/requirements`} style={{ color: "var(--accent)" }}>
+                    <Link to={`/p/${pid}/requirements`} style={{ color: "var(--accent-text)" }}>
                       {d.requirements.covered} of {d.requirements.total} have test cases
                       {d.requirements.failing ? `, ${d.requirements.failing} failing` : ""}
                     </Link>
                   }
                 />
               )}
-              <Stat label="Failing cases" value={s.failingCases} color={s.failingCases ? "var(--failed)" : undefined} sub="Latest result failed or blocked" />
-              <Stat label="Flaky tests" value={s.flakyTests} color={s.flakyTests ? "var(--flaky)" : undefined} sub="In the last 10 automated runs" />
+              <Stat label="Failing cases" value={s.failingCases} color={s.failingCases ? "var(--failed-fg)" : undefined} sub="Latest result failed or blocked" />
+              <Stat label="Flaky tests" value={s.flakyTests} color={s.flakyTests ? "var(--flaky-fg)" : undefined} sub="In the last 10 automated runs" />
               <Stat
                 label="Unlinked tests"
                 value={s.unlinkedTests}
-                sub={s.unlinkedTests ? <Link to={`/p/${pid}/automated?filter=unlinked`} style={{ color: "var(--accent)" }}>Link them to cases</Link> : "All linked"}
+                sub={s.unlinkedTests ? <Link to={`/p/${pid}/automated?filter=unlinked`} style={{ color: "var(--accent-text)" }}>Link them to cases</Link> : "All linked"}
               />
             </div>
 
@@ -141,8 +141,8 @@ export function DashboardPage() {
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
-              <TestTable title="Most failing" rows={d.mostFailing} empty="No failing tests in the last 10 runs." metric={(t) => <span style={{ color: "var(--failed)" }}>{t.failures}/{t.runs} failed</span>} />
-              <TestTable title="Flaky" rows={d.flaky} empty="No flaky tests. Playwright's JSON report is needed to detect them." metric={(t) => <span style={{ color: "var(--flaky)" }}>{t.flaky}× flaky</span>} />
+              <TestTable title="Most failing" rows={d.mostFailing} empty="No failing tests in the last 10 runs." metric={(t) => <span style={{ color: "var(--failed-fg)" }}>{t.failures}/{t.runs} failed</span>} />
+              <TestTable title="Flaky" rows={d.flaky} empty="No flaky tests. Playwright's JSON report is needed to detect them." metric={(t) => <span style={{ color: "var(--flaky-fg)" }}>{t.flaky}× flaky</span>} />
               <TestTable title="Slowest" rows={d.slowest} empty="No timing data yet." metric={(t) => formatDuration(t.avg_ms)} />
             </div>
 
@@ -174,7 +174,7 @@ export function DashboardPage() {
             <div className="card">
               <div className="card-header" style={{ fontSize: 13 }}>
                 <Sparkles size={14} /> Automate next
-                <Link to={`/p/${pid}/automated?view=insights`} style={{ marginLeft: "auto", color: "var(--accent)", fontSize: 12, fontWeight: 400 }}>
+                <Link to={`/p/${pid}/automated?view=insights`} style={{ marginLeft: "auto", color: "var(--accent-text)", fontSize: 12, fontWeight: 400 }}>
                   {d.candidatesTotal > d.candidates.length ? `All ${d.candidatesTotal}` : "Insights"}
                 </Link>
               </div>

@@ -515,7 +515,7 @@ function SuiteTree(props: {
                 <button className="nav-item" onClick={() => { setMenu(null); props.onEdit(s); }}><Pencil size={13} /> Rename</button>
                 <button className="nav-item" disabled={children[0] === s} onClick={() => { setMenu(null); nudge(s, -1); }}><ArrowUp size={13} /> Move up</button>
                 <button className="nav-item" disabled={children.at(-1) === s} onClick={() => { setMenu(null); nudge(s, 1); }}><ArrowDown size={13} /> Move down</button>
-                <button className="nav-item" onClick={() => { setMenu(null); props.onDelete(s); }} style={{ color: "var(--failed)" }}><Trash2 size={13} /> Delete</button>
+                <button className="nav-item" onClick={() => { setMenu(null); props.onDelete(s); }} style={{ color: "var(--failed-fg)" }}><Trash2 size={13} /> Delete</button>
               </div>
             </>
           )}
