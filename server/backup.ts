@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import { Zip, ZipDeflate, ZipPassThrough, strToU8 } from "fflate";
 import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { once } from "node:events";
-import type { ServerResponse } from "node:http";
+import type { Writable } from "node:stream";
 import { join } from "node:path";
 import { bagFromZip } from "./importers/bag.ts";
 import { closeDatabase, DATA_DIR, DB_FILE, db, getSetting, reopenDatabase, setSetting, UPLOAD_DIR } from "./db.ts";
@@ -40,7 +40,7 @@ export function backupInfo() {
  * Streams a zip of everything (database snapshot + uploaded files) to the response without holding it in memory.
  * The database is copied with SQLite's online backup, so the snapshot is consistent even while the app is in use.
  */
-export async function streamBackup(res: ServerResponse): Promise<void> {
+export async function streamBackup(res: Writable, opts: { record?: string } = {}): Promise<void> {
   const snapshot = join(DATA_DIR, `.snapshot-${process.pid}-${Date.now()}.db`);
   await db.backup(snapshot);
   try {
@@ -83,7 +83,7 @@ export async function streamBackup(res: ServerResponse): Promise<void> {
     await add("testbench.db", snapshot, true);
     for (const f of files) await add(`uploads/${f}`, join(UPLOAD_DIR, f), !ALREADY_COMPRESSED.test(f));
     zip.end();
-    setSetting("last_backup_at", manifest.createdAt);
+    setSetting(opts.record ?? "last_backup_at", manifest.createdAt);
   } finally {
     rmSync(snapshot, { force: true });
   }

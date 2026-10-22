@@ -92,7 +92,8 @@ export interface WorkflowRun {
 }
 export interface BackupInfo {
   projects: number; cases: number; runs: number; dbBytes: number; uploadFiles: number; uploadBytes: number;
-  lastBackupAt: string | null; previousCopies: string[];
+  lastBackupAt: string | null; previousCopies: string[]; lastManualBackupAt: string | null;
+  auto: { enabled: boolean; dir: string; keep: number; count: number; lastAt: string | null; lastName: string | null };
 }
 export interface RestoreSummary { projects: number; cases: number; runs: number; uploadFiles: number; previous: string }
 export interface ImportResult { runId: number; duplicate: boolean; total: number; linked: number; attachments: number; artifacts?: string[] }

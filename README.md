@@ -32,6 +32,16 @@ without your click, and exact IDs in test names still win.
 - **Settings:** `TYPESAFE_MODEL` (default `jev-latest`), `TYPESAFE_LINK_THRESHOLD` (default `0.7`), `TYPESAFE_API_URL`.
 - This is a spike: the 0.7 threshold is a starting point to tune on your own data.
 
+## Tests
+
+```bash
+npm test
+```
+
+Runs the automated tests (`test/`, Node's built-in runner through `tsx`). They cover the report parsers, linking tests to cases by ID, requirement
+coverage and review flags, moving suites, the release checklist, the database indexes and the automatic backup. Each test file uses its own
+temporary database, so your real `data/` is never touched. `npm run typecheck` checks the types, and `npm run build` typechecks and then bundles the web app.
+
 ## Ordering suites
 
 On **Test cases**, drag a suite in the left tree to reorder it: drop on the top or bottom edge of another suite to place it before or
@@ -67,6 +77,11 @@ requirements that are failing or weren't run, and exports include them (JSON and
   history. The files live in `data/uploads/`, so the backup zip includes them; the JSON export lists their names.
 
 ## Backup and restore
+
+**Automatic backups:** while Testbench is running it saves a backup about once a day (the first shortly after start-up, once you have a project) and
+keeps the newest 7, in `data/backups/`. That is the same disk as your data, so it protects against mistakes and a damaged database but not a lost
+disk: for an off-disk copy start it with `TESTBENCH_BACKUP_DIR` pointing at a synced folder (iCloud Drive, Dropbox). `TESTBENCH_BACKUP_KEEP=14`
+keeps more, `TESTBENCH_AUTO_BACKUP=0` turns it off. Restore any of them with "Choose backup .zip" below. The sidebar's "Backed up" counts both.
 
 **Backup & restore** (sidebar, key `8`) downloads one zip with all projects: the database and every uploaded file. Restore it on this or
 another computer, without restarting. A restore validates the zip first and moves your current data to `data/previous/<time>` instead

@@ -10,6 +10,8 @@ import { extname, join } from "node:path";
 import { z } from "zod";
 import { checkSource, startAutoImport } from "./autoimport.ts";
 import { backupInfo, restoreFromZip, streamBackup } from "./backup.ts";
+import { autoBackupInfo, startAutoBackup } from "./autobackup.ts";
+import { moveSuite, SuiteMoveError } from "./suites.ts";
 import { DATA_DIR, db, ensureMilestone, parseJson, snapshotCase, UPLOAD_DIR } from "./db.ts";
 import { seedDemo } from "./demo.ts";
 import { artifactsByRun, getToken, importRun, listRuns, type GithubSource } from "./importers/github.ts";
@@ -150,26 +152,13 @@ app.patch("/api/suites/:id", (req) => {
 
 // Move a suite: under `parentId` (null = top level), placed before the sibling `beforeId` or last when that is null/omitted.
 app.post("/api/suites/:id/move", (req) => {
-  const id = idParam(req);
   const { parentId, beforeId } = z.object({ parentId: z.number().int().nullable(), beforeId: z.number().int().nullable().optional() }).parse(req.body);
-  const cur = must(db.prepare("SELECT id, project_id FROM suites WHERE id = ?").get(id) as { id: number; project_id: number } | undefined, "Suite");
-  if (parentId != null) {
-    const parent = db.prepare("SELECT project_id FROM suites WHERE id = ?").get(parentId) as { project_id: number } | undefined;
-    if (!parent || parent.project_id !== cur.project_id) throw new HttpError(400, "That suite is in another project");
-    // Walk up from the new parent: meeting the moved suite means it would end up inside itself.
-    for (let a: number | null = parentId; a != null; a = (db.prepare("SELECT parent_id FROM suites WHERE id = ?").get(a) as { parent_id: number | null } | undefined)?.parent_id ?? null) {
-      if (a === id) throw new HttpError(400, "A suite can't be moved into itself");
-    }
+  try {
+    return moveSuite(idParam(req), parentId, beforeId);
+  } catch (e) {
+    if (e instanceof SuiteMoveError) throw new HttpError(e.status, e.message);
+    throw e;
   }
-  db.transaction(() => {
-    const siblings = (db.prepare("SELECT id FROM suites WHERE project_id = ? AND parent_id IS ? AND id != ? ORDER BY position, id").all(cur.project_id, parentId, id) as { id: number }[]).map((r) => r.id);
-    const at = beforeId == null ? siblings.length : siblings.indexOf(beforeId);
-    if (at === -1) throw new HttpError(400, "The suite to place it before is not in that folder");
-    siblings.splice(at, 0, id);
-    siblings.forEach((sid, i) => db.prepare("UPDATE suites SET position = ? WHERE id = ?").run(i, sid));
-    db.prepare("UPDATE suites SET parent_id = ? WHERE id = ?").run(parentId, id);
-  })();
-  return db.prepare("SELECT * FROM suites WHERE id = ?").get(id);
 });
 
 app.delete("/api/suites/:id", (req) => {
@@ -935,7 +924,13 @@ app.put("/api/cases/:id/requirements", (req) => {
 
 // ---------------- Backup & restore ----------------
 
-app.get("/api/backup/info", () => backupInfo());
+app.get("/api/backup/info", () => {
+  const info = backupInfo();
+  const auto = autoBackupInfo();
+  // "Backed up" in the sidebar means the newest of a download and an automatic backup.
+  const newest = [info.lastBackupAt, auto.lastAt].filter((x): x is string => !!x).sort().at(-1) ?? null;
+  return { ...info, lastBackupAt: newest, lastManualBackupAt: info.lastBackupAt, auto };
+});
 
 app.get("/api/backup", async (_req, reply) => {
   const stamp = new Date().toISOString().slice(0, 16).replace("T", "-").replace(":", "");
@@ -1165,6 +1160,7 @@ app.post("/api/github-sources/:id/check", async (req) => {
 });
 
 startAutoImport();
+startAutoBackup();
 
 await app.listen({ port: PORT, host: "127.0.0.1" });
 console.log(`Testbench API on http://127.0.0.1:${PORT}`);

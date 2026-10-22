@@ -70,6 +70,33 @@ export function BackupPage() {
             </div>
           </div>
 
+          {info && (
+            <div className="card">
+              <div className="card-header"><Archive size={15} /> Automatic daily backup</div>
+              <div className="card-body col" style={{ gap: 8 }}>
+                {info.auto.enabled ? (
+                  <>
+                    <div className="muted">
+                      Testbench saves a backup about once a day while it is running and keeps the newest {info.auto.keep}.{" "}
+                      {info.auto.lastAt ? `The last one was made ${timeAgo(info.auto.lastAt)}.` : "The first one is made shortly after start-up once you have a project."}
+                    </div>
+                    <div className="row" style={{ gap: 6 }}>
+                      <span className="faint">Saved in</span> <code className="inline">{info.auto.dir}</code>
+                      <span className="faint">({info.auto.count} {info.auto.count === 1 ? "copy" : "copies"})</span>
+                    </div>
+                    <div className="faint" style={{ fontSize: 12.5 }}>
+                      This folder is on the same disk as your data, which protects against mistakes and a damaged database but not a lost disk. For an extra copy
+                      elsewhere, start Testbench with <code className="inline">TESTBENCH_BACKUP_DIR</code> set to a synced folder such as iCloud Drive or Dropbox.
+                      To restore one, use "Choose backup .zip" below.
+                    </div>
+                  </>
+                ) : (
+                  <div className="muted">Automatic backups are turned off (<code className="inline">TESTBENCH_AUTO_BACKUP=0</code>).</div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="card">
             <div className="card-header"><RotateCcw size={15} /> Restore from a backup</div>
             <div className="card-body col" style={{ gap: 12 }}>

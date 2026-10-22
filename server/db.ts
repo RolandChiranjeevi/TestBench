@@ -289,6 +289,16 @@ CREATE TABLE IF NOT EXISTS requirement_cases (
   PRIMARY KEY (requirement_id, case_id)
 );
 CREATE INDEX IF NOT EXISTS requirement_cases_case ON requirement_cases(case_id);`);
+  // Indexes for lookups that grow with CI imports: results per automated test, attachments per result, rows per project.
+  d.exec(`
+CREATE INDEX IF NOT EXISTS results_automated_test ON results(automated_test_id);
+CREATE INDEX IF NOT EXISTS attachments_result ON attachments(result_id);
+CREATE INDEX IF NOT EXISTS runs_project ON runs(project_id, started_at);
+CREATE INDEX IF NOT EXISTS cases_project ON cases(project_id);
+CREATE INDEX IF NOT EXISTS cases_suite ON cases(suite_id);
+CREATE INDEX IF NOT EXISTS automated_project_case ON automated_tests(project_id, case_id);
+CREATE INDEX IF NOT EXISTS suites_project ON suites(project_id, parent_id);`);
+
   // Optional AI link suggestions (see linksuggest.ts): one row per judged (test, case) pair, so a pair is never judged twice,
   // and a marker per test so tests with no candidates are not retried on every click.
   d.exec(`
