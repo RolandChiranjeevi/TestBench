@@ -15,11 +15,16 @@ const COVERAGE_COLOR: Record<CoverageState, string> = {
   uncovered: "var(--text-3)", failing: "var(--failed)", passing: "var(--passed)", partial: "var(--blocked)", untested: "var(--text-3)",
 };
 
+/** Text colours with AA contrast; the dot uses the brighter fill colour. */
+const COVERAGE_FG: Record<CoverageState, string> = {
+  uncovered: "var(--text-3)", failing: "var(--failed-fg)", passing: "var(--passed-fg)", partial: "var(--blocked-fg)", untested: "var(--text-3)",
+};
+
 export function CoverageChip({ coverage }: { coverage: Requirement["coverage"] }) {
   const label = COVERAGE_LABEL[coverage.state];
   const detail = coverage.cases ? ` · ${coverage.passing}/${coverage.cases}` : "";
   return (
-    <span className="chip" title={`${coverage.cases} test case(s): ${coverage.passing} passing, ${coverage.failing} failing, ${coverage.notRun} not run`}>
+    <span className="chip status" style={{ color: COVERAGE_FG[coverage.state] }} title={`${coverage.cases} test case(s): ${coverage.passing} passing, ${coverage.failing} failing, ${coverage.notRun} not run`}>
       <span className="dot" style={{ background: COVERAGE_COLOR[coverage.state] }} />
       {label}{detail}
     </span>
@@ -110,7 +115,7 @@ export function RequirementsPage() {
                 <span className="id mono" style={{ width: 62 }}>REQ-{r.number}</span>
                 <span className="title" style={r.status === "deprecated" ? { textDecoration: "line-through", color: "var(--text-3)" } : undefined}>{r.title}</span>
                 <span className="meta">
-                  {!compact && r.source && <span className="chip">{jiraLabel(r.source)}</span>}
+                  {!compact && r.source && <span className="faint mono" style={{ fontSize: 11.5 }}>{jiraLabel(r.source)}</span>}
                   {r.status === "draft" && <span className="chip">Draft</span>}
                   {r.attachmentCount > 0 && <span className="chip" title={`${r.attachmentCount} attachment(s)`}><Paperclip size={11} /> {r.attachmentCount}</span>}
                   {r.status !== "deprecated" && r.reviewCount > 0 && (

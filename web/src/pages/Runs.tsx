@@ -101,15 +101,15 @@ function RunRow({ run }: { run: RunSummary }) {
       <span className="meta">
         <FrameworkBadge framework={run.framework} />
       </span>
-      <div style={{ width: 180, flexShrink: 0, display: "flex", flexDirection: "column", gap: 5 }}>
+      <div className="run-counts">
         <ProgressBar counts={run} />
         <div className="row faint tabular" style={{ fontSize: 11.5, justifyContent: "space-between" }}>
           <span>
-            <span style={{ color: "var(--passed-fg)" }}>{run.passed}</span> · <span style={{ color: run.failed ? "var(--failed-fg)" : undefined }}>{run.failed}</span>
-            {run.blocked > 0 && <> · <span style={{ color: "var(--blocked-fg)" }}>{run.blocked}</span></>}
-            {run.skipped > 0 && <> · {run.skipped}</>}
+            <span style={{ color: "var(--passed-fg)" }}>{run.passed} passed</span> · <span style={{ color: run.failed ? "var(--failed-fg)" : undefined }}>{run.failed} failed</span>
+            {run.blocked > 0 && <> · <span style={{ color: "var(--blocked-fg)" }}>{run.blocked} blocked</span></>}
+            {run.skipped > 0 && <> · {run.skipped} skipped</>}
           </span>
-          <span>{run.kind === "manual" ? `${done}/${run.total}` : `${run.total} tests`}</span>
+          <span>{run.kind === "manual" ? `${done}/${run.total} run` : `${run.total} tests`}</span>
         </div>
       </div>
       <span
