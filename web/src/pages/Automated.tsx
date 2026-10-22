@@ -136,7 +136,7 @@ export function AutomatedPage() {
                   <td>
                     <div className="row" style={{ gap: 6, maxWidth: 280 }}>
                       {t.case_id && (
-                        <Link to={`/p/${pid}/cases?case=${t.case_id}`} className="chip accent" title="Open case">
+                        <Link to={`/p/${pid}/cases?case=${t.case_id}`} className="chip accent" title="Open case" style={{ minHeight: 24, display: "inline-flex", alignItems: "center" }}>
                           {key}-{t.case_number}
                         </Link>
                       )}
@@ -155,8 +155,8 @@ export function AutomatedPage() {
                     </div>
                   </td>
                   <td className="tabular" style={{ textAlign: "right" }}>{t.run_count}</td>
-                  <td className="tabular" style={{ textAlign: "right", color: t.fail_count ? "var(--failed-fg)" : "var(--text-4)" }}>{t.fail_count}</td>
-                  <td className="tabular" style={{ textAlign: "right", color: t.flaky_count ? "var(--flaky-fg)" : "var(--text-4)" }}>{t.flaky_count}</td>
+                  <td className="tabular" style={{ textAlign: "right", color: t.fail_count ? "var(--failed-fg)" : "var(--text-4)" }}>{t.fail_count || "–"}</td>
+                  <td className="tabular" style={{ textAlign: "right", color: t.flaky_count ? "var(--flaky-fg)" : "var(--text-4)" }}>{t.flaky_count || "–"}</td>
                   <td className="tabular muted" style={{ textAlign: "right" }}>{formatDuration(t.avg_duration_ms)}</td>
                   <td className="muted" style={{ textAlign: "right" }}>{timeAgo(t.last_seen)}</td>
                 </tr>

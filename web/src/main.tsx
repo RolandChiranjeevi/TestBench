@@ -244,6 +244,14 @@ function ProjectLayout() {
     if (pid) storage.set(LAST_PROJECT, pid);
   }, [pid]);
 
+  // Browser tab title: "Test cases · Demo Shop · Testbench", so tabs, history and screen readers say where you are.
+  const section = loc.pathname.split("/")[3] ?? "";
+  useEffect(() => {
+    const label = ({ dashboard: "Dashboard", requirements: "Requirements", cases: "Test cases", runs: "Runs", automated: "Automated tests", import: "Import results", reports: "Sprint reports", backup: "Backup & restore" } as Record<string, string>)[section];
+    document.title = [label, project?.name, "Testbench"].filter(Boolean).join(" · ");
+    return () => { document.title = "Testbench"; };
+  }, [section, project?.name]);
+
   useHotkeys({
     "1": () => navigate(`/p/${pid}/dashboard`),
     "2": () => navigate(`/p/${pid}/requirements`),

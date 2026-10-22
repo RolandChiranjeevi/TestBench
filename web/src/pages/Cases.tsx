@@ -190,7 +190,7 @@ export function CasesPage() {
       {/* Suite tree */}
       <div className="pane suite-pane" style={{ width: 220, flexShrink: 0, borderRight: "1px solid var(--border)", background: "var(--bg-panel)", position: "relative" }}>
         <div className="topbar" style={{ padding: "0 8px 0 16px" }}>
-          <h1 style={{ fontSize: 12.5, color: "var(--text-3)", fontWeight: 500 }}>Suites</h1>
+          <h2 style={{ fontSize: 12.5, color: "var(--text-3)", fontWeight: 500 }}>Suites</h2>
           <span className="spacer" />
           <button className="btn ghost icon sm" onClick={() => setSuiteModal({ parentId: null })} title="New suite" aria-label="New suite">
             <Plus size={14} />
@@ -325,7 +325,7 @@ export function CasesPage() {
           )}
           <span className="spacer" />
           {!compact && (
-            <span className="faint" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+            <span className="faint kbd-hints" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
               <Kbd>J</Kbd> <Kbd>K</Kbd> move · <Kbd>X</Kbd> select · <Kbd>↵</Kbd> open
             </span>
           )}
@@ -379,18 +379,17 @@ export function CasesPage() {
                       />
                       <PriorityIcon priority={c.priority} />
                       <span className="id mono">{project?.key}-{c.number}</span>
-                      <span className="title" style={c.status === "deprecated" ? { textDecoration: "line-through", color: "var(--text-3)" } : undefined}>
+                      <span className="title" title={c.tags.length ? `Tags: ${c.tags.join(", ")}` : undefined} style={c.status === "deprecated" ? { textDecoration: "line-through", color: "var(--text-3)" } : undefined}>
                         {c.title}
                       </span>
                       <span className="meta">
                         {!compact && c.status === "draft" && <span className="chip">Draft</span>}
-                        {!compact && c.tags.slice(0, 3).map((t) => <span key={t} className="chip">{t}</span>)}
                         {!!c.requirement_count && (
-                          <span className="chip" title={`${c.requirement_count} requirement(s)`}><BookOpenCheck size={11} /> {c.requirement_count}</span>
+                          <span className="chip" title={`${c.requirement_count} linked requirement(s)`}><BookOpenCheck size={11} /> {c.requirement_count}{!compact && " req"}</span>
                         )}
                         {c.automated_count > 0 && (
                           <span className="chip accent" title={`${c.automated_count} automated test(s)`}>
-                            <Bot size={11} /> {c.automated_count}
+                            <Bot size={11} /> {c.automated_count}{!compact && " auto"}
                           </span>
                         )}
                         {!compact && (

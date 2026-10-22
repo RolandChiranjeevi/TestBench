@@ -101,7 +101,7 @@ function UploadCard() {
 
   return (
     <div className="card">
-      <div className="card-header"><FileUp size={15} /> Upload a report</div>
+      <div className="card-header" role="heading" aria-level={2}><FileUp size={15} /> Upload a report</div>
       <div className="card-body col" style={{ gap: 12 }}>
         <div
           className={`dropzone${over ? " over" : ""}`}
@@ -204,7 +204,7 @@ function GithubCard() {
 
   return (
     <div className="card">
-      <div className="card-header">
+      <div className="card-header" role="heading" aria-level={2}>
         <Github size={15} /> GitHub Actions
         <span className="spacer" />
         {status && (
@@ -488,7 +488,7 @@ mvn test
       test-results/`;
   return (
     <div className="card">
-      <div className="card-header">Setup</div>
+      <div className="card-header" role="heading" aria-level={2}>Setup</div>
       <div className="card-body" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(380px, 100%), 1fr))", gap: 16 }}>
         <div className="col">
           <div className="row">

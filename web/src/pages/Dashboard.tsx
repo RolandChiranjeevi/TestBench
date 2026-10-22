@@ -38,10 +38,10 @@ function TestTable({ title, rows, metric, empty, limit }: { title: string; rows:
   const shown = limit ? rows.slice(0, limit) : rows;
   return (
     <div className="card" style={{ minWidth: 0 }}>
-      <div className="card-header" style={{ fontSize: 13 }}>
+      <div className="card-header" role="heading" aria-level={2} style={{ fontSize: 13 }}>
         {title}
         {shown.length < rows.length && (
-          <Link to={`/p/${pid}/automated`} style={{ marginLeft: "auto", color: "var(--accent-text)", fontSize: 12, fontWeight: 400 }}>All {rows.length}</Link>
+          <Link to={`/p/${pid}/automated`} style={{ margin: "-4px -6px -4px auto", padding: "4px 6px", color: "var(--accent-text)", fontSize: 12, fontWeight: 400 }}>All {rows.length}</Link>
         )}
       </div>
       {rows.length === 0 ? (
@@ -120,7 +120,7 @@ export function DashboardPage() {
 
             <div className="two-col two-col-2-1">
               <div className="card">
-                <div className="card-header" style={{ fontSize: 13 }}>
+                <div className="card-header" role="heading" aria-level={2} style={{ fontSize: 13 }}>
                   Automated pass rate <span className="faint" style={{ fontWeight: 400 }}>last {d.automatedRuns.length} runs</span>
                 </div>
                 <div className="card-body">
@@ -131,7 +131,7 @@ export function DashboardPage() {
                 </div>
               </div>
               <div className="card">
-                <div className="card-header" style={{ fontSize: 13 }}>Manual runs</div>
+                <div className="card-header" role="heading" aria-level={2} style={{ fontSize: 13 }}>Manual runs</div>
                 {d.manualRuns.length === 0 ? (
                   <div className="muted" style={{ padding: 16 }}>No manual runs yet.</div>
                 ) : (
@@ -161,7 +161,7 @@ export function DashboardPage() {
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(380px, 100%), 1fr))", gap: 16 }}>
               <div className="card">
-                <div className="card-header" style={{ fontSize: 13 }}>Failing cases</div>
+                <div className="card-header" role="heading" aria-level={2} style={{ fontSize: 13 }}>Failing cases</div>
                 {d.failingCases.length === 0 ? (
                   <div className="muted" style={{ padding: 16 }}>Every case's latest result is passing.</div>
                 ) : (
@@ -177,7 +177,7 @@ export function DashboardPage() {
                 )}
               </div>
               <div className="card">
-                <div className="card-header" style={{ fontSize: 13 }}><Bot size={14} /> Automation coverage by suite</div>
+                <div className="card-header" role="heading" aria-level={2} style={{ fontSize: 13 }}><Bot size={14} /> Automation coverage by suite</div>
                 <div className="card-body">
                   {d.bySuite.length === 0 ? <span className="muted">No suites yet.</span> : d.bySuite.map((x) => <CoverageBar key={x.name} label={x.name} value={x.automated} total={x.cases} />)}
                 </div>
@@ -185,9 +185,9 @@ export function DashboardPage() {
             </div>
 
             <div className="card">
-              <div className="card-header" style={{ fontSize: 13 }}>
+              <div className="card-header" role="heading" aria-level={2} style={{ fontSize: 13 }}>
                 <Sparkles size={14} /> Automate next
-                <Link to={`/p/${pid}/automated?view=insights`} style={{ marginLeft: "auto", color: "var(--accent-text)", fontSize: 12, fontWeight: 400 }}>
+                <Link to={`/p/${pid}/automated?view=insights`} style={{ margin: "-4px -6px -4px auto", padding: "4px 6px", color: "var(--accent-text)", fontSize: 12, fontWeight: 400 }}>
                   {d.candidatesTotal > d.candidates.length ? `All ${d.candidatesTotal}` : "Insights"}
                 </Link>
               </div>

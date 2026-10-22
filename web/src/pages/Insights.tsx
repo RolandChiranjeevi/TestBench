@@ -50,7 +50,7 @@ export function InsightsPage() {
           <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16, maxWidth: 1100 }}>
             {/* ---- Flaky ---- */}
             <div className="card">
-              <div className="card-header" style={{ fontSize: 13 }}>
+              <div className="card-header" role="heading" aria-level={2} style={{ fontSize: 13 }}>
                 <Flame size={14} /> Flaky tests <span className="faint" style={{ fontWeight: 400 }}>{d.flakyTotal ? `${d.flakyTotal} found` : ""}</span>
               </div>
               <div className="muted" style={{ padding: "10px 16px 0", fontSize: 12.5 }}>
@@ -100,7 +100,7 @@ export function InsightsPage() {
             {/* ---- Time ---- */}
             <div className="two-col two-col-3-2">
               <div className="card">
-                <div className="card-header" style={{ fontSize: 13 }}><Gauge size={14} /> Test time per run</div>
+                <div className="card-header" role="heading" aria-level={2} style={{ fontSize: 13 }}><Gauge size={14} /> Test time per run</div>
                 <div className="card-body">
                   <DurationChart
                     bars={d.runs.map((r) => ({ id: r.id, label: r.title, date: r.started_at, ms: r.duration_ms, failed: r.failed }))}
@@ -110,7 +110,7 @@ export function InsightsPage() {
                 </div>
               </div>
               <div className="card">
-                <div className="card-header" style={{ fontSize: 13 }}>Getting slower</div>
+                <div className="card-header" role="heading" aria-level={2} style={{ fontSize: 13 }}>Getting slower</div>
                 {d.slowdowns.length === 0 ? (
                   <div className="muted" style={{ padding: 16 }}>No test has slowed down noticeably. A test needs at least 6 timed runs, and its last 3 must be 25% and 300 ms slower than before.</div>
                 ) : (
@@ -129,7 +129,7 @@ export function InsightsPage() {
 
             {/* ---- Automate next ---- */}
             <div className="card">
-              <div className="card-header" style={{ fontSize: 13 }}>
+              <div className="card-header" role="heading" aria-level={2} style={{ fontSize: 13 }}>
                 <Sparkles size={14} /> Automate next <span className="faint" style={{ fontWeight: 400 }}>{d.candidatesTotal} manual {d.candidatesTotal === 1 ? "case has" : "cases have"} no automated test</span>
               </div>
               {d.candidates.length === 0 ? (

@@ -47,7 +47,7 @@ export function BackupPage() {
       <div className="content">
         <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16, maxWidth: 760 }}>
           <div className="card">
-            <div className="card-header"><Archive size={15} /> Back up everything</div>
+            <div className="card-header" role="heading" aria-level={2}><Archive size={15} /> Back up everything</div>
             <div className="card-body col" style={{ gap: 12 }}>
               <div className="muted">
                 One zip with all your projects: the database plus every uploaded screenshot, video and trace. Keep a copy somewhere safe, and restore it here
@@ -72,7 +72,7 @@ export function BackupPage() {
 
           {info && (
             <div className="card">
-              <div className="card-header"><Archive size={15} /> Automatic daily backup</div>
+              <div className="card-header" role="heading" aria-level={2}><Archive size={15} /> Automatic daily backup</div>
               <div className="card-body col" style={{ gap: 8 }}>
                 {info.auto.enabled ? (
                   <>
@@ -98,7 +98,7 @@ export function BackupPage() {
           )}
 
           <div className="card">
-            <div className="card-header"><RotateCcw size={15} /> Restore from a backup</div>
+            <div className="card-header" role="heading" aria-level={2}><RotateCcw size={15} /> Restore from a backup</div>
             <div className="card-body col" style={{ gap: 12 }}>
               <div className="row" style={{ alignItems: "flex-start", gap: 10, color: "var(--blocked-fg)" }}>
                 <ShieldAlert size={16} style={{ flexShrink: 0, marginTop: 2 }} />
@@ -128,7 +128,7 @@ export function BackupPage() {
 
           {info && info.previousCopies.length > 0 && (
             <div className="card">
-              <div className="card-header"><History size={15} /> Data kept from earlier restores</div>
+              <div className="card-header" role="heading" aria-level={2}><History size={15} /> Data kept from earlier restores</div>
               <div className="card-body col" style={{ gap: 6 }}>
                 <div className="muted">
                   Each is a full copy of what was replaced. To go back to one, copy its <code className="inline">testbench.db</code> and <code className="inline">uploads</code> folder
