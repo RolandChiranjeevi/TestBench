@@ -255,3 +255,7 @@ and is never stored.
 
 `1`–`8` switch pages · `C` new case/run · `J`/`K` move · `X` select · `R` run selected ·
 `P`/`F`/`B`/`S` pass/fail/block/skip while executing · `⌘V` paste a screenshot.
+
+## License
+
+[MIT](LICENSE). Use it, change it and share it, including commercially; keep the copyright notice.
