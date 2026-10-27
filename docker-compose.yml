@@ -15,6 +15,8 @@ services:
       TESTBENCH_PASSWORD: "${TESTBENCH_PASSWORD:-}"
       TESTBENCH_ALLOWED_HOSTS: "${TESTBENCH_ALLOWED_HOSTS:-}"
       GITHUB_TOKEN: "${GITHUB_TOKEN:-}"   # for importing GitHub Actions runs
+      LINEAR_API_KEY: "${LINEAR_API_KEY:-}"   # optional: create Linear issues from failing tests
+      LINEAR_TEAM_ID: "${LINEAR_TEAM_ID:-}"
     volumes:
       - testbench-data:/data
     restart: unless-stopped

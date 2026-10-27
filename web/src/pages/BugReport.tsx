@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, Download, ExternalLink, Link2, Paperclip } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Check, Copy, Download, ExternalLink, Link2, Paperclip, Send } from "lucide-react";
 import { api, type AutomatedResultDetail, type ResultDetail } from "../api";
 import { Modal, useToast } from "../components/ui";
 
@@ -35,6 +35,23 @@ function toText(f: Fields, c: Context): string {
   if (f.notes) out.push("Notes:", f.notes, "");
   return out.join("\n").trim();
 }
+
+/** Markdown for Linear, whose description field renders it. */
+function toMarkdown(f: Fields, c: Context): string {
+  const out: string[] = [...c.facts.map(([k, v]) => `**${k}:** ${v}`), ""];
+  if (c.preconditions) out.push("**Preconditions**", c.preconditions, "");
+  out.push(`**${c.stepsTitle}**`, ...c.steps.map((s, i) => `${i + 1}. ${s.action}${s.fails ? " **(fails here)**" : ""}`), "");
+  if (f.expected) out.push("**Expected result**", f.expected, "");
+  if (f.actual) out.push("**Actual result**", f.actual, "");
+  for (const b of c.blocks) {
+    const fence = b.text.includes("```") ? "~~~~" : "```";
+    out.push(`**${b.label}**`, fence, b.text, fence, "");
+  }
+  if (f.notes) out.push("**Notes**", f.notes, "");
+  return out.join("\n").trim();
+}
+
+interface LinearStatus { enabled: boolean; teams: { id: string; key: string; name: string }[]; defaultTeam: string | null; error?: string }
 
 /** Rich text for pasting into Jira's editor: bold labels, a real numbered list and code blocks. */
 function toHtml(f: Fields, c: Context): string {
@@ -180,10 +197,29 @@ function BugReportDialog({ draft, resultId, jiraKey, attachmentCount, attachment
   const saved = jiraKey ?? "";
   const link = jiraUrl(saved);
 
+  // Optional Linear connection: the server creates the issue (LINEAR_API_KEY) and keeps its link on the result.
+  const { data: linear } = useQuery({ queryKey: ["linear-status"], queryFn: () => api.get<LinearStatus>("/api/linear/status"), staleTime: 60_000 });
+  const [team, setTeam] = useState("");
+  const teamId = team || linear?.defaultTeam || "";
+  const createLinear = useMutation({
+    mutationFn: () =>
+      api.post<{ identifier: string; url: string }>(`/api/results/${resultId}/linear-issue`, {
+        title: fields.summary.trim(),
+        description: toMarkdown(fields, draft.ctx),
+        ...(teamId ? { teamId } : {}),
+      }),
+    onSuccess: (r) => {
+      setIssue(r.url);
+      for (const k of [["result", resultId], ["automated-result", resultId], ["run", runId]]) qc.invalidateQueries({ queryKey: k });
+      toast("success", `Created ${r.identifier} in Linear`);
+    },
+    onError: (e: Error) => toast("error", e.message),
+  });
+
   return (
     <Modal title="Report bug" onClose={onClose} width={760} footer={<button className="btn" onClick={onClose}>Done</button>}>
       <div className="muted" style={{ fontSize: "var(--fs-md)", marginTop: -4 }}>
-        Edit the draft, copy it into a new Jira issue, then paste the issue key back here to link it.
+        Edit the draft, then {linear?.enabled ? "create the issue in Linear, or " : ""}copy it into a new Jira issue and paste the issue key back here to link it.
       </div>
 
       <div className="field">
@@ -240,13 +276,38 @@ function BugReportDialog({ draft, resultId, jiraKey, attachmentCount, attachment
         )}
       </div>
 
+      {linear?.enabled && (
+        <div className="card" style={{ padding: 12, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <Send size={15} className="faint" />
+          <div className="grow" style={{ minWidth: 180 }}>
+            <div style={{ fontWeight: 500 }}>Create in Linear</div>
+            <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>
+              {linear.error ? linear.error : saved ? `Already linked to ${jiraLabel(saved)}. Remove the link below to create a new issue.` : "Creates the issue with this draft and links it here."}
+            </div>
+          </div>
+          {linear.teams.length > 1 && (
+            <select className="input" style={{ width: "auto" }} aria-label="Linear team" value={teamId} onChange={(e) => setTeam(e.target.value)}>
+              <option value="">Choose team…</option>
+              {linear.teams.map((t) => <option key={t.id} value={t.id}>{t.key} · {t.name}</option>)}
+            </select>
+          )}
+          <button
+            className="btn primary"
+            disabled={!!saved || !fields.summary.trim() || createLinear.isPending || !!linear.error || (linear.teams.length > 1 && !teamId)}
+            onClick={() => createLinear.mutate()}
+          >
+            {createLinear.isPending ? "Creating…" : "Create issue"}
+          </button>
+        </div>
+      )}
+
       <div className="field">
-        <label htmlFor="bug-issue"><Link2 size={11} style={{ verticalAlign: -1 }} /> Linked Jira issue</label>
+        <label htmlFor="bug-issue"><Link2 size={11} style={{ verticalAlign: -1 }} /> Linked issue (Jira or Linear)</label>
         <div className="row">
           <input
             id="bug-issue"
             className="input"
-            placeholder="PROJ-123 or the issue link"
+            placeholder="PROJ-123 or the issue link (Jira or Linear)"
             value={issue}
             onChange={(e) => setIssue(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && issue.trim() !== saved && saveIssue.mutate()}

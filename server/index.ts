@@ -28,6 +28,7 @@ import { automationCandidates, insightsData } from "./insights.ts";
 import { addRequirementAttachment, removeRequirementAttachment, requirementAttachmentFiles } from "./requirements.ts";
 import { dismissSuggestion, listSuggestions, SuggestError, suggestLinks, typesafeConfig } from "./linksuggest.ts";
 import { addChecklistItem, copyChecklist, listChecklist } from "./checklist.ts";
+import { createIssue, LinearError, linearEnabled, listTeams } from "./linear.ts";
 import { addRequirementCases, createRequirement, getRequirement, linkCaseByTags, listRequirements, markReviewed, recordRevision, requirementsForCase, requirementSummary, setCaseRequirements, setRequirementCases, type RevisionChange } from "./requirements.ts";
 import { dashboardData, listMilestones, milestoneReport } from "./stats.ts";
 import { parseReport, type Framework, type ParsedReport } from "./importers/parse.ts";
@@ -611,6 +612,38 @@ app.patch("/api/results/:id", (req) => {
         executed_at = CASE WHEN ? != status THEN datetime('now') ELSE executed_at END
       WHERE id = ? RETURNING *`)
     .get(body.status ?? cur.status, body.notes ?? cur.notes, jiraKey, body.status ?? cur.status, id);
+});
+
+// ---- Optional Linear connection (LINEAR_API_KEY): create an issue from a failed result and keep its link on the result. ----
+const asLinearHttp = (e: unknown) => (e instanceof LinearError ? new HttpError(e.status, e.message) : e);
+
+app.get("/api/linear/status", async () => {
+  if (!linearEnabled()) return { enabled: false, teams: [], defaultTeam: null };
+  try {
+    const teams = await listTeams();
+    const want = process.env.LINEAR_TEAM_ID?.trim().toLowerCase();
+    const def = teams.find((t) => want && (t.id.toLowerCase() === want || t.key.toLowerCase() === want)) ?? (teams.length === 1 ? teams[0] : null);
+    return { enabled: true, teams, defaultTeam: def?.id ?? null };
+  } catch (e) {
+    return { enabled: true, teams: [], defaultTeam: null, error: e instanceof Error ? e.message : String(e) };
+  }
+});
+
+app.post("/api/results/:id/linear-issue", async (req) => {
+  const id = idParam(req);
+  const body = z
+    .object({ title: z.string().trim().min(1).max(255), description: z.string().max(50000), teamId: z.string().max(100).optional(), replace: z.boolean().optional() })
+    .parse(req.body);
+  const cur = must(db.prepare("SELECT id, jira_key FROM results WHERE id = ?").get(id) as { id: number; jira_key: string | null } | undefined, "Result");
+  // A second click (or a second browser tab) must not create a duplicate issue.
+  if (cur.jira_key && !body.replace) throw new HttpError(409, `This result is already linked to ${cur.jira_key}.`);
+  try {
+    const issue = await createIssue({ title: body.title, description: body.description, teamId: body.teamId });
+    db.prepare("UPDATE results SET jira_key = ? WHERE id = ?").run(issue.url, id);
+    return { identifier: issue.identifier, url: issue.url };
+  } catch (e) {
+    throw asLinearHttp(e);
+  }
 });
 
 app.put("/api/results/:id/steps/:stepId", (req) => {

@@ -63,6 +63,7 @@ All settings are environment variables. None are required.
 | `GITHUB_TOKEN` | `gh auth token` | Token for importing GitHub Actions runs. A logged-in `gh` CLI is used when it is not set. |
 | `TESTBENCH_CHROME_CHANNEL` / `_PATH` / `_NO_SANDBOX` | `chrome` | Which browser renders PDFs (see Quick start). |
 | `TYPESAFE_API_KEY` | none | Optional AI link suggestions (see below). |
+| `LINEAR_API_KEY` | none | Optional: create Linear issues from failing tests (see "Creating Linear issues"). `LINEAR_TEAM_ID` (a team id or its short key, e.g. `ENG`) sets the default team. |
 
 ## Running it for a team
 
@@ -196,6 +197,20 @@ requirements that are failing or weren't run, and exports include them (JSON and
 - **Attachments**: attach specs, mockups, mails and other files to a requirement (drop, browse, or paste a screenshot with ⌘V). PDF, Word,
   Excel, PowerPoint, images, CSV, text, `.eml`, zip and video are accepted, up to 100 MB each. Attaching or removing a file shows in the
   history. The files live in `data/uploads/`, so the backup zip includes them; the JSON export lists their names.
+
+## Creating Linear issues
+
+Optional. On a failed or blocked result (a manual run or an automated test), **Report bug** builds a draft from the case, steps, environment and
+error output. With a Linear key set it also shows **Create in Linear**: the issue is created with that draft and its link is saved on the result,
+so it appears next to the result and in the reports. Without a key nothing changes; you can still copy the draft into Jira or anywhere else.
+
+1. In Linear: Settings, Account, Security & access, create a **personal API key**.
+2. Put it in the `.env` file next to `docker-compose.yml` (git-ignored), or export it before `npm start`:
+   `LINEAR_API_KEY=lin_api_...`. Optionally `LINEAR_TEAM_ID=ENG`; with several teams and no default you pick the team in the dialog.
+3. Restart Testbench.
+
+The key stays on the server and is sent only to `api.linear.app`. It can create issues as you, so treat it like a password and revoke it in Linear if
+it leaks. A result that already has a linked issue cannot create a second one by mistake.
 
 ## Deleting cases and projects
 
