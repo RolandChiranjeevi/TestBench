@@ -156,6 +156,7 @@ function UploadCard() {
               <option value="playwright">Playwright</option>
               <option value="testcafe">TestCafe</option>
               <option value="selenium">Selenium</option>
+              <option value="bruno">Bruno (API tests)</option>
               <option value="junit">Other (JUnit)</option>
             </select>
           </div>
@@ -452,7 +453,7 @@ function SetupGuide() {
   const { pid } = useParams();
   const { data: projects } = useQuery({ queryKey: ["projects"], queryFn: () => api.get<Project[]>("/api/projects") });
   const key = projects?.find((p) => p.id === Number(pid))?.key ?? "KEY";
-  const [tab, setTab] = useState<"playwright" | "testcafe" | "selenium">("playwright");
+  const [tab, setTab] = useState<"playwright" | "testcafe" | "selenium" | "bruno">("playwright");
   const snippets = {
     playwright: `// playwright.config.ts
 reporter: [
@@ -477,6 +478,13 @@ pytest --junitxml=test-results/junit.xml
 mvn test
 
 # Put @${key}-1 in the test name or display name to link it.`,
+    bruno: `# npm i -g @usebruno/cli — run the collection and write a JUnit report
+bru run --env ci --reporter-junit test-results/bruno.xml
+
+// In a request's Tests tab, put @${key}-1 in the test name to link it:
+test("@${key}-1 returns the user", function () {
+  expect(res.getStatus()).to.equal(200);
+});`,
   };
   const workflow = `# .github/workflows/e2e.yml — add after the test step
 - uses: actions/upload-artifact@v4
@@ -495,7 +503,7 @@ mvn test
             <span className="section-label" style={{ margin: 0 }}>1. Write a machine-readable report</span>
             <span className="spacer" />
             <div className="tabs">
-              {(["playwright", "testcafe", "selenium"] as const).map((t) => (
+              {(["playwright", "testcafe", "selenium", "bruno"] as const).map((t) => (
                 <button key={t} className={`tab${tab === t ? " active" : ""}`} onClick={() => setTab(t)}>{t[0].toUpperCase() + t.slice(1)}</button>
               ))}
             </div>

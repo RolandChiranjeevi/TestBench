@@ -764,7 +764,7 @@ app.patch("/api/automated/:id", (req) => {
 
 // ---------------- Report upload ----------------
 
-const FRAMEWORKS = ["playwright", "testcafe", "selenium", "junit"] as const;
+const FRAMEWORKS = ["playwright", "testcafe", "selenium", "bruno", "junit"] as const;
 
 app.post("/api/projects/:id/import", async (req) => {
   const projectId = idParam(req);

@@ -281,6 +281,25 @@ run are present, the JSON is used (it has the details) so tests aren't counted t
 | Playwright | `json` reporter (adds flaky detection) or `junit`               |
 | TestCafe   | `testcafe-reporter-xunit`                                       |
 | Selenium   | JUnit XML from pytest `--junitxml`, Maven Surefire, TestNG, ... |
+| Bruno      | `bru run --reporter-junit results.xml` (API tests, see below)   |
+
+### Bruno (API tests)
+
+Run the collection in CI and upload the JUnit file like any other report:
+
+```yaml
+- run: npm install -g @usebruno/cli
+- run: bru run --env ci --reporter-junit test-results/bruno.xml
+  working-directory: api-tests          # the folder with your collection
+- uses: actions/upload-artifact@v4
+  if: always()
+  with: { name: test-results, path: api-tests/test-results/ }
+```
+
+Each request file becomes the test's suite and file; each `test(...)` or assertion in it is one test. The request URL is not part
+of the test's identity, so the same request run against staging and production is the same test. Put a case ID in the test name
+(`test("@SHOP-12 returns the user", ...)`) to link it. A request that cannot run at all (connection refused) shows as one failed
+test, "Request failed to run".
 
 ## GitHub Actions
 

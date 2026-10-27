@@ -147,6 +147,31 @@ describe("parseReport: JUnit XML", () => {
     assert.equal(parseReport(xml("s", `<testcase name="x" classname="com.acme.Tests"/>`)).framework, "junit");
   });
 
+  it("reads a Bruno CLI report: the request file identifies the test, not the URL", () => {
+    // Shape written by `bru run --reporter-junit`: suite name = request file, classname = request URL.
+    const bruno = (url: string) => `<?xml version="1.0"?><testsuites>
+      <testsuite name="users/get-user" errors="0" failures="1" skipped="0" tests="2" timestamp="2026-10-21T10:00:00" hostname="ci" time="0.120">
+        <testcase name="@SHOP-12 returns the user" status="pass" classname="${url}/users/1" time="0.060"/>
+        <testcase name="res.status eq 201" status="fail" classname="${url}/users/1" time="0.060"><failure type="failure" message="expected 200 to equal 201"/></testcase>
+      </testsuite>
+      <testsuite name="users/create-user" errors="1" failures="0" skipped="0" tests="1" timestamp="2026-10-21T10:00:01" hostname="ci" time="0.050">
+        <testcase name="Test suite has no errors" status="fail" classname="${url}/users" time="0.050"><error type="error" message="connect ECONNREFUSED 127.0.0.1:3000"/></testcase>
+      </testsuite></testsuites>`;
+    const a = parseReport(bruno("https://staging.example.com"));
+    const b = parseReport(bruno("https://prod.example.com"));
+    assert.equal(a.framework, "bruno");
+    assert.deepEqual(a.tests.map((t) => t.status), ["passed", "failed", "failed"]);
+    assert.equal(a.tests[0].file, "users/get-user");
+    assert.equal(a.tests[0].suitePath, "users/get-user");
+    assert.equal(a.tests[0].fullName, "users/get-user › @SHOP-12 returns the user");
+    assert.match(a.tests[1].error, /expected 200 to equal 201/);
+    assert.equal(a.tests[2].title, "Request failed to run");
+    assert.match(a.tests[2].error, /ECONNREFUSED/);
+    // The same request run against another environment is the same test.
+    assert.deepEqual(a.tests.map((t) => t.fullName), b.tests.map((t) => t.fullName));
+    assert.deepEqual(extractCaseRefs(a.tests[0].title, a.tests[0].suitePath), ["SHOP-12"]);
+  });
+
   it("rejects XML without test suites", () => {
     assert.throws(() => parseReport("<foo/>"), /No <testsuite>/);
   });

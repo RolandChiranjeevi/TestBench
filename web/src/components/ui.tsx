@@ -78,7 +78,7 @@ export function ProgressBar({ counts, large }: { counts: BarCounts; large?: bool
 
 export function FrameworkBadge({ framework }: { framework: string | null }) {
   if (!framework) return null;
-  const color: Record<string, string> = { playwright: "#45ba4b", testcafe: "#36b6e5", selenium: "#43b02a", junit: "#9a9ea6" };
+  const color: Record<string, string> = { playwright: "#45ba4b", testcafe: "#36b6e5", selenium: "#43b02a", bruno: "#f4aa41", junit: "#9a9ea6" };
   return (
     <span className="chip" title={`Framework: ${framework}`}>
       <span className="dot" style={{ background: color[framework] ?? "var(--text-3)" }} />

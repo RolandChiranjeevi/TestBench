@@ -1,6 +1,6 @@
 import { XMLParser } from "fast-xml-parser";
 
-export type Framework = "playwright" | "testcafe" | "selenium" | "junit";
+export type Framework = "playwright" | "testcafe" | "selenium" | "bruno" | "junit";
 export type TestStatus = "passed" | "failed" | "skipped";
 
 export interface SourceLocation { file: string; line: number; column: number }
@@ -149,7 +149,7 @@ function parsePlaywrightJson(json: { suites?: PwSuite[]; stats?: { startTime?: s
   return { framework: "playwright", format: "playwright-json", startedAt: json.stats?.startTime ?? null, tests };
 }
 
-// ---------- JUnit / xUnit XML (Playwright junit, TestCafe xunit, Selenium via pytest/Surefire/TestNG) ----------
+// ---------- JUnit / xUnit XML (Playwright junit, TestCafe xunit, Selenium via pytest/Surefire/TestNG, Bruno CLI) ----------
 
 type XmlNode = Record<string, any>;
 
@@ -192,14 +192,19 @@ function parseJUnit(xml: string, frameworkHint?: Framework): ParsedReport {
 
       // Playwright junit: name = "describe › title", classname = file
       const parts = name.split(" › ");
-      const title = parts.at(-1) ?? name;
-      const suitePath = parts.length > 1 ? parts.slice(0, -1).join(" › ") : classname || String(suite.name ?? "");
+      // Bruno CLI: testsuite name = the request file ("users/get-user"), classname = the request URL, which changes with the
+      // environment, so the file name (not the URL) identifies the test. A request that could not run is reported as one
+      // test named "Test suite has no errors" with an <error>.
+      const bruno = framework === "bruno";
+      const request = String(suite.name ?? "");
+      const title = bruno && /^Test suite has no errors$/i.test(name) ? "Request failed to run" : (parts.at(-1) ?? name);
+      const suitePath = bruno ? request : parts.length > 1 ? parts.slice(0, -1).join(" › ") : classname || String(suite.name ?? "");
       const time = Number.parseFloat(tc.time);
       tests.push({
-        file: String(tc.file ?? (framework === "playwright" ? classname : "")),
+        file: String(tc.file ?? (framework === "playwright" ? classname : bruno ? request : "")),
         suitePath,
         title,
-        fullName: [classname || suite.name, name].filter(Boolean).join(" › "),
+        fullName: bruno ? [request, title].filter(Boolean).join(" › ") : [classname || suite.name, name].filter(Boolean).join(" › "),
         status,
         flaky: false,
         durationMs: Number.isFinite(time) ? Math.round(time * 1000) : null,
@@ -215,6 +220,8 @@ function guessFramework(suites: XmlNode[]): Framework {
   if (suites.some((s) => /testcafe/i.test(String(s.name ?? "")))) return "testcafe";
   const cases = suites.flatMap((s) => arr<XmlNode>(s.testcase));
   if (cases.some((c) => String(c.name ?? "").includes(" › "))) return "playwright";
+  // Bruno names every test case's classname after the request URL.
+  if (cases.length && cases.every((c) => /^https?:\/\//i.test(String(c.classname ?? "")))) return "bruno";
   if (cases.some((c) => /selenium|webdriver/i.test(String(c.classname ?? "")))) return "selenium";
   return "junit";
 }
