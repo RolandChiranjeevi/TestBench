@@ -1,11 +1,19 @@
 import Database from "better-sqlite3";
-import { mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 export const DATA_DIR = process.env.TESTBENCH_DATA ?? join(process.cwd(), "data");
 export const UPLOAD_DIR = join(DATA_DIR, "uploads");
 export const DB_FILE = join(DATA_DIR, "testbench.db");
-mkdirSync(UPLOAD_DIR, { recursive: true });
+// The data folder holds every test, requirement, attachment and backup: only the account that runs Testbench may read it.
+// The umask makes everything created later (database, uploads, backup zips) private too; the chmod fixes a folder made earlier.
+process.umask(0o077);
+mkdirSync(UPLOAD_DIR, { recursive: true, mode: 0o700 });
+try {
+  chmodSync(DATA_DIR, 0o700);
+} catch {
+  /* a mounted volume we don't own: leave it as it is */
+}
 
 function open(): Database.Database {
   const d = new Database(DB_FILE);
