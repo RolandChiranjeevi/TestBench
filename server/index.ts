@@ -29,6 +29,7 @@ import { addRequirementAttachment, removeRequirementAttachment, requirementAttac
 import { dismissSuggestion, listSuggestions, SuggestError, suggestLinks, typesafeConfig } from "./linksuggest.ts";
 import { addChecklistItem, copyChecklist, listChecklist } from "./checklist.ts";
 import { createIssue, LinearError, linearEnabled, listTeams } from "./linear.ts";
+import { createJiraIssue, JiraError, jiraEnabled, jiraStatus } from "./jira.ts";
 import { addRequirementCases, createRequirement, getRequirement, linkCaseByTags, listRequirements, markReviewed, recordRevision, requirementsForCase, requirementSummary, setCaseRequirements, setRequirementCases, type RevisionChange } from "./requirements.ts";
 import { dashboardData, listMilestones, milestoneReport } from "./stats.ts";
 import { parseReport, type Framework, type ParsedReport } from "./importers/parse.ts";
@@ -643,6 +644,33 @@ app.post("/api/results/:id/linear-issue", async (req) => {
     return { identifier: issue.identifier, url: issue.url };
   } catch (e) {
     throw asLinearHttp(e);
+  }
+});
+
+// ---- Optional Jira Cloud connection (JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN, JIRA_PROJECT_KEY): same idea, the issue link is kept on the result. ----
+const asJiraHttp = (e: unknown) => (e instanceof JiraError ? new HttpError(e.status, e.message) : e);
+
+app.get("/api/jira/status", async () => {
+  if (!jiraEnabled()) return { enabled: false, project: null, issueType: null };
+  try {
+    const s = await jiraStatus();
+    return { enabled: true, project: s.project, issueType: s.issueType };
+  } catch (e) {
+    return { enabled: true, project: process.env.JIRA_PROJECT_KEY?.trim() ?? null, issueType: null, error: e instanceof Error ? e.message : String(e) };
+  }
+});
+
+app.post("/api/results/:id/jira-issue", async (req) => {
+  const id = idParam(req);
+  const body = z.object({ title: z.string().trim().min(1).max(255), description: z.string().max(30000) }).parse(req.body);
+  const cur = must(db.prepare("SELECT id, jira_key FROM results WHERE id = ?").get(id) as { id: number; jira_key: string | null } | undefined, "Result");
+  if (cur.jira_key) throw new HttpError(409, `This result is already linked to ${cur.jira_key}.`);
+  try {
+    const issue = await createJiraIssue(body);
+    db.prepare("UPDATE results SET jira_key = ? WHERE id = ?").run(issue.url, id);
+    return { identifier: issue.identifier, url: issue.url };
+  } catch (e) {
+    throw asJiraHttp(e);
   }
 });
 

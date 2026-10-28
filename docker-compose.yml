@@ -17,6 +17,11 @@ services:
       GITHUB_TOKEN: "${GITHUB_TOKEN:-}"   # for importing GitHub Actions runs
       LINEAR_API_KEY: "${LINEAR_API_KEY:-}"   # optional: create Linear issues from failing tests
       LINEAR_TEAM_ID: "${LINEAR_TEAM_ID:-}"
+      JIRA_BASE_URL: "${JIRA_BASE_URL:-}"   # optional: create Jira Cloud issues from failing tests
+      JIRA_EMAIL: "${JIRA_EMAIL:-}"
+      JIRA_API_TOKEN: "${JIRA_API_TOKEN:-}"
+      JIRA_PROJECT_KEY: "${JIRA_PROJECT_KEY:-}"
+      JIRA_ISSUE_TYPE: "${JIRA_ISSUE_TYPE:-}"
     volumes:
       - testbench-data:/data
     restart: unless-stopped

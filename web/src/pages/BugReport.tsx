@@ -36,7 +36,7 @@ function toText(f: Fields, c: Context): string {
   return out.join("\n").trim();
 }
 
-/** Markdown for Linear, whose description field renders it. */
+/** Markdown for Linear, whose description field renders it. Jira gets the same text, converted on the server. */
 function toMarkdown(f: Fields, c: Context): string {
   const out: string[] = [...c.facts.map(([k, v]) => `**${k}:** ${v}`), ""];
   if (c.preconditions) out.push("**Preconditions**", c.preconditions, "");
@@ -51,6 +51,7 @@ function toMarkdown(f: Fields, c: Context): string {
   return out.join("\n").trim();
 }
 
+interface JiraStatus { enabled: boolean; project: string | null; issueType: string | null; error?: string }
 interface LinearStatus { enabled: boolean; teams: { id: string; key: string; name: string }[]; defaultTeam: string | null; error?: string }
 
 /** Rich text for pasting into Jira's editor: bold labels, a real numbered list and code blocks. */
@@ -201,17 +202,36 @@ function BugReportDialog({ draft, resultId, jiraKey, attachmentCount, attachment
   const { data: linear } = useQuery({ queryKey: ["linear-status"], queryFn: () => api.get<LinearStatus>("/api/linear/status"), staleTime: 60_000 });
   const [team, setTeam] = useState("");
   const teamId = team || linear?.defaultTeam || "";
-  const createLinear = useMutation({
-    mutationFn: () =>
-      api.post<{ identifier: string; url: string }>(`/api/results/${resultId}/linear-issue`, {
+  const { data: jira } = useQuery({ queryKey: ["jira-status"], queryFn: () => api.get<JiraStatus>("/api/jira/status"), staleTime: 60_000 });
+  const trackers = [...(linear?.enabled ? (["linear"] as const) : []), ...(jira?.enabled ? (["jira"] as const) : [])];
+  const [chosen, setChosen] = useState<"linear" | "jira" | null>(() => {
+    try {
+      const v = localStorage.getItem("testbench.tracker");
+      return v === "linear" || v === "jira" ? v : null;
+    } catch {
+      return null;
+    }
+  });
+  const tracker = chosen && trackers.includes(chosen) ? chosen : (trackers[0] ?? null);
+  const pickTracker = (t: "linear" | "jira") => {
+    setChosen(t);
+    try {
+      localStorage.setItem("testbench.tracker", t);
+    } catch {
+      /* the choice just isn't remembered */
+    }
+  };
+  const createIssue = useMutation({
+    mutationFn: (t: "linear" | "jira") =>
+      api.post<{ identifier: string; url: string }>(`/api/results/${resultId}/${t}-issue`, {
         title: fields.summary.trim(),
         description: toMarkdown(fields, draft.ctx),
-        ...(teamId ? { teamId } : {}),
+        ...(t === "linear" && teamId ? { teamId } : {}),
       }),
-    onSuccess: (r) => {
+    onSuccess: (r, t) => {
       setIssue(r.url);
       for (const k of [["result", resultId], ["automated-result", resultId], ["run", runId]]) qc.invalidateQueries({ queryKey: k });
-      toast("success", `Created ${r.identifier} in Linear`);
+      toast("success", `Created ${r.identifier} in ${t === "linear" ? "Linear" : "Jira"}`);
     },
     onError: (e: Error) => toast("error", e.message),
   });
@@ -219,7 +239,7 @@ function BugReportDialog({ draft, resultId, jiraKey, attachmentCount, attachment
   return (
     <Modal title="Report bug" onClose={onClose} width={760} footer={<button className="btn" onClick={onClose}>Done</button>}>
       <div className="muted" style={{ fontSize: "var(--fs-md)", marginTop: -4 }}>
-        Edit the draft, then {linear?.enabled ? "create the issue in Linear, or " : ""}copy it into a new Jira issue and paste the issue key back here to link it.
+        Edit the draft, then {trackers.length ? `create the issue in ${trackers.map((t) => (t === "linear" ? "Linear" : "Jira")).join(" or ")}, or ` : ""}copy it into a new issue and paste the issue key or link back here.
       </div>
 
       <div className="field">
@@ -276,33 +296,52 @@ function BugReportDialog({ draft, resultId, jiraKey, attachmentCount, attachment
         )}
       </div>
 
-      {linear?.enabled && (
-        <div className="card" style={{ padding: 12, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <Send size={15} className="faint" />
-          <div className="grow" style={{ minWidth: 180 }}>
-            <div style={{ fontWeight: 500 }}>Create in Linear</div>
-            <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>
-              {linear.error ? linear.error : saved ? `Already linked to ${jiraLabel(saved)}. Remove the link below to create a new issue.` : "Creates the issue with this draft and links it here."}
+      {tracker && (() => {
+        const info = tracker === "linear" ? linear : jira;
+        const name = tracker === "linear" ? "Linear" : "Jira";
+        const err = info?.error;
+        const needsTeam = tracker === "linear" && (linear?.teams.length ?? 0) > 1 && !teamId;
+        return (
+          <div className="card" style={{ padding: 12, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <Send size={15} className="faint" />
+            <div className="grow" style={{ minWidth: 180 }}>
+              <div className="row" style={{ gap: 8 }}>
+                <span style={{ fontWeight: 500 }}>Create in {trackers.length > 1 ? "" : name}</span>
+                {trackers.length > 1 && (
+                  <div className="tabs" role="tablist" aria-label="Issue tracker">
+                    {trackers.map((t) => (
+                      <button key={t} role="tab" aria-selected={tracker === t} className={`tab${tracker === t ? " active" : ""}`} onClick={() => pickTracker(t)}>
+                        {t === "linear" ? "Linear" : "Jira"}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>
+                {err
+                  ? err
+                  : saved
+                    ? `Already linked to ${jiraLabel(saved)}. Remove the link below to create a new issue.`
+                    : tracker === "jira" && jira?.project
+                      ? `Creates a ${jira.issueType ?? "Bug"} in project ${jira.project} with this draft and links it here.`
+                      : "Creates the issue with this draft and links it here."}
+              </div>
             </div>
+            {tracker === "linear" && (linear?.teams.length ?? 0) > 1 && (
+              <select className="input" style={{ width: "auto" }} aria-label="Linear team" value={teamId} onChange={(e) => setTeam(e.target.value)}>
+                <option value="">Choose team…</option>
+                {linear!.teams.map((t) => <option key={t.id} value={t.id}>{t.key} · {t.name}</option>)}
+              </select>
+            )}
+            <button className="btn primary" disabled={!!saved || !fields.summary.trim() || createIssue.isPending || !!err || needsTeam} onClick={() => createIssue.mutate(tracker)}>
+              {createIssue.isPending ? "Creating…" : "Create issue"}
+            </button>
           </div>
-          {linear.teams.length > 1 && (
-            <select className="input" style={{ width: "auto" }} aria-label="Linear team" value={teamId} onChange={(e) => setTeam(e.target.value)}>
-              <option value="">Choose team…</option>
-              {linear.teams.map((t) => <option key={t.id} value={t.id}>{t.key} · {t.name}</option>)}
-            </select>
-          )}
-          <button
-            className="btn primary"
-            disabled={!!saved || !fields.summary.trim() || createLinear.isPending || !!linear.error || (linear.teams.length > 1 && !teamId)}
-            onClick={() => createLinear.mutate()}
-          >
-            {createLinear.isPending ? "Creating…" : "Create issue"}
-          </button>
-        </div>
-      )}
+        );
+      })()}
 
       <div className="field">
-        <label htmlFor="bug-issue"><Link2 size={11} style={{ verticalAlign: -1 }} /> Linked issue (Jira or Linear)</label>
+        <label htmlFor="bug-issue"><Link2 size={11} style={{ verticalAlign: -1 }} /> Linked issue</label>
         <div className="row">
           <input
             id="bug-issue"

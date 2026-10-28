@@ -64,6 +64,7 @@ All settings are environment variables. None are required.
 | `TESTBENCH_CHROME_CHANNEL` / `_PATH` / `_NO_SANDBOX` | `chrome` | Which browser renders PDFs (see Quick start). |
 | `TYPESAFE_API_KEY` | none | Optional AI link suggestions (see below). |
 | `LINEAR_API_KEY` | none | Optional: create Linear issues from failing tests (see "Creating Linear issues"). `LINEAR_TEAM_ID` (a team id or its short key, e.g. `ENG`) sets the default team. |
+| `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `JIRA_PROJECT_KEY` | none | Optional: create Jira Cloud issues from failing tests (see "Creating Jira issues"). `JIRA_ISSUE_TYPE` (default `Bug`) names the issue type. |
 
 ## Running it for a team
 
@@ -211,6 +212,22 @@ so it appears next to the result and in the reports. Without a key nothing chang
 
 The key stays on the server and is sent only to `api.linear.app`. It can create issues as you, so treat it like a password and revoke it in Linear if
 it leaks. A result that already has a linked issue cannot create a second one by mistake.
+
+## Creating Jira issues
+
+Optional, and independent of Linear. With the four Jira values set, **Report bug** also offers **Create in Jira**; with both Jira and Linear
+set, a small switch in that card chooses which one (the last choice is remembered in the browser). The issue is created in your project
+with the draft as its description, and its link is saved on the result like a pasted key would be.
+
+1. In Jira Cloud: id.atlassian.com, Security, **Create API token** (free on every plan).
+2. Put these in `.env` next to `docker-compose.yml` (or export them before `npm start`):
+   `JIRA_BASE_URL=https://yourteam.atlassian.net`, `JIRA_EMAIL=you@example.com`, `JIRA_API_TOKEN=...`, `JIRA_PROJECT_KEY=PROJ`.
+   Optionally `JIRA_ISSUE_TYPE=Defect` if your project does not use "Bug".
+3. Restart Testbench. The card checks the project and issue type and shows what is wrong if something is.
+
+The token stays on the server and is sent only to the site in `JIRA_BASE_URL` (https only). It acts as your account, so treat it like a
+password and revoke it on the Atlassian page if it leaks. Projects with required custom fields reject the create; the card shows Jira's message
+naming the field. Jira Server / Data Center is not supported, only Jira Cloud.
 
 ## Deleting cases and projects
 
