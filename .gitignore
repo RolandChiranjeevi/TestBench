@@ -1,8 +1,9 @@
 node_modules
 dist
 data/
-.claude-flow
 .DS_Store
+.claude/
+.claude-flow
 .swarm/
 ruvector.db
 agentdb.rvf*
