@@ -1,0 +1,37 @@
+{
+  "format": "testbench-audit-package",
+  "version": 1,
+  "audit": {
+    "id": "example-audit-001",
+    "title": "Example checkout audit",
+    "startedAt": "2026-11-02T09:00:00Z",
+    "finishedAt": "2026-11-02T09:40:00Z",
+    "project": "SHOP",
+    "agent": {
+      "name": "example-test-agent",
+      "version": "0.1",
+      "model": "example"
+    },
+    "review": {
+      "status": "self-reviewed",
+      "method": "each finding reproduced at least once",
+      "reviewer": "agent"
+    }
+  },
+  "files": [
+    {
+      "path": "evidence/discount-total.png",
+      "sha256": "cd153c75a54d230d226cc5f85ec86f23af00b160a09fac7ba927c7a28038bb44",
+      "size": 166
+    },
+    {
+      "path": "evidence/card-field.txt",
+      "sha256": "e69d2fb15e655747d7cd540c5b140a7b01a3f3437d766dc8cec41c59cfa076f7",
+      "size": 73
+    }
+  ],
+  "parts": {
+    "bugs": "bugs.json",
+    "narrative": "report.md"
+  }
+}

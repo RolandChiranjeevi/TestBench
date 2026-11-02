@@ -278,7 +278,7 @@ function AutoImport({ source }: { source: GithubSource }) {
     onSuccess: (r) => {
       refresh();
       if (r.error) toast("error", r.error);
-      else toast("success", r.imported ? `Imported ${r.imported} new ${r.imported === 1 ? "run" : "runs"}` : "No new runs");
+      else toast("success", [r.imported ? `Imported ${r.imported} new ${r.imported === 1 ? "run" : "runs"}` : "No new runs", r.audits ? `${r.audits} audit ${r.audits === 1 ? "package" : "packages"} (see Bug reports)` : "", r.auditsRejected ? `${r.auditsRejected} audit ${r.auditsRejected === 1 ? "package" : "packages"} refused (see Bug reports, Audits)` : ""].filter(Boolean).join(" · "));
     },
     onError: (e: Error) => toast("error", e.message),
   });

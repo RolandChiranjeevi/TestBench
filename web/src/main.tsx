@@ -2,7 +2,7 @@ import { StrictMode, useEffect, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, BookOpenCheck, Bot, ChevronDown, Download, FileBarChart, FlaskConical, LayoutDashboard, ListChecks, LogOut, Menu, Pencil, Play, Plus, Sparkles, Trash2 } from "lucide-react";
+import { Archive, BookOpenCheck, Bot, Bug, ChevronDown, Download, FileBarChart, FlaskConical, LayoutDashboard, ListChecks, LogOut, Menu, Pencil, Play, Plus, Sparkles, Trash2 } from "lucide-react";
 import { api, timeAgo, type BackupInfo, type Project } from "./api";
 import { ConfirmModal, Empty, Modal, ToastProvider, useHotkeys, useToast } from "./components/ui";
 import { CasesPage } from "./pages/Cases";
@@ -14,6 +14,7 @@ import { ImportPage } from "./pages/Import";
 import { DashboardPage } from "./pages/Dashboard";
 import { ReportsPage } from "./pages/Reports";
 import { BackupPage } from "./pages/Backup";
+import { BugReportsPage } from "./pages/BugReports";
 import "./styles.css";
 
 const LAST_PROJECT = "testbench:lastProject";
@@ -247,7 +248,7 @@ function ProjectLayout() {
   // Browser tab title: "Test cases · Demo Shop · Testbench", so tabs, history and screen readers say where you are.
   const section = loc.pathname.split("/")[3] ?? "";
   useEffect(() => {
-    const label = ({ dashboard: "Dashboard", requirements: "Requirements", cases: "Test cases", runs: "Runs", automated: "Automated tests", import: "Import results", reports: "Sprint reports", backup: "Backup & restore" } as Record<string, string>)[section];
+    const label = ({ dashboard: "Dashboard", requirements: "Requirements", cases: "Test cases", runs: "Runs", automated: "Automated tests", import: "Import results", bugs: "Bug reports", reports: "Sprint reports", backup: "Backup & restore" } as Record<string, string>)[section];
     document.title = [label, project?.name, "Testbench"].filter(Boolean).join(" · ");
     return () => { document.title = "Testbench"; };
   }, [section, project?.name]);
@@ -261,15 +262,19 @@ function ProjectLayout() {
     "6": () => navigate(`/p/${pid}/import`),
     "7": () => navigate(`/p/${pid}/reports`),
     "8": () => navigate(`/p/${pid}/backup`),
+    "9": () => navigate(`/p/${pid}/bugs`),
   });
+  // How many reports from test agents wait for a decision (the same query the Bug reports page uses for its default tab).
+  const { data: proposedBugs } = useQuery({ queryKey: ["bug-reports", pid, "proposed"], queryFn: () => api.get<{ counts: Record<string, number> }>(`/api/projects/${pid}/bug-reports?status=proposed`), staleTime: 30_000, enabled: !!pid });
 
   if (isLoading) return null;
   if (!project) return <Navigate to="/" replace />;
 
-  const link = (to: string, icon: ReactNode, label: string, shortcut: string) => (
+  const link = (to: string, icon: ReactNode, label: string, shortcut: string, badge = 0) => (
     <NavLink to={`/p/${project.id}/${to}`} className={({ isActive }) => `nav-item${isActive ? " active" : ""}`} title={label}>
       {icon}
       <span className="nav-label">{label}</span>
+      {badge > 0 && <span className="chip accent" aria-label={`${badge} waiting for review`}>{badge}</span>}
       <span className="count"><kbd className="kbd">{shortcut}</kbd></span>
     </NavLink>
   );
@@ -324,6 +329,7 @@ function ProjectLayout() {
         {link("runs", <Play size={15} />, "Runs", "4")}
         {link("automated", <Bot size={15} />, "Automated tests", "5")}
         {link("import", <Download size={15} />, "Import results", "6")}
+        {link("bugs", <Bug size={15} />, "Bug reports", "9", proposedBugs?.counts.proposed ?? 0)}
         <div className="sidebar-section">Reporting</div>
         {link("reports", <FileBarChart size={15} />, "Sprint reports", "7")}
         <div className="sidebar-section">Data</div>
@@ -380,6 +386,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="runs/:runId" element={<RunDetailPage />} />
               <Route path="automated" element={<AutomatedPage />} />
               <Route path="import" element={<ImportPage />} />
+              <Route path="bugs" element={<BugReportsPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

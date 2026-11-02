@@ -229,6 +229,16 @@ The token stays on the server and is sent only to the site in `JIRA_BASE_URL` (h
 password and revoke it on the Atlassian page if it leaks. Projects with required custom fields reject the create; the card shows Jira's message
 naming the field. Jira Server / Data Center is not supported, only Jira Cloud.
 
+## Bug reports from a test agent
+
+Optional. A test agent can leave an **audit package** (its findings, evidence and its own report) that Testbench imports as **proposals** on the
+**Bug reports** page. A person reads each one and accepts or rejects it; the agent's own review never decides anything, and nothing is
+sent to Jira or Linear by the import. Import a package by hand (**Bug reports, Import audit package**: a zip or a folder, with a preview first)
+or upload it from CI as an artifact named `testbench-audit-*` and let the GitHub import pick it up.
+
+The format, the rules for importing the same report again, the limits and a worked example (`examples/audit-package/`, for the demo project)
+are in [docs/audit-package.md](docs/audit-package.md). Publishing an accepted report to Jira or Linear is not part of this yet.
+
 ## Deleting cases and projects
 
 **Cases:** open a case and use the trash icon, or tick cases in the list (the box at the start of the toolbar ticks everything shown, after

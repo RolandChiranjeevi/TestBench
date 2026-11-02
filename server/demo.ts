@@ -1,4 +1,8 @@
+import { createHash } from "node:crypto";
+import { crc32, deflateSync } from "node:zlib";
 import { db, ensureMilestone } from "./db.ts";
+import { importAuditPackage } from "./audits.ts";
+import { bagFromFiles } from "./importers/bag.ts";
 import { createRequirement, setRequirementCases } from "./requirements.ts";
 import { importReport } from "./importers/import.ts";
 import { parseReport } from "./importers/parse.ts";
@@ -183,7 +187,75 @@ export function seedDemo() {
     const id = createRequirement(project.id, { title: r.title, priority: r.priority, source: r.source, description: r.description });
     setRequirementCases(id, project.id, r.cases.map((i) => caseIds[i]).filter((x) => x != null));
   }
+  // A small audit from a test agent, so the Bug reports page has proposals to look at.
+  importAuditPackage(demoAuditPackage("SHOP"), { projectId: project.id, source: "upload" });
   return project;
+}
+
+/** A solid-colour PNG, built here so the demo needs no image files. */
+function solidPng(w: number, h: number, rgb: [number, number, number]) {
+  const chunk = (type: string, data: Buffer) => {
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([len, body, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr.set([8, 2, 0, 0, 0], 8);
+  const row = Buffer.concat([Buffer.from([0]), Buffer.from(Array.from({ length: w }, () => rgb).flat())]);
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", ihdr), chunk("IDAT", deflateSync(Buffer.concat(Array.from({ length: h }, () => row)))), chunk("IEND", Buffer.alloc(0))]);
+}
+
+function demoAuditPackage(projectKey: string) {
+  const shot = solidPng(96, 54, [230, 126, 34]);
+  const markup = Buffer.from('<input id="card" type="text" name="card">\n(no <label> and no aria-label)\n');
+  const entry = (path: string, b: Buffer) => ({ path, sha256: createHash("sha256").update(b).digest("hex"), size: b.length });
+  const bugs = [
+    {
+      sourceId: "BUG-001", title: "Order total shows 0 kr after applying a discount code",
+      description: "After entering the code SAVE10 in the cart, the total drops to 0 kr instead of 10 % less.",
+      steps: ["Add any product to the cart", "Open the cart and enter the code SAVE10", "Look at the order total"],
+      expected: "The total is reduced by 10 %", actual: "The total is 0 kr", environment: "staging", url: "https://staging.example.test/cart",
+      agentSeverity: "high", confidence: 0.8, foundAt: new Date(Date.now() - 3_600_000).toISOString(),
+      agentReview: { status: "confirmed", method: "reproduced twice in a clean session", notes: "" },
+      fingerprint: "cart-discount-total-zero", refs: { cases: [`${projectKey}-6`], requirements: ["REQ-3"] },
+      evidence: [{ path: "evidence/discount-total.png", label: "Cart after applying SAVE10" }],
+    },
+    {
+      sourceId: "BUG-002", title: "Card number field has no label for screen readers",
+      description: "The card number input has neither a visible label nor an aria-label.",
+      steps: ["Open the checkout page", "Inspect the card number field with a screen reader or axe"],
+      expected: 'The field is announced as "Card number"', actual: 'The field is announced as "edit text"', environment: "staging", url: "https://staging.example.test/checkout",
+      toolImpact: { tool: "axe-core", value: "serious", ruleId: "label" }, agentSeverity: "medium", foundAt: new Date(Date.now() - 3_000_000).toISOString(),
+      agentReview: { status: "unconfirmed", method: "single automated scan", notes: "not checked with a real screen reader" },
+      refs: { cases: [`${projectKey}-99`], requirements: ["REQ-3"] },
+      evidence: [{ path: "evidence/card-field.txt", label: "The field's markup" }],
+    },
+    {
+      sourceId: "BUG-003", title: "Typo in the order confirmation subject line", description: 'The subject reads "Your ordre is confirmed".',
+      expected: "Your order is confirmed", actual: "Your ordre is confirmed", environment: "staging", agentSeverity: "low",
+    },
+  ];
+  const manifest = {
+    format: "testbench-audit-package", version: 1,
+    audit: {
+      id: "demo-audit-001", title: "Checkout audit (demo)", project: projectKey, startedAt: new Date(Date.now() - 4_200_000).toISOString(), finishedAt: new Date(Date.now() - 2_400_000).toISOString(),
+      agent: { name: "demo-test-agent", version: "0.1", model: "demo" }, review: { status: "self-reviewed", method: "each finding reproduced at least once", reviewer: "agent" },
+    },
+    files: [entry("evidence/discount-total.png", shot), entry("evidence/card-field.txt", markup)],
+    parts: { bugs: "bugs.json", narrative: "report.md" },
+  };
+  return bagFromFiles(new Map<string, Uint8Array>([
+    ["manifest.json", Buffer.from(JSON.stringify(manifest))],
+    ["bugs.json", Buffer.from(JSON.stringify({ version: 1, bugs }))],
+    ["report.md", Buffer.from("# Checkout audit (demo)\n\nAbout 40 minutes of exploration of the cart and checkout on staging. Three findings, listed as proposals in Testbench.\n")],
+    ["evidence/discount-total.png", shot],
+    ["evidence/card-field.txt", markup],
+  ]));
 }
 
 function playwrightReport(daysAgo: number, failing: boolean) {
