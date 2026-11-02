@@ -1,4 +1,5 @@
 import { db } from "./db.ts";
+import { projectAuditFiles } from "./audits.ts";
 
 export class DeletionError extends Error {
   constructor(public status: 400 | 404, message: string) {
@@ -22,7 +23,7 @@ export function deleteCases(projectId: number, ids: number[]): { deleted: number
 export interface ProjectDeletion {
   name: string;
   key: string;
-  counts: { cases: number; runs: number; requirements: number; automatedTests: number };
+  counts: { cases: number; runs: number; requirements: number; automatedTests: number; bugReports: number };
   /** Stored names of uploaded files (evidence, requirement attachments) that no longer belong to anything. The caller removes them. */
   files: string[];
 }
@@ -39,6 +40,7 @@ export function describeProject(projectId: number) {
       runs: n("SELECT COUNT(*) AS n FROM runs WHERE project_id = ?"),
       requirements: n("SELECT COUNT(*) AS n FROM requirements WHERE project_id = ?"),
       automatedTests: n("SELECT COUNT(*) AS n FROM automated_tests WHERE project_id = ?"),
+      bugReports: n("SELECT COUNT(*) AS n FROM bug_reports WHERE project_id = ?"),
     },
   };
 }
@@ -58,7 +60,7 @@ export function deleteProject(projectId: number, confirmKey: string): ProjectDel
     ...(db
       .prepare("SELECT a.stored_name FROM requirement_attachments a JOIN requirements q ON q.id = a.requirement_id WHERE q.project_id = ?")
       .all(projectId) as { stored_name: string }[]),
-  ].map((f) => f.stored_name);
+  ].map((f) => f.stored_name).concat(projectAuditFiles(projectId)); // evidence of bug reports and stored audit reports go with the project
 
   db.transaction(() => {
     db.prepare("DELETE FROM projects WHERE id = ?").run(projectId);

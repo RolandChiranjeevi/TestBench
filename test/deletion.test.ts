@@ -84,7 +84,7 @@ describe("deleteProject", () => {
   it("describes what a deletion would remove", () => {
     const d = describeProject(victim.id);
     assert.equal(d.key, "DV");
-    assert.deepEqual(d.counts, { cases: 1, runs: 1, requirements: 1, automatedTests: 1 });
+    assert.deepEqual(d.counts, { cases: 1, runs: 1, requirements: 1, automatedTests: 1, bugReports: 0 });
     assert.throws(() => describeProject(999999), (e: unknown) => e instanceof DeletionError && e.status === 404);
   });
 
@@ -98,7 +98,7 @@ describe("deleteProject", () => {
 
   it("removes the project with everything in it, and returns the files to delete", () => {
     const r = deleteProject(victim.id, "DV");
-    assert.deepEqual(r.counts, { cases: 1, runs: 1, requirements: 1, automatedTests: 1 });
+    assert.deepEqual(r.counts, { cases: 1, runs: 1, requirements: 1, automatedTests: 1, bugReports: 0 });
     assert.deepEqual([...r.files].sort(), ["evidence-1.png", "spec-1.pdf"]);
 
     // every table with a project_id column is empty for it

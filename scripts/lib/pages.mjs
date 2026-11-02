@@ -42,6 +42,7 @@ export async function discoverPages(base) {
     api(`/api/projects/${pid}/requirements`),
     api(`/api/projects/${pid}/cases`),
   ]);
+  const bugs = await api(`/api/projects/${pid}/bug-reports?status=all`);
   const manualRun = runs.find((r) => r.kind === "manual");
   const autoRun = runs.find((r) => r.kind === "automated");
 
@@ -56,6 +57,8 @@ export async function discoverPages(base) {
     ...(autoRun ? [["Automated run", `/p/${pid}/runs/${autoRun.id}`]] : []),
     ["Automated tests", `/p/${pid}/automated`],
     ["Import results", `/p/${pid}/import`],
+    ["Bug reports", `/p/${pid}/bugs`],
+    ...(bugs.items?.[0] ? [["Bug report open", `/p/${pid}/bugs?bug=${bugs.items[0].id}`]] : []),
     ["Sprint reports", `/p/${pid}/reports${milestones[0] ? `/${milestones[0].id}` : ""}`],
     ["Backup & restore", `/p/${pid}/backup`],
   ];

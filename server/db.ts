@@ -387,6 +387,124 @@ CREATE TABLE IF NOT EXISTS github_seen (
   PRIMARY KEY (source_id, run_id)
 );`);
 
+  // Audit packages from a test agent: the audit, its bug reports (proposed until a human decides), their evidence and links.
+  // A bug report outlives its audit: audit_id can become NULL, so what the audit said about it is kept on the report (origin).
+  d.exec(`
+CREATE TABLE IF NOT EXISTS audits (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  agent_audit_id TEXT NOT NULL,              -- the agent's own id, not GitHub's run id
+  title TEXT NOT NULL DEFAULT '',
+  agent_name TEXT NOT NULL DEFAULT '', agent_version TEXT NOT NULL DEFAULT '', agent_model TEXT NOT NULL DEFAULT '',
+  started_at TEXT, finished_at TEXT,
+  review_status TEXT NOT NULL DEFAULT '', review_method TEXT NOT NULL DEFAULT '', review_reviewer TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL,                      -- upload | github
+  github_repo TEXT, github_run_id INTEGER, github_artifact_id INTEGER,
+  run_id INTEGER REFERENCES runs(id) ON DELETE SET NULL,
+  run_state TEXT NOT NULL DEFAULT 'none',    -- linked | pending (run not imported yet) | none (no GitHub run named)
+  package_sha256 TEXT,
+  narrative_stored_name TEXT,
+  first_imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (project_id, agent_audit_id)
+);
+CREATE TABLE IF NOT EXISTS audit_imports (
+  id INTEGER PRIMARY KEY,
+  audit_id INTEGER NOT NULL REFERENCES audits(id) ON DELETE CASCADE,
+  imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+  source TEXT NOT NULL,
+  artifact_id INTEGER,
+  new_count INTEGER NOT NULL DEFAULT 0, unchanged_count INTEGER NOT NULL DEFAULT 0,
+  updated_count INTEGER NOT NULL DEFAULT 0, pending_count INTEGER NOT NULL DEFAULT 0,
+  warnings TEXT NOT NULL DEFAULT '[]'
+);
+CREATE TABLE IF NOT EXISTS bug_reports (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  audit_id INTEGER REFERENCES audits(id) ON DELETE SET NULL,
+  origin_audit_id TEXT NOT NULL,             -- the agent's audit id, kept when the audit row is deleted
+  origin TEXT NOT NULL DEFAULT '{}',         -- audit title, agent, review method, times, source and GitHub ids as first imported
+  source_id TEXT NOT NULL,
+  -- working copy (a human may edit it)
+  title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', steps TEXT NOT NULL DEFAULT '[]',
+  expected TEXT NOT NULL DEFAULT '', actual TEXT NOT NULL DEFAULT '', environment TEXT NOT NULL DEFAULT '', url TEXT NOT NULL DEFAULT '',
+  -- three separate judgements
+  tool_impact TEXT, agent_severity TEXT, human_severity TEXT,
+  confidence REAL, agent_review TEXT,
+  found_at TEXT, imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+  fingerprint TEXT NOT NULL DEFAULT '', recurrence_hint TEXT NOT NULL DEFAULT '',
+  review_status TEXT NOT NULL DEFAULT 'proposed',   -- proposed | accepted | rejected | duplicate; only a human sets this
+  reviewed_at TEXT, review_note TEXT NOT NULL DEFAULT '',
+  duplicate_of_id INTEGER REFERENCES bug_reports(id) ON DELETE SET NULL,
+  edited_at TEXT,
+  applied_rev INTEGER NOT NULL DEFAULT 1, latest_rev INTEGER NOT NULL DEFAULT 1, ignored_rev INTEGER NOT NULL DEFAULT 0,
+  run_id INTEGER REFERENCES runs(id) ON DELETE SET NULL,
+  result_id INTEGER REFERENCES results(id) ON DELETE SET NULL,
+  UNIQUE (project_id, origin_audit_id, source_id)
+);
+CREATE INDEX IF NOT EXISTS bug_reports_project ON bug_reports(project_id, review_status);
+CREATE INDEX IF NOT EXISTS bug_reports_audit ON bug_reports(audit_id);
+CREATE TABLE IF NOT EXISTS bug_revisions (
+  id INTEGER PRIMARY KEY,
+  bug_report_id INTEGER NOT NULL REFERENCES bug_reports(id) ON DELETE CASCADE,
+  rev INTEGER NOT NULL,
+  payload TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+  audit_import_id INTEGER REFERENCES audit_imports(id) ON DELETE SET NULL,
+  UNIQUE (bug_report_id, rev)
+);
+CREATE TABLE IF NOT EXISTS bug_refs (
+  id INTEGER PRIMARY KEY,
+  bug_report_id INTEGER NOT NULL REFERENCES bug_reports(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,                        -- requirement | case | test
+  raw TEXT NOT NULL,
+  case_id INTEGER REFERENCES cases(id) ON DELETE SET NULL,
+  requirement_id INTEGER REFERENCES requirements(id) ON DELETE SET NULL,
+  automated_test_id INTEGER REFERENCES automated_tests(id) ON DELETE SET NULL,
+  state TEXT NOT NULL,                       -- resolved | unresolved | wrong_project | ambiguous
+  reason TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS bug_refs_bug ON bug_refs(bug_report_id);
+CREATE TABLE IF NOT EXISTS bug_attachments (
+  id INTEGER PRIMARY KEY,
+  bug_report_id INTEGER NOT NULL REFERENCES bug_reports(id) ON DELETE CASCADE,
+  declared_path TEXT NOT NULL, filename TEXT NOT NULL, mime TEXT NOT NULL DEFAULT '', size INTEGER NOT NULL DEFAULT 0,
+  sha256 TEXT, label TEXT NOT NULL DEFAULT '',
+  stored_name TEXT,                          -- NULL when the file was rejected, missing or failed its checksum
+  state TEXT NOT NULL,                       -- stored | rejected | missing | checksum_mismatch
+  reason TEXT NOT NULL DEFAULT '',
+  active INTEGER NOT NULL DEFAULT 1,         -- 0 = belongs to a pending update that nobody applied yet
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS bug_attachments_bug ON bug_attachments(bug_report_id);
+-- Where a report went (or already was). Delivery 1 only records links to existing external issues; publishing comes later.
+CREATE TABLE IF NOT EXISTS bug_publications (
+  id INTEGER PRIMARY KEY,
+  bug_report_id INTEGER NOT NULL REFERENCES bug_reports(id) ON DELETE CASCADE,
+  destination TEXT NOT NULL,                 -- jira | linear | other
+  destination_ref TEXT NOT NULL DEFAULT '',  -- Jira site + project, or Linear team; later set per Testbench project
+  mode TEXT NOT NULL,                        -- created | linked_existing
+  state TEXT NOT NULL,                       -- pending | sent | unknown | failed
+  idempotency_key TEXT,
+  preview_hash TEXT,
+  external_id TEXT NOT NULL DEFAULT '', external_url TEXT NOT NULL DEFAULT '',
+  error TEXT NOT NULL DEFAULT '',
+  attachments_state TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')), completed_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS bug_publications_active ON bug_publications(bug_report_id, destination, destination_ref) WHERE state IN ('pending', 'sent', 'unknown');
+-- Artifacts the GitHub checker has dealt with. Keyed by artifact, not by run, so a package that appears after its run was imported is still fetched.
+CREATE TABLE IF NOT EXISTS github_artifacts (
+  source_id INTEGER NOT NULL REFERENCES github_sources(id) ON DELETE CASCADE,
+  artifact_id INTEGER NOT NULL,
+  run_id INTEGER, name TEXT NOT NULL DEFAULT '',
+  outcome TEXT NOT NULL,                     -- imported | rejected
+  note TEXT NOT NULL DEFAULT '',
+  seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (source_id, artifact_id)
+);`);
+
   // Make sure every sprint named on a run has a sprint record.
   const named = d.prepare("SELECT DISTINCT project_id, milestone FROM runs WHERE milestone != ''").all() as { project_id: number; milestone: string }[];
   for (const r of named) ensureMilestone(r.project_id, r.milestone, d);

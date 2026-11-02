@@ -30,6 +30,11 @@ import { dismissSuggestion, listSuggestions, SuggestError, suggestLinks, typesaf
 import { addChecklistItem, copyChecklist, listChecklist } from "./checklist.ts";
 import { createIssue, LinearError, linearEnabled, listTeams } from "./linear.ts";
 import { createJiraIssue, JiraError, jiraEnabled, jiraStatus } from "./jira.ts";
+import {
+  applyPendingUpdate, AuditError, auditReportText, deleteAudit, deleteBugReport, getBugReport, ignorePendingUpdate, importAuditPackage, linkExternalIssue,
+  listAudits, listBugReports, listRejectedPackages, markDuplicate, previewAuditDeletion, relinkBugRefs, reviewBugReport, unlinkExternalIssue, updateBugReport,
+} from "./audits.ts";
+import { LIMITS as AUDIT_LIMITS, PackageError } from "./importers/auditpackage.ts";
 import { addRequirementCases, createRequirement, getRequirement, linkCaseByTags, listRequirements, markReviewed, recordRevision, requirementsForCase, requirementSummary, setCaseRequirements, setRequirementCases, type RevisionChange } from "./requirements.ts";
 import { dashboardData, listMilestones, milestoneReport } from "./stats.ts";
 import { parseReport, type Framework, type ParsedReport } from "./importers/parse.ts";
@@ -847,6 +852,124 @@ app.post("/api/projects/:id/import", async (req) => {
     { projectId, source: "upload", title, environment: fields.environment ?? "", milestone: fields.milestone ?? "", meta: { files: names } },
     mergeBags(bags),
   );
+});
+
+// ---------------- Audit packages and bug reports ----------------
+// Reports from a test agent arrive as a package (a GitHub artifact named testbench-audit-*, or an upload) and start as "proposed".
+// Nothing here sends anything to Jira or Linear; accepting a report is only a decision made in Testbench.
+
+const asAuditHttp = (e: unknown) => (e instanceof AuditError ? new HttpError(e.status, e.message) : e instanceof PackageError ? new HttpError(400, e.message) : e);
+function audited<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (e) {
+    throw asAuditHttp(e);
+  }
+}
+
+// A zip, or a picked folder (each file preceded by its "relpath" field). ?dryRun=1 only reports what would happen.
+app.post("/api/projects/:id/audit-import", async (req) => {
+  const projectId = idParam(req);
+  const dryRun = (req.query as { dryRun?: string }).dryRun === "1";
+  const loose = new Map<string, Uint8Array>();
+  let zip: FileBag | null = null;
+  let relpath = "";
+  let total = 0;
+  for await (const part of req.parts()) {
+    if (part.type === "field") {
+      if (part.fieldname === "relpath") relpath = String(part.value ?? "");
+      continue;
+    }
+    const fromFolder = !!relpath;
+    const name = relpath || part.filename;
+    relpath = "";
+    const bytes = new Uint8Array(await part.toBuffer());
+    total += bytes.length;
+    if (total > AUDIT_LIMITS.totalBytes) throw new HttpError(400, `The upload is larger than ${AUDIT_LIMITS.totalBytes / 1024 / 1024} MB`);
+    if (!fromFolder && /\.zip$/i.test(name)) {
+      if (zip) throw new HttpError(400, "Upload one audit package at a time");
+      try {
+        zip = bagFromZip(bytes);
+      } catch {
+        throw new HttpError(400, `${part.filename}: not a readable zip file`);
+      }
+    } else {
+      loose.set(name, bytes);
+    }
+  }
+  if (zip && loose.size) throw new HttpError(400, "Upload either one zip or one folder, not both");
+  if (!zip && !loose.size) throw new HttpError(400, "Choose a zip file or a folder with the audit package");
+  return audited(() => importAuditPackage(zip ?? bagFromFiles(loose), { projectId, source: "upload" }, { dryRun }));
+});
+
+app.get("/api/projects/:id/bug-reports", (req) => {
+  const q = req.query as { status?: string; q?: string };
+  return listBugReports(idParam(req), { status: q.status, q: q.q });
+});
+app.get("/api/projects/:id/audits", (req) => listAudits(idParam(req)));
+app.get("/api/projects/:id/audit-rejections", (req) => listRejectedPackages(idParam(req)));
+app.get("/api/bug-reports/:id", (req) => audited(() => getBugReport(idParam(req))));
+
+const severity = z.enum(["low", "medium", "high", "critical"]);
+app.patch("/api/bug-reports/:id", (req) => {
+  const id = idParam(req);
+  const body = z
+    .object({
+      title: z.string().trim().min(1).max(200).optional(), description: z.string().max(20000).optional(), steps: z.array(z.string().max(1000)).max(50).optional(),
+      expected: z.string().max(5000).optional(), actual: z.string().max(5000).optional(), environment: z.string().max(200).optional(), url: z.string().max(2000).optional(),
+      humanSeverity: severity.nullable().optional(),
+    })
+    .parse(req.body);
+  audited(() => updateBugReport(id, body));
+  return getBugReport(id);
+});
+app.post("/api/bug-reports/:id/review", (req) => {
+  const id = idParam(req);
+  const body = z.object({ status: z.enum(["proposed", "accepted", "rejected"]), note: z.string().max(2000).optional() }).parse(req.body);
+  audited(() => reviewBugReport(id, body.status, body.note));
+  return getBugReport(id);
+});
+app.post("/api/bug-reports/:id/duplicate", (req) => {
+  const id = idParam(req);
+  const body = z.object({ ofId: z.number().int(), note: z.string().max(2000).optional() }).parse(req.body);
+  audited(() => markDuplicate(id, body.ofId, body.note));
+  return getBugReport(id);
+});
+app.post("/api/bug-reports/:id/external-link", (req) => {
+  const id = idParam(req);
+  const body = z.object({ destination: z.enum(["jira", "linear", "other"]), url: z.string().max(2000), externalId: z.string().max(100).optional() }).parse(req.body);
+  audited(() => linkExternalIssue(id, body));
+  return getBugReport(id);
+});
+app.delete("/api/bug-publications/:id", (req) => audited(() => (unlinkExternalIssue(idParam(req)), { ok: true })));
+app.post("/api/bug-reports/:id/apply-update", (req) => {
+  const id = idParam(req);
+  audited(() => applyPendingUpdate(id));
+  return getBugReport(id);
+});
+app.post("/api/bug-reports/:id/ignore-update", (req) => {
+  const id = idParam(req);
+  audited(() => ignorePendingUpdate(id));
+  return getBugReport(id);
+});
+app.post("/api/bug-reports/:id/relink", (req) => {
+  const id = idParam(req);
+  const b = audited(() => getBugReport(id));
+  relinkBugRefs(b.projectId, id);
+  return getBugReport(id);
+});
+app.delete("/api/bug-reports/:id", (req) => audited(() => (deleteBugReport(idParam(req), (req.query as { force?: string }).force === "1"), { ok: true })));
+
+app.get("/api/audits/:id/deletion-preview", (req) => {
+  const { removable: _ids, ...preview } = audited(() => previewAuditDeletion(idParam(req)));
+  return preview;
+});
+app.delete("/api/audits/:id", (req) => audited(() => deleteAudit(idParam(req))));
+app.get("/api/audits/:id/report", (req, reply) => {
+  const text = audited(() => auditReportText(idParam(req)));
+  // Shown as plain text: the agent's report is never interpreted as markup.
+  reply.type("text/plain; charset=utf-8").header("X-Content-Type-Options", "nosniff");
+  return text;
 });
 
 // ---------------- GitHub ----------------

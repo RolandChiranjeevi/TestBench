@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "bugs": [
+    {
+      "sourceId": "BUG-001",
+      "title": "Order total shows 0 kr after applying a discount code",
+      "description": "After entering the code SAVE10 in the cart, the total drops to 0 kr instead of 10 % less.",
+      "steps": [
+        "Add any product to the cart",
+        "Open the cart and enter the code SAVE10",
+        "Look at the order total"
+      ],
+      "expected": "The total is reduced by 10 %",
+      "actual": "The total is 0 kr",
+      "environment": "staging",
+      "url": "https://staging.example.test/cart",
+      "agentSeverity": "high",
+      "confidence": 0.8,
+      "foundAt": "2026-11-02T09:12:00Z",
+      "agentReview": {
+        "status": "confirmed",
+        "method": "reproduced twice in a clean session",
+        "notes": ""
+      },
+      "fingerprint": "cart-discount-total-zero",
+      "refs": {
+        "cases": [
+          "SHOP-6"
+        ],
+        "requirements": [
+          "REQ-2"
+        ],
+        "tests": []
+      },
+      "evidence": [
+        {
+          "path": "evidence/discount-total.png",
+          "label": "Cart after applying SAVE10"
+        }
+      ]
+    },
+    {
+      "sourceId": "BUG-002",
+      "title": "Card number field has no label for screen readers",
+      "description": "The card number input has neither a visible label nor an aria-label.",
+      "steps": [
+        "Open the checkout page",
+        "Inspect the card number field with a screen reader or axe"
+      ],
+      "expected": "The field is announced as \"Card number\"",
+      "actual": "The field is announced as \"edit text\"",
+      "environment": "staging",
+      "url": "https://staging.example.test/checkout",
+      "toolImpact": {
+        "tool": "axe-core",
+        "value": "serious",
+        "ruleId": "label"
+      },
+      "agentSeverity": "medium",
+      "foundAt": "2026-11-02T09:20:00Z",
+      "agentReview": {
+        "status": "unconfirmed",
+        "method": "single automated scan",
+        "notes": "not checked with a real screen reader"
+      },
+      "refs": {
+        "cases": [
+          "SHOP-99"
+        ],
+        "requirements": [
+          "REQ-2"
+        ],
+        "tests": []
+      },
+      "evidence": [
+        {
+          "path": "evidence/card-field.txt",
+          "label": "The field's markup"
+        }
+      ]
+    },
+    {
+      "sourceId": "BUG-003",
+      "title": "Typo in the order confirmation subject line",
+      "description": "The subject reads \"Your ordre is confirmed\".",
+      "steps": [
+        "Place an order",
+        "Read the subject of the confirmation email"
+      ],
+      "expected": "Your order is confirmed",
+      "actual": "Your ordre is confirmed",
+      "environment": "staging",
+      "agentSeverity": "low",
+      "foundAt": "2026-11-02T09:31:00Z",
+      "refs": {
+        "cases": [],
+        "requirements": [],
+        "tests": []
+      },
+      "evidence": []
+    }
+  ]
+}

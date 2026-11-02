@@ -1,5 +1,7 @@
 import { db } from "./db.ts";
-import { importRun, listRuns, type GithubSource } from "./importers/github.ts";
+import { downloadArtifactBag, importRun, listAuditArtifacts, listRuns, MAX_AUDIT_ARTIFACT_BYTES, type GithubSource } from "./importers/github.ts";
+import { PackageError } from "./importers/auditpackage.ts";
+import { importAuditPackage } from "./audits.ts";
 
 /** Errors that will never go away for a given run (it simply has no test artifacts), so it is remembered and not retried. */
 const PERMANENT = [/no matching, unexpired artifacts/i, /No JUnit XML or Playwright JSON reports found/i];
@@ -18,6 +20,9 @@ export interface CheckResult {
   skipped: number;
   /** Runs still in progress, picked up on a later check. */
   waiting: number;
+  /** Audit packages imported / refused (a refused one is not tried again; the reason is shown on the Bug reports page). */
+  audits: number;
+  auditsRejected: number;
   error: string | null;
 }
 
@@ -26,7 +31,7 @@ const markSeen = (sourceId: number, runId: number, outcome: string, note: string
 
 /** Imports the source's finished workflow runs that appeared since automatic import was switched on. */
 export async function checkSource(src: GithubSource): Promise<CheckResult> {
-  const result: CheckResult = { imported: 0, skipped: 0, waiting: 0, error: null };
+  const result: CheckResult = { imported: 0, skipped: 0, waiting: 0, audits: 0, auditsRejected: 0, error: null };
   try {
     const since = src.auto_since ? Date.parse(src.auto_since.replace(" ", "T") + "Z") : 0;
     const seen = new Set((db.prepare("SELECT run_id FROM github_seen WHERE source_id = ?").all(src.id) as { run_id: number }[]).map((r) => r.run_id));
@@ -57,8 +62,38 @@ export async function checkSource(src: GithubSource): Promise<CheckResult> {
   } catch (e) {
     result.error = (e as Error).message;
   }
+  try {
+    await checkAuditPackages(src, result);
+  } catch (e) {
+    result.error ??= (e as Error).message;
+  }
   db.prepare("UPDATE github_sources SET last_checked_at = datetime('now'), last_error = ? WHERE id = ?").run(result.error ?? "", src.id);
   return result;
+}
+
+/**
+ * Audit packages are followed artifact by artifact (artifact ids never change), not run by run. So a package that shows up after its
+ * workflow run was imported, or after the run was skipped for having no test reports, is still fetched. Only the repository's 100 newest
+ * artifacts are looked at, so after a long pause older packages are not found. They become importable by uploading them by hand.
+ */
+async function checkAuditPackages(src: GithubSource, result: CheckResult) {
+  const since = src.auto_since ? Date.parse(src.auto_since.replace(" ", "T") + "Z") : 0;
+  const done = new Set((db.prepare("SELECT artifact_id FROM github_artifacts WHERE source_id = ?").all(src.id) as { artifact_id: number }[]).map((r) => r.artifact_id));
+  const record = (a: { id: number; name: string; workflow_run: { id: number } }, outcome: "imported" | "rejected", note: string) =>
+    db.prepare("INSERT OR REPLACE INTO github_artifacts (source_id, artifact_id, run_id, name, outcome, note) VALUES (?, ?, ?, ?, ?, ?)").run(src.id, a.id, a.workflow_run.id, a.name, outcome, note.slice(0, 500));
+  for (const a of (await listAuditArtifacts(src)).sort((x, y) => x.id - y.id)) {
+    if (done.has(a.id) || a.expired || Date.parse(a.created_at) < since || !branchMatches(a.workflow_run.head_branch ?? "", src.branch_filter)) continue;
+    if (a.size_in_bytes > MAX_AUDIT_ARTIFACT_BYTES) { record(a, "rejected", `The artifact is larger than ${MAX_AUDIT_ARTIFACT_BYTES / 1024 / 1024} MB`); result.auditsRejected++; continue; }
+    try {
+      const bag = await downloadArtifactBag(src, a);
+      importAuditPackage(bag, { projectId: src.project_id, source: "github", github: { repo: `${src.owner}/${src.repo}`, runId: a.workflow_run.id, artifactId: a.id } });
+      record(a, "imported", "");
+      result.audits++;
+    } catch (e) {
+      if (e instanceof PackageError) { record(a, "rejected", e.message); result.auditsRejected++; } // never importable as it is: not retried
+      else result.error ??= `Audit package ${a.name}: ${(e as Error).message}`; // possibly temporary: tried again next time
+    }
+  }
 }
 
 let running = false;

@@ -1,0 +1,9 @@
+{
+  "rule": "label",
+  "impact": "serious",
+  "target": [
+    "#card"
+  ],
+  "html": "<input id=\"card\" type=\"text\" name=\"card\">",
+  "failureSummary": "Form elements must have labels"
+}

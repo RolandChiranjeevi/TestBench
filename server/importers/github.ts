@@ -2,6 +2,8 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { bagFromZip, dedupeReports, mergeBags, readReports, type FileBag } from "./bag.ts";
 import { importReport, mergeReports, type ImportResult } from "./import.ts";
+import { isAuditArtifactName, PackageError } from "./auditpackage.ts";
+import { linkAuditsToRun } from "../audits.ts";
 import type { ParsedReport } from "./parse.ts";
 
 const MAX_ARTIFACT_BYTES = 200 * 1024 * 1024;
@@ -77,6 +79,33 @@ export async function listRuns(src: GithubSource): Promise<WorkflowRun[]> {
 }
 
 interface Artifact { id: number; name: string; size_in_bytes: number; expired: boolean }
+export interface AuditArtifact extends Artifact { created_at: string; workflow_run: { id: number; head_branch?: string } }
+
+/**
+ * Audit packages (artifacts named testbench-audit-*) among the repository's 100 most recent artifacts. GitHub lists artifacts newest first
+ * and this does not page further, so a package older than the newest 100 artifacts is not found. Expired ones cannot be downloaded.
+ */
+export async function listAuditArtifacts(src: GithubSource): Promise<AuditArtifact[]> {
+  const { artifacts } = await gh<{ artifacts: (Artifact & { created_at: string; workflow_run?: { id: number; head_branch?: string } })[] }>(`${repoPath(src)}/actions/artifacts?per_page=100`);
+  return artifacts.filter((a) => isAuditArtifactName(a.name) && a.workflow_run).map((a) => ({ ...a, workflow_run: a.workflow_run! }));
+}
+
+export const MAX_AUDIT_ARTIFACT_BYTES = MAX_ARTIFACT_BYTES;
+
+/** Downloads one artifact. A zip that cannot be read is the package's fault (PackageError); any other failure may be temporary. */
+export async function downloadArtifactBag(src: GithubSource, artifact: { id: number; name: string }): Promise<FileBag> {
+  const token = await getToken();
+  const res = await fetch(`https://api.github.com${repoPath(src)}/actions/artifacts/${artifact.id}/zip`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
+  });
+  if (!res.ok) throw new Error(`Downloading artifact "${artifact.name}" failed: ${res.status}`);
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  try {
+    return bagFromZip(bytes);
+  } catch {
+    throw new PackageError(`Artifact "${artifact.name}" is not a readable zip file`);
+  }
+}
 
 function matchesPattern(name: string, pattern: string) {
   if (!pattern.trim()) return true;
@@ -94,7 +123,7 @@ export async function artifactsByRun(src: GithubSource): Promise<Map<number, num
   const { artifacts } = await gh<{ artifacts: (Artifact & { workflow_run?: { id: number } })[] }>(`${repoPath(src)}/actions/artifacts?per_page=100`);
   const counts = new Map<number, number>();
   for (const a of artifacts) {
-    if (a.expired || !a.workflow_run || !matchesPattern(a.name, src.artifact_pattern)) continue;
+    if (a.expired || !a.workflow_run || isAuditArtifactName(a.name) || !matchesPattern(a.name, src.artifact_pattern)) continue;
     counts.set(a.workflow_run.id, (counts.get(a.workflow_run.id) ?? 0) + 1);
   }
   return counts;
@@ -103,7 +132,8 @@ export async function artifactsByRun(src: GithubSource): Promise<Map<number, num
 export async function importRun(src: GithubSource, runId: number): Promise<ImportResult & { artifacts: string[] }> {
   const run = await gh<WorkflowRun>(`${repoPath(src)}/actions/runs/${runId}`);
   const { artifacts } = await gh<{ artifacts: Artifact[] }>(`${repoPath(src)}/actions/runs/${runId}/artifacts?per_page=100`);
-  const usable = artifacts.filter((a) => !a.expired && a.size_in_bytes <= MAX_ARTIFACT_BYTES && matchesPattern(a.name, src.artifact_pattern));
+  // Audit packages are read separately (see autoimport.ts); their files must not be taken for test reports.
+  const usable = artifacts.filter((a) => !a.expired && !isAuditArtifactName(a.name) && a.size_in_bytes <= MAX_ARTIFACT_BYTES && matchesPattern(a.name, src.artifact_pattern));
   if (!usable.length) throw new Error("This run has no matching, unexpired artifacts");
 
   const token = await getToken();
@@ -145,5 +175,7 @@ export async function importRun(src: GithubSource, runId: number): Promise<Impor
     },
     mergeBags(bags),
   );
+  // Audit packages that arrived before this run was imported can be linked to it now.
+  linkAuditsToRun(src.project_id, `${src.owner}/${src.repo}#${run.id}`, result.runId);
   return { ...result, artifacts: usable.map((a) => a.name) };
 }
