@@ -6,6 +6,8 @@ accepts or rejects it. Nothing is sent to Jira or Linear by the import, and acce
 
 A small working example is in [`examples/audit-package/`](../examples/audit-package/). It is meant for a project with the key `SHOP` (the demo project).
 
+If you write the agent that produces packages, read [agent-audit-guide.md](agent-audit-guide.md) too: it covers stable ids and has a checker (`npm run audit:package`).
+
 ## Getting a package in
 
 | Way | How |

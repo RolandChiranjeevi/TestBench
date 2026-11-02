@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "bugs": [
+    {
+      "sourceId": "cart-discount-total-zero",
+      "title": "Order total shows 0 kr after applying a discount code",
+      "description": "After entering the code SAVE10 in the cart, the total drops to 0 kr instead of 10 % less. It only happens when the cart holds more than one product.",
+      "steps": [
+        "Add two different products to the cart",
+        "Open the cart and enter the code SAVE10",
+        "Look at the order total"
+      ],
+      "expected": "The total is reduced by 10 %",
+      "actual": "The total is 0 kr with two products; with one product it is correct",
+      "environment": "staging",
+      "url": "https://staging.example.test/cart",
+      "agentSeverity": "high",
+      "confidence": 0.8,
+      "foundAt": "2026-11-02T09:12:00Z",
+      "agentReview": {
+        "status": "confirmed",
+        "method": "reproduced three times, with one and with two products",
+        "notes": ""
+      },
+      "fingerprint": "cart-discount-total-zero",
+      "refs": {
+        "requirements": [
+          "REQ-2"
+        ],
+        "cases": [
+          "SHOP-6"
+        ],
+        "tests": []
+      },
+      "evidence": [
+        {
+          "path": "evidence/discount-total.png",
+          "label": "Cart after applying SAVE10"
+        }
+      ]
+    },
+    {
+      "sourceId": "checkout-card-field-no-label",
+      "title": "Card number field has no accessible name",
+      "description": "The card number input has neither a visible label nor an aria-label.",
+      "steps": [
+        "Open the checkout page",
+        "Run axe-core on the page"
+      ],
+      "expected": "The field is announced as \"Card number\"",
+      "actual": "axe-core reports the rule label as serious",
+      "environment": "staging",
+      "url": "https://staging.example.test/checkout",
+      "toolImpact": {
+        "tool": "axe-core",
+        "value": "serious",
+        "ruleId": "label"
+      },
+      "agentSeverity": "medium",
+      "confidence": 0.9,
+      "foundAt": "2026-11-02T09:20:00Z",
+      "agentReview": {
+        "status": "confirmed",
+        "method": "axe-core scan, then read the markup",
+        "notes": ""
+      },
+      "fingerprint": "checkout-card-field-no-label",
+      "refs": {
+        "requirements": [
+          "REQ-3"
+        ],
+        "cases": [],
+        "tests": []
+      },
+      "evidence": [
+        {
+          "path": "evidence/card-field-axe.json",
+          "label": "axe-core result for the field"
+        }
+      ]
+    },
+    {
+      "sourceId": "checkout-coupon-field-clears-on-error",
+      "title": "The discount code field is emptied after a wrong code",
+      "description": "Entering an unknown code empties the field, so the customer has to type the whole code again.",
+      "steps": [
+        "Open the cart",
+        "Enter the code WRONG and press Apply"
+      ],
+      "expected": "The field keeps the text and shows an error",
+      "actual": "The field is empty and the error disappears after two seconds",
+      "environment": "staging",
+      "url": "https://staging.example.test/cart",
+      "agentSeverity": "low",
+      "confidence": 0.7,
+      "foundAt": "2026-11-04T08:41:00Z",
+      "agentReview": {
+        "status": "confirmed",
+        "method": "reproduced twice",
+        "notes": ""
+      },
+      "fingerprint": "checkout-coupon-field-clears-on-error",
+      "refs": {
+        "requirements": [
+          "REQ-2"
+        ],
+        "cases": [],
+        "tests": []
+      },
+      "evidence": []
+    }
+  ]
+}

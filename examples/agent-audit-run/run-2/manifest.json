@@ -1,0 +1,37 @@
+{
+  "format": "testbench-audit-package",
+  "version": 1,
+  "audit": {
+    "id": "shop-checkout-2026-w45",
+    "title": "Checkout audit, week 45",
+    "startedAt": "2026-11-02T09:00:00Z",
+    "finishedAt": "2026-11-04T09:10:00Z",
+    "project": "SHOP",
+    "agent": {
+      "name": "checkout-audit-agent",
+      "version": "0.4.0",
+      "model": "claude"
+    },
+    "review": {
+      "status": "self-reviewed",
+      "method": "every finding reproduced a second time in a clean browser session",
+      "reviewer": "agent"
+    }
+  },
+  "files": [
+    {
+      "path": "evidence/card-field-axe.json",
+      "sha256": "696c5b5aa1ff84796fe2adc51e3eaaa31f0d6cb5b555c738a3a08a3588716c2b",
+      "size": 191
+    },
+    {
+      "path": "evidence/discount-total.png",
+      "sha256": "cd153c75a54d230d226cc5f85ec86f23af00b160a09fac7ba927c7a28038bb44",
+      "size": 166
+    }
+  ],
+  "parts": {
+    "bugs": "bugs.json",
+    "narrative": "report.md"
+  }
+}

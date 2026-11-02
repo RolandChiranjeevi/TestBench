@@ -237,7 +237,9 @@ sent to Jira or Linear by the import. Import a package by hand (**Bug reports, I
 or upload it from CI as an artifact named `testbench-audit-*` and let the GitHub import pick it up.
 
 The format, the rules for importing the same report again, the limits and a worked example (`examples/audit-package/`, for the demo project)
-are in [docs/audit-package.md](docs/audit-package.md). Publishing an accepted report to Jira or Linear is not part of this yet.
+are in [docs/audit-package.md](docs/audit-package.md). How a test agent should write a package, with stable ids so that a repeated audit gives
+new versions instead of duplicates, is in [docs/agent-audit-guide.md](docs/agent-audit-guide.md); `npm run audit:package -- <folder> --write` fills in and
+checks a package, and `examples/agent-audit-run/` holds two runs of the same audit. Publishing an accepted report to Jira or Linear is not part of this yet.
 
 ## Deleting cases and projects
 
