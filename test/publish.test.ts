@@ -24,7 +24,7 @@ function fakeLinear() {
   type Call = { url: string; method: string; auth: string | null; query: string; variables: any };
   const calls: Call[] = [];
   const issues = new Map<string, { id: string; identifier: string; url: string }>();
-  const behave = { create: "ok" as "ok" | "reject" | "network" | "lost" | "http500" | "badjson", teams: "ok" as "ok" | "401" | "network", put: "ok" as "ok" | "fail", delay: 0 };
+  const behave = { create: "ok" as "ok" | "reject" | "network" | "lost" | "http500" | "badjson", teams: "ok" as "ok" | "401" | "network", put: "ok" as "ok" | "fail", upload: "ok" as "ok" | "denied", delay: 0 };
   let seq = 11;
   const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status });
   const f = (async (input: unknown, init: RequestInit = {}) => {
@@ -59,6 +59,7 @@ function fakeLinear() {
       const found = issues.get(body.variables.id);
       return found ? json({ data: { issue: found } }) : json({ errors: [{ message: "Entity not found: Issue" }] });
     }
+    if (q.includes("fileUpload") && behave.upload === "denied") return json({ errors: [{ message: "Forbidden", extensions: { userPresentableMessage: "This API key lacks the write scope." } }] }, 400);
     if (q.includes("fileUpload")) return json({ data: { fileUpload: { success: true, uploadFile: { uploadUrl: `https://storage.example/up/${calls.length}`, assetUrl: "https://uploads.linear.app/x", headers: [{ key: "x-goog-meta", value: "1" }] } } } });
     if (q.includes("attachmentCreate")) return json({ data: { attachmentCreate: { success: true } } });
     return json({ errors: [{ message: "unexpected query" }] });
@@ -362,6 +363,19 @@ describe("publishing", () => {
     assert.deepEqual(Object.values(again.attachments), ["ok", "ok"]);
     await rejectsWith(retryAttachments(done.id, f.f, NOENV), 400, /already been attached/);
     assert.equal(f.created().length, 1);
+  });
+
+  it("says why a file was refused by Linear, for example a key without write permission, and a retry works once that is fixed", async () => {
+    const f = fakeLinear();
+    const { bug } = await setup(f, { files: { "evidence/a.png": PNG } });
+    f.behave.upload = "denied";
+    const done = await approve(bug, f);
+    assert.equal(done.state, "sent", "the issue stands");
+    assert.match(Object.values(done.attachments)[0], /^failed: Linear answered with an error \(HTTP 400\): "This API key lacks the write scope\."/);
+    assert.ok(!JSON.stringify(done).includes("SECRETKEY"));
+    f.behave.upload = "ok";
+    assert.deepEqual(Object.values((await retryAttachments(done.id, f.f, NOENV)).attachments), ["ok"]);
+    assert.equal(f.created().length, 1, "no second issue");
   });
 
   it("sends the key only to api.linear.app, never to the file storage, and never puts it in an error", async () => {

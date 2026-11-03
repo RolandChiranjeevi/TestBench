@@ -249,6 +249,10 @@ The key is checked against Linear when you save, kept encrypted on the server (t
 shown again (only its last four characters) and not part of backups, so after restoring a backup elsewhere the key has to be entered again. Without
 a key of its own the project uses the server's `LINEAR_API_KEY`.
 
+The key needs permission to read (teams and the issue itself), to create issues **and to write**: without write permission Linear creates the
+issue but refuses the files, and the report shows "N files did not get attached" with Linear's own reason. Give the key write permission and press
+**Retry files**; the issue is not touched. A key limited to the one team you publish to is enough.
+
 A report can be published only after **you** accepted it, and accepting never sends anything. **Publish to Linear…** opens a preview of exactly what
 will be created: the team, the title, the full description, how the severity maps to Linear's priority, which links to requirements and test cases
 are included and which evidence files are attached (each can be unticked). The issue is created only when you tick the approval and press the

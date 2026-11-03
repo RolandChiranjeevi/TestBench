@@ -21,6 +21,19 @@ export interface LinearIssue { identifier: string; url: string }
 
 export const linearEnabled = (env: NodeJS.ProcessEnv = process.env) => !!env.LINEAR_API_KEY?.trim();
 
+/** Linear's own explanation in an error answer, shortened. Without it a refusal for a missing permission looks like any other HTTP 400. */
+async function reason(res: Response): Promise<string> {
+  const text = await res.text().catch(() => "");
+  let msg: unknown = "";
+  try {
+    const e = (JSON.parse(text) as { errors?: { message?: string; extensions?: { userPresentableMessage?: string } }[] }).errors?.[0];
+    msg = e?.extensions?.userPresentableMessage || e?.message || "";
+  } catch {
+    /* not JSON: nothing worth showing */
+  }
+  return String(msg).replace(/[\u0000-\u001f]+/g, " ").trim().slice(0, 300);
+}
+
 async function gql<T>(query: string, variables: Record<string, unknown>, f: typeof fetch, env: NodeJS.ProcessEnv): Promise<T> {
   const key = env.LINEAR_API_KEY?.trim();
   if (!key) throw new LinearError(400, "Linear is not connected. Set LINEAR_API_KEY on the server (see the README).", "rejected");
@@ -31,8 +44,14 @@ async function gql<T>(query: string, variables: Record<string, unknown>, f: type
   } catch {
     throw new LinearError(502, "Could not reach Linear. Check the internet connection and try again.", "unknown");
   }
-  if (res.status === 401 || res.status === 403) throw new LinearError(401, "Linear rejected the API key. Check the key.", "rejected");
-  if (!res.ok) throw new LinearError(502, `Linear answered with an error (HTTP ${res.status}).`, res.status >= 500 ? "unknown" : "rejected");
+  if (res.status === 401 || res.status === 403) {
+    const why = await reason(res);
+    throw new LinearError(401, `Linear rejected the API key or its permissions (HTTP ${res.status}). Check the key${why ? `. Linear says: "${why}"` : ""}`, "rejected");
+  }
+  if (!res.ok) {
+    const why = await reason(res);
+    throw new LinearError(502, `Linear answered with an error (HTTP ${res.status})${why ? `: "${why}"` : "."}`, res.status >= 500 ? "unknown" : "rejected");
+  }
   const body = (await res.json().catch(() => null)) as { data?: T; errors?: { message?: string }[] } | null;
   if (!body) throw new LinearError(502, "Linear: the answer could not be read.", "unknown");
   if (body.errors?.length || !body.data) throw new LinearError(502, `Linear: ${body.errors?.[0]?.message ?? "unexpected response"}`, "rejected");
