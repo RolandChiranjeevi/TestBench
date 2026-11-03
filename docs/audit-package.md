@@ -1,8 +1,11 @@
 # Audit packages: bug reports from a test agent
 
-A test agent (a person's script, or an AI agent) can leave an **audit package** behind: its findings, the evidence for them and its own
-readable report. Testbench imports the package and shows every finding as a **proposal** on the **Bug reports** page. A person reads it and
-accepts or rejects it. Nothing is sent to Jira or Linear by the import, and accepting is only a decision made in Testbench.
+A test agent (a person's script, or an AI agent) can leave an **audit package** behind: its findings, the evidence for them, the **manual
+test cases** it proposes and its own readable report. Testbench imports the package and shows every finding as a **proposal** on the
+**Bug reports** page and every manual test as a **proposal** on the **Manual tests** page. A person reads it and accepts or rejects it.
+Nothing is sent to Jira or Linear by the import, nothing is run, and accepting is only a decision made in Testbench.
+
+What the agent should test against is the project's **requirements**, which it reads from Testbench: see [requirements.md](requirements.md).
 
 A small working example is in [`examples/audit-package/`](../examples/audit-package/). It is meant for a project with the key `SHOP` (the demo project).
 
@@ -30,12 +33,14 @@ The artifact can be uploaded by any job, in the same workflow run as the tests o
 ```
 manifest.json      required: the audit, and every file with its sha256 and size
 bugs.json          required: the findings
+manual-tests.json  optional: manual test cases for a person to review and run
 report.md          optional: the agent's readable audit. Stored and shown as plain text, never interpreted.
 evidence/...       files that findings point to (screenshots, logs, ...)
 ```
 
-A zip may hold the files at its root or inside one folder. `results/` (test results) and `cases.json` (test cases) are not imported from a
-package in this version; if they are present, the preview says so. Test results keep going through the normal import.
+A zip may hold the files at its root or inside one folder. `results/` (test results) and `cases.json` (the project's own test cases) are not
+imported from a package; if they are present, the preview says so. Test results keep going through the normal import. A package without
+`manual-tests.json` imports exactly as before.
 
 ### manifest.json
 
@@ -54,7 +59,7 @@ package in this version; if they are present, the preview says so. Test results 
     "github": { "repo": "owner/repo", "runId": 123456 }
   },
   "files": [ { "path": "evidence/a.png", "sha256": "<64 hex characters>", "size": 1234 } ],
-  "parts": { "bugs": "bugs.json", "narrative": "report.md" }
+  "parts": { "bugs": "bugs.json", "manualTests": "manual-tests.json", "narrative": "report.md" }
 }
 ```
 
@@ -86,8 +91,47 @@ package in this version; if they are present, the preview says so. Test results 
 Only `sourceId` and `title` are required. `agentSeverity` is one of `low`, `medium`, `high`, `critical`. Unknown fields are ignored, **including
 any status**: the agent cannot accept its own report.
 
+### manual-tests.json
+
+Manual tests are checks an automatic run cannot decide: whether a screen reader announces the checkout sensibly, whether the focus order
+follows the visual order, whether an error message helps. The agent **proposes** the test. A person reviews it, runs it and judges the
+result. The agent never gives a result or a status, and Testbench does not run manual tests.
+
+```json
+{ "version": 1, "tests": [ {
+  "sourceId": "checkout-screen-reader-focus-order",
+  "title": "The checkout is understandable with a screen reader and the focus order follows the visual order",
+  "description": "Needs a person with a screen reader.",
+  "preconditions": "A cart with one item. VoiceOver or NVDA running.",
+  "steps": ["Open the checkout and move through it with Tab only", "Listen to what is announced", "Compare the focus order with the screen"],
+  "expected": "Every control is announced with a matching name and role, and focus moves top to bottom, left to right.",
+  "priority": "high",
+  "category": "accessibility",
+  "wcag": ["1.3.2", "2.4.3", "4.1.2"],
+  "viewports": [ { "device": "iPhone 13", "width": 390, "height": 844 }, { "breakpoint": "md", "width": 768 } ],
+  "refs": { "requirements": ["CHECKOUT-A11Y-1"], "cases": ["SHOP-6"], "tests": [] }
+} ] }
+```
+
+| Field | Rule |
+|---|---|
+| `sourceId` | Required. The test's **stable id** inside the audit: letters, digits and `. _ : - /`, at most 120 characters, unique in the file. Derive it from what the test checks, never from its position. |
+| `title` | Required, at most 200 characters. |
+| `steps` | Required, 1 to 50 steps, one non-empty string each. |
+| `expected` | Required: what should happen. |
+| `priority` | Required: `low`, `medium`, `high` or `critical`. This is the agent's priority; a person sets their own separately. |
+| `category` | Required: `functional`, `accessibility`, `responsive`, `usability`, `security` or `other`. |
+| `description`, `preconditions` | Optional text. |
+| `wcag` | Optional: WCAG success criteria as numbers such as `2.4.3` or `1.4.10` (at most 20). Name them for accessibility tests. |
+| `viewports` | Required (at least one) for a `responsive` test, optional otherwise. Each names a `device`, a `width` (and `height`) in pixels, or a `breakpoint`; at most 10. |
+| `refs` | Optional: `requirements` (`REQ-3`, or the stable id a requirement was imported with), `cases` (`SHOP-6`) and `tests`. Looked up only in the project being imported into, like the references of bug reports. |
+
+At most 200 tests and 10 MB. Unknown fields are ignored, **including any status or result**. A test that breaks a rule refuses the **whole
+package** and nothing is stored, bug reports included, with a message that names the test and the field.
+
 ## What the import does
 
+- **Manual tests are kept apart.** They are stored separately from the project's own test cases, from automated results and from bug reports, and show on their own page. They start as `proposed`; a person can accept, reject or reopen one, and can edit the title, description, preconditions, steps, expected result and priority. The agent's version and the person's version are separate: the agent's priority and the person's priority are two fields, what the agent wrote stays in the test's revisions, and a person's review is never taken as the agent's judgement. Nothing runs a manual test and nothing creates a result.
 - **Everything starts as `proposed`.** The agent's own review (`agentReview`, and `audit.review`) is kept as information about where the report came from, and nothing more.
 - **Three separate judgements** are kept apart: the tool's impact (`toolImpact`), the agent's severity, and *your* severity, which you set when you review.
 - **References** are looked up only in the project you import into: `REQ-n` a requirement, `SHOP-n` a test case (the project's own key), `tests` an automated test by its full name or title. A reference that does not resolve is **shown as unresolved** (not found, another project's key, or ambiguous), and *Check again* resolves it later, for instance after the case has been created. A reference whose target was deleted later is shown as such.
@@ -96,7 +140,7 @@ any status**: the agent cannot accept its own report.
 
 ## Importing the same thing again
 
-A report is identified by `(project, audit.id, sourceId)`.
+A report or a manual test is identified by `(project, audit.id, sourceId)`. Everything below holds for both; for manual tests, read "report" as "test".
 
 | Case | What happens |
 |---|---|
@@ -104,6 +148,7 @@ A report is identified by `(project, audit.id, sourceId)`.
 | Changed content, report still untouched (proposed, never edited, not linked to an external issue) | The working copy is updated; the older version stays as a revision. |
 | Changed content, but you have **reviewed, edited or linked** it | **Your version is not touched.** The newer version waits on the report ("The agent sent a newer version") with a comparison, and you choose *Use the agent's version* or *Keep mine*. |
 | A report that is **not in the package** this time (it was in an earlier run of the same audit) | **Nothing happens to it.** It is not removed, closed, archived or marked as fixed. Testbench only shows that it was not seen in the latest run (**Not present in latest audit run**, with the run and date it was last seen). If it comes back, it is the same report, and the two rows above apply to a new version. |
+| A **manual test** that is not in the package this time | Same as a report: nothing happens to it, and Testbench shows **Not present in latest audit run**. A package that has **no `manual-tests.json` at all** says nothing about manual tests, so nothing is marked missing; an **empty** list (`"tests": []`) does say that none were listed. |
 | The same bug in a **new** audit | A new report. If it has the same `fingerprint` as another, the two are pointed out to each other, and you can mark one as a duplicate of the other. Nothing is merged automatically. |
 
 You can also record that an **existing external issue** (Jira, Linear or other) already covers a report. That stores a link; it calls no API.
@@ -113,6 +158,8 @@ You can also record that an **existing external issue** (Jira, Linear or other) 
 - **A report**: confirmation is only needed when it is accepted or linked. Its evidence files go with it. The external issue is never touched.
 - **A run**: reports linked to it stay (they just lose the link).
 - **An audit**: untouched proposals and the stored audit report are removed. Reports you have reviewed, edited or linked **stay**, as standalone reports. They keep a note of the audit they came from (its id, title, agent, times, source) and all their evidence. If the same package is imported again, those reports are found again and re-attached to the audit.
+- **A manual test** can be deleted by a person; an accepted one asks for confirmation.
+- **An audit** also removes its untouched manual-test proposals. Manual tests a person has accepted, rejected or edited stay, as standalone tests with a note of where they came from.
 - **A project** removes everything, including the evidence files, after the usual safety backup.
 
 ## Limits
@@ -123,7 +170,8 @@ You can also record that an **existing external issue** (Jira, Linear or other) 
 | Unpacked size of a package | 500 MB (checked from the zip's table of contents before anything is unpacked) |
 | One file | 50 MB |
 | Findings in one package | 200 |
-| `manifest.json` / `bugs.json` / report | 1 MB / 20 MB / 5 MB |
+| Manual tests in one package | 200 |
+| `manifest.json` / `bugs.json` / `manual-tests.json` / report | 1 MB / 20 MB / 10 MB / 5 MB |
 | GitHub artifact | 200 MB |
 
 A package that breaks a rule about its structure, size or project is refused as a whole and nothing is stored. Files written before a failure are removed again.
@@ -143,4 +191,4 @@ A package that breaks a rule about its structure, size or project is refused as 
 
 ## Not in this version
 
-Publishing to Jira, status sync with the external issue and publishing many reports at once (an accepted report can be published to Linear one at a time, after a preview; see the README), importing test cases or test results from a package, suggesting duplicates automatically, and counting reports in dashboards and sprint reports. Reports that are not accepted never appear in those numbers.
+Publishing to Jira, status sync with the external issue and publishing many reports at once (an accepted report can be published to Linear one at a time, after a preview; see the README), importing the project's own test cases or test results from a package, running manual tests or recording their results in Testbench (an accepted manual test is where a person takes over), suggesting duplicates automatically, and counting reports in dashboards and sprint reports. Reports that are not accepted never appear in those numbers.

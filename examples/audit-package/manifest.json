@@ -20,18 +20,19 @@
   },
   "files": [
     {
-      "path": "evidence/discount-total.png",
-      "sha256": "cd153c75a54d230d226cc5f85ec86f23af00b160a09fac7ba927c7a28038bb44",
-      "size": 166
-    },
-    {
       "path": "evidence/card-field.txt",
       "sha256": "e69d2fb15e655747d7cd540c5b140a7b01a3f3437d766dc8cec41c59cfa076f7",
       "size": 73
+    },
+    {
+      "path": "evidence/discount-total.png",
+      "sha256": "cd153c75a54d230d226cc5f85ec86f23af00b160a09fac7ba927c7a28038bb44",
+      "size": 166
     }
   ],
   "parts": {
     "bugs": "bugs.json",
+    "manualTests": "manual-tests.json",
     "narrative": "report.md"
   }
 }

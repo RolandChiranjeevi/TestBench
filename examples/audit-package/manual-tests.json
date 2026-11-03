@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "tests": [
+    {
+      "sourceId": "checkout-card-declined-message",
+      "title": "A declined card explains what happened and keeps the cart",
+      "description": "An automatic run can check that an error appears, not that the wording helps a customer.",
+      "preconditions": "A cart with one item. The payment provider's test card that is always declined.",
+      "steps": [
+        "Open the checkout and enter the declined test card",
+        "Submit the payment",
+        "Read the message and look at the cart"
+      ],
+      "expected": "The message says the card was declined and what to do next, in plain language. The cart still holds the item.",
+      "priority": "high",
+      "category": "functional",
+      "refs": { "requirements": ["CHECKOUT-PAY-1"] }
+    },
+    {
+      "sourceId": "checkout-screen-reader-focus-order",
+      "title": "The checkout is understandable with a screen reader and the focus order follows the visual order",
+      "description": "Needs a person with a screen reader: a script cannot judge whether the announcements make sense.",
+      "preconditions": "A cart with one item. VoiceOver (macOS) or NVDA (Windows) running.",
+      "steps": [
+        "Open the checkout and move through it with Tab only",
+        "Listen to what the screen reader announces for each control",
+        "Compare the order of focus with the order on screen"
+      ],
+      "expected": "Every control is announced with a name and role that match its label, and focus moves top to bottom, left to right.",
+      "priority": "high",
+      "category": "accessibility",
+      "wcag": ["1.3.2", "2.4.3", "4.1.2"],
+      "refs": { "requirements": ["CHECKOUT-A11Y-1"] }
+    },
+    {
+      "sourceId": "checkout-layout-phone-and-tablet",
+      "title": "The checkout fits a phone and a tablet without sideways scrolling",
+      "preconditions": "A cart with one item.",
+      "steps": [
+        "Open the checkout at 390×844 (iPhone 13) in portrait",
+        "Scroll through the whole page and use every control by touch",
+        "Repeat at the tablet breakpoint, 768 px wide"
+      ],
+      "expected": "No content is cut off, there is no horizontal scrolling, and every control is large enough to tap.",
+      "priority": "medium",
+      "category": "responsive",
+      "viewports": [
+        { "device": "iPhone 13", "width": 390, "height": 844 },
+        { "breakpoint": "md", "width": 768 }
+      ],
+      "refs": { "requirements": ["CHECKOUT-RESP-1"] }
+    }
+  ]
+}

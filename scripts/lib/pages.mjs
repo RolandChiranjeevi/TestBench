@@ -59,6 +59,7 @@ export async function discoverPages(base) {
     ["Import results", `/p/${pid}/import`],
     ["Bug reports", `/p/${pid}/bugs`],
     ...(bugs.items?.[0] ? [["Bug report open", `/p/${pid}/bugs?bug=${bugs.items[0].id}`]] : []),
+    ["Manual tests", `/p/${pid}/manual-tests`],
     ["Sprint reports", `/p/${pid}/reports${milestones[0] ? `/${milestones[0].id}` : ""}`],
     ["Backup & restore", `/p/${pid}/backup`],
   ];

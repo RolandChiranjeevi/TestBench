@@ -290,6 +290,7 @@ describe("agent run example: a changed report, in a repeated audit", () => {
       same: ["cart-discount-total-zero", "checkout-card-field-no-label"],
       added: ["checkout-coupon-field-clears-on-error"],
       missing: ["confirmation-email-subject-typo"],
+      manual: { same: [], added: [], missing: [] },
     });
     assert.match(r.warnings.join(" "), /Not in this package any more: confirmation-email-subject-typo/);
 

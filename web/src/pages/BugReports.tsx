@@ -51,6 +51,10 @@ interface Summary {
   dryRun: boolean; audit: { agentAuditId: string; title: string; agent: string; isNew: boolean; github: { repo: string; runId: number } | null; runState: string };
   counts: { new: number; unchanged: number; updated: number; pending: number }; evidence: { ok: number; problems: number }; unresolvedRefs: number; warnings: string[];
   items: { sourceId: string; title: string; action: string; severity: string | null; unresolvedRefs: number; evidenceProblems: number }[];
+  manualTests: {
+    listed: boolean; counts: { new: number; unchanged: number; updated: number; pending: number }; unresolvedRefs: number;
+    items: { sourceId: string; title: string; action: string; category: string; priority: string; unresolvedRefs: number }[];
+  };
 }
 
 type Tab = Status | "all" | "audits";
@@ -61,7 +65,7 @@ const STATUS_FG: Record<Status, string> = { proposed: "var(--blocked-fg)", accep
 const RUN_STATE: Record<string, string> = { linked: "Linked to the run", pending: "Waiting for the run to be imported", none: "No GitHub run named", deleted: "The run was deleted" };
 const DANGER = { color: "var(--failed-fg)" };
 
-function StatusChip({ status }: { status: Status }) {
+export function StatusChip({ status }: { status: Status }) {
   return (
     <span className="chip status" style={{ color: STATUS_FG[status] }}>
       <span className="dot" style={{ background: STATUS_COLOR[status] }} />
@@ -70,7 +74,7 @@ function StatusChip({ status }: { status: Status }) {
   );
 }
 
-function Severity({ value }: { value: Priority | null }) {
+export function Severity({ value }: { value: Priority | null }) {
   if (!value) return <span className="faint">—</span>;
   return <span className="row" style={{ gap: 4 }}><PriorityIcon priority={value} size={13} /> {PRIORITY_LABEL[value]}</span>;
 }
@@ -164,10 +168,10 @@ export function BugReportsPage() {
   );
 }
 
-function useRefresh(pid: string) {
+export function useRefresh(pid: string) {
   const qc = useQueryClient();
   return () => {
-    for (const k of [["bug-reports"], ["bug-report"], ["audits", pid], ["audit-rejections", pid]]) qc.invalidateQueries({ queryKey: k });
+    for (const k of [["bug-reports"], ["bug-report"], ["manual-tests"], ["manual-test"], ["requirements", pid], ["requirement"], ["requirement-coverage", pid], ["audits", pid], ["audit-rejections", pid]]) qc.invalidateQueries({ queryKey: k });
   };
 }
 
@@ -589,7 +593,7 @@ function AuditsPanel({ pid }: { pid: string }) {
   const [report, setReport] = useState<Audit | null>(null);
   const [del, setDel] = useState<Audit | null>(null);
   const { data: text } = useQuery({ queryKey: ["audit-report", report?.id], enabled: !!report, queryFn: async () => { const r = await fetch(`/api/audits/${report!.id}/report`); return r.ok ? r.text() : "The report could not be loaded."; } });
-  const { data: preview } = useQuery({ queryKey: ["audit-deletion", del?.id], enabled: !!del, queryFn: () => api.get<{ title: string; deleted: number; kept: number }>(`/api/audits/${del!.id}/deletion-preview`) });
+  const { data: preview } = useQuery({ queryKey: ["audit-deletion", del?.id], enabled: !!del, queryFn: () => api.get<{ title: string; deleted: number; kept: number; manualDeleted: number; manualKept: number }>(`/api/audits/${del!.id}/deletion-preview`) });
   const remove = useMutation({
     mutationFn: () => api.del<{ deleted: number; kept: number }>(`/api/audits/${del!.id}`),
     onSuccess: (r) => { refresh(); setDel(null); toast("success", `Audit deleted. ${r.deleted} untouched proposal${r.deleted === 1 ? "" : "s"} removed, ${r.kept} report${r.kept === 1 ? "" : "s"} kept.`); },
@@ -633,7 +637,8 @@ function AuditsPanel({ pid }: { pid: string }) {
           {preview ? (
             <p style={{ margin: 0 }}>
               {preview.deleted} untouched proposal{preview.deleted === 1 ? "" : "s"} and the stored audit report will be removed.{" "}
-              {preview.kept > 0 ? `${preview.kept} report${preview.kept === 1 ? " is" : "s are"} kept (reviewed, edited or linked), with their evidence and a note of where they came from.` : "No reports are kept."}
+              {preview.kept > 0 ? `${preview.kept} report${preview.kept === 1 ? " is" : "s are"} kept (reviewed, edited or linked), with their evidence and a note of where they came from.` : "No reports are kept."}{" "}
+              {preview.manualDeleted + preview.manualKept > 0 && `Manual tests: ${preview.manualDeleted} untouched proposal${preview.manualDeleted === 1 ? "" : "s"} removed, ${preview.manualKept} kept (reviewed or edited).`}
             </p>
           ) : <p style={{ margin: 0 }}>Checking…</p>}
         </ConfirmModal>
@@ -647,7 +652,7 @@ function AuditsPanel({ pid }: { pid: string }) {
 interface Picked { file: File; path: string; fromFolder: boolean }
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 
-function ImportModal({ pid, onClose }: { pid: string; onClose: () => void }) {
+export function ImportModal({ pid, onClose }: { pid: string; onClose: () => void }) {
   const toast = useToast();
   const refresh = useRefresh(pid);
   const zipInput = useRef<HTMLInputElement>(null);
@@ -664,7 +669,12 @@ function ImportModal({ pid, onClose }: { pid: string; onClose: () => void }) {
   const preview = useMutation({ mutationFn: (list: Picked[]) => api.post<Summary>(`/api/projects/${pid}/audit-import?dryRun=1`, form(list)) });
   const doImport = useMutation({
     mutationFn: () => api.post<Summary>(`/api/projects/${pid}/audit-import`, form(picked)),
-    onSuccess: (s) => { refresh(); toast("success", `Imported: ${s.counts.new} new, ${s.counts.updated} updated, ${s.counts.pending} waiting for your decision`); onClose(); },
+    onSuccess: (s) => {
+      refresh();
+      const m = s.manualTests;
+      toast("success", `Imported: ${s.counts.new} new, ${s.counts.updated} updated, ${s.counts.pending} waiting for your decision${m.listed ? `. Manual tests: ${m.counts.new} new, ${m.counts.updated} updated, ${m.counts.pending} waiting` : ""}`);
+      onClose();
+    },
     onError: (e: Error) => toast("error", e.message),
   });
   const choose = (list: FileList | null, fromFolder: boolean) => {
@@ -689,7 +699,7 @@ function ImportModal({ pid, onClose }: { pid: string; onClose: () => void }) {
       }
     >
       <div className="col" style={{ gap: 12 }}>
-        <div className="faint">A package is a zip or a folder with <code className="inline">manifest.json</code>, <code className="inline">bugs.json</code> and its evidence. Every report arrives as a proposal; nothing is accepted or sent anywhere.</div>
+        <div className="faint">A package is a zip or a folder with <code className="inline">manifest.json</code>, <code className="inline">bugs.json</code>, optionally <code className="inline">manual-tests.json</code>, and its evidence. Every report and every manual test arrives as a proposal; nothing is accepted, run or sent anywhere.</div>
         <div className="row">
           <input ref={zipInput} type="file" accept=".zip" hidden onChange={(e) => { choose(e.target.files, false); e.target.value = ""; }} />
           <input ref={folderInput} type="file" multiple hidden {...({ webkitdirectory: "", directory: "" } as Record<string, string>)} onChange={(e) => { choose(e.target.files, true); e.target.value = ""; }} />
@@ -713,6 +723,25 @@ function ImportModal({ pid, onClose }: { pid: string; onClose: () => void }) {
                 Evidence: {s.evidence.ok} file{s.evidence.ok === 1 ? "" : "s"} will be stored{s.evidence.problems ? `, ${s.evidence.problems} cannot be imported` : ""} · {s.unresolvedRefs} reference{s.unresolvedRefs === 1 ? "" : "s"} not resolved
               </div>
             </div>
+            {s.manualTests.listed && (
+              <div className="card" style={{ padding: 12 }}>
+                <strong>Manual tests</strong>
+                <div style={{ marginTop: 4 }}>
+                  {s.manualTests.counts.new} new · {s.manualTests.counts.unchanged} unchanged · {s.manualTests.counts.updated} updated · {s.manualTests.counts.pending} with a newer version waiting for review
+                </div>
+                <div className="faint" style={{ fontSize: "var(--fs-md)" }}>{s.manualTests.unresolvedRefs} reference{s.manualTests.unresolvedRefs === 1 ? "" : "s"} not resolved. A person has to run these; nothing is run by the import.</div>
+                <div style={{ maxHeight: 140, overflow: "auto", marginTop: 6 }}>
+                  {s.manualTests.items.map((i) => (
+                    <div key={i.sourceId} className="row" style={{ gap: 8, padding: "3px 0" }}>
+                      <span className="chip">{i.action === "update" ? "updated" : i.action}</span>
+                      <span className="chip">{i.category}</span>
+                      <span className="truncate grow" title={i.title}>{i.title}</span>
+                      {i.unresolvedRefs > 0 && <span style={{ color: "var(--blocked-fg)" }}>{i.unresolvedRefs} unresolved</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {s.warnings.map((w, i) => <div key={i} className="row" style={{ gap: 6, color: "var(--blocked-fg)", fontSize: "var(--fs-md)" }}><AlertTriangle size={13} /> {w}</div>)}
             <div style={{ maxHeight: 220, overflow: "auto", border: "1px solid var(--border)", borderRadius: "var(--radius)" }}>
               {s.items.map((i) => (

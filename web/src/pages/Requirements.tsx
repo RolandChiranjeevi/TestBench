@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpenCheck, Check, ExternalLink, FileText, History, ImagePlus, Link2, Loader2, Paperclip, Play, Plus, Search, Trash2, X } from "lucide-react";
-import { api, timeAgo, type CoverageState, type Priority, type Project, type Requirement, type RequirementAttachment, type RequirementDetail, type RequirementRevision, type RequirementStatus } from "../api";
+import { AlertTriangle, Archive, ArchiveRestore, BookOpenCheck, Bug, Check, ClipboardCheck, Download, ExternalLink, FileText, History, ImagePlus, Link2, Loader2, Paperclip, Play, Plus, Search, Trash2, Upload, X } from "lucide-react";
+import { api, formatViewport, KIND_LABEL, parseViewports, timeAgo, type CoverageState, type Priority, type Project, type Requirement, type RequirementKind, type RequirementAttachment, type RequirementDetail, type RequirementRevision, type RequirementStatus } from "../api";
 import { Empty, Kbd, Modal, PriorityIcon, PRIORITY_LABEL, StatusIcon, useHotkeys, useToast, ListSkeleton } from "../components/ui";
 import { CasePicker } from "../components/CasePicker";
 import { jiraLabel, jiraUrl } from "./BugReport";
@@ -33,6 +33,13 @@ export function CoverageChip({ coverage }: { coverage: Requirement["coverage"] }
 
 const STATUS_LABEL: Record<RequirementStatus, string> = { draft: "Draft", approved: "Approved", deprecated: "Deprecated" };
 type Filter = "all" | "review" | CoverageState;
+/** How a requirement stands with what the agent and people have produced. Only decisions by a person count as coverage. */
+type Scope = "" | "no_test" | "open_bugs" | "not_in_run";
+interface CoverageInfo {
+  summary: { active: number; withoutTest: number; withOpenBugs: number; notInLatestRun: number; auditKnown: boolean };
+  unresolved: { kind: "bug" | "manual_test"; id: number; title: string; raw: string; reason: string }[];
+}
+const WCAG_PATTERN = /^[1-4]\.\d{1,2}\.\d{1,2}$/;
 
 export function RequirementsPage() {
   const { pid } = useParams();
@@ -44,7 +51,11 @@ export function RequirementsPage() {
   const { data: reqs = [], isLoading } = useQuery({ queryKey: ["requirements", pid], queryFn: () => api.get<Requirement[]>(`/api/projects/${pid}/requirements`) });
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+  const [kind, setKind] = useState<"" | RequirementKind>("");
+  const [scope, setScope] = useState<Scope>("");
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const { data: cov } = useQuery({ queryKey: ["requirement-coverage", pid], queryFn: () => api.get<CoverageInfo>(`/api/projects/${pid}/requirements/coverage`) });
   const searchRef = useRef<HTMLInputElement>(null);
 
   const select = (id: number | null) =>
@@ -70,10 +81,12 @@ export function RequirementsPage() {
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     return reqs.filter((r) => {
+      if (kind && r.kind !== kind) return false;
+      if (scope && (r.status !== "approved" || (scope === "no_test" ? !r.links.withoutTest : scope === "open_bugs" ? r.links.bugs.open === 0 : r.links.audit !== "not_referenced"))) return false;
       if (filter === "review" ? r.status === "deprecated" || r.reviewCount === 0 : filter !== "all" && (r.status === "deprecated" || r.coverage.state !== filter)) return false;
       return !q || `REQ-${r.number} ${r.title} ${r.source} ${r.description}`.toLowerCase().includes(q);
     });
-  }, [reqs, search, filter]);
+  }, [reqs, search, filter, kind, scope]);
   const compact = selectedId != null;
   const tabs: Filter[] = ["all", "uncovered", "failing", "passing", "review"];
 
@@ -87,8 +100,33 @@ export function RequirementsPage() {
             <Search size={13} />
             <input ref={searchRef} className="input" placeholder="Search requirements" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search requirements" />
           </div>
+          <a className="btn icon" href={`/api/projects/${pid}/agent/requirements?download=1`} title="Download the active requirements as a file for a test agent (read-only)" aria-label="Download requirements for the agent"><Download size={14} /></a>
+          <button className="btn" onClick={() => setImporting(true)}><Upload size={14} /> Import</button>
           <button className="btn primary" onClick={() => setCreating(true)}><Plus size={14} /> New requirement <Kbd>C</Kbd></button>
         </div>
+        {cov && cov.summary.active > 0 && (
+          <div className="toolbar" style={{ gap: 8 }} aria-label="Coverage of active requirements">
+            <span className="faint" style={{ whiteSpace: "nowrap" }}>{cov.summary.active} active</span>
+            <button className={`chip${scope === "no_test" ? " accent" : ""}`} aria-pressed={scope === "no_test"} onClick={() => setScope(scope === "no_test" ? "" : "no_test")} title="No test case and no accepted manual test is linked">{cov.summary.withoutTest} without a test</button>
+            <button className={`chip${scope === "open_bugs" ? " accent" : ""}`} aria-pressed={scope === "open_bugs"} onClick={() => setScope(scope === "open_bugs" ? "" : "open_bugs")} title="An accepted bug report names the requirement"><Bug size={11} /> {cov.summary.withOpenBugs} with open bugs</button>
+            {cov.summary.auditKnown && <button className={`chip${scope === "not_in_run" ? " accent" : ""}`} aria-pressed={scope === "not_in_run"} onClick={() => setScope(scope === "not_in_run" ? "" : "not_in_run")} title="No bug report or manual test of the latest run of an audit names the requirement"><ClipboardCheck size={11} /> {cov.summary.notInLatestRun} not in latest audit run</button>}
+            <span className="spacer" />
+            <select className="select" style={{ width: "auto" }} aria-label="Kind" value={kind} onChange={(e) => setKind(e.target.value as "" | RequirementKind)}>
+              <option value="">Kind: any</option>
+              {(Object.keys(KIND_LABEL) as RequirementKind[]).map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
+            </select>
+          </div>
+        )}
+        {!!cov?.unresolved.length && (
+          <details className="card" style={{ margin: "8px 20px", padding: 10 }}>
+            <summary style={{ cursor: "pointer" }}><AlertTriangle size={13} /> {cov.unresolved.length} reference{cov.unresolved.length === 1 ? "" : "s"} to requirements that do not exist in this project</summary>
+            <div style={{ fontSize: "var(--fs-md)", marginTop: 6, display: "grid", gap: 2 }}>
+              {cov.unresolved.map((u, i) => (
+                <div key={i}><span className="mono">{u.raw}</span> in {u.kind === "bug" ? "bug report" : "manual test"} “{u.title}” <span className="faint">— {u.reason}</span></div>
+              ))}
+            </div>
+          </details>
+        )}
         <div className="toolbar">
           <div className="tabs" role="tablist">
             {tabs.map((f) => (
@@ -117,13 +155,19 @@ export function RequirementsPage() {
                 <span className="meta">
                   {!compact && r.source && <span className="faint mono" style={{ fontSize: "var(--fs-sm)" }}>{jiraLabel(r.source)}</span>}
                   {r.status === "draft" && <span className="chip">Draft</span>}
+                  {!compact && r.kind !== "functional" && <span className="chip" title={r.wcag.length ? `WCAG ${r.wcag.join(", ")}` : undefined}>{KIND_LABEL[r.kind]}{r.wcag.length ? ` · WCAG ${r.wcag.length > 2 ? `${r.wcag.slice(0, 2).join(", ")}…` : r.wcag.join(", ")}` : ""}</span>}
+                  {r.status === "approved" && r.links.bugs.open > 0 && <span className="chip" style={{ color: "var(--failed-fg)" }} title="Accepted bug reports name this requirement"><Bug size={11} /> {r.links.bugs.open} open</span>}
+                  {!compact && r.status === "approved" && r.links.manualTests.accepted + r.links.manualTests.proposed > 0 && <span className="chip" title={`${r.links.manualTests.accepted} accepted and ${r.links.manualTests.proposed} proposed manual test(s)`}><ClipboardCheck size={11} /> {r.links.manualTests.accepted}{r.links.manualTests.proposed ? ` +${r.links.manualTests.proposed}` : ""}</span>}
+                  {!compact && r.status === "approved" && r.links.audit === "not_referenced" && <span className="chip" title="Not named by the latest run of any audit">Not in latest run</span>}
                   {r.attachmentCount > 0 && <span className="chip" title={`${r.attachmentCount} attachment(s)`}><Paperclip size={11} /> {r.attachmentCount}</span>}
                   {r.status !== "deprecated" && r.reviewCount > 0 && (
                     <span className="chip" style={{ borderColor: "var(--blocked)" }} title={`${r.reviewCount} linked case(s) to check after the wording changed`}>
                       <span className="dot" style={{ background: "var(--blocked)" }} />{r.reviewCount} to review
                     </span>
                   )}
-                  {r.status !== "deprecated" && <CoverageChip coverage={r.coverage} />}
+                  {r.status !== "deprecated" && (r.coverage.state === "uncovered" && r.links.manualTests.accepted > 0
+                    ? <span className="chip status" title="No test case is linked, but an accepted manual test is"><span className="dot" style={{ background: "var(--blocked)" }} />Manual tests only</span>
+                    : <CoverageChip coverage={r.coverage} />)}
                 </span>
               </div>
             ))
@@ -138,6 +182,7 @@ export function RequirementsPage() {
         </div>
         </>
       )}
+      {importing && <ImportRequirementsModal pid={pid!} onClose={() => setImporting(false)} />}
       {creating && <NewRequirementModal projectId={projectId} onClose={() => setCreating(false)} onCreated={select} />}
     </div>
   );
@@ -149,6 +194,7 @@ function useInvalidate() {
   return () => {
     qc.invalidateQueries({ queryKey: ["requirements", pid] });
     qc.invalidateQueries({ queryKey: ["requirement"] });
+    qc.invalidateQueries({ queryKey: ["requirement-coverage", pid] });
     qc.invalidateQueries({ queryKey: ["cases", pid] });
     qc.invalidateQueries({ queryKey: ["case"] });
     qc.invalidateQueries({ queryKey: ["dashboard", pid] });
@@ -185,6 +231,7 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
   const [linking, setLinking] = useState(false);
   const [running, setRunning] = useState(false);
   const [edits, setEdits] = useState<Partial<Pick<RequirementDetail, "title" | "description" | "source">>>({});
+  const [more, setMore] = useState<{ externalId?: string; wcag?: string; viewports?: string }>({});
 
   const save = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.patch<RequirementDetail>(`/api/requirements/${id}`, body),
@@ -212,6 +259,22 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
     setEdits((e) => ({ ...e, [k]: undefined }));
   };
   const link = jiraUrl(data.source);
+  const wcagText = more.wcag ?? data.wcag.join(", ");
+  const viewportText = more.viewports ?? data.viewports.map(formatViewport).join("\n");
+  const idText = more.externalId ?? data.external_id ?? "";
+  const commitMore = () => {
+    const body: Record<string, unknown> = {};
+    if (more.externalId !== undefined && more.externalId.trim() !== (data.external_id ?? "")) body.externalId = more.externalId.trim() || null;
+    if (more.wcag !== undefined) {
+      const list = more.wcag.split(/[,\s]+/).filter(Boolean);
+      if (list.some((c) => !WCAG_PATTERN.test(c))) { toast("error", "A WCAG criterion looks like 2.4.3"); return; }
+      if (list.join(",") !== data.wcag.join(",")) body.wcag = list;
+    }
+    if (more.viewports !== undefined && more.viewports.trim() !== data.viewports.map(formatViewport).join("\n").trim()) body.viewports = parseViewports(more.viewports);
+    setMore({});
+    if (Object.keys(body).length) save.mutate(body);
+  };
+  const archived = data.status === "deprecated";
 
   return (
     <div>
@@ -219,6 +282,9 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
         <span className="mono muted">REQ-{data.number}</span>
         <CoverageChip coverage={data.coverage} />
         <span className="spacer" />
+        <button className="btn ghost sm" title={archived ? "Make it active again" : "Retire it: it stays, but is no longer an active requirement"} onClick={() => save.mutate({ status: archived ? "approved" : "deprecated" })}>
+          {archived ? <><ArchiveRestore size={13} /> Restore</> : <><Archive size={13} /> Archive</>}
+        </button>
         <button className="btn ghost icon sm danger" title="Delete requirement" aria-label="Delete requirement" onClick={() => confirm(`Delete REQ-${data.number}? The test cases stay, only the links are removed.`) && remove.mutate()}><Trash2 size={14} /></button>
         <button className="btn ghost icon sm" onClick={onClose} title="Close" aria-label="Close"><X size={14} /></button>
       </div>
@@ -233,6 +299,12 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
               {(["critical", "high", "medium", "low"] as const).map((p) => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}
             </select>
           </label>
+          <label className="pill" title="What the requirement is about">
+            {KIND_LABEL[data.kind]}
+            <select value={data.kind} onChange={(e) => save.mutate({ kind: e.target.value })} aria-label="Kind">
+              {(Object.keys(KIND_LABEL) as RequirementKind[]).map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
+            </select>
+          </label>
           <label className="pill" title="Status">
             {STATUS_LABEL[data.status]}
             <select value={data.status} onChange={(e) => save.mutate({ status: e.target.value })} aria-label="Status">
@@ -244,6 +316,17 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
           <div className="section-label">Description</div>
           <textarea className="bare" style={{ minHeight: 60, fieldSizing: "content" } as React.CSSProperties} value={text("description")} placeholder="What should the system do? Add acceptance criteria here."
             aria-label="Description" onChange={(e) => setEdits((s) => ({ ...s, description: e.target.value }))} onBlur={() => commit("description")} />
+        </section>
+        {(data.kind === "accessibility" || data.kind === "responsive") && (
+          <section>
+            <div className="section-label">{data.kind === "accessibility" ? "WCAG criteria and viewports" : "Viewports, devices and breakpoints"}</div>
+            {data.kind === "accessibility" && <input className="input" style={{ marginBottom: 6 }} value={wcagText} placeholder="WCAG success criteria, e.g. 2.4.3, 1.3.2" aria-label="WCAG criteria" onChange={(e) => setMore((m) => ({ ...m, wcag: e.target.value }))} onBlur={commitMore} />}
+            <textarea className="textarea" rows={2} value={viewportText} placeholder={"One per line: 390x844 iPhone 13, 320, bp:md"} aria-label="Viewports" onChange={(e) => setMore((m) => ({ ...m, viewports: e.target.value }))} onBlur={commitMore} />
+          </section>
+        )}
+        <section>
+          <div className="section-label">Stable id</div>
+          <input className="input" value={idText} placeholder="e.g. CHK-001. Used when requirements are imported and exported" aria-label="Stable id" onChange={(e) => setMore((m) => ({ ...m, externalId: e.target.value }))} onBlur={commitMore} />
         </section>
         <section>
           <div className="section-label">Source</div>
@@ -265,6 +348,36 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
             <button className="btn sm" onClick={() => review.mutate(undefined)} disabled={review.isPending}><Check size={12} /> All still correct</button>
           </div>
         )}
+        <section>
+          <div className="section-label"><ClipboardCheck size={13} /> Manual tests from agents <span className="faint">{data.linked.manualTests.length}</span></div>
+          {data.linked.manualTests.length === 0 ? <div className="muted" style={{ fontSize: "var(--fs-md)" }}>No manual test names this requirement. A test agent can propose one in an audit package (refs.requirements).</div> : (
+            <div className="card">
+              {data.linked.manualTests.map((m) => (
+                <Link key={m.id} to={`/p/${pid}/manual-tests?test=${m.id}`} className="row" style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)", color: "inherit" }}>
+                  <span className="mono muted" style={{ width: 120 }}>{m.sourceId}</span>
+                  <span className="truncate grow">{m.title}</span>
+                  <span className="chip">{m.status}</span>
+                </Link>
+              ))}
+            </div>
+          )}
+          <div className="faint" style={{ fontSize: "var(--fs-sm)", marginTop: 4 }}>Only accepted manual tests count as coverage.</div>
+        </section>
+        <section>
+          <div className="section-label"><Bug size={13} /> Bug reports <span className="faint">{data.linked.bugs.length}</span></div>
+          {data.linked.bugs.length === 0 ? <div className="muted" style={{ fontSize: "var(--fs-md)" }}>No bug report names this requirement.</div> : (
+            <div className="card">
+              {data.linked.bugs.map((b) => (
+                <Link key={b.id} to={`/p/${pid}/bugs?bug=${b.id}`} className="row" style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)", color: "inherit" }}>
+                  <span className="mono muted" style={{ width: 120 }}>{b.sourceId}</span>
+                  <span className="truncate grow">{b.title}</span>
+                  <span className="chip">{b.status}</span>
+                </Link>
+              ))}
+            </div>
+          )}
+          <div className="faint" style={{ fontSize: "var(--fs-sm)", marginTop: 4 }}>Only accepted bug reports count as open.</div>
+        </section>
         <section>
           <div className="section-label">Test cases <span className="faint">{data.cases.length}</span></div>
           {data.cases.length === 0 ? (
@@ -327,7 +440,7 @@ function LinkCasesModal({ initial, onClose, onSave, saving }: { initial: number[
   );
 }
 
-const FIELD_LABEL: Record<string, string> = { title: "Title", description: "Description", priority: "Priority", status: "Status", source: "Source" };
+const FIELD_LABEL: Record<string, string> = { title: "Title", description: "Description", priority: "Priority", status: "Status", source: "Source", kind: "Kind", id: "Stable id", wcag: "WCAG criteria", viewports: "Viewports" };
 
 function RevisionRow({ rev, caseKey }: { rev: RequirementRevision; caseKey: string }) {
   const keys = (nums: number[]) => nums.map((n) => `${caseKey}-${n}`).join(", ");
@@ -392,6 +505,74 @@ export function LinkToRequirementModal({ caseIds, onClose, onDone }: { caseIds: 
       )}
     </Modal>
   );
+}
+
+/** Import requirements from a JSON file: a preview first, nothing is written until it is confirmed. */
+function ImportRequirementsModal({ pid, onClose }: { pid: string; onClose: () => void }) {
+  const toast = useToast();
+  const invalidate = useInvalidate();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [content, setContent] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const preview = useMutation({ mutationFn: (text: string) => api.post<ImportPreview>(`/api/projects/${pid}/requirements/import?dryRun=1`, { content: text }) });
+  const doImport = useMutation({
+    mutationFn: () => api.post<ImportPreview>(`/api/projects/${pid}/requirements/import`, { content }),
+    onSuccess: (s) => { invalidate(); toast("success", `Imported: ${s.counts.new} new, ${s.counts.updated} updated, ${s.counts.unchanged} unchanged`); onClose(); },
+    onError: (e: Error) => toast("error", e.message),
+  });
+  const choose = async (f: File | undefined) => {
+    if (!f) return;
+    const text = await f.text();
+    setContent(text);
+    setName(f.name);
+    preview.mutate(text);
+  };
+  const s = preview.data;
+  const problems = ((preview.error as (Error & { problems?: string[] }) | null)?.problems) ?? [];
+  return (
+    <Modal title="Import requirements" onClose={onClose} width={720}
+      footer={<><button className="btn ghost" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!s || doImport.isPending || (s.counts.new + s.counts.updated === 0)} onClick={() => doImport.mutate()}>{doImport.isPending ? "Importing…" : "Import"}</button></>}>
+      <div className="col" style={{ gap: 12 }}>
+        <div className="faint">A JSON file with <code className="inline">"format": "testbench-requirements"</code>, <code className="inline">"project"</code> (this project's key) and <code className="inline">"requirements"</code>. Each has a stable <code className="inline">id</code>: the same id is updated, a new id is added, and requirements that are not in the file are left alone.</div>
+        <div className="row">
+          <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={(e) => { choose(e.target.files?.[0]); e.target.value = ""; }} />
+          <button className="btn" onClick={() => fileRef.current?.click()}><Upload size={13} /> Choose a file</button>
+          {name && <span className="faint">{name}</span>}
+        </div>
+        {preview.isPending && <ListSkeleton rows={2} />}
+        {preview.error && (
+          <div role="alert" style={{ color: "var(--failed-fg)" }}>
+            {(preview.error as Error).message}
+            {problems.length > 0 && <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>{problems.map((p, i) => <li key={i}>{p}</li>)}</ul>}
+          </div>
+        )}
+        {s && (
+          <div className="col" style={{ gap: 8 }}>
+            <div className="card" style={{ padding: 12 }}>
+              {s.counts.new} new · {s.counts.updated} updated · {s.counts.unchanged} unchanged · {s.untouched} existing requirement{s.untouched === 1 ? "" : "s"} not in the file (left as they are)
+            </div>
+            <div style={{ maxHeight: 280, overflow: "auto", border: "1px solid var(--border)", borderRadius: "var(--radius)" }}>
+              {s.items.map((i) => (
+                <div key={i.id} style={{ padding: "6px 10px", borderBottom: "1px solid var(--border)" }}>
+                  <div className="row" style={{ gap: 8 }}>
+                    <span className="chip">{i.action === "update" ? "updated" : i.action}</span>
+                    <span className="mono faint">{i.matches ?? i.id}</span>
+                    <span className="truncate grow" title={i.title}>{i.title}</span>
+                  </div>
+                  {i.changes.map((c) => <div key={c.field} className="faint" style={{ fontSize: "var(--fs-sm)", overflowWrap: "anywhere" }}>{c.field}: {c.from || "(empty)"} → {c.to || "(empty)"}</div>)}
+                  {i.warnings.map((w, k) => <div key={k} style={{ fontSize: "var(--fs-sm)", color: "var(--blocked-fg)" }}><AlertTriangle size={11} /> {w}</div>)}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+interface ImportPreview {
+  counts: { new: number; unchanged: number; updated: number }; untouched: number;
+  items: { id: string; title: string; action: string; matches: string | null; changes: { field: string; from: string; to: string }[]; warnings: string[] }[];
 }
 
 const fmtSize = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
