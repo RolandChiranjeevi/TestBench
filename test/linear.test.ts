@@ -99,3 +99,26 @@ describe("createIssue", () => {
     assert.ok(e instanceof Error && !e.message.includes("lin_api_test"));
   });
 });
+
+describe("what Linear says when it refuses", () => {
+  const answering = (status: number, body: string) => (async () => new Response(body, { status })) as unknown as typeof fetch;
+
+  it("shows Linear's own message for an error answer, so a missing permission is not just 'HTTP 400'", async () => {
+    const f = answering(400, JSON.stringify({ errors: [{ message: "Generic message", extensions: { userPresentableMessage: "Your key needs the write scope to upload files." } }] }));
+    await assert.rejects(listTeams(f, env()), (e: unknown) => e instanceof LinearError && e.status === 502 && e.outcome === "rejected" && /HTTP 400\): "Your key needs the write scope to upload files\."/.test(e.message));
+    const g = answering(400, JSON.stringify({ errors: [{ message: "Variable \"$size\" got invalid value" }] }));
+    await assert.rejects(listTeams(g, env()), /HTTP 400\): "Variable .* got invalid value"/);
+  });
+
+  it("adds Linear's message to a refused key too, and keeps the old text when the answer has none or is not JSON", async () => {
+    await assert.rejects(listTeams(answering(403, JSON.stringify({ errors: [{ message: "Forbidden: missing scope" }] })), env()), (e: unknown) => e instanceof LinearError && e.status === 401 && /Linear rejected the API key/.test(e.message) && /Forbidden: missing scope/.test(e.message));
+    await assert.rejects(listTeams(answering(401, "nope"), env()), (e: unknown) => e instanceof LinearError && /^Linear rejected the API key or its permissions \(HTTP 401\)\. Check the key$/.test(e.message));
+    await assert.rejects(listTeams(answering(400, "<html>bad</html>"), env()), (e: unknown) => e instanceof LinearError && e.message === "Linear answered with an error (HTTP 400).");
+  });
+
+  it("shortens a long message, drops control characters, and still treats a server error as unclear", async () => {
+    const long = "x".repeat(1000) + "\nsecond line";
+    await assert.rejects(listTeams(answering(400, JSON.stringify({ errors: [{ message: long }] })), env()), (e: unknown) => e instanceof LinearError && e.message.length < 400 && !e.message.includes("\n"));
+    await assert.rejects(listTeams(answering(503, JSON.stringify({ errors: [{ message: "Overloaded" }] })), env()), (e: unknown) => e instanceof LinearError && e.outcome === "unknown" && /Overloaded/.test(e.message));
+  });
+});
