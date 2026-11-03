@@ -261,6 +261,7 @@ function AutoImport({ source }: { source: GithubSource }) {
   const toast = useToast();
   const [filter, setFilter] = useState(source.branch_filter);
   const [sprint, setSprint] = useState(source.default_milestone);
+  const [auditWf, setAuditWf] = useState(source.audit_workflows);
   const { data: milestones = [] } = useQuery({ queryKey: ["milestones", pid], queryFn: () => api.get<Milestone[]>(`/api/projects/${pid}/milestones`) });
   const on = !!source.auto_import;
 
@@ -269,8 +270,8 @@ function AutoImport({ source }: { source: GithubSource }) {
     qc.invalidateQueries({ queryKey: ["projects"] });
   };
   const save = useMutation({
-    mutationFn: (body: Partial<{ autoImport: boolean; branchFilter: string; defaultMilestone: string }>) => api.patch<GithubSource>(`/api/github-sources/${source.id}`, body),
-    onSuccess: refresh,
+    mutationFn: (body: Partial<{ autoImport: boolean; branchFilter: string; defaultMilestone: string; auditWorkflows: string }>) => api.patch<GithubSource>(`/api/github-sources/${source.id}`, body),
+    onSuccess: (s) => { refresh(); setAuditWf(s.audit_workflows); },
     onError: (e: Error) => toast("error", e.message),
   });
   const check = useMutation({
@@ -278,7 +279,7 @@ function AutoImport({ source }: { source: GithubSource }) {
     onSuccess: (r) => {
       refresh();
       if (r.error) toast("error", r.error);
-      else toast("success", [r.imported ? `Imported ${r.imported} new ${r.imported === 1 ? "run" : "runs"}` : "No new runs", r.audits ? `${r.audits} audit ${r.audits === 1 ? "package" : "packages"} (see Bug reports)` : "", r.auditsRejected ? `${r.auditsRejected} audit ${r.auditsRejected === 1 ? "package" : "packages"} refused (see Bug reports, Audits)` : ""].filter(Boolean).join(" · "));
+      else toast("success", [r.imported ? `Imported ${r.imported} new ${r.imported === 1 ? "run" : "runs"}` : "No new runs", r.audits ? `${r.audits} audit ${r.audits === 1 ? "package" : "packages"} (see Bug reports)` : "", r.auditsRejected ? `${r.auditsRejected} audit ${r.auditsRejected === 1 ? "package" : "packages"} refused (see Bug reports, Audits)` : "", r.auditsBlocked ? `${r.auditsBlocked} audit ${r.auditsBlocked === 1 ? "package" : "packages"} left alone (workflow not allowed)` : ""].filter(Boolean).join(" · "));
     },
     onError: (e: Error) => toast("error", e.message),
   });
@@ -313,6 +314,16 @@ function AutoImport({ source }: { source: GithubSource }) {
               />
               <datalist id="auto-milestones">{milestones.map((m) => <option key={m.id} value={m.name} />)}</datalist>
             </div>
+          </div>
+          <div className="field">
+            <label htmlFor="aw">Workflows allowed to deliver audit packages</label>
+            <input
+              id="aw" className="input" placeholder="e.g. audit.yml, 12345678 (workflow file name or id)" value={auditWf}
+              onChange={(e) => setAuditWf(e.target.value)} onBlur={() => auditWf.trim() !== source.audit_workflows && save.mutate({ auditWorkflows: auditWf })}
+            />
+            <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>
+              Only artifacts named testbench-audit-* from these workflows are imported as audit packages. Empty means no audit packages are imported from this repository.
+            </span>
           </div>
           <div className="row">
             <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>
@@ -412,12 +423,14 @@ function AddSourceModal({ onClose, onAdded }: { onClose: () => void; onAdded: (i
   const [repo, setRepo] = useState("");
   const [workflow, setWorkflow] = useState("");
   const [artifactPattern, setArtifactPattern] = useState("");
+  const [auditWorkflows, setAuditWorkflows] = useState("");
   const add = useMutation({
     mutationFn: () =>
       api.post<GithubSource>(`/api/projects/${pid}/github-sources`, {
         repo: repo.trim().replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "").replace(/\/$/, ""),
         workflow,
         artifactPattern,
+        auditWorkflows,
       }),
     onSuccess: (s) => {
       qc.invalidateQueries({ queryKey: ["gh-sources", pid] });
@@ -444,6 +457,10 @@ function AddSourceModal({ onClose, onAdded }: { onClose: () => void; onAdded: (i
       <div className="field">
         <label htmlFor="ap">Artifact names (optional)</label>
         <input id="ap" className="input" placeholder="test-results*, junit-*" value={artifactPattern} onChange={(e) => setArtifactPattern(e.target.value)} />
+      </div>
+      <div className="field">
+        <label htmlFor="aw0">Workflows allowed to deliver audit packages (optional)</label>
+        <input id="aw0" className="input" placeholder="audit.yml — empty means no audit packages are imported" value={auditWorkflows} onChange={(e) => setAuditWorkflows(e.target.value)} />
       </div>
     </Modal>
   );

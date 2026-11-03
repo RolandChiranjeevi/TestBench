@@ -1,5 +1,5 @@
 import { db } from "./db.ts";
-import { downloadArtifactBag, importRun, listAuditArtifacts, listRuns, MAX_AUDIT_ARTIFACT_BYTES, type GithubSource } from "./importers/github.ts";
+import { auditRunBlockedReason, downloadArtifactBag, getRunInfo, importRun, listAuditArtifacts, listRuns, MAX_AUDIT_ARTIFACT_BYTES, parseWorkflowList, type GithubSource, type RunInfo } from "./importers/github.ts";
 import { PackageError } from "./importers/auditpackage.ts";
 import { importAuditPackage } from "./audits.ts";
 
@@ -23,6 +23,8 @@ export interface CheckResult {
   /** Audit packages imported / refused (a refused one is not tried again; the reason is shown on the Bug reports page). */
   audits: number;
   auditsRejected: number;
+  /** Audit packages left alone because their workflow is not allowed. They are not remembered, so allowing the workflow later imports them. */
+  auditsBlocked: number;
   error: string | null;
 }
 
@@ -31,7 +33,7 @@ const markSeen = (sourceId: number, runId: number, outcome: string, note: string
 
 /** Imports the source's finished workflow runs that appeared since automatic import was switched on. */
 export async function checkSource(src: GithubSource): Promise<CheckResult> {
-  const result: CheckResult = { imported: 0, skipped: 0, waiting: 0, audits: 0, auditsRejected: 0, error: null };
+  const result: CheckResult = { imported: 0, skipped: 0, waiting: 0, audits: 0, auditsRejected: 0, auditsBlocked: 0, error: null };
   try {
     const since = src.auto_since ? Date.parse(src.auto_since.replace(" ", "T") + "Z") : 0;
     const seen = new Set((db.prepare("SELECT run_id FROM github_seen WHERE source_id = ?").all(src.id) as { run_id: number }[]).map((r) => r.run_id));
@@ -75,15 +77,45 @@ export async function checkSource(src: GithubSource): Promise<CheckResult> {
  * Audit packages are followed artifact by artifact (artifact ids never change), not run by run. So a package that shows up after its
  * workflow run was imported, or after the run was skipped for having no test reports, is still fetched. Only the repository's 100 newest
  * artifacts are looked at, so after a long pause older packages are not found. They become importable by uploading them by hand.
+ *
+ * Which workflow made an artifact is not in the artifact list, so it is looked up from the artifact's run before anything is downloaded.
+ * Only workflows listed in the source's audit_workflows may deliver packages; an empty list allows none.
  */
 async function checkAuditPackages(src: GithubSource, result: CheckResult) {
   const since = src.auto_since ? Date.parse(src.auto_since.replace(" ", "T") + "Z") : 0;
   const done = new Set((db.prepare("SELECT artifact_id FROM github_artifacts WHERE source_id = ?").all(src.id) as { artifact_id: number }[]).map((r) => r.artifact_id));
   const record = (a: { id: number; name: string; workflow_run: { id: number } }, outcome: "imported" | "rejected", note: string) =>
     db.prepare("INSERT OR REPLACE INTO github_artifacts (source_id, artifact_id, run_id, name, outcome, note) VALUES (?, ?, ?, ?, ?, ?)").run(src.id, a.id, a.workflow_run.id, a.name, outcome, note.slice(0, 500));
-  for (const a of (await listAuditArtifacts(src)).sort((x, y) => x.id - y.id)) {
-    if (done.has(a.id) || a.expired || Date.parse(a.created_at) < since || !branchMatches(a.workflow_run.head_branch ?? "", src.branch_filter)) continue;
+  const fresh = (await listAuditArtifacts(src))
+    .filter((a) => !done.has(a.id) && !a.expired && Date.parse(a.created_at) >= since && branchMatches(a.workflow_run.head_branch ?? "", src.branch_filter))
+    .sort((x, y) => x.id - y.id);
+  if (!fresh.length) return;
+
+  let allowed: string[];
+  try {
+    allowed = parseWorkflowList(src.audit_workflows ?? "");
+  } catch (e) {
+    result.error ??= `Audit workflows: ${(e as Error).message}. ${fresh.length} audit package${fresh.length === 1 ? "" : "s"} not imported.`;
+    result.auditsBlocked += fresh.length;
+    return;
+  }
+  if (!allowed.length) {
+    result.error ??= `${fresh.length} audit package${fresh.length === 1 ? "" : "s"} (testbench-audit-*) found in ${src.owner}/${src.repo}, but no workflow is allowed to deliver audit packages for this source. Nothing was imported. Add the workflow file name or id under "Workflows allowed to deliver audit packages".`;
+    result.auditsBlocked += fresh.length;
+    return;
+  }
+
+  const runs = new Map<number, RunInfo | Error>();
+  for (const a of fresh) {
     if (a.size_in_bytes > MAX_AUDIT_ARTIFACT_BYTES) { record(a, "rejected", `The artifact is larger than ${MAX_AUDIT_ARTIFACT_BYTES / 1024 / 1024} MB`); result.auditsRejected++; continue; }
+    if (!runs.has(a.workflow_run.id)) runs.set(a.workflow_run.id, await getRunInfo(src, a.workflow_run.id).catch((e: Error) => e));
+    const run = runs.get(a.workflow_run.id)!;
+    if (run instanceof Error) { // cannot tell where it came from, so it is not trusted; tried again next time
+      result.error ??= `Audit package ${a.name}: could not look up its workflow run: ${run.message}`;
+      result.auditsBlocked++;
+      continue;
+    }
+    if (auditRunBlockedReason(src, run, allowed)) { result.auditsBlocked++; continue; }
     try {
       const bag = await downloadArtifactBag(src, a);
       importAuditPackage(bag, { projectId: src.project_id, source: "github", github: { repo: `${src.owner}/${src.repo}`, runId: a.workflow_run.id, artifactId: a.id } });

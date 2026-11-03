@@ -17,7 +17,7 @@ import { bulkUpdateCases, CaseBulkError, duplicateCase } from "./casebulk.ts";
 import { authConfigFromEnv, registerAuth } from "./auth.ts";
 import { DATA_DIR, db, ensureMilestone, parseJson, snapshotCase, UPLOAD_DIR } from "./db.ts";
 import { seedDemo } from "./demo.ts";
-import { artifactsByRun, getToken, importRun, listRuns, REPO_SLUG, type GithubSource } from "./importers/github.ts";
+import { artifactsByRun, getToken, importRun, listRuns, parseWorkflowList, REPO_SLUG, type GithubSource } from "./importers/github.ts";
 import { bagFromFiles, bagFromZip, dedupeReports, mergeBags, readReports, type FileBag } from "./importers/bag.ts";
 import { importReport, mergeReports, relinkAutomatedTests } from "./importers/import.ts";
 import type { CaseSnapshot } from "./db.ts";
@@ -990,6 +990,16 @@ app.get("/api/projects/:id/github-sources", (req) =>
     .all(idParam(req)),
 );
 
+/** Workflow ids or file names allowed to deliver audit packages, stored as a normalised comma separated list. */
+const auditWorkflowsField = z.string().max(500).transform((text, ctx) => {
+  try {
+    return parseWorkflowList(text).join(", ");
+  } catch (e) {
+    ctx.addIssue({ code: "custom", message: (e as Error).message });
+    return z.NEVER;
+  }
+});
+
 app.post("/api/projects/:id/github-sources", (req) => {
   const projectId = idParam(req);
   const body = z
@@ -997,13 +1007,14 @@ app.post("/api/projects/:id/github-sources", (req) => {
       repo: z.string().trim().regex(REPO_SLUG, "Use owner/repo"),
       workflow: z.string().trim().max(200).optional(),
       artifactPattern: z.string().trim().max(200).optional(),
+      auditWorkflows: auditWorkflowsField.optional(),
     })
     .parse(req.body);
   const [owner, repo] = body.repo.split("/");
   try {
     return db
-      .prepare("INSERT INTO github_sources (project_id, owner, repo, workflow, artifact_pattern) VALUES (?, ?, ?, ?, ?) RETURNING *")
-      .get(projectId, owner, repo, body.workflow ?? "", body.artifactPattern ?? "");
+      .prepare("INSERT INTO github_sources (project_id, owner, repo, workflow, artifact_pattern, audit_workflows) VALUES (?, ?, ?, ?, ?, ?) RETURNING *")
+      .get(projectId, owner, repo, body.workflow ?? "", body.artifactPattern ?? "", body.auditWorkflows ?? "");
   } catch {
     throw new HttpError(409, "This repository/workflow is already connected");
   }
@@ -1429,6 +1440,7 @@ app.patch("/api/github-sources/:id", (req) => {
       autoImport: z.boolean().optional(),
       branchFilter: z.string().trim().max(200).optional(),
       defaultMilestone: z.string().trim().max(100).optional(),
+      auditWorkflows: auditWorkflowsField.optional(),
     })
     .parse(req.body);
   const cur = getSource(id);
@@ -1438,8 +1450,8 @@ app.patch("/api/github-sources/:id", (req) => {
   const milestone = body.defaultMilestone ?? cur.default_milestone;
   if (milestone) ensureMilestone(cur.project_id, milestone);
   return db
-    .prepare("UPDATE github_sources SET auto_import = ?, auto_since = ?, branch_filter = ?, default_milestone = ? WHERE id = ? RETURNING *")
-    .get(on ? 1 : 0, since, body.branchFilter ?? cur.branch_filter, milestone, id);
+    .prepare("UPDATE github_sources SET auto_import = ?, auto_since = ?, branch_filter = ?, default_milestone = ?, audit_workflows = ? WHERE id = ? RETURNING *")
+    .get(on ? 1 : 0, since, body.branchFilter ?? cur.branch_filter, milestone, body.auditWorkflows ?? cur.audit_workflows, id);
 });
 
 // Look for new runs right now instead of waiting for the next scheduled check.

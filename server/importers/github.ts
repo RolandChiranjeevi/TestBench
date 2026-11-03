@@ -18,6 +18,8 @@ export interface GithubSource {
   repo: string;
   workflow: string;
   artifact_pattern: string;
+  /** Workflow ids or file names (comma separated) that may deliver audit packages. Empty means none, never "all". */
+  audit_workflows: string;
   /** Automatic import: 1 when on, and the moment it was switched on (older runs are left alone). */
   auto_import: number;
   auto_since: string | null;
@@ -91,6 +93,34 @@ export async function listAuditArtifacts(src: GithubSource): Promise<AuditArtifa
 }
 
 export const MAX_AUDIT_ARTIFACT_BYTES = MAX_ARTIFACT_BYTES;
+
+/** A workflow given by id (`12345`) or by file name (`audit.yml`; a leading `.github/workflows/` is accepted and dropped). */
+const WORKFLOW_ENTRY = /^(\d+|[\w.-]+\.ya?ml)$/i;
+
+/** Splits the stored list. Throws on an entry that is neither an id nor a file name, so a typo is not silently "no workflow". */
+export function parseWorkflowList(text: string): string[] {
+  const entries = text.split(/[,\s]+/).map((s) => s.trim().replace(/^\.github\/workflows\//, "")).filter(Boolean);
+  for (const e of entries) if (!WORKFLOW_ENTRY.test(e)) throw new Error(`"${e}" is not a workflow id or a workflow file name such as audit.yml`);
+  return [...new Set(entries)];
+}
+
+/** What the audit check needs to know about the run an artifact came from. */
+export interface RunInfo { id: number; workflowId: number; workflowFile: string; repo: string }
+
+/** The run that uploaded an artifact. The artifact list does not say which workflow that was, so it is asked for here. */
+export async function getRunInfo(src: GithubSource, runId: number): Promise<RunInfo> {
+  const r = await gh<{ id: number; workflow_id?: number; path?: string; head_repository?: { full_name?: string } | null }>(`${repoPath(src)}/actions/runs/${runId}`);
+  // `path` is `.github/workflows/audit.yml`, and can carry an `@ref` suffix.
+  const file = (r.path ?? "").split("@")[0].split("/").pop() ?? "";
+  return { id: r.id, workflowId: Number(r.workflow_id ?? 0), workflowFile: file, repo: r.head_repository?.full_name ?? "" };
+}
+
+/** Why the run may not deliver audit packages for this source, or null when it may. */
+export function auditRunBlockedReason(src: GithubSource, run: RunInfo, allowed: string[]): string | null {
+  if (run.repo.toLowerCase() !== `${src.owner}/${src.repo}`.toLowerCase()) return `run ${run.id} comes from ${run.repo || "an unknown repository"}, not ${src.owner}/${src.repo}`;
+  const ok = allowed.some((w) => (/^\d+$/.test(w) ? Number(w) === run.workflowId : w.toLowerCase() === run.workflowFile.toLowerCase()));
+  return ok ? null : `run ${run.id} belongs to workflow ${run.workflowFile || run.workflowId}, which is not in the allowed list (${allowed.join(", ")})`;
+}
 
 /** Downloads one artifact. A zip that cannot be read is the package's fault (PackageError); any other failure may be temporary. */
 export async function downloadArtifactBag(src: GithubSource, artifact: { id: number; name: string }): Promise<FileBag> {
