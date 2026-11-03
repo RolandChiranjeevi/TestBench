@@ -904,8 +904,8 @@ app.post("/api/projects/:id/audit-import", async (req) => {
 });
 
 app.get("/api/projects/:id/bug-reports", (req) => {
-  const q = req.query as { status?: string; q?: string };
-  return listBugReports(idParam(req), { status: q.status, q: q.q });
+  const q = req.query as { status?: string; q?: string; presence?: string };
+  return audited(() => listBugReports(idParam(req), { status: q.status, q: q.q, presence: q.presence }));
 });
 app.get("/api/projects/:id/audits", (req) => listAudits(idParam(req)));
 app.get("/api/projects/:id/audit-rejections", (req) => listRejectedPackages(idParam(req)));
