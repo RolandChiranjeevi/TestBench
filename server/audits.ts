@@ -1,8 +1,11 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { db, parseJson, UPLOAD_DIR } from "./db.ts";
 import type { FileBag } from "./importers/bag.ts";
+import { AuditError, hashOf, resolveOne, resolveRefs, toSqlDate, type ResolvedRef } from "./auditcommon.ts";
+export { AuditError } from "./auditcommon.ts";
+import { manualTestsOfAudit, planManualTests, writeManualTests, type PlannedManual } from "./manualtests.ts";
 import { inspectEvidence, PackageError, parsePackage, readEvidence, safeRelPath, type BugItem, type EvidenceCheck, type ParsedPackage } from "./importers/auditpackage.ts";
 
 /**
@@ -12,12 +15,6 @@ import { inspectEvidence, PackageError, parsePackage, readEvidence, safeRelPath,
  *    twice (GitHub and an upload, or a re-run) is the same report.
  *  - A report outlives its audit: `audit_id` can become NULL and what the audit said about it is kept on the report (`origin`).
  */
-
-export class AuditError extends Error {
-  constructor(public status: 400 | 404 | 409, message: string) {
-    super(message);
-  }
-}
 
 export type ReviewStatus = "proposed" | "accepted" | "rejected" | "duplicate";
 type Sev = "low" | "medium" | "high" | "critical";
@@ -37,11 +34,6 @@ interface Payload {
   evidence: { path: string; label: string; sha256: string | null }[];
 }
 
-interface ResolvedRef {
-  kind: "requirement" | "case" | "test"; raw: string; caseId: number | null; requirementId: number | null; automatedTestId: number | null;
-  state: "resolved" | "unresolved" | "wrong_project" | "ambiguous"; reason: string;
-}
-
 interface PlannedBug {
   sourceId: string; payload: Payload; hash: string; refs: ResolvedRef[];
   action: "new" | "unchanged" | "update" | "pending";
@@ -55,17 +47,16 @@ export interface ImportSummary {
   counts: { new: number; unchanged: number; updated: number; pending: number };
   evidence: { ok: number; problems: number };
   unresolvedRefs: number;
+  /** The manual tests of the package. `listed` is false when it has no manual-tests.json. */
+  manualTests: {
+    listed: boolean; counts: { new: number; unchanged: number; updated: number; pending: number }; unresolvedRefs: number;
+    items: { sourceId: string; title: string; action: PlannedManual["action"]; category: string; priority: string; unresolvedRefs: number }[];
+  };
   warnings: string[];
   items: { sourceId: string; title: string; action: PlannedBug["action"]; severity: string | null; unresolvedRefs: number; evidenceProblems: number }[];
   auditId: number | null;
 }
 
-const hashOf = (p: Payload) => createHash("sha256").update(JSON.stringify(p)).digest("hex");
-const toSqlDate = (iso: string | null | undefined) => {
-  if (!iso) return null;
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 19).replace("T", " ");
-};
 const attKey = (path: string, sha: string | null) => `${path}\0${sha ?? ""}`;
 
 function payloadOf(b: BugItem, pkg: ParsedPackage): Payload {
@@ -82,34 +73,6 @@ function payloadOf(b: BugItem, pkg: ParsedPackage): Payload {
 }
 
 // ---------- References ----------
-
-function resolveOne(projectId: number, projectKey: string, kind: ResolvedRef["kind"], raw: string): ResolvedRef {
-  const base = { kind, raw, caseId: null, requirementId: null, automatedTestId: null };
-  if (kind === "requirement") {
-    const m = /^REQ-(\d+)$/i.exec(raw.trim());
-    if (!m) return { ...base, state: "unresolved", reason: "not a requirement reference such as REQ-3" };
-    const row = db.prepare("SELECT id FROM requirements WHERE project_id = ? AND number = ?").get(projectId, Number(m[1])) as { id: number } | undefined;
-    return row ? { ...base, requirementId: row.id, state: "resolved", reason: "" } : { ...base, state: "unresolved", reason: "no such requirement in this project" };
-  }
-  if (kind === "case") {
-    const m = /^([A-Za-z][A-Za-z0-9]*)-(\d+)$/.exec(raw.trim());
-    if (!m) return { ...base, state: "unresolved", reason: "not a test case reference such as SHOP-12" };
-    if (m[1].toUpperCase() !== projectKey.toUpperCase()) return { ...base, state: "wrong_project", reason: `belongs to project ${m[1].toUpperCase()}, not ${projectKey}` };
-    const row = db.prepare("SELECT id FROM cases WHERE project_id = ? AND number = ?").get(projectId, Number(m[2])) as { id: number } | undefined;
-    return row ? { ...base, caseId: row.id, state: "resolved", reason: "" } : { ...base, state: "unresolved", reason: "no such test case in this project" };
-  }
-  const rows = db.prepare("SELECT id FROM automated_tests WHERE project_id = ? AND (full_name = ? OR title = ?)").all(projectId, raw, raw) as { id: number }[];
-  if (rows.length === 1) return { ...base, automatedTestId: rows[0].id, state: "resolved", reason: "" };
-  return { ...base, state: rows.length ? "ambiguous" : "unresolved", reason: rows.length ? `${rows.length} automated tests match` : "no automated test with that name in this project" };
-}
-
-function resolveRefs(projectId: number, projectKey: string, refs: Payload["refs"]): ResolvedRef[] {
-  return [
-    ...refs.requirements.map((r) => resolveOne(projectId, projectKey, "requirement", r)),
-    ...refs.cases.map((r) => resolveOne(projectId, projectKey, "case", r)),
-    ...refs.tests.map((r) => resolveOne(projectId, projectKey, "test", r)),
-  ];
-}
 
 function replaceRefs(bugId: number, refs: ResolvedRef[]) {
   db.prepare("DELETE FROM bug_refs WHERE bug_report_id = ?").run(bugId);
@@ -208,7 +171,8 @@ function planImport(pkg: ParsedPackage, ctx: ImportContext) {
   }
   const run = gh ? (db.prepare("SELECT id FROM runs WHERE project_id = ? AND source = 'github' AND external_id = ?").get(project.id, externalRunId(gh.repo, gh.runId)) as { id: number } | undefined) : undefined;
   const runState: "linked" | "pending" | "none" = !gh ? "none" : run ? "linked" : "pending";
-  return { project, planned, warnings, gh, run: run?.id ?? null, runState };
+  const manual = planManualTests(pkg, project);
+  return { project, planned, manual, warnings, gh, run: run?.id ?? null, runState };
 }
 
 function summarize(pkg: ParsedPackage, ctx: ImportContext, plan: ReturnType<typeof planImport>, dryRun: boolean, auditId: number | null, isNew: boolean): ImportSummary {
@@ -228,6 +192,12 @@ function summarize(pkg: ParsedPackage, ctx: ImportContext, plan: ReturnType<type
     dryRun,
     audit: { agentAuditId: a.id, title: a.title, agent: [a.agent.name, a.agent.version].filter(Boolean).join(" "), isNew, source: ctx.source, github: plan.gh ? { repo: plan.gh.repo, runId: plan.gh.runId } : null, runState: plan.runState },
     counts, evidence: { ok, problems }, unresolvedRefs: unresolved, warnings: plan.warnings, items, auditId,
+    manualTests: {
+      listed: pkg.manualTests !== null,
+      counts: plan.manual.reduce((c, m) => { c[m.action === "update" ? "updated" : m.action] += 1; return c; }, { new: 0, unchanged: 0, updated: 0, pending: 0 }),
+      unresolvedRefs: plan.manual.reduce((n, m) => n + m.refs.filter((r) => r.state !== "resolved").length, 0),
+      items: plan.manual.map((m) => ({ sourceId: m.sourceId, title: m.payload.title, action: m.action, category: m.payload.category, priority: m.payload.priority, unresolvedRefs: m.refs.filter((r) => r.state !== "resolved").length })),
+    },
   };
 }
 
@@ -276,8 +246,8 @@ export function importAuditPackage(bag: FileBag, ctx: ImportContext, opts: { dry
             a.review?.status ?? "", a.review?.method ?? "", a.review?.reviewer ?? "", ctx.source, github?.repo ?? null, github?.runId ?? null, github?.artifactId ?? null,
             plan.run, plan.runState, pkg.packageSha256, narrativeName) as { id: number }).id;
       }
-      const importId = (db.prepare("INSERT INTO audit_imports (audit_id, source, artifact_id, warnings, sightings_recorded, github_repo, github_run_id) VALUES (?, ?, ?, ?, 1, ?, ?) RETURNING id")
-        .get(auditId, ctx.source, github?.artifactId ?? null, JSON.stringify(plan.warnings), github?.repo ?? null, github?.runId ?? null) as { id: number }).id;
+      const importId = (db.prepare("INSERT INTO audit_imports (audit_id, source, artifact_id, warnings, sightings_recorded, github_repo, github_run_id, manual_listed) VALUES (?, ?, ?, ?, 1, ?, ?, ?) RETURNING id")
+        .get(auditId, ctx.source, github?.artifactId ?? null, JSON.stringify(plan.warnings), github?.repo ?? null, github?.runId ?? null, pkg.manualTests ? 1 : 0) as { id: number }).id;
       const sighted = db.prepare("INSERT OR IGNORE INTO bug_sightings (bug_report_id, audit_import_id) VALUES (?, ?)");
       const origin = JSON.stringify({
         auditId: a.id, title: a.title, agent: a.agent, review: a.review ?? null, startedAt: a.startedAt ?? null, finishedAt: a.finishedAt ?? null,
@@ -354,6 +324,7 @@ export function importAuditPackage(bag: FileBag, ctx: ImportContext, opts: { dry
         linkBugRun(bugId);
       }
       relinkBugRefs(ctx.projectId);
+      writeManualTests(plan.manual, { projectId: ctx.projectId, auditId, agentAuditId: a.id, origin, importId });
       summary = summarize(pkg, ctx, plan, false, auditId, !existingAudit);
       db.prepare("UPDATE audit_imports SET new_count = ?, unchanged_count = ?, updated_count = ?, pending_count = ? WHERE id = ?")
         .run(summary.counts.new, summary.counts.unchanged, summary.counts.updated, summary.counts.pending, importId);
@@ -673,7 +644,11 @@ export function previewAuditDeletion(auditId: number) {
   if (!a) throw new AuditError(404, "Audit not found");
   const bugs = db.prepare("SELECT id, review_status, edited_at FROM bug_reports WHERE audit_id = ?").all(auditId) as { id: number; review_status: string; edited_at: string | null }[];
   const removable = bugs.filter((b) => b.review_status === "proposed" && !b.edited_at && !hasPublication(b.id));
-  return { title: a.title, removable: removable.map((b) => b.id), deleted: removable.length, kept: bugs.length - removable.length };
+  const manual = manualTestsOfAudit(auditId);
+  return {
+    title: a.title, removable: removable.map((b) => b.id), deleted: removable.length, kept: bugs.length - removable.length,
+    manualRemovable: manual.removable, manualDeleted: manual.deleted, manualKept: manual.kept,
+  };
 }
 
 export function deleteAudit(auditId: number) {
@@ -682,12 +657,14 @@ export function deleteAudit(auditId: number) {
   const narrative = (db.prepare("SELECT narrative_stored_name FROM audits WHERE id = ?").get(auditId) as { narrative_stored_name: string | null }).narrative_stored_name;
   db.transaction(() => {
     for (const id of prev.removable) db.prepare("DELETE FROM bug_reports WHERE id = ?").run(id);
+    for (const id of prev.manualRemovable) db.prepare("DELETE FROM manual_tests WHERE id = ?").run(id);
+    db.prepare("UPDATE manual_tests SET audit_id = NULL WHERE audit_id = ?").run(auditId);
     // The rest stay as standalone reports (audit_id becomes NULL); their origin and evidence are on the reports themselves.
     db.prepare("UPDATE bug_reports SET audit_id = NULL WHERE audit_id = ?").run(auditId);
     db.prepare("DELETE FROM audits WHERE id = ?").run(auditId);
   })();
   removeFiles([...files, ...(narrative ? [narrative] : [])]);
-  return { deleted: prev.deleted, kept: prev.kept };
+  return { deleted: prev.deleted, kept: prev.kept, manualDeleted: prev.manualDeleted, manualKept: prev.manualKept };
 }
 
 /** Files that belong to audits and bug reports of a project, for project deletion. */

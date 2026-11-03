@@ -35,8 +35,13 @@ import {
   applyPendingUpdate, AuditError, auditReportText, deleteAudit, deleteBugReport, getBugReport, ignorePendingUpdate, importAuditPackage, linkExternalIssue,
   listAudits, listBugReports, listRejectedPackages, markDuplicate, previewAuditDeletion, relinkBugRefs, reviewBugReport, unlinkExternalIssue, updateBugReport,
 } from "./audits.ts";
+import { agentRequirements } from "./agentexport.ts";
+import { importRequirements, RequirementImportError } from "./reqimport.ts";
+import { requirementCoverage } from "./reqlinks.ts";
+import { normViewports, normWcag, viewportSchema, wcagCriterion, type Viewport } from "./shapes.ts";
 import { LIMITS as AUDIT_LIMITS, PackageError } from "./importers/auditpackage.ts";
-import { addRequirementCases, createRequirement, getRequirement, linkCaseByTags, listRequirements, markReviewed, recordRevision, requirementsForCase, requirementSummary, setCaseRequirements, setRequirementCases, type RevisionChange } from "./requirements.ts";
+import { applyManualUpdate, deleteManualTest, getManualTest, ignoreManualUpdate, listManualTests, relinkManualRefs, reviewManualTest, updateManualTest } from "./manualtests.ts";
+import { addRequirementCases, createRequirement, kindProblem, REQUIREMENT_KINDS, getRequirement, linkCaseByTags, listRequirements, markReviewed, recordRevision, requirementsForCase, requirementSummary, setCaseRequirements, setRequirementCases, type RevisionChange } from "./requirements.ts";
 import { dashboardData, listMilestones, milestoneReport } from "./stats.ts";
 import { parseReport, type Framework, type ParsedReport } from "./importers/parse.ts";
 
@@ -86,13 +91,13 @@ if (process.env.NODE_ENV === "production" && existsSync(distDir)) {
 }
 
 class HttpError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(public status: number, message: string, public problems?: string[]) {
     super(message);
   }
 }
 app.setErrorHandler((err, _req, reply) => {
   if (err instanceof z.ZodError) return reply.code(400).send({ error: err.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ") });
-  if (err instanceof HttpError) return reply.code(err.status).send({ error: err.message });
+  if (err instanceof HttpError) return reply.code(err.status).send({ error: err.message, ...(err.problems?.length ? { problems: err.problems } : {}) });
   const status = (err as { statusCode?: number }).statusCode ?? 500;
   if (status >= 500) app.log.error(err);
   return reply.code(status).send({ error: (err as Error).message });
@@ -1003,7 +1008,7 @@ app.post("/api/bug-reports/:id/relink", (req) => {
 app.delete("/api/bug-reports/:id", (req) => audited(() => (deleteBugReport(idParam(req), (req.query as { force?: string }).force === "1"), { ok: true })));
 
 app.get("/api/audits/:id/deletion-preview", (req) => {
-  const { removable: _ids, ...preview } = audited(() => previewAuditDeletion(idParam(req)));
+  const { removable: _ids, manualRemovable: _mids, ...preview } = audited(() => previewAuditDeletion(idParam(req)));
   return preview;
 });
 app.delete("/api/audits/:id", (req) => audited(() => deleteAudit(idParam(req))));
@@ -1013,6 +1018,49 @@ app.get("/api/audits/:id/report", (req, reply) => {
   reply.type("text/plain; charset=utf-8").header("X-Content-Type-Options", "nosniff");
   return text;
 });
+
+// ---- Manual test cases proposed by a test agent (manual-tests.json in an audit package). A person reviews and runs them; nothing here runs a test. ----
+app.get("/api/projects/:id/manual-tests", (req) => {
+  const q = req.query as { status?: string; q?: string; category?: string; priority?: string; wcag?: string; presence?: string };
+  return audited(() => listManualTests(idParam(req), q));
+});
+app.get("/api/manual-tests/:id", (req) => audited(() => getManualTest(idParam(req))));
+app.patch("/api/manual-tests/:id", (req) => {
+  const id = idParam(req);
+  const body = z
+    .object({
+      title: z.string().trim().min(1).max(200).optional(), description: z.string().max(20000).optional(), preconditions: z.string().max(5000).optional(),
+      steps: z.array(z.string().max(1000)).min(1).max(50).optional(), expected: z.string().trim().min(1).max(5000).optional(),
+      humanPriority: severity.nullable().optional(), requirements: z.array(z.string().max(120)).max(50).optional(),
+    })
+    .parse(req.body);
+  audited(() => updateManualTest(id, body));
+  return getManualTest(id);
+});
+app.post("/api/manual-tests/:id/review", (req) => {
+  const id = idParam(req);
+  const body = z.object({ status: z.enum(["proposed", "accepted", "rejected"]), note: z.string().max(2000).optional() }).parse(req.body);
+  audited(() => reviewManualTest(id, body.status, body.note));
+  return getManualTest(id);
+});
+app.post("/api/manual-tests/:id/apply-update", (req) => {
+  const id = idParam(req);
+  audited(() => applyManualUpdate(id));
+  return getManualTest(id);
+});
+app.post("/api/manual-tests/:id/ignore-update", (req) => {
+  const id = idParam(req);
+  audited(() => ignoreManualUpdate(id));
+  return getManualTest(id);
+});
+app.post("/api/manual-tests/:id/relink", (req) => {
+  const id = idParam(req);
+  const m = audited(() => getManualTest(id));
+  relinkManualRefs(m.projectId, id);
+  return getManualTest(id);
+});
+app.delete("/api/manual-tests/:id", (req) => audited(() => (deleteManualTest(idParam(req), (req.query as { force?: string }).force === "1"), { ok: true })));
+
 
 // ---------------- GitHub ----------------
 
@@ -1169,8 +1217,22 @@ const requirementBody = z.object({
   status: z.enum(["draft", "approved", "deprecated"]).optional(),
   /** Free text: a Jira story key, a link, a document name. */
   source: z.string().trim().max(300).optional(),
+  kind: z.enum(REQUIREMENT_KINDS).optional(),
+  /** The stable id used when requirements are imported and exported. Not a Testbench number (REQ-3), and unique within the project. */
+  externalId: z.string().trim().max(120).regex(/^[\w.:\-/]+$/, "use letters, digits and . _ : - /").refine((v) => !/^REQ-\d+$/i.test(v), "REQ-n is a Testbench number, not a stable id").nullable().optional(),
+  wcag: z.array(wcagCriterion).max(20).optional(),
+  viewports: z.array(viewportSchema).max(10).optional(),
   caseIds: z.array(z.number().int()).max(5000).optional(),
 });
+const requirementProblem = (kind: string, wcag: string[], viewports: Viewport[]) => {
+  const why = kindProblem(kind, wcag, viewports);
+  if (why) throw new HttpError(400, why);
+};
+const externalIdTaken = (projectId: number, externalId: string | null | undefined, exceptId?: number) => {
+  if (!externalId) return;
+  const row = db.prepare("SELECT number FROM requirements WHERE project_id = ? AND external_id = ? AND id != ?").get(projectId, externalId, exceptId ?? 0) as { number: number } | undefined;
+  if (row) throw new HttpError(409, `REQ-${row.number} already has the id ${externalId} in this project.`);
+};
 
 app.get("/api/projects/:id/requirements", (req) => listRequirements(idParam(req)));
 
@@ -1178,9 +1240,32 @@ app.post("/api/projects/:id/requirements", (req) => {
   const projectId = idParam(req);
   const { caseIds, ...input } = requirementBody.parse(req.body);
   must(db.prepare("SELECT id FROM projects WHERE id = ?").get(projectId), "Project");
-  const id = createRequirement(projectId, input);
+  requirementProblem(input.kind ?? "functional", input.wcag ?? [], input.viewports ?? []);
+  externalIdTaken(projectId, input.externalId);
+  const id = createRequirement(projectId, { ...input, wcag: input.wcag ? normWcag(input.wcag) : undefined, viewports: input.viewports ? normViewports(input.viewports) : undefined });
   if (caseIds?.length) setRequirementCases(id, projectId, caseIds);
   return getRequirement(id);
+});
+
+// Requirements as a test agent reads them (read-only). By default the active ones. ?download=1 saves it as a file.
+app.get("/api/projects/:id/agent/requirements", (req, reply) => {
+  const q = req.query as { status?: string; kind?: string; download?: string };
+  const out = audited(() => agentRequirements(idParam(req), q));
+  if (q.download === "1") reply.header("Content-Disposition", `attachment; filename="${out.project}-requirements.json"`);
+  return out;
+});
+app.get("/api/projects/:id/requirements/coverage", (req) => requirementCoverage(idParam(req)));
+
+// Import requirements from a structured file. {"content": "<the file's text>"}, or the file's own JSON. ?dryRun=1 only says what would happen.
+app.post("/api/projects/:id/requirements/import", { bodyLimit: 6 * 1024 * 1024 }, (req) => {
+  const projectId = idParam(req);
+  const body = req.body as { content?: unknown } | null;
+  const content = typeof body?.content === "string" ? body.content : JSON.stringify(body ?? {});
+  try {
+    return importRequirements(projectId, content, { dryRun: (req.query as { dryRun?: string }).dryRun === "1" });
+  } catch (e) {
+    throw e instanceof RequirementImportError ? new HttpError(e.status, e.message, e.problems) : e;
+  }
 });
 
 app.get("/api/requirements/:id", (req) => must(getRequirement(idParam(req)) ?? undefined, "Requirement"));
@@ -1189,15 +1274,21 @@ app.patch("/api/requirements/:id", (req) => {
   const id = idParam(req);
   const body = requirementBody.partial().parse(req.body);
   const cur = must(db.prepare("SELECT * FROM requirements WHERE id = ?").get(id) as Record<string, any> | undefined, "Requirement");
+  const wcag = body.wcag ? normWcag(body.wcag) : parseJson<string[]>(cur.wcag, []);
+  const viewports = body.viewports ? normViewports(body.viewports) : parseJson<Viewport[]>(cur.viewports, []);
+  const kind = body.kind ?? cur.kind;
+  requirementProblem(kind, wcag, viewports);
+  const externalId = body.externalId === undefined ? cur.external_id : body.externalId;
+  if (externalId !== cur.external_id) externalIdTaken(cur.project_id, externalId, id);
   db.transaction(() => {
-    const next = { title: body.title ?? cur.title, description: body.description ?? cur.description, priority: body.priority ?? cur.priority, status: body.status ?? cur.status, source: body.source ?? cur.source };
-    db.prepare("UPDATE requirements SET title = ?, description = ?, priority = ?, status = ?, source = ?, updated_at = datetime('now') WHERE id = ?").run(
-      next.title, next.description, next.priority, next.status, next.source, id,
+    const next = { title: body.title ?? cur.title, description: body.description ?? cur.description, priority: body.priority ?? cur.priority, status: body.status ?? cur.status, source: body.source ?? cur.source, kind, external_id: externalId, wcag: JSON.stringify(wcag), viewports: JSON.stringify(viewports) };
+    db.prepare("UPDATE requirements SET title = ?, description = ?, priority = ?, status = ?, source = ?, kind = ?, external_id = ?, wcag = ?, viewports = ?, updated_at = datetime('now') WHERE id = ?").run(
+      next.title, next.description, next.priority, next.status, next.source, next.kind, next.external_id, next.wcag, next.viewports, id,
     );
     // Wording changes ask for a second look at the linked cases; the rest is just recorded.
-    const changes: RevisionChange[] = (["title", "description", "priority", "status", "source"] as const)
+    const changes: RevisionChange[] = (["title", "description", "priority", "status", "source", "kind", "external_id", "wcag", "viewports"] as const)
       .filter((f) => next[f] !== cur[f])
-      .map((f) => ({ field: f, from: cur[f], to: next[f] }));
+      .map((f) => ({ field: f === "external_id" ? "id" : f, from: String(cur[f] ?? ""), to: String(next[f] ?? "") }));
     recordRevision(id, changes, changes.some((c) => c.field === "title" || c.field === "description"));
     if (body.caseIds) setRequirementCases(id, cur.project_id, body.caseIds);
   })();

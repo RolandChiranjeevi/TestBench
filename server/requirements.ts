@@ -1,4 +1,18 @@
 import { db, parseJson } from "./db.ts";
+import type { Viewport } from "./shapes.ts";
+import { requirementLinks, requirementOverviews } from "./reqlinks.ts";
+
+/** What a requirement is about. Accessibility requirements may name WCAG criteria; accessibility and responsive ones may name viewports. */
+export const REQUIREMENT_KINDS = ["functional", "accessibility", "responsive", "security_privacy", "business_rule", "usability"] as const;
+export type RequirementKind = (typeof REQUIREMENT_KINDS)[number];
+export const REQUIREMENT_STATUSES = ["draft", "approved", "deprecated"] as const;
+
+/** Why this combination of kind, WCAG criteria and viewports is not allowed, or null. */
+export function kindProblem(kind: string, wcag: string[], viewports: Viewport[]): string | null {
+  if (wcag.length && kind !== "accessibility") return "WCAG criteria belong to accessibility requirements";
+  if (viewports.length && kind !== "responsive" && kind !== "accessibility") return "viewports belong to responsive (or accessibility) requirements";
+  return null;
+}
 
 /**
  * How well a requirement is tested, from the latest result of each test case linked to it:
@@ -27,9 +41,16 @@ export interface RequirementRow {
   priority: string;
   status: string;
   source: string;
+  kind: string;
+  external_id: string | null;
+  wcag: string;
+  viewports: string;
   created_at: string;
   updated_at: string;
 }
+
+/** The stored row with its JSON columns read. */
+const shape = <T extends RequirementRow>(r: T) => ({ ...r, wcag: parseJson<string[]>(r.wcag, []), viewports: parseJson<Viewport[]>(r.viewports, []) });
 
 /** Newest executed result per case. Skipped and untested results say nothing about a case, so they are ignored. */
 export function latestStatusByCase(projectId: number): Map<number, string> {
@@ -76,10 +97,12 @@ export function listRequirements(projectId: number) {
     if (!byReq.has(l.requirement_id)) byReq.set(l.requirement_id, []);
     byReq.get(l.requirement_id)!.push({ id: l.case_id, active: l.case_status !== "deprecated", review: !!l.review });
   }
+  const overviews = requirementOverviews(projectId);
   return rows.map((r) => {
     const linked = byReq.get(r.id) ?? [];
     return {
-      ...r,
+      ...shape(r),
+      links: overviews.get(r.id)!,
       caseIds: linked.map((l) => l.id),
       /** Linked cases that are not deprecated: only these count towards coverage. */
       activeCaseIds: linked.filter((l) => l.active).map((l) => l.id),
@@ -107,7 +130,7 @@ export function getRequirement(id: number) {
     (h) => ({ id: h.id, at: h.changed_at, material: !!h.material, changes: parseJson<RevisionChange[]>(h.changes, []) }),
   );
   const attachments = db.prepare("SELECT id, filename, stored_name, mime, size, created_at FROM requirement_attachments WHERE requirement_id = ? ORDER BY id").all(id);
-  return { ...row, cases, history, attachments, coverage: classify(cases.filter((c) => c.status !== "deprecated").map((c) => c.last_status ?? undefined)) };
+  return { ...shape(row), links: requirementOverviews(row.project_id).get(row.id)!, linked: requirementLinks(id), cases, history, attachments, coverage: classify(cases.filter((c) => c.status !== "deprecated").map((c) => c.last_status ?? undefined)) };
 }
 
 export function requirementsForCase(caseId: number) {
@@ -127,6 +150,11 @@ export interface RequirementInput {
   priority?: string;
   status?: string;
   source?: string;
+  kind?: string;
+  /** The stable id the requirement is imported and exported under. Unique within the project. */
+  externalId?: string | null;
+  wcag?: string[];
+  viewports?: Viewport[];
 }
 
 export function createRequirement(projectId: number, input: RequirementInput): number {
@@ -137,9 +165,10 @@ export function createRequirement(projectId: number, input: RequirementInput): n
     if (!n) throw new Error("Project not found");
     const row = db
       .prepare(`
-        INSERT INTO requirements (project_id, number, title, description, priority, status, source)
-        VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`)
-      .get(projectId, n.n, input.title, input.description ?? "", input.priority ?? "medium", input.status ?? "approved", input.source ?? "") as { id: number };
+        INSERT INTO requirements (project_id, number, title, description, priority, status, source, kind, external_id, wcag, viewports)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`)
+      .get(projectId, n.n, input.title, input.description ?? "", input.priority ?? "medium", input.status ?? "approved", input.source ?? "",
+        input.kind ?? "functional", input.externalId ?? null, JSON.stringify(input.wcag ?? []), JSON.stringify(input.viewports ?? [])) as { id: number };
     recordRevision(row.id, [{ field: "created" }], false);
     return row.id;
   })();
