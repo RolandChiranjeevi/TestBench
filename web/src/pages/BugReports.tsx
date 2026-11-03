@@ -638,7 +638,7 @@ function AuditsPanel({ pid }: { pid: string }) {
             <p style={{ margin: 0 }}>
               {preview.deleted} untouched proposal{preview.deleted === 1 ? "" : "s"} and the stored audit report will be removed.{" "}
               {preview.kept > 0 ? `${preview.kept} report${preview.kept === 1 ? " is" : "s are"} kept (reviewed, edited or linked), with their evidence and a note of where they came from.` : "No reports are kept."}{" "}
-              {preview.manualDeleted + preview.manualKept > 0 && `Manual tests: ${preview.manualDeleted} untouched proposal${preview.manualDeleted === 1 ? "" : "s"} removed, ${preview.manualKept} kept (reviewed or edited).`}
+              {preview.manualDeleted + preview.manualKept > 0 && `Agent proposals: ${preview.manualDeleted} untouched proposal${preview.manualDeleted === 1 ? "" : "s"} removed, ${preview.manualKept} kept (reviewed or edited).`}
             </p>
           ) : <p style={{ margin: 0 }}>Checking…</p>}
         </ConfirmModal>
@@ -672,7 +672,7 @@ export function ImportModal({ pid, onClose }: { pid: string; onClose: () => void
     onSuccess: (s) => {
       refresh();
       const m = s.manualTests;
-      toast("success", `Imported: ${s.counts.new} new, ${s.counts.updated} updated, ${s.counts.pending} waiting for your decision${m.listed ? `. Manual tests: ${m.counts.new} new, ${m.counts.updated} updated, ${m.counts.pending} waiting` : ""}`);
+      toast("success", `Imported: ${s.counts.new} new, ${s.counts.updated} updated, ${s.counts.pending} waiting for your decision${m.listed ? `. Agent proposals: ${m.counts.new} new, ${m.counts.updated} updated, ${m.counts.pending} waiting` : ""}`);
       onClose();
     },
     onError: (e: Error) => toast("error", e.message),
@@ -699,7 +699,7 @@ export function ImportModal({ pid, onClose }: { pid: string; onClose: () => void
       }
     >
       <div className="col" style={{ gap: 12 }}>
-        <div className="faint">A package is a zip or a folder with <code className="inline">manifest.json</code>, <code className="inline">bugs.json</code>, optionally <code className="inline">manual-tests.json</code>, and its evidence. Every report and every manual test arrives as a proposal; nothing is accepted, run or sent anywhere.</div>
+        <div className="faint">A package is a zip or a folder with <code className="inline">manifest.json</code>, <code className="inline">bugs.json</code>, optionally <code className="inline">manual-tests.json</code>, and its evidence. Every report and every manual test arrives as a proposal; nothing is accepted, run or sent anywhere. Manual tests show on Agent proposals; accept one to turn it into a test case.</div>
         <div className="row">
           <input ref={zipInput} type="file" accept=".zip" hidden onChange={(e) => { choose(e.target.files, false); e.target.value = ""; }} />
           <input ref={folderInput} type="file" multiple hidden {...({ webkitdirectory: "", directory: "" } as Record<string, string>)} onChange={(e) => { choose(e.target.files, true); e.target.value = ""; }} />
@@ -725,7 +725,7 @@ export function ImportModal({ pid, onClose }: { pid: string; onClose: () => void
             </div>
             {s.manualTests.listed && (
               <div className="card" style={{ padding: 12 }}>
-                <strong>Manual tests</strong>
+                <strong>Agent proposals (manual tests)</strong>
                 <div style={{ marginTop: 4 }}>
                   {s.manualTests.counts.new} new · {s.manualTests.counts.unchanged} unchanged · {s.manualTests.counts.updated} updated · {s.manualTests.counts.pending} with a newer version waiting for review
                 </div>

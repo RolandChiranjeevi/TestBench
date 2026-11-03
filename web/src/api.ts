@@ -40,7 +40,7 @@ export interface Requirement {
 }
 export interface RequirementDetail extends Omit<Requirement, "caseIds" | "activeCaseIds" | "reviewCount"> {
   linked: {
-    manualTests: { id: number; sourceId: string; title: string; status: "proposed" | "accepted" | "rejected"; category: string; priority: Priority }[];
+    manualTests: { id: number; sourceId: string; title: string; status: "proposed" | "accepted" | "rejected"; category: string; priority: Priority; testCase: string | null }[];
     bugs: { id: number; sourceId: string; title: string; status: "proposed" | "accepted" | "rejected" | "duplicate"; severity: Priority | null }[];
   };
   cases: { id: number; number: number; title: string; priority: Priority; status: CaseSummary["status"]; suite_name: string | null; last_status: Status | null; review_needed: boolean }[];
@@ -56,6 +56,8 @@ export interface HistoryEntry { id: number; status: Status; flaky: number; durat
 export interface CaseDetail extends CaseSummary {
   description: string; preconditions: string; project_key: string; steps: Required<Step>[]; automated: AutomatedTest[]; history: HistoryEntry[];
   edited_since?: boolean; requirements: RequirementRef[];
+  /** The agent proposal this case was made from, if any. */
+  proposal?: { id: number; sourceId: string; title: string; status: string } | null;
 }
 export interface Counts { total: number; passed: number; failed: number; blocked: number; skipped: number; untested: number; flaky: number; duration_ms: number }
 export interface RunSummary extends Counts {

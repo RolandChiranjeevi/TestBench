@@ -49,17 +49,17 @@ A complete example is in [`examples/requirements/shop-requirements.json`](../exa
 
 ## What is linked to a requirement
 
-A requirement is linked to **test cases** as before, and to the **manual tests** and **bug reports** that name it (`refs.requirements`: `REQ-3` or the stable id), or that a person linked by hand (on a manual test, **Edit requirements**). The requirement's page lists them. Links only ever resolve inside the project; a reference that matches nothing is shown on the manual test or bug report with the reason (not found, or not a requirement reference), and the Requirements page lists them all under *references to requirements that do not exist*.
+A requirement is linked to **test cases** as before (a test case made from an agent proposal is linked to the requirements the proposal named), and to the **agent proposals** (manual tests) and **bug reports** that name it (`refs.requirements`: `REQ-3` or the stable id), or that a person linked by hand (on a manual test, **Edit requirements**). The requirement's page lists them. Links only ever resolve inside the project; a reference that matches nothing is shown on the manual test or bug report with the reason (not found, or not a requirement reference), and the Requirements page lists them all under *references to requirements that do not exist*.
 
 Coverage counts **people's decisions**, not the agent's proposals:
 
 | | |
 |---|---|
-| **Without a test** | No active test case and no **accepted** manual test is linked. A proposed manual test is shown next to the count (`0 +1`) and does not cover anything until a person accepts it. |
+| **Without a test** | No active test case is linked, and no **accepted** agent proposal either. A proposal that is not reviewed yet is shown next to the count (`0 +1`) and covers nothing. An accepted proposal that is not a test case yet shows as *Proposal accepted*: create a test case from it, and run it, for the requirement to show real coverage. |
 | **With open bugs** | An **accepted** bug report names the requirement. A proposed one is shown but does not count. |
 | **Not in latest audit run** | Audits have been imported, and neither a bug report nor a manual test of the **latest run** of any audit names the requirement (by the agent's newest version of it). It means "the agent's latest run did not look at this", not that it is met or broken. |
 
-These are filters on the Requirements page. The existing coverage from test case results (**Passing**, **Failing**, …) is unchanged.
+These are filters on the Requirements page. The coverage from test case results (**Passing**, **Failing**, …) is what says how well a requirement is tested, and a test case made from a proposal takes part in it like any other case.
 
 ## What the agent reads
 

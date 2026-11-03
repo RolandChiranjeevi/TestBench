@@ -4,6 +4,7 @@ import type { ManualCategory, ManualTestItem, ParsedPackage } from "./importers/
 import { MANUAL_CATEGORIES } from "./importers/auditpackage.ts";
 import { PRIORITIES, type Viewport } from "./shapes.ts";
 import type { Presence } from "./audits.ts";
+import { addRequirementCases, latestStatusByCase } from "./requirements.ts";
 
 /**
  * Manual test cases from an audit package (manual-tests.json). The agent proposes them; a person reviews, edits and runs them.
@@ -12,6 +13,9 @@ import type { Presence } from "./audits.ts";
  *  - Identity is (project, the agent's audit id, the test's sourceId). Same rules as bug reports for what a repeat may change:
  *    an untouched proposal is updated, anything a person reviewed or edited keeps their version and the newer one waits as a revision.
  *  - A test that is not in the latest run is shown as such and otherwise left alone.
+ *  - A proposal is an inbox, not a second kind of test: once a person has accepted it they can create a test case from it (createCaseFromProposal).
+ *    The test case is then what is run, in Runs, and what counts as coverage. Only a person's explicit choice ("Use the agent's version")
+ *    ever changes that test case from a later version of the proposal.
  */
 
 export type ManualStatus = "proposed" | "accepted" | "rejected";
@@ -125,6 +129,62 @@ export function writeManualTests(plan: PlannedManual[], ctx: { projectId: number
   relinkManualRefs(ctx.projectId);
 }
 
+// ---------- From proposal to test case ----------
+
+const caseKey = (projectId: number, number: number) => `${(db.prepare("SELECT key FROM projects WHERE id = ?").get(projectId) as { key: string }).key}-${number}`;
+
+/** The test case's steps: the agent's actions, with the expected result on the last one (the case format has one per step). */
+const caseSteps = (p: ManualPayload) => p.steps.map((action, i) => ({ action, expected: i === p.steps.length - 1 ? p.expected : "" }));
+const caseTags = (p: ManualPayload) => ["agent-proposed", p.category, ...p.wcag.map((c) => `wcag-${c}`)];
+
+/** Makes the case's steps match, keeping the rows (and so the step results of earlier runs) where they already exist. */
+function writeCaseSteps(caseId: number, steps: { action: string; expected: string }[]) {
+  const have = (db.prepare("SELECT id FROM case_steps WHERE case_id = ? ORDER BY position").all(caseId) as { id: number }[]).map((r) => r.id);
+  steps.forEach((s, i) => {
+    if (have[i]) db.prepare("UPDATE case_steps SET position = ?, action = ?, expected = ? WHERE id = ?").run(i, s.action, s.expected, have[i]);
+    else db.prepare("INSERT INTO case_steps (case_id, position, action, expected) VALUES (?, ?, ?, ?)").run(caseId, i, s.action, s.expected);
+  });
+  for (const id of have.slice(steps.length)) db.prepare("DELETE FROM case_steps WHERE id = ?").run(id);
+}
+
+/**
+ * A person turns an accepted proposal into a test case of the project. The case starts as the proposal is now (their edits included),
+ * is linked to the requirements it names, and is run in Runs like any other case. Nothing is run here and no result is made.
+ */
+export function createCaseFromProposal(id: number) {
+  const m = db.prepare("SELECT * FROM manual_tests WHERE id = ?").get(id) as Record<string, any> | undefined;
+  if (!m) throw new AuditError(404, "Manual test not found");
+  if (m.review_status !== "accepted") throw new AuditError(409, "Accept the proposal first. Only a proposal you have accepted can become a test case.");
+  if (m.case_id) {
+    const c = db.prepare("SELECT number FROM cases WHERE id = ?").get(m.case_id) as { number: number } | undefined;
+    if (c) throw new AuditError(409, `This proposal is already the test case ${caseKey(m.project_id, c.number)}.`);
+  }
+  const payload: ManualPayload = {
+    title: m.title, description: m.description, preconditions: m.preconditions, steps: json<string[]>(m.steps, []), expected: m.expected,
+    priority: effective(m), category: m.category, wcag: json<string[]>(m.wcag, []), viewports: json<Viewport[]>(m.viewports, []), refs: { requirements: [], cases: [], tests: [] },
+  };
+  return db.transaction(() => {
+    const n = db.prepare("UPDATE projects SET next_case_number = next_case_number + 1 WHERE id = ? RETURNING next_case_number - 1 AS n").get(m.project_id) as { n: number };
+    const pos = (db.prepare("SELECT COALESCE(MAX(position), -1) + 1 AS p FROM cases WHERE project_id = ?").get(m.project_id) as { p: number }).p;
+    const caseId = (db.prepare(`INSERT INTO cases (project_id, suite_id, number, title, description, preconditions, priority, status, tags, position)
+        VALUES (?, NULL, ?, ?, ?, ?, ?, 'ready', ?, ?) RETURNING id`)
+      .get(m.project_id, n.n, payload.title, payload.description, payload.preconditions, payload.priority, JSON.stringify(caseTags(payload)), pos) as { id: number }).id;
+    writeCaseSteps(caseId, caseSteps(payload));
+    for (const r of db.prepare("SELECT DISTINCT requirement_id AS rid FROM manual_test_refs WHERE manual_test_id = ? AND requirement_id IS NOT NULL").all(id) as { rid: number }[]) {
+      addRequirementCases(r.rid, m.project_id, [caseId]);
+    }
+    db.prepare("UPDATE manual_tests SET case_id = ? WHERE id = ?").run(caseId, id);
+    return { caseId, number: n.n, key: caseKey(m.project_id, n.n) };
+  })();
+}
+
+/** The agent's newer version, applied by a person, also replaces the text of the test case made from the proposal. */
+function syncCase(caseId: number, p: ManualPayload) {
+  db.prepare("UPDATE cases SET title = ?, description = ?, preconditions = ?, priority = ?, tags = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(p.title, p.description, p.preconditions, p.priority, JSON.stringify(caseTags(p)), caseId);
+  writeCaseSteps(caseId, caseSteps(p));
+}
+
 // ---------- Presence in the latest run ----------
 
 /**
@@ -190,7 +250,8 @@ export function listManualTests(projectId: number, opts: ManualListOpts = {}) {
     SELECT m.id, m.source_id, m.title, m.review_status, m.category, m.wcag, m.viewports, m.agent_priority, m.human_priority, m.imported_at, m.audit_id, m.origin, m.latest_rev, m.applied_rev, m.ignored_rev, m.edited_at,
       ${PRESENCE_EXPR} AS presence,
       (SELECT COUNT(*) FROM manual_test_refs r WHERE r.manual_test_id = m.id AND r.state != 'resolved') AS unresolved_refs,
-      (SELECT COUNT(*) FROM manual_test_refs r WHERE r.manual_test_id = m.id AND r.requirement_id IS NOT NULL) AS requirements
+      (SELECT COUNT(*) FROM manual_test_refs r WHERE r.manual_test_id = m.id AND r.requirement_id IS NOT NULL) AS requirements,
+      (SELECT number FROM cases WHERE id = m.case_id) AS case_number, (SELECT key FROM projects WHERE id = m.project_id) AS project_key
     FROM manual_tests m LEFT JOIN cur c ON c.audit_id = m.audit_id WHERE ${where.join(" AND ")} ORDER BY m.imported_at DESC, m.id DESC LIMIT 500`).all(...args) as Record<string, any>[];
   const counts = db.prepare("SELECT review_status AS s, COUNT(*) AS n FROM manual_tests WHERE project_id = ? GROUP BY review_status").all(projectId) as { s: string; n: number }[];
   const presenceCounts: Record<Presence, number> = { present: 0, missing: 0, no_later_run: 0 };
@@ -202,7 +263,7 @@ export function listManualTests(projectId: number, opts: ManualListOpts = {}) {
       id: r.id, sourceId: r.source_id, title: r.title, status: r.review_status as ManualStatus, category: r.category as ManualCategory,
       priority: effective(r), wcag: json<string[]>(r.wcag, []), viewports: json<Viewport[]>(r.viewports, []).map(viewportText),
       importedAt: r.imported_at, auditTitle: json<{ title?: string }>(r.origin, {}).title ?? "", auditDeleted: r.audit_id == null,
-      unresolvedRefs: r.unresolved_refs, requirements: r.requirements, edited: !!r.edited_at,
+      unresolvedRefs: r.unresolved_refs, requirements: r.requirements, edited: !!r.edited_at, testCase: r.case_number ? `${r.project_key}-${r.case_number}` : null,
       pendingUpdate: r.latest_rev > r.applied_rev && r.latest_rev > r.ignored_rev, presence: r.presence as Presence,
     })),
     presenceCounts,
@@ -254,6 +315,11 @@ export function getManualTest(id: number) {
     importedAt: m.imported_at, agentUpdatedAt: latestRevAt, origin: json<Record<string, any>>(m.origin, {}), originAuditId: m.origin_audit_id, audit,
     refs, revisions, pendingUpdate: pending, latestRun: manualStanding(m as { id: number; audit_id: number | null }),
     requiresHumanCheck: true,
+    /** The test case made from this proposal (run in Runs), or null. */
+    testCase: (() => {
+      const c = m.case_id ? (db.prepare("SELECT id, number, title, status FROM cases WHERE id = ?").get(m.case_id) as { id: number; number: number; title: string; status: string } | undefined) : undefined;
+      return c ? { id: c.id, number: c.number, key: caseKey(m.project_id, c.number), title: c.title, status: c.status, lastStatus: latestStatusByCase(m.project_id).get(c.id) ?? null } : null;
+    })(),
   };
 }
 
@@ -274,6 +340,8 @@ export interface ManualPatch {
 /** A person edits the working copy. The agent's version stays in the revisions; a later import will not overwrite this. */
 export function updateManualTest(id: number, patch: ManualPatch) {
   const m = exists(id);
+  const made = db.prepare("SELECT c.number FROM manual_tests t JOIN cases c ON c.id = t.case_id WHERE t.id = ?").get(id) as { number: number } | undefined;
+  if (made) throw new AuditError(409, `This proposal has become the test case ${caseKey(m.project_id, made.number)}. Edit the test case instead.`);
   const sets: string[] = [];
   const args: unknown[] = [];
   for (const [col, v] of [["title", patch.title], ["description", patch.description], ["preconditions", patch.preconditions], ["expected", patch.expected]] as const) {
@@ -311,9 +379,11 @@ export function applyManualUpdate(id: number) {
   const rev = db.prepare("SELECT payload FROM manual_test_revisions WHERE manual_test_id = ? AND rev = ?").get(id, m.latest_rev) as { payload: string };
   const p = json<ManualPayload>(rev.payload, null as unknown as ManualPayload);
   const project = db.prepare("SELECT key FROM projects WHERE id = ?").get(m.project_id) as { key: string };
+  const made = (db.prepare("SELECT case_id FROM manual_tests WHERE id = ?").get(id) as { case_id: number | null }).case_id;
   db.transaction(() => {
     writeCopy(id, p, m.latest_rev);
     replaceRefs(id, resolveRefs(m.project_id, project.key, p.refs));
+    if (made) syncCase(made, p);
   })();
 }
 

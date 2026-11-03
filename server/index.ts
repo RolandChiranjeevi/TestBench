@@ -40,7 +40,7 @@ import { importRequirements, RequirementImportError } from "./reqimport.ts";
 import { requirementCoverage } from "./reqlinks.ts";
 import { normViewports, normWcag, viewportSchema, wcagCriterion, type Viewport } from "./shapes.ts";
 import { LIMITS as AUDIT_LIMITS, PackageError } from "./importers/auditpackage.ts";
-import { applyManualUpdate, deleteManualTest, getManualTest, ignoreManualUpdate, listManualTests, relinkManualRefs, reviewManualTest, updateManualTest } from "./manualtests.ts";
+import { applyManualUpdate, createCaseFromProposal, deleteManualTest, getManualTest, ignoreManualUpdate, listManualTests, relinkManualRefs, reviewManualTest, updateManualTest } from "./manualtests.ts";
 import { addRequirementCases, createRequirement, kindProblem, REQUIREMENT_KINDS, getRequirement, linkCaseByTags, listRequirements, markReviewed, recordRevision, requirementsForCase, requirementSummary, setCaseRequirements, setRequirementCases, type RevisionChange } from "./requirements.ts";
 import { dashboardData, listMilestones, milestoneReport } from "./stats.ts";
 import { parseReport, type Framework, type ParsedReport } from "./importers/parse.ts";
@@ -256,6 +256,8 @@ function getCase(id: number) {
     ...caseRow(row),
     steps: db.prepare("SELECT * FROM case_steps WHERE case_id = ? ORDER BY position").all(id),
     requirements: requirementsForCase(id),
+    // The agent proposal this case was made from, if any.
+    proposal: (db.prepare("SELECT id, source_id AS sourceId, title, review_status AS status FROM manual_tests WHERE case_id = ?").get(id) as { id: number; sourceId: string; title: string; status: string } | undefined) ?? null,
     automated: db.prepare("SELECT * FROM automated_tests WHERE case_id = ? ORDER BY title").all(id),
     history: db
       .prepare(`
@@ -1042,6 +1044,12 @@ app.post("/api/manual-tests/:id/review", (req) => {
   const body = z.object({ status: z.enum(["proposed", "accepted", "rejected"]), note: z.string().max(2000).optional() }).parse(req.body);
   audited(() => reviewManualTest(id, body.status, body.note));
   return getManualTest(id);
+});
+// A person turns an accepted proposal into a test case of the project (to be run in Runs).
+app.post("/api/manual-tests/:id/create-case", (req) => {
+  const id = idParam(req);
+  const made = audited(() => createCaseFromProposal(id));
+  return { case: made, manualTest: getManualTest(id) };
 });
 app.post("/api/manual-tests/:id/apply-update", (req) => {
   const id = idParam(req);
