@@ -455,7 +455,7 @@ describe("audit package: deleting", () => {
     const preview = previewAuditDeletion(auditId);
     assert.equal(preview.deleted, 1);
     assert.equal(preview.kept, 1);
-    assert.deepEqual(deleteAudit(auditId), { deleted: 1, kept: 1 });
+    assert.deepEqual(deleteAudit(auditId), { deleted: 1, kept: 1, manualDeleted: 0, manualKept: 0 });
 
     assert.equal(row(gone), undefined);
     assert.ok(!existsSync(join(UPLOAD_DIR, goneFile)), "an untouched proposal's evidence goes with it");

@@ -24,8 +24,11 @@ if (!dir || args.length > 1 || previous === "" || zip === "") {
 
 const r = checkPackageDir(resolve(dir), { write, previousDir: previous ? resolve(previous) : undefined });
 if (r.auditId) console.log(`Audit ${r.auditId} for project ${r.project}: ${r.sourceIds.length} finding${r.sourceIds.length === 1 ? "" : "s"} (${r.sourceIds.join(", ") || "none"})`);
+if (r.manualSourceIds.length) console.log(`Manual tests: ${r.manualSourceIds.length} (${r.manualSourceIds.join(", ")})`);
 if (r.compared) {
   console.log(`Compared with ${r.compared.previousAuditId}: ${r.compared.same.length} same, ${r.compared.added.length} new${r.compared.added.length ? ` (${r.compared.added.join(", ")})` : ""}, ${r.compared.missing.length} not repeated`);
+  const m = r.compared.manual;
+  if (m.same.length + m.added.length + m.missing.length) console.log(`Manual tests: ${m.same.length} same, ${m.added.length} new${m.added.length ? ` (${m.added.join(", ")})` : ""}, ${m.missing.length} not repeated`);
 }
 for (const w of r.warnings) console.log(`warning: ${w}`);
 for (const e of r.errors) console.log(`error: ${e}`);

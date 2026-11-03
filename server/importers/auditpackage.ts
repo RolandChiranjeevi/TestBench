@@ -2,11 +2,13 @@ import { createHash } from "node:crypto";
 import { extname } from "node:path";
 import { z } from "zod";
 import { MAX_FILE_BYTES, type FileBag } from "./bag.ts";
+import { idText, normViewports, normWcag, PRIORITIES, str, viewportSchema, wcagCriterion } from "../shapes.ts";
 
 /**
  * Audit package: what a test agent leaves behind after an exploratory audit. A folder or zip with
  *   manifest.json   the audit (id, agent, project key), and every file with its sha256 and size
  *   bugs.json       { "version": 1, "bugs": [ ... ] }
+ *   manual-tests.json  optional, { "version": 1, "tests": [ ... ] }: manual test cases for a person to review and run
  *   report.md       optional, the agent's readable audit (stored and shown as text, never interpreted)
  *   evidence/...    files the bug reports point to
  * It is read the same way whether it arrives as a GitHub artifact or as a manual upload.
@@ -21,6 +23,8 @@ export const LIMITS = {
   totalBytes: 500 * 1024 * 1024, // all entries together, unpacked
   fileBytes: MAX_FILE_BYTES, // one file
   bugs: 200,
+  manualTests: 200,
+  manualTestsBytes: 10 * 1024 * 1024,
   manifestBytes: 1024 * 1024,
   bugsBytes: 20 * 1024 * 1024,
   narrativeBytes: 5 * 1024 * 1024,
@@ -51,8 +55,6 @@ export const mimeFor = (ext: string) => MIME[ext.toLowerCase()] ?? "application/
 
 const SEVERITY = ["low", "medium", "high", "critical"] as const;
 const isoLike = z.string().max(40).refine((s) => !Number.isNaN(Date.parse(s)), "not a date");
-const idText = z.string().min(1).max(120).regex(/^[\w.:\-/]+$/, "use letters, digits and . _ : - /");
-const str = (max: number) => z.string().max(max);
 const refList = z.array(str(300)).max(50).default([]);
 
 const manifestSchema = z.object({
@@ -69,7 +71,7 @@ const manifestSchema = z.object({
     github: z.object({ repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/), runId: z.number().int().positive() }).optional(),
   }),
   files: z.array(z.object({ path: z.string().min(1).max(300), sha256: z.string().regex(/^[a-fA-F0-9]{64}$/), size: z.number().int().min(0) })).max(LIMITS.files).default([]),
-  parts: z.object({ bugs: str(300).optional(), narrative: str(300).optional(), results: z.array(str(300)).optional() }).default({}),
+  parts: z.object({ bugs: str(300).optional(), manualTests: str(300).optional(), narrative: str(300).optional(), results: z.array(str(300)).optional() }).default({}),
 });
 
 const bugSchema = z.object({
@@ -94,12 +96,40 @@ const bugSchema = z.object({
 });
 const bugsFileSchema = z.object({ version: z.literal(1), bugs: z.array(z.unknown()).max(LIMITS.bugs) });
 
+export const MANUAL_CATEGORIES = ["functional", "accessibility", "responsive", "usability", "security", "other"] as const;
+export type ManualCategory = (typeof MANUAL_CATEGORIES)[number];
+
+/**
+ * A manual test case the agent proposes: something a person has to check, because an automatic run cannot decide it. The agent describes
+ * the test; it never gives a result or a status.
+ */
+const manualTestSchema = z
+  .object({
+    sourceId: idText,
+    title: z.string().trim().min(1).max(200),
+    description: str(20000).default(""),
+    preconditions: str(5000).default(""),
+    steps: z.array(z.string().trim().min(1).max(1000)).min(1, "at least one step").max(50),
+    expected: z.string().trim().min(1, "say what should happen").max(5000),
+    priority: z.enum(PRIORITIES),
+    category: z.enum(MANUAL_CATEGORIES),
+    wcag: z.array(wcagCriterion).max(20).default([]),
+    viewports: z.array(viewportSchema).max(10).default([]),
+    refs: z.object({ requirements: refList, cases: refList, tests: refList }).default({ requirements: [], cases: [], tests: [] }),
+  })
+  .refine((t) => t.category !== "responsive" || t.viewports.length > 0, { message: "a responsive test names at least one viewport, device or breakpoint", path: ["viewports"] })
+  .transform((t) => ({ ...t, wcag: normWcag(t.wcag), viewports: normViewports(t.viewports) }));
+const manualTestsFileSchema = z.object({ version: z.literal(1), tests: z.array(z.unknown()).max(LIMITS.manualTests) });
+
 export type Manifest = z.infer<typeof manifestSchema>;
 export type BugItem = z.infer<typeof bugSchema>;
+export type ManualTestItem = z.infer<typeof manualTestSchema>;
 
 export interface ParsedPackage {
   manifest: Manifest;
   bugs: BugItem[];
+  /** The manual tests of the package; null when it has no manual-tests.json at all (which says nothing about earlier manual tests). */
+  manualTests: ManualTestItem[] | null;
   /** Prefix of the package inside the bag: "" for the root, "folder/" when everything sits in one folder. */
   root: string;
   bag: FileBag;
@@ -184,6 +214,29 @@ export function parsePackage(bag: FileBag): ParsedPackage {
     bugs.push(r.data);
   });
 
+  let manualTests: ManualTestItem[] | null = null;
+  let manualPath: string | null = null;
+  let manualBytes: Uint8Array | null = null;
+  const declaredManual = manifest.parts.manualTests;
+  if (declaredManual !== undefined && !safeRelPath(declaredManual)) throw new PackageError("parts.manualTests is not a safe path");
+  const manualName = safeRelPath(declaredManual ?? "manual-tests.json");
+  if (manualName && (declaredManual !== undefined || bag.names.includes(root + manualName))) {
+    manualPath = manualName;
+    const mt = readJson(bag, root + manualName, LIMITS.manualTestsBytes, manualName);
+    manualBytes = mt.bytes;
+    const file = manualTestsFileSchema.safeParse(mt.value);
+    if (!file.success) throw new PackageError(`${manualName}: ${issues(file.error)}`);
+    manualTests = [];
+    const seenManual = new Set<string>();
+    file.data.tests.forEach((raw, i) => {
+      const r = manualTestSchema.safeParse(raw);
+      if (!r.success) throw new PackageError(`${manualName}: test #${i + 1}${typeof (raw as { sourceId?: unknown })?.sourceId === "string" ? ` (${(raw as { sourceId: string }).sourceId})` : ""}: ${issues(r.error)}`);
+      if (seenManual.has(r.data.sourceId)) throw new PackageError(`${manualName}: sourceId "${r.data.sourceId}" appears twice`);
+      seenManual.add(r.data.sourceId);
+      manualTests!.push(r.data);
+    });
+  }
+
   const warnings: string[] = [];
   let narrative: Uint8Array | null = null;
   const narrativePath = manifest.parts.narrative ? safeRelPath(manifest.parts.narrative) : bag.names.includes(root + "report.md") ? "report.md" : null;
@@ -196,11 +249,11 @@ export function parsePackage(bag: FileBag): ParsedPackage {
   }
   if (manifest.parts.results?.length) warnings.push("The package lists test results. Test results are not imported from an audit package in this version; use the normal import for them.");
   if (bag.names.includes(root + "cases.json")) warnings.push("cases.json is present but test cases are not imported from an audit package in this version.");
-  const listed = new Set([...declared.keys(), manifestPath.slice(root.length), bugsPath, ...(narrativePath ? [narrativePath] : [])]);
+  const listed = new Set([...declared.keys(), manifestPath.slice(root.length), bugsPath, ...(manualPath ? [manualPath] : []), ...(narrativePath ? [narrativePath] : [])]);
   const unlisted = bag.names.filter((n) => n.startsWith(root) && !listed.has(n.slice(root.length))).length;
   if (unlisted) warnings.push(`${unlisted} file${unlisted === 1 ? "" : "s"} in the package ${unlisted === 1 ? "is" : "are"} not listed in the manifest and ${unlisted === 1 ? "was" : "were"} ignored`);
 
-  return { manifest, bugs, root, bag, packageSha256: sha256(Buffer.concat([m.bytes, b.bytes])), narrative, declared, warnings };
+  return { manifest, bugs, manualTests, root, bag, packageSha256: sha256(Buffer.concat([m.bytes, b.bytes, ...(manualBytes ? [manualBytes] : [])])), narrative, declared, warnings };
 }
 
 export interface EvidenceCheck {

@@ -523,6 +523,73 @@ CREATE INDEX IF NOT EXISTS bug_sightings_import ON bug_sightings(audit_import_id
   if (!hasColumn("audit_imports", "github_repo")) d.exec("ALTER TABLE audit_imports ADD COLUMN github_repo TEXT");
   if (!hasColumn("audit_imports", "github_run_id")) d.exec("ALTER TABLE audit_imports ADD COLUMN github_run_id INTEGER");
 
+  // Requirements that a test agent can use as a basis: a kind, the stable id they were imported with, and (for accessibility and
+  // responsive requirements) the WCAG criteria and viewports. external_id is unique within a project, never across projects.
+  if (!hasColumn("requirements", "kind")) d.exec("ALTER TABLE requirements ADD COLUMN kind TEXT NOT NULL DEFAULT 'functional'");
+  if (!hasColumn("requirements", "external_id")) d.exec("ALTER TABLE requirements ADD COLUMN external_id TEXT");
+  if (!hasColumn("requirements", "wcag")) d.exec("ALTER TABLE requirements ADD COLUMN wcag TEXT NOT NULL DEFAULT '[]'");
+  if (!hasColumn("requirements", "viewports")) d.exec("ALTER TABLE requirements ADD COLUMN viewports TEXT NOT NULL DEFAULT '[]'");
+  d.exec("CREATE UNIQUE INDEX IF NOT EXISTS requirements_external ON requirements(project_id, external_id) WHERE external_id IS NOT NULL");
+
+  // Manual test cases proposed by a test agent in an audit package (manual-tests.json). They are kept apart from the project's own test cases,
+  // from automated results and from bug reports, and start as proposals. Same shape as bug reports: a working copy a person may edit, the
+  // agent's versions as revisions, and which audit runs contained the test.
+  d.exec(`
+CREATE TABLE IF NOT EXISTS manual_tests (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  audit_id INTEGER REFERENCES audits(id) ON DELETE SET NULL,
+  origin_audit_id TEXT NOT NULL,
+  origin TEXT NOT NULL DEFAULT '{}',
+  source_id TEXT NOT NULL,
+  -- working copy (a person may edit it)
+  title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', preconditions TEXT NOT NULL DEFAULT '',
+  steps TEXT NOT NULL DEFAULT '[]', expected TEXT NOT NULL DEFAULT '',
+  category TEXT NOT NULL, wcag TEXT NOT NULL DEFAULT '[]', viewports TEXT NOT NULL DEFAULT '[]',
+  -- two separate judgements of priority
+  agent_priority TEXT NOT NULL, human_priority TEXT,
+  imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+  review_status TEXT NOT NULL DEFAULT 'proposed',   -- proposed | accepted | rejected; only a person sets this
+  reviewed_at TEXT, review_note TEXT NOT NULL DEFAULT '',
+  edited_at TEXT,
+  applied_rev INTEGER NOT NULL DEFAULT 1, latest_rev INTEGER NOT NULL DEFAULT 1, ignored_rev INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (project_id, origin_audit_id, source_id)
+);
+CREATE INDEX IF NOT EXISTS manual_tests_project ON manual_tests(project_id, review_status);
+CREATE INDEX IF NOT EXISTS manual_tests_audit ON manual_tests(audit_id);
+CREATE TABLE IF NOT EXISTS manual_test_revisions (
+  id INTEGER PRIMARY KEY,
+  manual_test_id INTEGER NOT NULL REFERENCES manual_tests(id) ON DELETE CASCADE,
+  rev INTEGER NOT NULL,
+  payload TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+  audit_import_id INTEGER REFERENCES audit_imports(id) ON DELETE SET NULL,
+  UNIQUE (manual_test_id, rev)
+);
+CREATE TABLE IF NOT EXISTS manual_test_refs (
+  id INTEGER PRIMARY KEY,
+  manual_test_id INTEGER NOT NULL REFERENCES manual_tests(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,                        -- requirement | case | test
+  raw TEXT NOT NULL,
+  case_id INTEGER REFERENCES cases(id) ON DELETE SET NULL,
+  requirement_id INTEGER REFERENCES requirements(id) ON DELETE SET NULL,
+  automated_test_id INTEGER REFERENCES automated_tests(id) ON DELETE SET NULL,
+  state TEXT NOT NULL,
+  reason TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS manual_test_refs_test ON manual_test_refs(manual_test_id);
+CREATE INDEX IF NOT EXISTS manual_test_refs_req ON manual_test_refs(requirement_id);
+CREATE TABLE IF NOT EXISTS manual_test_sightings (
+  manual_test_id INTEGER NOT NULL REFERENCES manual_tests(id) ON DELETE CASCADE,
+  audit_import_id INTEGER NOT NULL REFERENCES audit_imports(id) ON DELETE CASCADE,
+  PRIMARY KEY (manual_test_id, audit_import_id)
+);
+CREATE INDEX IF NOT EXISTS manual_test_sightings_import ON manual_test_sightings(audit_import_id);`);
+  // 1 when the package of that run had a manual-tests.json (even an empty one). Only then does a run say anything about manual tests.
+  if (!hasColumn("audit_imports", "manual_listed")) d.exec("ALTER TABLE audit_imports ADD COLUMN manual_listed INTEGER NOT NULL DEFAULT 0");
+  d.exec("CREATE INDEX IF NOT EXISTS bug_refs_req ON bug_refs(requirement_id)");
+
   // Where a project's accepted bug reports are published. One per project. The token is stored sealed (see secrets.ts) and never returned;
   // no token means the server's own key (LINEAR_API_KEY) is used.
   d.exec(`

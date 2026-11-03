@@ -199,6 +199,13 @@ requirements that are failing or weren't run, and exports include them (JSON and
   Excel, PowerPoint, images, CSV, text, `.eml`, zip and video are accepted, up to 100 MB each. Attaching or removing a file shows in the
   history. The files live in `data/uploads/`, so the backup zip includes them; the JSON export lists their names.
 
+
+**Requirements as a basis for a test agent.** A requirement also has a **kind** (functional, accessibility with WCAG criteria, responsive with
+viewports, security and privacy, business rule, usability) and an optional stable id. Import them from a JSON file with a preview (**Import**),
+and download the active ones for an agent (**For the agent**, or `GET /api/projects/<id>/agent/requirements`). The Requirements page also shows
+which requirements have no test, have open bugs, or were not named by the latest audit run, counting only what a person has accepted. An agent
+can use requirements to choose tests and to propose manual tests, but can never mark a requirement as met. See [docs/requirements.md](docs/requirements.md).
+
 ## Creating Linear issues
 
 Optional. On a failed or blocked result (a manual run or an automated test), **Report bug** builds a draft from the case, steps, environment and

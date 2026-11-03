@@ -26,11 +26,23 @@ export interface RequirementRef { id: number; number: number; title: string; sta
 export interface RequirementAttachment { id: number; filename: string; stored_name: string; mime: string; size: number; created_at: string }
 export interface RevisionChange { field: string; from?: string; to?: string; added?: number[]; removed?: number[] }
 export interface RequirementRevision { id: number; at: string; material: boolean; changes: RevisionChange[] }
+export type RequirementKind = "functional" | "accessibility" | "responsive" | "security_privacy" | "business_rule" | "usability";
+export interface Viewport { device?: string; width?: number; height?: number; breakpoint?: string }
+/** What is linked to a requirement besides test cases, and whether the latest audit run touched it. Only a person's decisions count as coverage. */
+export interface RequirementLinks {
+  manualTests: { accepted: number; proposed: number }; bugs: { open: number; proposed: number }; cases: number; withoutTest: boolean;
+  audit: "referenced" | "not_referenced" | "no_audit";
+}
 export interface Requirement {
   id: number; project_id: number; number: number; title: string; description: string; priority: Priority; status: RequirementStatus;
-  source: string; created_at: string; updated_at: string; caseIds: number[]; activeCaseIds: number[]; coverage: Coverage; reviewCount: number; attachmentCount: number;
+  source: string; kind: RequirementKind; external_id: string | null; wcag: string[]; viewports: Viewport[]; links: RequirementLinks;
+  created_at: string; updated_at: string; caseIds: number[]; activeCaseIds: number[]; coverage: Coverage; reviewCount: number; attachmentCount: number;
 }
 export interface RequirementDetail extends Omit<Requirement, "caseIds" | "activeCaseIds" | "reviewCount"> {
+  linked: {
+    manualTests: { id: number; sourceId: string; title: string; status: "proposed" | "accepted" | "rejected"; category: string; priority: Priority }[];
+    bugs: { id: number; sourceId: string; title: string; status: "proposed" | "accepted" | "rejected" | "duplicate"; severity: Priority | null }[];
+  };
   cases: { id: number; number: number; title: string; priority: Priority; status: CaseSummary["status"]; suite_name: string | null; last_status: Status | null; review_needed: boolean }[];
   history: RequirementRevision[];
   attachments: RequirementAttachment[];
@@ -155,7 +167,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
   // Signed out (or the session expired) on an instance with a password: go to the login page.
   if (res.status === 401 && !url.startsWith("/api/login")) window.location.href = "/login";
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error ?? `${res.status} ${res.statusText}`);
+  if (!res.ok) throw Object.assign(new Error(data.error ?? `${res.status} ${res.statusText}`), { problems: Array.isArray(data.problems) ? (data.problems as string[]) : [] });
   return data as T;
 }
 
@@ -205,3 +217,26 @@ export const passRate = (c: Pick<Counts, "passed" | "failed" | "blocked">) => {
   const executed = c.passed + c.failed + c.blocked;
   return executed ? Math.round((c.passed / executed) * 100) : null;
 };
+
+export const KIND_LABEL: Record<RequirementKind, string> = {
+  functional: "Functional", accessibility: "Accessibility", responsive: "Responsive", security_privacy: "Security & privacy", business_rule: "Business rule", usability: "Usability",
+};
+
+/** "390x844 iPhone 13", "320", "bp:md" per line, in the form the editor shows them. */
+export function formatViewport(v: Viewport): string {
+  return [v.width ? `${v.width}${v.height ? `x${v.height}` : ""}` : "", v.breakpoint ? `bp:${v.breakpoint}` : "", v.device ?? ""].filter(Boolean).join(" ");
+}
+export function parseViewports(text: string): Viewport[] {
+  return text.split("\n").map((l) => l.trim()).filter(Boolean).map((line) => {
+    const out: Viewport = {};
+    const rest: string[] = [];
+    for (const tok of line.split(/\s+/)) {
+      const size = /^(\d{3,5})(?:x(\d{3,5}))?$/i.exec(tok);
+      if (size && !out.width) { out.width = Number(size[1]); if (size[2]) out.height = Number(size[2]); }
+      else if (/^bp:/i.test(tok) && !out.breakpoint) out.breakpoint = tok.slice(3);
+      else rest.push(tok);
+    }
+    if (rest.length) out.device = rest.join(" ");
+    return out;
+  });
+}

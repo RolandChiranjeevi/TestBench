@@ -1,0 +1,54 @@
+{
+  "format": "testbench-requirements",
+  "version": 1,
+  "project": "SHOP",
+  "requirements": [
+    {
+      "id": "CHECKOUT-PAY-1",
+      "title": "A customer can pay with a card",
+      "description": "The checkout accepts a valid card and confirms the order. A card that is declined shows why and keeps the cart.",
+      "kind": "functional",
+      "priority": "critical",
+      "status": "active",
+      "source": "https://example.test/spec/checkout#pay"
+    },
+    {
+      "id": "CHECKOUT-A11Y-1",
+      "title": "The checkout can be used with a keyboard and a screen reader",
+      "description": "Every control in the checkout is reachable by keyboard, has an accessible name, and the focus order follows the visual order.",
+      "kind": "accessibility",
+      "priority": "high",
+      "status": "active",
+      "source": "WCAG 2.2 AA",
+      "wcag": ["1.3.2", "2.1.1", "2.4.3", "4.1.2"]
+    },
+    {
+      "id": "CHECKOUT-RESP-1",
+      "title": "The checkout works on a phone and a tablet",
+      "description": "No content is cut off or needs sideways scrolling, and every control can be used by touch.",
+      "kind": "responsive",
+      "priority": "high",
+      "status": "active",
+      "viewports": [
+        { "device": "iPhone 13", "width": 390, "height": 844 },
+        { "breakpoint": "md", "width": 768 }
+      ]
+    },
+    {
+      "id": "CHECKOUT-SEC-1",
+      "title": "Card numbers are never stored or logged",
+      "description": "Card data goes straight to the payment provider. It does not appear in logs, URLs or local storage.",
+      "kind": "security_privacy",
+      "priority": "critical",
+      "status": "active"
+    },
+    {
+      "id": "CART-RULE-1",
+      "title": "A discount code reduces the total by its percentage",
+      "description": "SAVE10 takes 10 % off the order total, and never more than the total itself.",
+      "kind": "business_rule",
+      "priority": "medium",
+      "status": "draft"
+    }
+  ]
+}
