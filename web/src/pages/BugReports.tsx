@@ -1,16 +1,20 @@
 import { useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Bug, Check, ExternalLink, FileText, FolderOpen, Link2, Paperclip, Pencil, Send, Settings, Trash2, Upload } from "lucide-react";
-import { api, timeAgo, type Priority } from "../api";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, Bug, Check, EyeOff, ExternalLink, FileText, FolderOpen, Link2, Paperclip, Pencil, Send, Settings, Trash2, Upload } from "lucide-react";
+import { api, formatDateTime, timeAgo, type Priority } from "../api";
 import { ConfirmModal, Empty, ListSkeleton, Modal, PriorityIcon, PRIORITY_LABEL, useToast } from "../components/ui";
 
 type Status = "proposed" | "accepted" | "rejected" | "duplicate";
 interface Item {
   id: number; sourceId: string; title: string; status: Status; severity: Priority | null; foundAt: string | null; importedAt: string;
-  auditTitle: string; auditDeleted: boolean; unresolvedRefs: number; attachments: number; attachmentProblems: number; pendingUpdate: boolean; published: boolean;
+  auditTitle: string; auditDeleted: boolean; unresolvedRefs: number; attachments: number; attachmentProblems: number; pendingUpdate: boolean; published: boolean; presence: Presence;
 }
-interface List { items: Item[]; counts: Record<string, number> }
+/** Where a report stands against the latest run of its audit. */
+type Presence = "present" | "missing" | "no_later_run";
+interface RunRef { run: number; importId: number; importedAt: string; source: string; recorded: boolean; github: { repo: string; runId: number; url: string } | null }
+interface LatestRun { presence: Presence; reason: string; runs: number; latest: RunRef | null; lastSeen: RunRef | null }
+interface List { items: Item[]; counts: Record<string, number>; presenceCounts: Record<Presence, number> }
 interface Ref { id: number; kind: string; raw: string; state: string; reason: string; label: string; target: { kind: string; id: number } | null }
 interface Attachment { id: number; declared_path: string; filename: string; mime: string; size: number; label: string; stored_name: string | null; state: string; reason: string; active: number }
 interface Detail {
@@ -20,7 +24,7 @@ interface Detail {
   confidence: number | null; agentReview: { status: string; method: string; notes: string } | null; foundAt: string | null; importedAt: string; fingerprint: string;
   origin: { title?: string; agent?: { name?: string; version?: string; model?: string }; review?: { status: string; method: string; reviewer: string } | null; source?: string; github?: { repo: string; runId: number } | null };
   originAuditId: string; audit: { id: number; title: string; run_state: string; has_report: number } | null; runId: number | null;
-  refs: Ref[]; attachments: Attachment[]; revisions: { rev: number; imported_at: string }[];
+  refs: Ref[]; attachments: Attachment[]; revisions: { rev: number; imported_at: string }[]; latestRun: LatestRun;
   pendingUpdate: { rev: number; changes: { field: string; from: string; to: string }[]; evidenceAdded: number; evidenceRemoved: number } | null;
   duplicateOf: { id: number; title: string } | null; duplicates: { id: number; title: string }[]; similar: { id: number; title: string; status: string }[];
   publications: Publication[];
@@ -77,10 +81,11 @@ export function BugReportsPage() {
   const [tab, setTab] = useState<Tab>("proposed");
   const [importing, setImporting] = useState(false);
   const [destinationOpen, setDestinationOpen] = useState(false);
+  const [presence, setPresence] = useState<"" | Presence>("");
   const { data: dest } = useQuery({ queryKey: ["destination", pid], queryFn: () => api.get<{ destination: Destination | null; serverKey: boolean }>(`/api/projects/${pid}/destination`) });
   const open = Number(params.get("bug")) || null;
   const statusParam = tab === "audits" ? "proposed" : tab;
-  const { data, isLoading } = useQuery({ queryKey: ["bug-reports", pid, statusParam], queryFn: () => api.get<List>(`/api/projects/${pid}/bug-reports?status=${statusParam}`) });
+  const { data, isLoading } = useQuery({ queryKey: ["bug-reports", pid, statusParam, presence], queryFn: () => api.get<List>(`/api/projects/${pid}/bug-reports?status=${statusParam}${presence ? `&presence=${presence}` : ""}`), placeholderData: keepPreviousData });
   const counts = data?.counts ?? {};
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   const setOpen = (id: number | null) => setParams((p) => { if (id) p.set("bug", String(id)); else p.delete("bug"); return p; }, { replace: true });
@@ -104,6 +109,17 @@ export function BugReportsPage() {
             </button>
           ))}
         </div>
+        {tab !== "audits" && (
+          <>
+            <span className="spacer" />
+            <select className="select" style={{ width: "auto" }} aria-label="Latest audit run" value={presence} onChange={(e) => setPresence(e.target.value as "" | Presence)} title="Compare with the latest run of the audit each report came from">
+              <option value="">Latest run: any</option>
+              <option value="present">Still present in latest run{data ? ` (${data.presenceCounts.present})` : ""}</option>
+              <option value="missing">Not present in latest run{data ? ` (${data.presenceCounts.missing})` : ""}</option>
+              <option value="no_later_run">No later run available{data ? ` (${data.presenceCounts.no_later_run})` : ""}</option>
+            </select>
+          </>
+        )}
       </div>
       <div className="content">
         {tab === "audits" ? (
@@ -113,7 +129,7 @@ export function BugReportsPage() {
         ) : !data?.items.length ? (
           <Empty
             icon={<Bug size={20} />}
-            title={tab === "proposed" ? "Nothing waiting for review" : "No bug reports here"}
+            title={presence ? "No reports match this run filter" : tab === "proposed" ? "Nothing waiting for review" : "No bug reports here"}
             action={<button className="btn" onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</button>}
           >
             Reports from a test agent arrive as proposals. Nothing is accepted or sent anywhere until you decide.
@@ -131,6 +147,7 @@ export function BugReportsPage() {
                     <Paperclip size={11} /> {b.attachments}{b.attachmentProblems > 0 && <span style={DANGER}> +{b.attachmentProblems} problem</span>}
                   </span>
                 )}
+                {b.presence === "missing" && <span className="chip" style={{ color: "var(--blocked-fg)" }} title="This report was not in the latest run of its audit. It is kept as it is."><EyeOff size={11} /> Not in latest run</span>}
                 {b.published && <span className="chip"><Link2 size={11} /> linked</span>}
                 <Severity value={b.severity} />
                 {tab === "all" && <StatusChip status={b.status} />}
@@ -227,6 +244,7 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
             <button className="btn" onClick={() => setPublishing(true)}><Send size={14} /> Publish to Linear…</button>
           )}
         </div>
+        <RunStanding r={b.latestRun} />
         {b.reviewNote && <div className="faint">Note: {b.reviewNote}{b.reviewedAt ? ` · ${timeAgo(b.reviewedAt)}` : ""}</div>}
         {b.duplicateOf && <div>Duplicate of <button className="btn ghost sm" onClick={() => onOpen(b.duplicateOf!.id)}>{b.duplicateOf.title}</button></div>}
         <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>Accepting is only your decision in Testbench. Publishing to Linear is a separate step: you get a preview of exactly what is sent and approve it first.</div>
@@ -350,6 +368,39 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
       )}
     </Modal>
   );
+}
+
+// ---------- Latest run ----------
+
+const runText = (r: RunRef) => `Run ${r.run} · ${formatDateTime(r.importedAt)} · ${r.source === "github" ? "from GitHub" : "uploaded"}`;
+
+function RunLink({ r }: { r: RunRef }) {
+  return (
+    <>
+      {runText(r)}
+      {r.github && r.github.url.startsWith("https://github.com/") && <> · <a href={r.github.url} target="_blank" rel="noreferrer noopener">{r.github.repo}#{r.github.runId} <ExternalLink size={11} /></a></>}
+    </>
+  );
+}
+
+/** Whether the report was in the latest run of its audit. Only shown, never acted on: nothing is closed, archived or removed because of it. */
+function RunStanding({ r }: { r: LatestRun }) {
+  if (r.presence === "missing") {
+    return (
+      <div className="card" style={{ padding: 12, borderColor: "var(--blocked)" }}>
+        <div className="row" style={{ gap: 8 }}><EyeOff size={14} /><strong>Not present in latest audit run</strong></div>
+        <div style={{ marginTop: 6, fontSize: "var(--fs-md)", display: "grid", gap: 2 }}>
+          {r.lastSeen ? <div>Last seen: <RunLink r={r.lastSeen} />{!r.lastSeen.recorded && <span className="faint"> (earlier runs were not recorded in detail, so it may have been seen in a later one)</span>}</div> : <div>Last seen: not recorded</div>}
+          {r.latest && <div>Latest run: <RunLink r={r.latest} /></div>}
+        </div>
+        <div className="faint" style={{ fontSize: "var(--fs-sm)", marginTop: 6 }}>
+          The report is kept as it is. It is not closed, archived or marked as fixed because it is missing; if the problem is gone, you decide that yourself. If the agent reports it again it is the same report.
+        </div>
+      </div>
+    );
+  }
+  if (r.presence === "present") return <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>Still present in the latest audit run{r.latest ? ` (${runText(r.latest)})` : ""}.</div>;
+  return <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>No later run available. {r.reason}</div>;
 }
 
 // ---------- Publishing ----------

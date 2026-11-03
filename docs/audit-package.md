@@ -103,6 +103,7 @@ A report is identified by `(project, audit.id, sourceId)`.
 | The same report again (the same package from GitHub and from an upload, or a re-run) | Nothing changes. |
 | Changed content, report still untouched (proposed, never edited, not linked to an external issue) | The working copy is updated; the older version stays as a revision. |
 | Changed content, but you have **reviewed, edited or linked** it | **Your version is not touched.** The newer version waits on the report ("The agent sent a newer version") with a comparison, and you choose *Use the agent's version* or *Keep mine*. |
+| A report that is **not in the package** this time (it was in an earlier run of the same audit) | **Nothing happens to it.** It is not removed, closed, archived or marked as fixed. Testbench only shows that it was not seen in the latest run (**Not present in latest audit run**, with the run and date it was last seen). If it comes back, it is the same report, and the two rows above apply to a new version. |
 | The same bug in a **new** audit | A new report. If it has the same `fingerprint` as another, the two are pointed out to each other, and you can mark one as a duplicate of the other. Nothing is merged automatically. |
 
 You can also record that an **existing external issue** (Jira, Linear or other) already covers a report. That stores a link; it calls no API.

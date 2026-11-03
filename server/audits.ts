@@ -276,8 +276,9 @@ export function importAuditPackage(bag: FileBag, ctx: ImportContext, opts: { dry
             a.review?.status ?? "", a.review?.method ?? "", a.review?.reviewer ?? "", ctx.source, github?.repo ?? null, github?.runId ?? null, github?.artifactId ?? null,
             plan.run, plan.runState, pkg.packageSha256, narrativeName) as { id: number }).id;
       }
-      const importId = (db.prepare("INSERT INTO audit_imports (audit_id, source, artifact_id, warnings) VALUES (?, ?, ?, ?) RETURNING id")
-        .get(auditId, ctx.source, github?.artifactId ?? null, JSON.stringify(plan.warnings)) as { id: number }).id;
+      const importId = (db.prepare("INSERT INTO audit_imports (audit_id, source, artifact_id, warnings, sightings_recorded, github_repo, github_run_id) VALUES (?, ?, ?, ?, 1, ?, ?) RETURNING id")
+        .get(auditId, ctx.source, github?.artifactId ?? null, JSON.stringify(plan.warnings), github?.repo ?? null, github?.runId ?? null) as { id: number }).id;
+      const sighted = db.prepare("INSERT OR IGNORE INTO bug_sightings (bug_report_id, audit_import_id) VALUES (?, ?)");
       const origin = JSON.stringify({
         auditId: a.id, title: a.title, agent: a.agent, review: a.review ?? null, startedAt: a.startedAt ?? null, finishedAt: a.finishedAt ?? null,
         source: ctx.source, github: github ? { repo: github.repo, runId: github.runId, artifactId: github.artifactId } : null, packageSha256: pkg.packageSha256,
@@ -349,6 +350,7 @@ export function importAuditPackage(bag: FileBag, ctx: ImportContext, opts: { dry
             }
           }
         }
+        sighted.run(bugId, importId); // this run contained the report, whatever happened to its content
         linkBugRun(bugId);
       }
       relinkBugRefs(ctx.projectId);
@@ -379,28 +381,81 @@ function removeFiles(names: string[]) {
 const json = <T>(s: string | null, fallback: T): T => parseJson<T>(s, fallback);
 const effective = (r: Record<string, any>): string | null => r.human_severity ?? r.agent_severity ?? null;
 
-export function listBugReports(projectId: number, opts: { status?: string; q?: string } = {}) {
+export type Presence = "present" | "missing" | "no_later_run";
+export const PRESENCE_VALUES: Presence[] = ["present", "missing", "no_later_run"];
+
+/**
+ * Where a report stands against the latest run of its audit, as SQL. A run is one import of a package of that audit.
+ * present: the latest run contained it (and there is an earlier run to compare with). missing: the latest run did not.
+ * no_later_run: nothing to compare with: the audit has had one run only, was deleted, or its latest run was imported before runs were recorded.
+ */
+const PRESENCE_CTE = `latest AS (SELECT i.audit_id, MAX(i.id) AS import_id, COUNT(*) AS n FROM audit_imports i GROUP BY i.audit_id),
+  cur AS (SELECT l.audit_id, l.import_id, l.n, i.sightings_recorded AS tracked FROM latest l JOIN audit_imports i ON i.id = l.import_id)`;
+const PRESENCE_EXPR = `CASE WHEN c.import_id IS NULL OR c.tracked = 0 THEN 'no_later_run'
+  WHEN EXISTS (SELECT 1 FROM bug_sightings s WHERE s.bug_report_id = b.id AND s.audit_import_id = c.import_id) THEN CASE WHEN c.n >= 2 THEN 'present' ELSE 'no_later_run' END
+  ELSE 'missing' END`;
+
+export function listBugReports(projectId: number, opts: { status?: string; q?: string; presence?: string } = {}) {
+  if (opts.presence && !PRESENCE_VALUES.includes(opts.presence as Presence)) throw new AuditError(400, `presence must be one of ${PRESENCE_VALUES.join(", ")}`);
   const where = ["b.project_id = ?"];
   const args: (string | number)[] = [projectId];
   if (opts.status && opts.status !== "all") { where.push("b.review_status = ?"); args.push(opts.status); }
   if (opts.q?.trim()) { where.push("(b.title LIKE ? OR b.description LIKE ? OR b.source_id LIKE ?)"); const like = `%${opts.q.trim().replace(/[%_]/g, "")}%`; args.push(like, like, like); }
+  const base = [...args];
+  const baseWhere = [...where];
+  if (opts.presence) { where.push(`${PRESENCE_EXPR} = ?`); args.push(opts.presence); }
   const rows = db.prepare(`
+    WITH ${PRESENCE_CTE}
     SELECT b.id, b.source_id, b.title, b.review_status, b.agent_severity, b.human_severity, b.found_at, b.imported_at, b.audit_id, b.origin, b.latest_rev, b.applied_rev, b.ignored_rev,
+      ${PRESENCE_EXPR} AS presence,
       (SELECT COUNT(*) FROM bug_refs r WHERE r.bug_report_id = b.id AND r.state != 'resolved') AS unresolved_refs,
       (SELECT COUNT(*) FROM bug_attachments x WHERE x.bug_report_id = b.id AND x.active = 1 AND x.state = 'stored') AS attachments,
       (SELECT COUNT(*) FROM bug_attachments x WHERE x.bug_report_id = b.id AND x.active = 1 AND x.state != 'stored') AS attachment_problems,
       (SELECT COUNT(*) FROM bug_publications p WHERE p.bug_report_id = b.id AND p.state IN ('sent', 'pending', 'unknown')) AS publications
-    FROM bug_reports b WHERE ${where.join(" AND ")} ORDER BY b.imported_at DESC, b.id DESC LIMIT 500`).all(...args) as Record<string, any>[];
+    FROM bug_reports b LEFT JOIN cur c ON c.audit_id = b.audit_id WHERE ${where.join(" AND ")} ORDER BY b.imported_at DESC, b.id DESC LIMIT 500`).all(...args) as Record<string, any>[];
   const counts = db.prepare("SELECT review_status AS s, COUNT(*) AS n FROM bug_reports WHERE project_id = ? GROUP BY review_status").all(projectId) as { s: string; n: number }[];
+  // How many reports stand each way within the chosen status and search, whichever presence filter is on.
+  const presenceCounts = Object.fromEntries(PRESENCE_VALUES.map((v) => [v, 0])) as Record<Presence, number>;
+  for (const r of db.prepare(`WITH ${PRESENCE_CTE} SELECT ${PRESENCE_EXPR} AS p, COUNT(*) AS n FROM bug_reports b LEFT JOIN cur c ON c.audit_id = b.audit_id WHERE ${baseWhere.join(" AND ")} GROUP BY p`).all(...base) as { p: Presence; n: number }[]) presenceCounts[r.p] = r.n;
   return {
     items: rows.map((r) => ({
       id: r.id, sourceId: r.source_id, title: r.title, status: r.review_status as ReviewStatus, severity: effective(r), foundAt: r.found_at, importedAt: r.imported_at,
       auditTitle: json<{ title?: string }>(r.origin, {}).title ?? "", auditDeleted: r.audit_id == null,
       unresolvedRefs: r.unresolved_refs, attachments: r.attachments, attachmentProblems: r.attachment_problems,
-      pendingUpdate: r.latest_rev > r.applied_rev && r.latest_rev > r.ignored_rev, published: r.publications > 0,
+      pendingUpdate: r.latest_rev > r.applied_rev && r.latest_rev > r.ignored_rev, published: r.publications > 0, presence: r.presence as Presence,
     })),
+    presenceCounts,
     counts: Object.fromEntries(counts.map((c) => [c.s, c.n])) as Record<string, number>,
   };
+}
+
+export interface RunRef {
+  /** The run's place among the runs of its audit: 1 for the first import, 2 for the second, and so on. */
+  run: number; importId: number; importedAt: string; source: string;
+  /** False for runs imported before sightings were recorded: only runs that changed a report are known for those. */
+  recorded: boolean;
+  github: { repo: string; runId: number; url: string } | null;
+}
+
+/** Where one report stands against the latest run of its audit, with the dates and runs to show. Reads only. */
+export function runStanding(b: { id: number; audit_id: number | null }) {
+  const imports = (b.audit_id
+    ? db.prepare("SELECT id, imported_at, source, sightings_recorded, github_repo, github_run_id FROM audit_imports WHERE audit_id = ? ORDER BY id").all(b.audit_id)
+    : []) as { id: number; imported_at: string; source: string; sightings_recorded: number; github_repo: string | null; github_run_id: number | null }[];
+  const seen = new Set((db.prepare("SELECT audit_import_id AS i FROM bug_sightings WHERE bug_report_id = ?").all(b.id) as { i: number }[]).map((r) => r.i));
+  const ref = (i: (typeof imports)[number] | undefined): RunRef | null => !i ? null : {
+    run: imports.indexOf(i) + 1, importId: i.id, importedAt: i.imported_at, source: i.source, recorded: !!i.sightings_recorded,
+    github: i.github_repo && i.github_run_id ? { repo: i.github_repo, runId: i.github_run_id, url: `https://github.com/${i.github_repo}/actions/runs/${i.github_run_id}` } : null,
+  };
+  const latest = imports.at(-1);
+  const lastSeen = [...imports].reverse().find((i) => seen.has(i.id));
+  let presence: Presence;
+  let reason = "";
+  if (!latest) { presence = "no_later_run"; reason = "The audit this report came from was deleted from Testbench, so there is no run to compare with."; }
+  else if (!latest.sightings_recorded) { presence = "no_later_run"; reason = "The latest run was imported before Testbench recorded which reports a run contained. Import the audit again and this will be known."; }
+  else if (seen.has(latest.id)) { presence = imports.length >= 2 ? "present" : "no_later_run"; if (presence === "no_later_run") reason = "This audit has had one run so far, so there is nothing to compare with yet."; }
+  else presence = "missing";
+  return { presence, reason, runs: imports.length, latest: ref(latest), lastSeen: ref(lastSeen) };
 }
 
 const FIELD_LABEL: Record<string, string> = { title: "Title", description: "Description", steps: "Steps", expected: "Expected result", actual: "Actual result", environment: "Environment", url: "URL", agentSeverity: "Agent severity" };
@@ -451,6 +506,7 @@ export function getBugReport(id: number) {
     duplicateOf: dupOf ?? null,
     duplicates: db.prepare("SELECT id, title FROM bug_reports WHERE duplicate_of_id = ?").all(id) as { id: number; title: string }[],
     similar: b.fingerprint ? (db.prepare("SELECT id, title, review_status AS status FROM bug_reports WHERE project_id = ? AND fingerprint = ? AND id != ? ORDER BY id DESC LIMIT 10").all(b.project_id, b.fingerprint, id) as { id: number; title: string; status: string }[]) : [],
+    latestRun: runStanding(b as { id: number; audit_id: number | null }),
     publications: db.prepare("SELECT id, destination, destination_ref, mode, state, external_id, external_url, error, attachments_state, content_sent, created_at, completed_at FROM bug_publications WHERE bug_report_id = ? ORDER BY id").all(id),
   };
 }

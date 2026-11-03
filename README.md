@@ -242,6 +242,17 @@ are in [docs/audit-package.md](docs/audit-package.md). How a test agent should w
 new versions instead of duplicates, is in [docs/agent-audit-guide.md](docs/agent-audit-guide.md); `npm run audit:package -- <folder> --write` fills in and
 checks a package, and `examples/agent-audit-run/` holds two runs of the same audit.
 
+### Reports that are missing from the latest run
+
+Testbench remembers which reports each run of an audit (each import of a package with the same audit id) contained. When a report is not in the
+latest run, the report shows **Not present in latest audit run** with the run and date it was last seen, and the list marks it **Not in latest run**.
+A filter on the Bug reports page, **Latest run**, shows the reports that are still present, the ones that are not, and the ones with **no later run
+available** (the audit has had one run only, was deleted, or its latest run was imported before runs were recorded).
+
+This is only information. A missing report is never removed, closed, archived or marked as fixed, and its review, revisions, evidence and links to
+Jira or Linear stay as they are; whether the problem is gone is your decision. If the agent reports it again it is the same report, back in the
+latest run, and the usual rules apply to a new version (an untouched report is updated, a reviewed or edited one waits for you).
+
 ### Publishing an accepted report to Linear
 
 Optional, one report at a time. On **Bug reports**, **Set up publishing** stores a destination for the project: a Linear team and an API key.

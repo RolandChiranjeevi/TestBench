@@ -507,6 +507,22 @@ CREATE TABLE IF NOT EXISTS github_artifacts (
   PRIMARY KEY (source_id, artifact_id)
 );`);
 
+  // Which reports each audit run (import) contained, so a report that is missing from the latest run can be told apart from one that is in it.
+  // Imports made before this was recorded have sightings_recorded = 0: only the runs that changed a report are known for them.
+  d.exec(`
+CREATE TABLE IF NOT EXISTS bug_sightings (
+  bug_report_id INTEGER NOT NULL REFERENCES bug_reports(id) ON DELETE CASCADE,
+  audit_import_id INTEGER NOT NULL REFERENCES audit_imports(id) ON DELETE CASCADE,
+  PRIMARY KEY (bug_report_id, audit_import_id)
+);
+CREATE INDEX IF NOT EXISTS bug_sightings_import ON bug_sightings(audit_import_id);`);
+  if (!hasColumn("audit_imports", "sightings_recorded")) {
+    d.exec("ALTER TABLE audit_imports ADD COLUMN sightings_recorded INTEGER NOT NULL DEFAULT 0");
+    d.exec("INSERT OR IGNORE INTO bug_sightings (bug_report_id, audit_import_id) SELECT bug_report_id, audit_import_id FROM bug_revisions WHERE audit_import_id IS NOT NULL");
+  }
+  if (!hasColumn("audit_imports", "github_repo")) d.exec("ALTER TABLE audit_imports ADD COLUMN github_repo TEXT");
+  if (!hasColumn("audit_imports", "github_run_id")) d.exec("ALTER TABLE audit_imports ADD COLUMN github_run_id INTEGER");
+
   // Where a project's accepted bug reports are published. One per project. The token is stored sealed (see secrets.ts) and never returned;
   // no token means the server's own key (LINEAR_API_KEY) is used.
   d.exec(`
