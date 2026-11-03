@@ -240,7 +240,25 @@ workflows you list for the source (**Workflows allowed to deliver audit packages
 The format, the rules for importing the same report again, the limits and a worked example (`examples/audit-package/`, for the demo project)
 are in [docs/audit-package.md](docs/audit-package.md). How a test agent should write a package, with stable ids so that a repeated audit gives
 new versions instead of duplicates, is in [docs/agent-audit-guide.md](docs/agent-audit-guide.md); `npm run audit:package -- <folder> --write` fills in and
-checks a package, and `examples/agent-audit-run/` holds two runs of the same audit. Publishing an accepted report to Jira or Linear is not part of this yet.
+checks a package, and `examples/agent-audit-run/` holds two runs of the same audit.
+
+### Publishing an accepted report to Linear
+
+Optional, one report at a time. On **Bug reports**, **Set up publishing** stores a destination for the project: a Linear team and an API key.
+The key is checked against Linear when you save, kept encrypted on the server (the key file `.secret-key` in the data folder, owner only), never
+shown again (only its last four characters) and not part of backups, so after restoring a backup elsewhere the key has to be entered again. Without
+a key of its own the project uses the server's `LINEAR_API_KEY`.
+
+A report can be published only after **you** accepted it, and accepting never sends anything. **Publish to Linear…** opens a preview of exactly what
+will be created: the team, the title, the full description, how the severity maps to Linear's priority, which links to requirements and test cases
+are included and which evidence files are attached (each can be unticked). The issue is created only when you tick the approval and press the
+button; if the report or your selection changes after the preview, it is refused and you look at the new preview.
+
+The issue is created under an id Testbench picks and stores first. If Linear's answer is unclear (timeout, broken connection, server error) the
+report is marked **unclear** and nothing is retried by itself: **Check status** asks Linear whether the issue exists, and publishing again reuses
+the same id, so one report can never become two issues. A refusal from Linear leaves no local record. Files are attached after the issue exists;
+a file that fails is listed and can be retried without touching the issue. Testbench keeps the issue id, link, time and the exact content sent.
+There is no status sync and no bulk publishing. Jira is not available for this yet.
 
 ## Deleting cases and projects
 

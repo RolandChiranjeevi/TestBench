@@ -451,7 +451,7 @@ export function getBugReport(id: number) {
     duplicateOf: dupOf ?? null,
     duplicates: db.prepare("SELECT id, title FROM bug_reports WHERE duplicate_of_id = ?").all(id) as { id: number; title: string }[],
     similar: b.fingerprint ? (db.prepare("SELECT id, title, review_status AS status FROM bug_reports WHERE project_id = ? AND fingerprint = ? AND id != ? ORDER BY id DESC LIMIT 10").all(b.project_id, b.fingerprint, id) as { id: number; title: string; status: string }[]) : [],
-    publications: db.prepare("SELECT id, destination, destination_ref, mode, state, external_id, external_url, created_at FROM bug_publications WHERE bug_report_id = ? ORDER BY id").all(id),
+    publications: db.prepare("SELECT id, destination, destination_ref, mode, state, external_id, external_url, error, attachments_state, content_sent, created_at, completed_at FROM bug_publications WHERE bug_report_id = ? ORDER BY id").all(id),
   };
 }
 

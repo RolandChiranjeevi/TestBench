@@ -7,7 +7,11 @@
 const ENDPOINT = "https://api.linear.app/graphql";
 
 export class LinearError extends Error {
-  constructor(public status: 400 | 401 | 502, message: string) {
+  /**
+   * For a request that changes something: "rejected" means Linear answered and did not do it, "unknown" means it may or may not have
+   * (timeout, broken connection, server error, an answer that could not be read). Left unset for requests that only read.
+   */
+  constructor(public status: 400 | 401 | 502, message: string, public outcome?: "rejected" | "unknown") {
     super(message);
   }
 }
@@ -19,18 +23,19 @@ export const linearEnabled = (env: NodeJS.ProcessEnv = process.env) => !!env.LIN
 
 async function gql<T>(query: string, variables: Record<string, unknown>, f: typeof fetch, env: NodeJS.ProcessEnv): Promise<T> {
   const key = env.LINEAR_API_KEY?.trim();
-  if (!key) throw new LinearError(400, "Linear is not connected. Set LINEAR_API_KEY on the server (see the README).");
+  if (!key) throw new LinearError(400, "Linear is not connected. Set LINEAR_API_KEY on the server (see the README).", "rejected");
   let res: Response;
   try {
     // Personal API keys go in the header as they are, without "Bearer".
     res = await f(ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json", Authorization: key }, body: JSON.stringify({ query, variables }), signal: AbortSignal.timeout(15_000) });
   } catch {
-    throw new LinearError(502, "Could not reach Linear. Check the internet connection and try again.");
+    throw new LinearError(502, "Could not reach Linear. Check the internet connection and try again.", "unknown");
   }
-  if (res.status === 401 || res.status === 403) throw new LinearError(401, "Linear rejected the API key. Check LINEAR_API_KEY.");
-  if (!res.ok) throw new LinearError(502, `Linear answered with an error (HTTP ${res.status}).`);
+  if (res.status === 401 || res.status === 403) throw new LinearError(401, "Linear rejected the API key. Check the key.", "rejected");
+  if (!res.ok) throw new LinearError(502, `Linear answered with an error (HTTP ${res.status}).`, res.status >= 500 ? "unknown" : "rejected");
   const body = (await res.json().catch(() => null)) as { data?: T; errors?: { message?: string }[] } | null;
-  if (!body || body.errors?.length || !body.data) throw new LinearError(502, `Linear: ${body?.errors?.[0]?.message ?? "unexpected response"}`);
+  if (!body) throw new LinearError(502, "Linear: the answer could not be read.", "unknown");
+  if (body.errors?.length || !body.data) throw new LinearError(502, `Linear: ${body.errors?.[0]?.message ?? "unexpected response"}`, "rejected");
   return body.data;
 }
 
@@ -73,4 +78,93 @@ export async function createIssue(
   const issue = data.issueCreate.issue;
   if (!data.issueCreate.success || !issue) throw new LinearError(502, "Linear did not create the issue.");
   return issue;
+}
+
+// ---------- Publishing a bug report (see publish.ts) ----------
+
+export interface LinearCreated { id: string; identifier: string; url: string }
+
+/** Testbench severity to Linear's priority (1 urgent ... 4 low, 0 none). */
+export function linearPriority(severity: string | null): { value: number; label: string } {
+  switch (severity) {
+    case "critical": return { value: 1, label: "Urgent" };
+    case "high": return { value: 2, label: "High" };
+    case "medium": return { value: 3, label: "Medium" };
+    case "low": return { value: 4, label: "Low" };
+    default: return { value: 0, label: "No priority" };
+  }
+}
+
+/**
+ * Creates an issue under an id chosen by the caller (a UUID). The same id can only ever become one issue, so asking again after an
+ * unclear answer cannot make a second one: it either finds the first or is refused.
+ */
+export async function createIssueWithId(
+  input: { id: string; teamId: string; title: string; description: string; priority: number },
+  f: typeof fetch,
+  env: NodeJS.ProcessEnv,
+): Promise<LinearCreated> {
+  const data = await gql<{ issueCreate: { success: boolean; issue: LinearCreated | null } | null }>(
+    "mutation($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier url } } }",
+    { input: { id: input.id, teamId: input.teamId, title: input.title, description: input.description, priority: input.priority } },
+    f,
+    env,
+  );
+  const made = data.issueCreate;
+  if (!made?.success || !made.issue) throw new LinearError(502, "Linear did not create the issue.", "rejected");
+  return made.issue;
+}
+
+/** The issue with this id, or null when there is none. */
+export async function findIssue(id: string, f: typeof fetch, env: NodeJS.ProcessEnv): Promise<LinearCreated | null> {
+  try {
+    const data = await gql<{ issue: LinearCreated | null }>("query($id: String!) { issue(id: $id) { id identifier url } }", { id }, f, env);
+    return data.issue ?? null;
+  } catch (e) {
+    if (e instanceof LinearError && e.outcome === "rejected" && /not found/i.test(e.message)) return null;
+    throw e;
+  }
+}
+
+/** Uploads one file to Linear's storage and attaches it to the issue. Throws LinearError; the issue itself is not touched on failure. */
+export async function attachFile(
+  input: { issueId: string; filename: string; contentType: string; bytes: Uint8Array },
+  f: typeof fetch,
+  env: NodeJS.ProcessEnv,
+): Promise<void> {
+  const data = await gql<{ fileUpload: { success: boolean; uploadFile: { uploadUrl: string; assetUrl: string; headers: { key: string; value: string }[] } | null } | null }>(
+    "mutation($contentType: String!, $filename: String!, $size: Int!) { fileUpload(contentType: $contentType, filename: $filename, size: $size) { success uploadFile { uploadUrl assetUrl headers { key value } } } }",
+    { contentType: input.contentType, filename: input.filename, size: input.bytes.length },
+    f,
+    env,
+  );
+  const up = data.fileUpload?.uploadFile;
+  if (!data.fileUpload?.success || !up) throw new LinearError(502, `Linear would not take the file ${input.filename}.`);
+  let target: URL;
+  try {
+    target = new URL(up.uploadUrl);
+  } catch {
+    throw new LinearError(502, "Linear gave an upload address that is not a web address.");
+  }
+  if (target.protocol !== "https:") throw new LinearError(502, "Linear gave an upload address that is not https.");
+  let put: Response;
+  try {
+    // The signed address takes the file as it is. The API key is not sent there.
+    put = await f(up.uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": input.contentType, "Cache-Control": "public, max-age=31536000", ...Object.fromEntries(up.headers.map((h) => [h.key, h.value])) },
+      body: input.bytes as unknown as BodyInit,
+      signal: AbortSignal.timeout(60_000),
+    });
+  } catch {
+    throw new LinearError(502, `Could not upload ${input.filename} to Linear.`);
+  }
+  if (!put.ok) throw new LinearError(502, `Linear's storage refused ${input.filename} (HTTP ${put.status}).`);
+  const att = await gql<{ attachmentCreate: { success: boolean } | null }>(
+    "mutation($input: AttachmentCreateInput!) { attachmentCreate(input: $input) { success } }",
+    { input: { issueId: input.issueId, title: input.filename, url: up.assetUrl } },
+    f,
+    env,
+  );
+  if (!att.attachmentCreate?.success) throw new LinearError(502, `Linear did not attach ${input.filename} to the issue.`);
 }

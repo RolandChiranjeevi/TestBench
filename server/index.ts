@@ -30,6 +30,7 @@ import { dismissSuggestion, listSuggestions, SuggestError, suggestLinks, typesaf
 import { addChecklistItem, copyChecklist, listChecklist } from "./checklist.ts";
 import { createIssue, LinearError, linearEnabled, listTeams } from "./linear.ts";
 import { createJiraIssue, JiraError, jiraEnabled, jiraStatus } from "./jira.ts";
+import { buildPreview, checkPublication, getDestination, lookupTeams, publishBug, PublishError, removeDestination, retryAttachments, saveDestination } from "./publish.ts";
 import {
   applyPendingUpdate, AuditError, auditReportText, deleteAudit, deleteBugReport, getBugReport, ignorePendingUpdate, importAuditPackage, linkExternalIssue,
   listAudits, listBugReports, listRejectedPackages, markDuplicate, previewAuditDeletion, relinkBugRefs, reviewBugReport, unlinkExternalIssue, updateBugReport,
@@ -942,6 +943,47 @@ app.post("/api/bug-reports/:id/external-link", (req) => {
   return getBugReport(id);
 });
 app.delete("/api/bug-publications/:id", (req) => audited(() => (unlinkExternalIssue(idParam(req)), { ok: true })));
+
+// ---- Publishing an accepted report to the project's destination (Linear). Nothing is sent without a preview and an explicit approval of it. ----
+const asPublishHttp = (e: unknown) => (e instanceof PublishError ? new HttpError(e.status, e.message) : e);
+async function publishing<T>(fn: () => Promise<T> | T): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    throw asPublishHttp(e);
+  }
+}
+const selection = { refIds: z.array(z.number().int()).max(200).optional(), attachmentIds: z.array(z.number().int()).max(200).optional() };
+
+// The key itself is never returned: only where it comes from and its last four characters.
+app.get("/api/projects/:id/destination", (req) => ({ destination: getDestination(idParam(req)), serverKey: linearEnabled() }));
+app.post("/api/projects/:id/destination/teams", async (req) => {
+  const id = idParam(req);
+  const body = z.object({ token: z.string().max(500).optional() }).parse(req.body ?? {});
+  return publishing(() => lookupTeams(id, body.token));
+});
+app.put("/api/projects/:id/destination", async (req) => {
+  const id = idParam(req);
+  const body = z.object({ token: z.string().max(500).optional(), team: z.string().max(100).optional() }).parse(req.body);
+  return publishing(async () => ({ destination: await saveDestination(id, body), serverKey: linearEnabled() }));
+});
+app.delete("/api/projects/:id/destination", (req) => (removeDestination(idParam(req)), { ok: true }));
+
+app.post("/api/bug-reports/:id/publish-preview", (req) => {
+  const id = idParam(req);
+  const body = z.object(selection).parse(req.body ?? {});
+  return publishing(() => buildPreview(id, body));
+});
+app.post("/api/bug-reports/:id/publish", async (req) => {
+  const id = idParam(req);
+  const body = z.object({ ...selection, previewHash: z.string().min(1).max(100), approve: z.boolean() }).parse(req.body);
+  return publishing(async () => {
+    const publication = await publishBug(id, body);
+    return { publication, report: getBugReport(id) };
+  });
+});
+app.post("/api/bug-publications/:id/check", async (req) => publishing(() => checkPublication(idParam(req))));
+app.post("/api/bug-publications/:id/retry-attachments", async (req) => publishing(() => retryAttachments(idParam(req))));
 app.post("/api/bug-reports/:id/apply-update", (req) => {
   const id = idParam(req);
   audited(() => applyPendingUpdate(id));
