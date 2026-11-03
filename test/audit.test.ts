@@ -16,6 +16,7 @@ import {
 } from "../server/audits.ts";
 import { deleteProject } from "../server/deletion.ts";
 import { checkSource } from "../server/autoimport.ts";
+import { parseWorkflowList } from "../server/importers/github.ts";
 import { registerAuth } from "../server/auth.ts";
 import { seedDemo } from "../server/demo.ts";
 
@@ -578,7 +579,7 @@ describe("audit packages from GitHub", () => {
   after(() => { globalThis.fetch = realFetch; });
 
   interface FakeArtifact { id: number; name: string; size_in_bytes: number; expired: boolean; created_at: string; workflow_run: { id: number; head_branch: string } }
-  function fakeGithub(state: { runs: Record<string, unknown>[]; artifacts: FakeArtifact[]; zips: Record<number, Uint8Array>; failing?: Set<number> }) {
+  function fakeGithub(state: { runs: Record<string, unknown>[]; artifacts: FakeArtifact[]; zips: Record<number, Uint8Array>; failing?: Set<number>; runInfo?: Record<number, Record<string, unknown>>; lookupFails?: Set<number> }) {
     const calls: string[] = [];
     globalThis.fetch = (async (input: unknown) => {
       const url = new URL(String(input));
@@ -588,7 +589,12 @@ describe("audit packages from GitHub", () => {
       if (/\/actions\/runs$/.test(url.pathname)) return json({ workflow_runs: state.runs });
       if (/\/actions\/artifacts$/.test(url.pathname)) return json({ artifacts: state.artifacts });
       if ((m = url.pathname.match(/\/actions\/runs\/(\d+)\/artifacts$/))) return json({ artifacts: state.artifacts.filter((a) => a.workflow_run.id === Number(m![1])) });
-      if ((m = url.pathname.match(/\/actions\/runs\/(\d+)$/))) return json(state.runs.find((r) => r.id === Number(m![1])));
+      if ((m = url.pathname.match(/\/actions\/runs\/(\d+)$/))) {
+        const id = Number(m[1]);
+        if (state.lookupFails?.has(id)) return new Response("rate limited", { status: 403 });
+        // Unless a test says otherwise, every run belongs to workflow 1 (audit.yml) of o/r.
+        return json({ workflow_id: 1, path: ".github/workflows/audit.yml", head_repository: { full_name: "o/r" }, ...(state.runs.find((r) => r.id === id) ?? { id }), ...state.runInfo?.[id] });
+      }
       if ((m = url.pathname.match(/\/actions\/artifacts\/(\d+)\/zip$/))) {
         const id = Number(m[1]);
         if (state.failing?.has(id)) return new Response("nope", { status: 500 });
@@ -602,8 +608,8 @@ describe("audit packages from GitHub", () => {
   const artifact = (id: number, name: string, runId: number, extra: Partial<FakeArtifact> = {}): FakeArtifact => ({ id, name, size_in_bytes: 1000, expired: false, created_at: "2026-11-01T11:00:00Z", workflow_run: { id: runId, head_branch: "main" }, ...extra });
   const junit = zipSync({ "results.xml": Buffer.from('<testsuites><testsuite name="s" timestamp="2026-11-01T10:00:00"><testcase name="login works" classname="a.B" time="0.1"/></testsuite></testsuites>') });
   const auditZip = (project: string, bugs: unknown[] = [bug("G1")], audit: Record<string, unknown> = {}) => zipSync(Object.fromEntries(makePackage({ project, bugs, audit: { github: { repo: "o/r", runId: 7 }, ...audit } })));
-  const source = (projectId: number, branchFilter = "") => {
-    db.prepare("INSERT INTO github_sources (project_id, owner, repo, auto_import, auto_since, branch_filter) VALUES (?, 'o', 'r', 1, '2000-01-01 00:00:00', ?)").run(projectId, branchFilter);
+  const source = (projectId: number, branchFilter = "", auditWorkflows = "audit.yml") => {
+    db.prepare("INSERT INTO github_sources (project_id, owner, repo, auto_import, auto_since, branch_filter, audit_workflows) VALUES (?, 'o', 'r', 1, '2000-01-01 00:00:00', ?, ?)").run(projectId, branchFilter, auditWorkflows);
     return db.prepare("SELECT * FROM github_sources WHERE project_id = ?").get(projectId) as any;
   };
   const zipCalls = (calls: string[], id: number) => calls.filter((c) => c.endsWith(`/artifacts/${id}/zip`)).length;
@@ -767,6 +773,185 @@ describe("audit packages from GitHub", () => {
       assert.equal(count(`SELECT COUNT(*) AS n FROM ${t} WHERE project_id IN (?, ?)`, a.id, b.id), 0, t);
     }
     assert.equal(runInA > 0, true);
+  });
+
+  describe("workflow allow-list", () => {
+    const wf = (file: string, id: number, repo = "o/r") => ({ workflow_id: id, path: `.github/workflows/${file}`, head_repository: { full_name: repo } });
+    const setAllowed = (src: { id: number }, list: string) => {
+      db.prepare("UPDATE github_sources SET audit_workflows = ? WHERE id = ?").run(list, src.id);
+      return db.prepare("SELECT * FROM github_sources WHERE id = ?").get(src.id) as any;
+    };
+    const auditIds = (p: { id: number }) => (db.prepare("SELECT agent_audit_id FROM audits WHERE project_id = ? ORDER BY agent_audit_id").all(p.id) as { agent_audit_id: string }[]).map((a) => a.agent_audit_id);
+
+    it("takes packages only from the allowed workflow when the repository has several workflow files", async () => {
+      const p = proj();
+      const state = {
+        runs: [], runInfo: { 7: wf("audit.yml", 11), 8: wf("e2e.yml", 12), 9: wf("nightly.yml", 13) },
+        artifacts: [artifact(1001, "testbench-audit-a", 7), artifact(1002, "testbench-audit-b", 8), artifact(1003, "testbench-audit-c", 9)],
+        zips: { 1001: auditZip(p.key, [bug("A1")], { id: "from-audit" }), 1002: auditZip(p.key, [bug("B1")], { id: "from-e2e" }), 1003: auditZip(p.key, [bug("C1")], { id: "from-nightly" }) } as Record<number, Uint8Array>,
+      };
+      const calls = fakeGithub(state);
+      const r = await checkSource(source(p.id, "", "audit.yml"));
+      assert.deepEqual([r.audits, r.auditsBlocked, r.auditsRejected, r.error], [1, 2, 0, null]);
+      assert.deepEqual(auditIds(p), ["from-audit"]);
+      assert.equal(zipCalls(calls, 1001), 1);
+      assert.equal(zipCalls(calls, 1002) + zipCalls(calls, 1003), 0, "a package from another workflow is never even downloaded");
+    });
+
+    it("accepts a workflow by numeric id, by file name in any case, or with its path, and several at once", async () => {
+      const p = proj();
+      const state = {
+        runs: [], runInfo: { 7: wf("audit.yml", 11), 8: wf("e2e.yml", 12), 9: wf("nightly.yml", 13) },
+        artifacts: [artifact(1101, "testbench-audit-a", 7), artifact(1102, "testbench-audit-b", 8), artifact(1103, "testbench-audit-c", 9)],
+        zips: { 1101: auditZip(p.key, [bug("A1")], { id: "a" }), 1102: auditZip(p.key, [bug("B1")], { id: "b" }), 1103: auditZip(p.key, [bug("C1")], { id: "c" }) } as Record<number, Uint8Array>,
+      };
+      fakeGithub(state);
+      const r = await checkSource(source(p.id, "", "11, .github/workflows/E2E.YML"));
+      assert.deepEqual([r.audits, r.auditsBlocked], [2, 1]);
+      assert.deepEqual(auditIds(p), ["a", "b"]);
+    });
+
+    it("leaves a package from the wrong workflow alone even with the right name, without remembering it, and imports it once that workflow is allowed", async () => {
+      const p = proj();
+      const state = { runs: [], runInfo: { 7: wf("e2e.yml", 12) }, artifacts: [artifact(1201, "testbench-audit-x", 7)], zips: { 1201: auditZip(p.key) } as Record<number, Uint8Array> };
+      const calls = fakeGithub(state);
+      let src = source(p.id, "", "audit.yml");
+      const first = await checkSource(src);
+      assert.deepEqual([first.audits, first.auditsBlocked, first.error], [0, 1, null]);
+      assert.equal(zipCalls(calls, 1201), 0);
+      assert.equal(count("SELECT COUNT(*) AS n FROM github_artifacts WHERE source_id = ?", src.id), 0, "blocked is not remembered as done");
+      assert.equal(count("SELECT COUNT(*) AS n FROM bug_reports WHERE project_id = ?", p.id), 0);
+      src = setAllowed(src, "audit.yml, e2e.yml");
+      assert.equal((await checkSource(src)).audits, 1);
+      assert.equal(count("SELECT COUNT(*) AS n FROM github_artifacts WHERE source_id = ? AND outcome = 'imported'", src.id), 1);
+    });
+
+    it("does not read a blocked workflow's package as a test report either", async () => {
+      const p = proj();
+      const withResults = zipSync(Object.fromEntries(makePackage({ project: p.key, bugs: [bug("W1")], files: { "results/junit.xml": '<testsuites><testsuite name="x"><testcase name="must not become a test" classname="x.Y" time="0.1"/></testsuite></testsuites>' }, manifest: { parts: { results: ["results/junit.xml"] } } })));
+      const state = {
+        runs: [run(8)], runInfo: { 8: wf("e2e.yml", 12) },
+        artifacts: [artifact(1301, "testbench-audit-other", 8), artifact(1302, "test-results", 8)],
+        zips: { 1301: withResults, 1302: junit } as Record<number, Uint8Array>,
+      };
+      const calls = fakeGithub(state);
+      const r = await checkSource(source(p.id, "", "audit.yml"));
+      assert.deepEqual([r.imported, r.audits, r.auditsBlocked], [1, 0, 1]);
+      assert.equal(count("SELECT COUNT(*) AS n FROM results r JOIN runs ru ON ru.id = r.run_id WHERE ru.project_id = ?", p.id), 1, "only the test artifact became test results");
+      assert.equal(count("SELECT COUNT(*) AS n FROM automated_tests WHERE project_id = ? AND title LIKE '%must not become%'", p.id), 0);
+      assert.equal(zipCalls(calls, 1301), 0);
+    });
+
+    it("does not treat other artifacts with audit in the name as packages, even from the allowed workflow", async () => {
+      const p = proj();
+      const state = {
+        runs: [], artifacts: [artifact(1401, "audit-report", 7), artifact(1402, "testbench-audit", 7), artifact(1403, "my-testbench-audit-1", 7), artifact(1404, "Audit-results", 7)],
+        zips: { 1401: auditZip(p.key, [bug("N1")], { id: "n1" }), 1402: auditZip(p.key, [bug("N2")], { id: "n2" }), 1403: auditZip(p.key, [bug("N3")], { id: "n3" }), 1404: auditZip(p.key, [bug("N4")], { id: "n4" }) } as Record<number, Uint8Array>,
+      };
+      const calls = fakeGithub(state);
+      const r = await checkSource(source(p.id));
+      assert.deepEqual([r.audits, r.auditsBlocked, r.auditsRejected, r.error], [0, 0, 0, null]);
+      assert.equal(auditIds(p).length, 0);
+      for (const id of [1401, 1402, 1403, 1404]) assert.equal(zipCalls(calls, id), 0, String(id));
+    });
+
+    it("gives a clear configuration error and imports nothing when no workflow is allowed", async () => {
+      const p = proj();
+      const state = { runs: [], artifacts: [artifact(1501, "testbench-audit-x", 7)], zips: { 1501: auditZip(p.key) } as Record<number, Uint8Array> };
+      const calls = fakeGithub(state);
+      const before = files();
+      for (const empty of ["", "   ", " , ,"]) {
+        const src = source(p.id, "", empty);
+        const r = await checkSource(src);
+        assert.match(r.error ?? "", /no workflow is allowed to deliver audit packages/, JSON.stringify(empty));
+        assert.deepEqual([r.audits, r.auditsBlocked], [0, 1]);
+        assert.match((db.prepare("SELECT last_error FROM github_sources WHERE id = ?").get(src.id) as { last_error: string }).last_error, /no workflow is allowed/, "the error is kept on the source for the page");
+        assert.equal(count("SELECT COUNT(*) AS n FROM github_artifacts WHERE source_id = ?", src.id), 0);
+        db.prepare("DELETE FROM github_sources WHERE id = ?").run(src.id);
+      }
+      assert.equal(zipCalls(calls, 1501), 0);
+      assert.equal(calls.filter((c) => /\/actions\/runs\/\d+$/.test(c)).length, 0, "not even the run is looked up");
+      assert.equal(files(), before);
+      assert.equal(count("SELECT COUNT(*) AS n FROM audits WHERE project_id = ?", p.id), 0);
+    });
+
+    it("stays quiet about an empty list for a repository that has no audit packages", async () => {
+      const p = proj();
+      fakeGithub({ runs: [], artifacts: [artifact(1601, "test-results", 7)], zips: {} });
+      const r = await checkSource(source(p.id, "", ""));
+      assert.deepEqual([r.error, r.auditsBlocked], [null, 0]);
+    });
+
+    it("reports a malformed workflow entry instead of treating it as no restriction", async () => {
+      const p = proj();
+      const state = { runs: [], artifacts: [artifact(1701, "testbench-audit-x", 7)], zips: { 1701: auditZip(p.key) } as Record<number, Uint8Array> };
+      const calls = fakeGithub(state);
+      const r = await checkSource(source(p.id, "", "audit"));
+      assert.match(r.error ?? "", /"audit" is not a workflow id or a workflow file name/);
+      assert.equal(r.audits, 0);
+      assert.equal(zipCalls(calls, 1701), 0);
+    });
+
+    it("rejects a package for another project from the allowed workflow, whole, and writes nothing", async () => {
+      const a = proj();
+      const b = proj();
+      const pkg = zipSync(Object.fromEntries(makePackage({ project: b.key, narrative: "# r", files: { "evidence/a.png": PNG }, bugs: [bug("X1", { evidence: [{ path: "evidence/a.png" }] }), bug("X2")], audit: { id: "for-b" } })));
+      fakeGithub({ runs: [], artifacts: [artifact(1801, "testbench-audit-b", 7)], zips: { 1801: pkg } });
+      const before = files();
+      const src = source(a.id);
+      const r = await checkSource(src);
+      assert.deepEqual([r.audits, r.auditsRejected], [0, 1]);
+      assert.equal(files(), before);
+      for (const t of ["bug_reports", "audits"]) assert.equal(count(`SELECT COUNT(*) AS n FROM ${t} WHERE project_id IN (?, ?)`, a.id, b.id), 0, t);
+      assert.equal(count("SELECT COUNT(*) AS n FROM bug_attachments WHERE bug_report_id IN (SELECT id FROM bug_reports WHERE project_id IN (?, ?))", a.id, b.id), 0);
+      assert.match((db.prepare("SELECT note FROM github_artifacts WHERE source_id = ?").get(src.id) as { note: string }).note, /for project/);
+    });
+
+    it("does not trust a run from a fork, nor one whose workflow cannot be looked up, and tries the latter again", async () => {
+      const p = proj();
+      const state = {
+        runs: [], runInfo: { 7: wf("audit.yml", 11, "someone/r"), 8: wf("audit.yml", 11) },
+        artifacts: [artifact(1901, "testbench-audit-fork", 7), artifact(1902, "testbench-audit-ok", 8)],
+        zips: { 1901: auditZip(p.key, [bug("F1")], { id: "fork" }), 1902: auditZip(p.key, [bug("O1")], { id: "ok" }) } as Record<number, Uint8Array>,
+        lookupFails: new Set([8]),
+      };
+      const calls = fakeGithub(state);
+      const src = source(p.id);
+      const first = await checkSource(src);
+      assert.match(first.error ?? "", /could not look up its workflow run/);
+      assert.deepEqual([first.audits, first.auditsBlocked], [0, 2]);
+      assert.equal(zipCalls(calls, 1901) + zipCalls(calls, 1902), 0, "nothing is downloaded when its origin is unknown or foreign");
+      state.lookupFails.clear();
+      const second = await checkSource(src);
+      assert.deepEqual([second.audits, second.auditsBlocked], [1, 1]);
+      assert.deepEqual(auditIds(p), ["ok"]);
+    });
+
+    it("leaves no files and no 'done' mark when validation or the download fails", async () => {
+      const p = proj();
+      const invalid = zipSync(Object.fromEntries(makePackage({ project: p.key, narrative: "# r", files: { "evidence/a.png": PNG }, bugs: [bug("V1", { evidence: [{ path: "evidence/a.png" }] }), bug("V1")], audit: { id: "invalid" } })));
+      const state = {
+        runs: [], artifacts: [artifact(2001, "testbench-audit-bad", 7), artifact(2002, "testbench-audit-down", 7)],
+        zips: { 2001: invalid, 2002: auditZip(p.key, [bug("D1")], { id: "down" }) } as Record<number, Uint8Array>, failing: new Set([2002]),
+      };
+      fakeGithub(state);
+      const before = files();
+      const src = source(p.id);
+      const r = await checkSource(src);
+      assert.deepEqual([r.audits, r.auditsRejected], [0, 1], "the invalid package is refused");
+      assert.match(r.error ?? "", /testbench-audit-down.*500/, "the failed download");
+      assert.equal(files(), before);
+      assert.equal(count("SELECT COUNT(*) AS n FROM bug_reports WHERE project_id = ?", p.id), 0);
+      assert.equal(count("SELECT COUNT(*) AS n FROM audits WHERE project_id = ?", p.id), 0);
+      assert.equal(count("SELECT COUNT(*) AS n FROM github_artifacts WHERE source_id = ? AND outcome = 'imported'", src.id), 0, "neither is marked as imported");
+      assert.equal(count("SELECT COUNT(*) AS n FROM github_artifacts WHERE source_id = ? AND artifact_id = 2002", src.id), 0, "the failed download is tried again");
+    });
+
+    it("parses the workflow list, drops duplicates and refuses entries that are neither an id nor a yml file name", () => {
+      assert.deepEqual(parseWorkflowList("audit.yml, 123\n.github/workflows/e2e.yaml audit.yml"), ["audit.yml", "123", "e2e.yaml"]);
+      assert.deepEqual(parseWorkflowList(""), []);
+      for (const bad of ["audit", "../x.yml", "a/b.yml", "audit.yml;x", "*"]) assert.throws(() => parseWorkflowList(bad), /not a workflow id or a workflow file name/, bad);
+    });
   });
 });
 

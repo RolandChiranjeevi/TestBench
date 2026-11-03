@@ -234,7 +234,8 @@ naming the field. Jira Server / Data Center is not supported, only Jira Cloud.
 Optional. A test agent can leave an **audit package** (its findings, evidence and its own report) that Testbench imports as **proposals** on the
 **Bug reports** page. A person reads each one and accepts or rejects it; the agent's own review never decides anything, and nothing is
 sent to Jira or Linear by the import. Import a package by hand (**Bug reports, Import audit package**: a zip or a folder, with a preview first)
-or upload it from CI as an artifact named `testbench-audit-*` and let the GitHub import pick it up.
+or upload it from CI as an artifact named `testbench-audit-*` and let the GitHub import pick it up. GitHub only delivers packages from the
+workflows you list for the source (**Workflows allowed to deliver audit packages**); with an empty list nothing is imported.
 
 The format, the rules for importing the same report again, the limits and a worked example (`examples/audit-package/`, for the demo project)
 are in [docs/audit-package.md](docs/audit-package.md). How a test agent should write a package, with stable ids so that a repeated audit gives

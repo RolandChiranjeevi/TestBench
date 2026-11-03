@@ -13,7 +13,7 @@ If you write the agent that produces packages, read [agent-audit-guide.md](agent
 | Way | How |
 |---|---|
 | **Upload** | **Bug reports, Import audit package**: choose a zip, or choose the folder. You see a preview (what is new, unchanged, changed, which files or references have problems) and nothing is written until you click **Import as proposals**. |
-| **GitHub** | Upload the package as a workflow artifact **named `testbench-audit-<anything>`** (the name of the artifact, not of the workflow or step). With automatic import switched on for the repository (Import results), Testbench picks it up on its next check and imports it as proposals without any further approval. |
+| **GitHub** | Upload the package as a workflow artifact **named `testbench-audit-<anything>`** (the name of the artifact, not of the workflow or step). With automatic import switched on for the repository (Import results) **and the uploading workflow named under "Workflows allowed to deliver audit packages"**, Testbench picks it up on its next check and imports it as proposals without any further approval. |
 
 ```yaml
 - uses: actions/upload-artifact@v4
@@ -131,6 +131,11 @@ A package that breaks a rule about its structure, size or project is refused as 
 
 - Packages are followed **per artifact** (an artifact's id never changes), not per workflow run. A package that shows up *after* its run's test results were imported, or after the run was skipped for having no test reports, is still fetched. A package that arrives *before* its run is imported is linked when the run arrives.
 - Artifacts named `testbench-audit-*` are never read as test reports, so their files cannot be counted as test results.
+- **Only workflows you name may deliver packages.** Each GitHub source has a list, **Workflows allowed to deliver audit packages**, of workflow file names (`audit.yml`, the `.github/workflows/` prefix is optional) and/or numeric workflow ids, separated by commas. The flow is: the right repository, then the right workflow, then an artifact named `testbench-audit-*`, then the Testbench project whose key the package names.
+  - Which workflow made an artifact is looked up from the artifact's run before anything is downloaded. A package from any other workflow is left alone, even with the right artifact name, and is not remembered: allow its workflow later and it is imported on the next check (if it is still among the 100 newest artifacts).
+  - **An empty list allows no workflow, never all of them.** If there are new `testbench-audit-*` artifacts and the list is empty, the source shows a configuration error and nothing is imported. A repository without such artifacts shows no error. A malformed entry (not an id or a `.yml` name) is reported the same way.
+  - A run that comes from a fork of the repository, or whose workflow cannot be looked up (for example a rate limit), is not trusted: nothing is downloaded, and the lookup is retried on the next check.
+  - This list only concerns audit packages. The source's single *Workflow file* setting still decides which runs are listed for test results, and empty there still means all workflows.
 - **Limit: only the repository's 100 most recent artifacts are looked at** each time, and artifacts expire on GitHub's schedule. After a long pause (more than 100 artifacts in the meantime, or an expired artifact) a package may not be found. Complete catching-up after a long gap is **not** promised: download the package and upload it by hand.
 - A package that is refused (for example the wrong project key) is **not retried**, and the reason is shown on the Bug reports page under **Audits**. A temporary failure (network, rate limit) is retried on the next check.
 - Only artifacts created after automatic import was switched on, and matching the branch filter, are imported.

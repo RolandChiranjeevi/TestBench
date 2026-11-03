@@ -373,6 +373,8 @@ CREATE INDEX IF NOT EXISTS requirement_attachments_req ON requirement_attachment
     ["default_milestone", "TEXT NOT NULL DEFAULT ''"],
     ["last_checked_at", "TEXT"],
     ["last_error", "TEXT NOT NULL DEFAULT ''"],
+    // Workflows (ids or file names, comma separated) allowed to deliver audit packages. Empty allows none.
+    ["audit_workflows", "TEXT NOT NULL DEFAULT ''"],
   ] as const) {
     if (!hasColumn("github_sources", col)) d.exec(`ALTER TABLE github_sources ADD COLUMN ${col} ${def}`);
   }
