@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Bug, Check, ExternalLink, FileText, FolderOpen, Link2, Paperclip, Pencil, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, Bug, Check, ExternalLink, FileText, FolderOpen, Link2, Paperclip, Pencil, Send, Settings, Trash2, Upload } from "lucide-react";
 import { api, timeAgo, type Priority } from "../api";
 import { ConfirmModal, Empty, ListSkeleton, Modal, PriorityIcon, PRIORITY_LABEL, useToast } from "../components/ui";
 
@@ -23,8 +23,22 @@ interface Detail {
   refs: Ref[]; attachments: Attachment[]; revisions: { rev: number; imported_at: string }[];
   pendingUpdate: { rev: number; changes: { field: string; from: string; to: string }[]; evidenceAdded: number; evidenceRemoved: number } | null;
   duplicateOf: { id: number; title: string } | null; duplicates: { id: number; title: string }[]; similar: { id: number; title: string; status: string }[];
-  publications: { id: number; destination: string; destination_ref: string; mode: string; state: string; external_id: string; external_url: string }[];
+  publications: Publication[];
 }
+interface Publication {
+  id: number; destination: string; destination_ref: string; mode: string; state: string; external_id: string; external_url: string;
+  error: string; attachments_state: string; content_sent: string; created_at: string; completed_at: string | null;
+}
+interface Team { id: string; key: string; name: string }
+interface Destination { kind: string; baseUrl: string; team: Team; tokenSource: "stored" | "environment" | "unreadable" | "none"; tokenHint: string; ready: boolean }
+interface Preview {
+  bugId: number; destination: { label: string; baseUrl: string; team: Team } | null; title: string; description: string;
+  priority: { severity: string | null; value: number; label: string; mapping: string };
+  refs: { id: number; kind: string; label: string; state: string; included: boolean; sendable: boolean }[];
+  attachments: { id: number; filename: string; mime: string; size: number; included: boolean; sendable: boolean; reason: string }[];
+  warnings: string[]; blockers: string[]; canPublish: boolean; hash: string;
+}
+const fmtSize = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`);
 interface Audit {
   id: number; agentAuditId: string; title: string; agent: string; startedAt: string | null; source: string; github: { repo: string; runId: number } | null;
   runState: string; hasReport: boolean; bugs: number; proposed: number; imports: number; lastImportedAt: string;
@@ -62,6 +76,8 @@ export function BugReportsPage() {
   const [params, setParams] = useSearchParams();
   const [tab, setTab] = useState<Tab>("proposed");
   const [importing, setImporting] = useState(false);
+  const [destinationOpen, setDestinationOpen] = useState(false);
+  const { data: dest } = useQuery({ queryKey: ["destination", pid], queryFn: () => api.get<{ destination: Destination | null; serverKey: boolean }>(`/api/projects/${pid}/destination`) });
   const open = Number(params.get("bug")) || null;
   const statusParam = tab === "audits" ? "proposed" : tab;
   const { data, isLoading } = useQuery({ queryKey: ["bug-reports", pid, statusParam], queryFn: () => api.get<List>(`/api/projects/${pid}/bug-reports?status=${statusParam}`) });
@@ -74,6 +90,9 @@ export function BugReportsPage() {
       <div className="topbar">
         <h1>Bug reports</h1>
         <span className="spacer" />
+        <button className="btn" onClick={() => setDestinationOpen(true)} title="Where accepted reports are published">
+          <Settings size={14} /> {dest?.destination ? `Linear · ${dest.destination.team.key}` : "Set up publishing"}
+        </button>
         <button className="btn primary" onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</button>
       </div>
       <div className="toolbar">
@@ -123,6 +142,7 @@ export function BugReportsPage() {
       </div>
       {open && <DetailModal id={open} pid={pid!} onClose={() => setOpen(null)} onOpen={setOpen} />}
       {importing && <ImportModal pid={pid!} onClose={() => setImporting(false)} />}
+      {destinationOpen && <DestinationModal pid={pid!} onClose={() => setDestinationOpen(false)} />}
     </>
   );
 }
@@ -145,6 +165,7 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
   const [note, setNote] = useState("");
   const [link, setLink] = useState({ destination: "jira", url: "" });
   const [deleting, setDeleting] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const run = <T,>(fn: () => Promise<T>, ok?: string) => fn().then((r) => { refresh(); if (ok) toast("success", ok); return r; }).catch((e: Error) => { toast("error", e.message); });
   const post = (path: string, body?: unknown, ok?: string) => run(() => api.post(`/api/bug-reports/${id}/${path}`, body), ok);
 
@@ -202,10 +223,13 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
           {b.status !== "rejected" && <button className="btn" onClick={() => post("review", { status: "rejected", note: note || undefined }, "Rejected")}>Reject</button>}
           {b.status !== "proposed" && <button className="btn ghost" onClick={() => post("review", { status: "proposed" }, "Back to proposed")}>Reopen</button>}
           <input className="input grow" aria-label="Review note" placeholder="Note about your decision (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
+          {b.status === "accepted" && !b.publications.some((p) => p.destination === "linear" && (p.mode === "linked_existing" || p.state === "sent")) && (
+            <button className="btn" onClick={() => setPublishing(true)}><Send size={14} /> Publish to Linear…</button>
+          )}
         </div>
         {b.reviewNote && <div className="faint">Note: {b.reviewNote}{b.reviewedAt ? ` · ${timeAgo(b.reviewedAt)}` : ""}</div>}
         {b.duplicateOf && <div>Duplicate of <button className="btn ghost sm" onClick={() => onOpen(b.duplicateOf!.id)}>{b.duplicateOf.title}</button></div>}
-        <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>Accepting is only your decision in Testbench. Sending a report to Jira or Linear is a separate step and is not available yet.</div>
+        <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>Accepting is only your decision in Testbench. Publishing to Linear is a separate step: you get a preview of exactly what is sent and approve it first.</div>
 
         {/* Three separate judgements */}
         <div className="card" style={{ padding: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
@@ -273,14 +297,9 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
         </div>
 
         <div className="field">
-          <div className="section-label"><Link2 size={12} /> Existing external issue</div>
-          {b.publications.map((p) => (
-            <div key={p.id} className="row" style={{ gap: 8 }}>
-              <span className="chip">{p.destination}</span>
-              {p.external_url ? <a href={p.external_url} target="_blank" rel="noreferrer noopener" style={{ overflowWrap: "anywhere" }}>{p.external_id || p.external_url} <ExternalLink size={11} /></a> : p.external_id}
-              {p.mode === "linked_existing" && <button className="btn ghost sm" aria-label="Remove link" onClick={() => run(() => api.del(`/api/bug-publications/${p.id}`), "Link removed")}>Remove</button>}
-            </div>
-          ))}
+          <div className="section-label"><Link2 size={12} /> External issues</div>
+          {b.publications.length === 0 && <span className="faint">Not published or linked.</span>}
+          {b.publications.map((p) => <PublicationRow key={p.id} p={p} run={run} />)}
           <div className="row" style={{ gap: 6, marginTop: 6 }}>
             <select className="select" style={{ width: "auto" }} aria-label="Destination" value={link.destination} onChange={(e) => setLink({ ...link, destination: e.target.value })}>
               <option value="jira">Jira</option><option value="linear">Linear</option><option value="other">Other</option>
@@ -318,6 +337,7 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
           </div>
         </div>
       </div>
+      {publishing && <PublishModal id={id} pid={pid} onClose={() => setPublishing(false)} />}
       {deleting && (
         <ConfirmModal
           title="Delete this report?"
@@ -328,6 +348,182 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
           <p style={{ margin: 0 }}>This removes the report and its evidence files from Testbench.{guarded ? " It is accepted or linked to an external issue; that issue is not touched." : ""} If the agent sends the same package again, it will come back as a new proposal.</p>
         </ConfirmModal>
       )}
+    </Modal>
+  );
+}
+
+// ---------- Publishing ----------
+
+/** One link or publication of a report. A publication made here shows its state, what was sent, and what to do when it is unclear. */
+function PublicationRow({ p, run }: { p: Publication; run: <T>(fn: () => Promise<T>, ok?: string) => Promise<T | void> }) {
+  const created = p.mode === "created";
+  const files = Object.entries((() => { try { return JSON.parse(p.attachments_state || "{}") as Record<string, string>; } catch { return {}; } })());
+  const failedFiles = files.filter(([, v]) => v !== "ok");
+  const sent = (() => { try { return p.content_sent ? (JSON.parse(p.content_sent) as { title: string; description: string; team?: { key: string }; priority?: { label: string } }) : null; } catch { return null; } })();
+  const state = p.state === "pending" ? "unknown" : p.state;
+  return (
+    <div className="col" style={{ gap: 4, padding: "4px 0" }}>
+      <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+        <span className="chip">{p.destination}</span>
+        {created && <span className="chip" style={state === "sent" ? { color: "var(--passed-fg)" } : { color: "var(--blocked-fg)" }}>{state === "sent" ? "published" : state === "failed" ? "not created" : "unclear"}</span>}
+        {p.external_url ? <a href={p.external_url} target="_blank" rel="noreferrer noopener" style={{ overflowWrap: "anywhere" }}>{p.external_id || p.external_url} <ExternalLink size={11} /></a> : p.external_id}
+        {p.completed_at && created && <span className="faint">{timeAgo(p.completed_at)}</span>}
+        {p.mode === "linked_existing" && <button className="btn ghost sm" aria-label="Remove link" onClick={() => run(() => api.del(`/api/bug-publications/${p.id}`), "Link removed")}>Remove</button>}
+        {created && state !== "sent" && <button className="btn sm" onClick={() => run(() => api.post(`/api/bug-publications/${p.id}/check`), "Checked with Linear")}>Check status</button>}
+      </div>
+      {created && state !== "sent" && (
+        <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>
+          {p.error || "The answer from Linear was unclear."} Linear may or may not have created the issue. Check status asks Linear; publishing again reuses the same id, so it cannot create a second issue.
+        </div>
+      )}
+      {failedFiles.length > 0 && (
+        <div className="row" style={{ gap: 8, color: "var(--failed-fg)", fontSize: "var(--fs-md)" }}>
+          <AlertTriangle size={13} /> {failedFiles.length} of {files.length} file{files.length === 1 ? "" : "s"} did not get attached to the issue.
+          <button className="btn sm" onClick={() => run(() => api.post(`/api/bug-publications/${p.id}/retry-attachments`), "Tried the files again")}>Retry files</button>
+        </div>
+      )}
+      {created && sent && (
+        <details style={{ fontSize: "var(--fs-md)" }}>
+          <summary className="faint" style={{ cursor: "pointer" }}>What was sent</summary>
+          <div style={{ fontWeight: 500, marginTop: 4, overflowWrap: "anywhere" }}>{sent.title}</div>
+          <pre className="mono" style={{ whiteSpace: "pre-wrap", margin: "4px 0", overflowWrap: "anywhere", fontSize: "var(--fs-sm)" }}>{sent.description}</pre>
+        </details>
+      )}
+    </div>
+  );
+}
+
+/** The preview a person approves before anything is created in Linear. The approval is tied to this exact preview. */
+function PublishModal({ id, pid, onClose }: { id: number; pid: string; onClose: () => void }) {
+  const toast = useToast();
+  const refresh = useRefresh(pid);
+  const [sel, setSel] = useState<{ refIds?: number[]; attachmentIds?: number[] }>({});
+  const [approvedHash, setApprovedHash] = useState<string | null>(null);
+  const { data: pv, error, refetch } = useQuery({ queryKey: ["publish-preview", id, sel], queryFn: () => api.post<Preview>(`/api/bug-reports/${id}/publish-preview`, sel), gcTime: 0, staleTime: 0 });
+  const publish = useMutation({
+    mutationFn: () => api.post<{ publication: { externalId: string } }>(`/api/bug-reports/${id}/publish`, { ...sel, previewHash: pv!.hash, approve: true }),
+    onSuccess: (r) => { refresh(); toast("success", `Published as ${r.publication.externalId}`); onClose(); },
+    onError: (e: Error) => { refresh(); toast("error", e.message); refetch(); },
+  });
+  const toggleRef = (rid: number) => pv && setSel({ ...sel, refIds: pv.refs.filter((r) => (r.id === rid ? !r.included : r.included)).map((r) => r.id) });
+  const toggleFile = (aid: number) => pv && setSel({ ...sel, attachmentIds: pv.attachments.filter((a) => (a.id === aid ? !a.included : a.included)).map((a) => a.id) });
+  const ready = !!pv?.canPublish && approvedHash === pv.hash;
+  const team = pv?.destination?.team;
+  return (
+    <Modal
+      title="Publish to Linear"
+      onClose={onClose}
+      width={820}
+      footer={
+        <>
+          <span className="spacer" />
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn primary" disabled={!ready || publish.isPending} onClick={() => publish.mutate()}><Send size={14} /> {publish.isPending ? "Creating…" : "Create the issue in Linear"}</button>
+        </>
+      }
+    >
+      {!pv ? (
+        error ? <div style={DANGER}>{(error as Error).message}</div> : <ListSkeleton rows={4} />
+      ) : (
+        <div className="col" style={{ gap: 14 }}>
+          <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>Nothing has been sent. This is exactly what will be created, and it is only created when you approve it below.</div>
+          {pv.blockers.map((m) => <div key={m} className="row" style={{ gap: 6, ...DANGER }}><AlertTriangle size={14} /> {m}</div>)}
+          <div className="field"><div className="section-label">Target</div><div>Linear · team {team ? `${team.name} (${team.key})` : "not set"}</div></div>
+          <div className="field"><div className="section-label">Title</div><div style={{ fontWeight: 600, overflowWrap: "anywhere" }}>{pv.title}</div></div>
+          <div className="field">
+            <div className="section-label">Description</div>
+            <pre className="mono" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", margin: 0, padding: 10, border: "1px solid var(--border)", borderRadius: 6, maxHeight: 280, overflow: "auto", fontSize: "var(--fs-md)" }}>{pv.description}</pre>
+          </div>
+          <div className="field"><div className="section-label">Severity</div><div>{pv.priority.mapping}</div></div>
+          <div className="field">
+            <div className="section-label">Links to requirements and test cases</div>
+            {pv.refs.length === 0 && <span className="faint">None named in the report.</span>}
+            {pv.refs.map((r) => (
+              <label key={r.id} className="row" style={{ gap: 8, cursor: r.sendable ? "pointer" : "default", opacity: r.sendable ? 1 : 0.6 }}>
+                <input type="checkbox" className="checkbox" checked={r.included} disabled={!r.sendable} onChange={() => toggleRef(r.id)} />
+                <span>{r.label}</span>{!r.sendable && <span className="faint">not found in this project, cannot be sent</span>}
+              </label>
+            ))}
+          </div>
+          <div className="field">
+            <div className="section-label"><Paperclip size={12} /> Files attached to the issue</div>
+            {pv.attachments.length === 0 && <span className="faint">No evidence files.</span>}
+            {pv.attachments.map((a) => (
+              <label key={a.id} className="row" style={{ gap: 8, cursor: a.sendable ? "pointer" : "default", opacity: a.sendable ? 1 : 0.6 }}>
+                <input type="checkbox" className="checkbox" checked={a.included} disabled={!a.sendable} onChange={() => toggleFile(a.id)} />
+                <span style={{ overflowWrap: "anywhere" }}>{a.filename}</span><span className="faint">{fmtSize(a.size)}</span>{a.reason && <span className="faint">will not be sent: {a.reason}</span>}
+              </label>
+            ))}
+          </div>
+          {pv.warnings.map((m) => <div key={m} className="faint" style={{ fontSize: "var(--fs-md)" }}>{m}</div>)}
+          <label className="row" style={{ gap: 8, cursor: "pointer", alignItems: "flex-start" }}>
+            <input type="checkbox" className="checkbox" checked={approvedHash === pv.hash} disabled={!pv.canPublish} onChange={(e) => setApprovedHash(e.target.checked ? pv.hash : null)} />
+            <span>I have read the preview and approve creating this issue in Linear{team ? ` (team ${team.key})` : ""}.</span>
+          </label>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+/** Where this project's accepted reports are published. The key is sealed on the server and never shown again. */
+function DestinationModal({ pid, onClose }: { pid: string; onClose: () => void }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const { data } = useQuery({ queryKey: ["destination", pid], queryFn: () => api.get<{ destination: Destination | null; serverKey: boolean }>(`/api/projects/${pid}/destination`) });
+  const [token, setToken] = useState("");
+  const [teams, setTeams] = useState<Team[] | null>(null);
+  const [team, setTeam] = useState("");
+  const dest = data?.destination ?? null;
+  const done = () => qc.invalidateQueries({ queryKey: ["destination", pid] });
+  const load = useMutation({
+    mutationFn: () => api.post<Team[]>(`/api/projects/${pid}/destination/teams`, { token: token.trim() || undefined }),
+    onSuccess: (t) => { setTeams(t); setTeam(t.find((x) => x.id === dest?.team.id)?.key ?? t[0]?.key ?? ""); },
+    onError: (e: Error) => toast("error", e.message),
+  });
+  const save = useMutation({
+    mutationFn: () => api.put(`/api/projects/${pid}/destination`, { token: token.trim() || undefined, team: team || undefined }),
+    onSuccess: () => { done(); setToken(""); setTeams(null); toast("success", "Saved"); },
+    onError: (e: Error) => toast("error", e.message),
+  });
+  const remove = useMutation({
+    mutationFn: () => api.del(`/api/projects/${pid}/destination`),
+    onSuccess: () => { done(); toast("success", "Destination removed"); },
+    onError: (e: Error) => toast("error", e.message),
+  });
+  const source = dest?.tokenSource;
+  return (
+    <Modal title="Publishing destination" onClose={onClose} width={560} footer={<><span className="spacer" /><button className="btn" onClick={onClose}>Close</button></>}>
+      <div className="col" style={{ gap: 12 }}>
+        <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>
+          Accepted bug reports of this project can be published to Linear, one at a time, after a preview. Nothing is sent when you save this or when you accept a report.
+        </div>
+        {dest ? (
+          <div className="card" style={{ padding: 10 }}>
+            <div>Linear · team <strong>{dest.team.name}</strong> ({dest.team.key})</div>
+            <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>
+              {source === "stored" ? `API key stored for this project (ends ${dest.tokenHint})` : source === "environment" ? "Using the server's own key (LINEAR_API_KEY)" : source === "unreadable" ? "The stored key cannot be read on this installation. Enter it again." : "No API key. Enter one below."}
+            </div>
+          </div>
+        ) : <div className="faint">No destination yet.</div>}
+        <div className="field">
+          <label htmlFor="lin-key">Linear API key</label>
+          <input id="lin-key" className="input" type="password" autoComplete="off" spellCheck={false} placeholder={dest && source === "stored" ? "Leave empty to keep the stored key" : data?.serverKey ? "Leave empty to use the server's key" : "lin_api_…"} value={token} onChange={(e) => { setToken(e.target.value); setTeams(null); }} />
+          <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>Personal key from Linear: Settings, Account, Security &amp; access. It is stored encrypted on the server, never shown again, and is not part of backups.</span>
+        </div>
+        <div className="row" style={{ gap: 8 }}>
+          <button className="btn" disabled={load.isPending || (!token.trim() && !dest && !data?.serverKey)} onClick={() => load.mutate()}>{load.isPending ? "Checking…" : "Check key and load teams"}</button>
+          {teams && (
+            <select className="select" aria-label="Team" value={team} onChange={(e) => setTeam(e.target.value)}>
+              {teams.map((t) => <option key={t.id} value={t.key}>{t.name} ({t.key})</option>)}
+            </select>
+          )}
+        </div>
+        <div className="row" style={{ gap: 8 }}>
+          <button className="btn primary" disabled={!teams || !team || save.isPending} onClick={() => save.mutate()}>Save destination</button>
+          {dest && <button className="btn ghost" style={DANGER} disabled={remove.isPending} onClick={() => remove.mutate()}>Remove</button>}
+        </div>
+      </div>
     </Modal>
   );
 }

@@ -1090,7 +1090,7 @@ describe("the sign-in gate covers the new routes", () => {
   it("answers 401 to every audit and bug report route without a session", async () => {
     const app = Fastify();
     registerAuth(app, { password: "correct horse battery", sessionDays: 7 });
-    const routes = [["GET", "/api/projects/1/bug-reports"], ["POST", "/api/projects/1/audit-import"], ["POST", "/api/bug-reports/1/review"], ["GET", "/api/audits/1/report"], ["DELETE", "/api/audits/1"]] as const;
+    const routes = [["GET", "/api/projects/1/bug-reports"], ["POST", "/api/projects/1/audit-import"], ["POST", "/api/bug-reports/1/review"], ["GET", "/api/audits/1/report"], ["DELETE", "/api/audits/1"], ["GET", "/api/projects/1/destination"], ["PUT", "/api/projects/1/destination"], ["POST", "/api/projects/1/destination/teams"], ["POST", "/api/bug-reports/1/publish-preview"], ["POST", "/api/bug-reports/1/publish"], ["POST", "/api/bug-publications/1/check"], ["POST", "/api/bug-publications/1/retry-attachments"]] as const;
     for (const [m, u] of routes) app.route({ method: m, url: u, handler: async () => ({ leaked: true }) });
     for (const [m, u] of routes) {
       const res = await app.inject({ method: m, url: u });

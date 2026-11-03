@@ -507,6 +507,21 @@ CREATE TABLE IF NOT EXISTS github_artifacts (
   PRIMARY KEY (source_id, artifact_id)
 );`);
 
+  // Where a project's accepted bug reports are published. One per project. The token is stored sealed (see secrets.ts) and never returned;
+  // no token means the server's own key (LINEAR_API_KEY) is used.
+  d.exec(`
+CREATE TABLE IF NOT EXISTS project_destinations (
+  project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,                        -- linear (Jira later)
+  base_url TEXT NOT NULL,
+  team_id TEXT NOT NULL, team_key TEXT NOT NULL DEFAULT '', team_name TEXT NOT NULL DEFAULT '',
+  token_enc TEXT,
+  token_hint TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);`);
+  // The exact content that was sent, as JSON (title, description, priority, team, attachments).
+  if (!hasColumn("bug_publications", "content_sent")) d.exec("ALTER TABLE bug_publications ADD COLUMN content_sent TEXT NOT NULL DEFAULT ''");
+
   // Make sure every sprint named on a run has a sprint record.
   const named = d.prepare("SELECT DISTINCT project_id, milestone FROM runs WHERE milestone != ''").all() as { project_id: number; milestone: string }[];
   for (const r of named) ensureMilestone(r.project_id, r.milestone, d);

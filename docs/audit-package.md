@@ -142,4 +142,4 @@ A package that breaks a rule about its structure, size or project is refused as 
 
 ## Not in this version
 
-Publishing a report to Jira or Linear (including per-project destinations and attachments to the external issue), importing test cases or test results from a package, suggesting duplicates automatically, and counting reports in dashboards and sprint reports. Reports that are not accepted never appear in those numbers.
+Publishing to Jira, status sync with the external issue and publishing many reports at once (an accepted report can be published to Linear one at a time, after a preview; see the README), importing test cases or test results from a package, suggesting duplicates automatically, and counting reports in dashboards and sprint reports. Reports that are not accepted never appear in those numbers.
