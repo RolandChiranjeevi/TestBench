@@ -122,6 +122,38 @@ describe("idempotency", () => {
   });
 });
 
+describe("what the counters of an answer mean", () => {
+  it("a reopened bug is counted as reopened and not as updated", () => {
+    const p = proj();
+    run(p, [result()]);
+    run(p, [result({ status: "passed" })]);
+    const s = run(p, [result()]);
+    assert.deepEqual([s.bugsCreated, s.bugsUpdated, s.reopened, s.resolvedSuspected], [0, 0, 1, 0]);
+    assert.deepEqual(s.bugs.map((b) => b.action), ["reopened"]);
+    // The same goes for a bug that a person closed.
+    setTriage(bugOf(p.id, "e2e-checkout-empty-cart").id, { workflowStatus: "closed" });
+    const t = run(p, [result()]);
+    assert.deepEqual([t.bugsCreated, t.bugsUpdated, t.reopened, t.resolvedSuspected], [0, 0, 1, 0]);
+  });
+
+  it("each bug is counted under exactly one counter, and the four add up to the bugs that had an event", () => {
+    const p = proj();
+    const failed = (k: string) => result({ testKey: k });
+    const passed = (k: string) => result({ testKey: k, status: "passed" });
+    run(p, [failed("A"), failed("B"), failed("C"), failed("F"), failed("G"), failed("H")], { branch: "main" });
+    run(p, [failed("G")], { branch: "feature/x" });
+    run(p, [passed("B"), passed("C"), passed("F")], { branch: "main" }); // B, C and F are now resolved_suspected
+    setTriage(bugOf(p.id, "C").id, { workflowStatus: "closed" });
+    const s = run(p, [failed("A"), failed("B"), failed("C"), failed("E"), passed("F"), passed("G"), passed("H")], { branch: "main" });
+    const actions = Object.fromEntries(s.bugs.map((b) => [b.testKey, b.action]));
+    assert.deepEqual(actions, { A: "updated", B: "reopened", C: "reopened", E: "created", F: "recorded", G: "recorded", H: "resolved_suspected" });
+    assert.deepEqual([s.bugsCreated, s.bugsUpdated, s.reopened, s.resolvedSuspected], [1, 1, 2, 1]);
+    const counted = s.bugsCreated + s.bugsUpdated + s.reopened + s.resolvedSuspected;
+    assert.equal(counted, s.bugs.filter((b) => b.action !== "recorded").length, "the counters cover every bug with an event, none twice");
+    assert.equal(s.bugs.length, 7, "recorded bugs are listed but in no counter");
+  });
+});
+
 describe("a result without an error", () => {
   it("accepts error as null or missing for a passed test, and stores it as an empty string", () => {
     const p = proj();

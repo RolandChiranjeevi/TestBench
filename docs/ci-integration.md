@@ -64,6 +64,22 @@ The answer says what happened:
   "bugsCreated": 1, "bugsUpdated": 0, "reopened": 0, "resolvedSuspected": 0, "bugs": [{ "testKey": "…", "bugId": 7, "action": "created" }] }
 ```
 
+### What the counters mean
+
+Each bug that a run touches is counted under **exactly one** counter, so the counters never overlap:
+
+| Counter | The bug… | `action` in `bugs` |
+| --- | --- | --- |
+| `bugsCreated` | was created by this run (its test key had no bug) | `created` |
+| `bugsUpdated` | already existed and got a new failed or flaky result, **without a change of workflow status** | `updated` |
+| `reopened` | already existed and went back to *open* from *may be resolved* or *closed* because of this run | `reopened` |
+| `resolvedSuspected` | was *open* and was marked *may be resolved* because its test passed and no branch is failing any more | `resolved_suspected` |
+
+A reopened bug is therefore counted as `reopened` and **not** as `bugsUpdated`, even though it also got a new occurrence. The four counters add up to the
+number of bugs that had an event in this run. Two cases are in `bugs` but in none of the counters: a passing test that changed nothing (`recorded`, for
+example when another branch is still failing or the bug was already *may be resolved* or *closed*) and a replay (`already_processed`, below).
+`counts` is separate: it counts the *tests* of the run by status, not bugs.
+
 If the same `runId` with the same content is sent again, nothing is changed and the answer says so: `replayed: true`, `bugsCreated`, `bugsUpdated`,
 `reopened` and `resolvedSuspected` are all `0`, and each bug has `"action": "already_processed"`. `counts` still describes what the run contained.
 

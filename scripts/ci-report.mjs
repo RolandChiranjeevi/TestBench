@@ -165,8 +165,10 @@ async function main() {
   try {
     const s = await send(`${base.replace(/\/$/, "")}/api/projects/${project}/ci/test-results`, token, payload);
     const c = s.counts ?? {};
-    console.log(`Testbench: ${c.failed ?? 0} failed, ${c.flaky ?? 0} flaky, ${c.passed ?? 0} passed. ` +
-      `Bugs: ${s.bugsCreated} new, ${s.bugsUpdated} updated, ${s.reopened} reopened, ${s.resolvedSuspected} may be resolved.${s.replayed ? " (this run had already been reported)" : ""}`);
+    // The four bug counters never overlap: a reopened bug is counted as reopened only, not as updated.
+    console.log(`Testbench: ${c.failed ?? 0} failed, ${c.flaky ?? 0} flaky, ${c.passed ?? 0} passed tests. ` +
+      `Bugs with an event (each counted once): ${s.bugsCreated} new, ${s.bugsUpdated} updated (no status change), ${s.reopened} reopened, ${s.resolvedSuspected} may be resolved.` +
+      (s.replayed ? " This run had already been reported, so nothing was changed." : ""));
   } catch (e) {
     fail(e instanceof Error ? e.message.replaceAll(token, "[token]") : "request failed");
   }
