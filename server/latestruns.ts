@@ -51,3 +51,21 @@ export function latestRuns(projectId: number, sets = newBugIds(projectId)): Late
     manual: m ? { id: m.id, title: m.title, at: m.imported_at } : null,
   };
 }
+
+/**
+ * "New" agent proposals (manual tests): the ones whose first version (revision 1) came with the project's latest audit import that carried a
+ * manual-tests.json. An import without that file says nothing about manual tests, so it does not make earlier proposals old.
+ * Read-only, like the bugs above.
+ */
+export interface LatestManualImport { importId: number; auditId: number; auditTitle: string; importedAt: string; source: string; newCount: number }
+
+export function newManualTests(projectId: number): { ids: Set<number>; latest: LatestManualImport | null } {
+  const i = db.prepare(`
+    SELECT i.id, i.imported_at, i.source, a.id AS audit_id, a.title FROM audit_imports i JOIN audits a ON a.id = i.audit_id
+    WHERE a.project_id = ? AND i.manual_listed = 1 ORDER BY i.id DESC LIMIT 1`).get(projectId) as Record<string, any> | undefined;
+  if (!i) return { ids: new Set(), latest: null };
+  const rows = db.prepare(`
+    SELECT m.id FROM manual_tests m JOIN manual_test_revisions r ON r.manual_test_id = m.id AND r.rev = 1
+    WHERE m.project_id = ? AND r.audit_import_id = ?`).all(projectId, i.id) as { id: number }[];
+  return { ids: new Set(rows.map((r) => r.id)), latest: { importId: i.id, auditId: i.audit_id, auditTitle: i.title, importedAt: i.imported_at, source: i.source, newCount: rows.length } };
+}

@@ -4,7 +4,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Check, ClipboardCheck, EyeOff, Pencil, Trash2, Upload, UserCheck } from "lucide-react";
 import { api, formatDateTime, formatViewport, timeAgo, type Priority, type Viewport } from "../api";
 import { ConfirmModal, Empty, ListSkeleton, Modal, PriorityIcon, PRIORITY_LABEL, useToast } from "../components/ui";
-import { ImportModal, Severity, StatusChip, useRefresh } from "./BugReports";
+import { ImportModal, Severity, StatusChip, useRefresh, whenShort } from "./BugReports";
 
 type Status = "proposed" | "accepted" | "rejected";
 type Presence = "present" | "missing" | "no_later_run";
@@ -13,9 +13,10 @@ const CATEGORY_LABEL: Record<Category, string> = { functional: "Functional", acc
 
 interface Item {
   id: number; sourceId: string; title: string; status: Status; category: Category; priority: Priority; wcag: string[]; viewports: string[];
-  importedAt: string; auditTitle: string; auditDeleted: boolean; unresolvedRefs: number; requirements: number; edited: boolean; pendingUpdate: boolean; presence: Presence; testCase: string | null;
+  importedAt: string; auditTitle: string; auditDeleted: boolean; unresolvedRefs: number; requirements: number; edited: boolean; pendingUpdate: boolean; presence: Presence; testCase: string | null; isNew: boolean;
 }
-interface List { items: Item[]; counts: Record<string, number>; presenceCounts: Record<Presence, number>; wcagCriteria: string[] }
+interface LatestImport { importId: number; auditTitle: string; importedAt: string; newCount: number }
+interface List { items: Item[]; counts: Record<string, number>; presenceCounts: Record<Presence, number>; wcagCriteria: string[]; latest: LatestImport | null }
 interface RunRef { run: number; importId: number; importedAt: string; source: string; github: { repo: string; runId: number; url: string } | null }
 interface Ref { id: number; kind: string; raw: string; state: string; reason: string; label: string; target: { kind: string; id: number } | null }
 interface Detail {
@@ -46,13 +47,15 @@ export function ManualTestsPage() {
   const [wcag, setWcag] = useState("");
   const [presence, setPresence] = useState<"" | Presence>("");
   const [q, setQ] = useState("");
+  const [onlyNew, setOnlyNew] = useState(false);
   const open = Number(params.get("test")) || null;
-  const query = new URLSearchParams({ status: tab, ...(category && { category }), ...(priority && { priority }), ...(wcag && { wcag }), ...(presence && { presence }), ...(q.trim() && { q: q.trim() }) }).toString();
-  const { data, isLoading } = useQuery({ queryKey: ["manual-tests", pid, tab, category, priority, wcag, presence, q.trim()], queryFn: () => api.get<List>(`/api/projects/${pid}/manual-tests?${query}`), placeholderData: keepPreviousData });
+  const query = new URLSearchParams({ status: tab, ...(category && { category }), ...(priority && { priority }), ...(wcag && { wcag }), ...(presence && { presence }), ...(onlyNew && { new: "any" }), ...(q.trim() && { q: q.trim() }) }).toString();
+  const { data, isLoading } = useQuery({ queryKey: ["manual-tests", pid, tab, category, priority, wcag, presence, onlyNew, q.trim()], queryFn: () => api.get<List>(`/api/projects/${pid}/manual-tests?${query}`), placeholderData: keepPreviousData });
   const counts = data?.counts ?? {};
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   const setOpen = (id: number | null) => setParams((p) => { if (id) p.set("test", String(id)); else p.delete("test"); return p; }, { replace: true });
-  const filtered = !!(category || priority || wcag || presence || q.trim());
+  const filtered = !!(category || priority || wcag || presence || onlyNew || q.trim());
+  const latest = data?.latest ?? null;
 
   return (
     <>
@@ -61,6 +64,17 @@ export function ManualTestsPage() {
         <span className="spacer" />
         <button className="btn primary" onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</button>
       </div>
+      {latest && (
+        <section aria-label="Latest audit" className="row" style={{ flexShrink: 0, gap: 8, flexWrap: "wrap", minHeight: 24, padding: "6px 16px 6px 20px", borderBottom: "1px solid var(--border)", fontSize: "var(--fs-md)" }}>
+          <strong style={{ fontWeight: 500 }}>Latest audit with proposals</strong>
+          <span className="faint" aria-hidden="true">·</span><span title={formatDateTime(latest.importedAt)}>{whenShort(latest.importedAt)}</span>
+          <span className="faint" aria-hidden="true">·</span><span style={{ overflowWrap: "anywhere" }}>{latest.auditTitle}</span>
+          <span className="faint" aria-hidden="true">·</span>
+          {latest.newCount > 0
+            ? <button className="btn sm" onClick={() => { setTab("all"); setCategory(""); setPriority(""); setWcag(""); setPresence(""); setQ(""); setOnlyNew(true); }} aria-label={`${latest.newCount} new ${latest.newCount === 1 ? "proposal" : "proposals"} from the latest audit: show ${latest.newCount === 1 ? "it" : "them"}`} title="Show the proposals that came with this audit import">{latest.newCount} new</button>
+            : <span className="faint">0 new</span>}
+        </section>
+      )}
       <div className="toolbar">
         <div className="tabs" role="tablist">
           {(["proposed", "accepted", "rejected", "all"] as const).map((t) => (
@@ -92,6 +106,10 @@ export function ManualTestsPage() {
           <option value="missing">Not present in latest run{data ? ` (${data.presenceCounts.missing})` : ""}</option>
           <option value="no_later_run">No later run available{data ? ` (${data.presenceCounts.no_later_run})` : ""}</option>
         </select>
+        <select className="select" style={{ width: "auto" }} aria-label="New" value={onlyNew ? "any" : ""} onChange={(e) => setOnlyNew(e.target.value === "any")} title="Proposals that came with the latest audit import">
+          <option value="">New: any</option>
+          <option value="any">New{latest ? ` (${latest.newCount})` : ""}</option>
+        </select>
       </div>
       <div className="content">
         <div className="faint" style={{ padding: "8px 20px", fontSize: "var(--fs-md)", display: "flex", gap: 8, alignItems: "center" }}>
@@ -111,6 +129,7 @@ export function ManualTestsPage() {
               <span className="id mono truncate" style={{ width: 120 }} title={t.sourceId}>{t.sourceId}</span>
               <span className="title">{t.title}</span>
               <span className="meta">
+                {t.isNew && <span className="chip accent" title={`First proposed in the latest audit import${latest ? ` (${whenShort(latest.importedAt)} · ${latest.auditTitle})` : ""}. It stops being new when a newer import with proposals arrives.`}>New</span>}
                 {t.pendingUpdate && <span className="chip accent" title="The agent sent a newer version. Review it.">Update waiting</span>}
                 {t.presence === "missing" && <span className="chip" style={{ color: "var(--blocked-fg)" }} title="This test was not in the latest run of its audit. It is kept as it is."><EyeOff size={11} /> Not in latest run</span>}
                 {t.unresolvedRefs > 0 && <span className="chip" title="References that match nothing in this project"><AlertTriangle size={11} /> {t.unresolvedRefs} unresolved</span>}

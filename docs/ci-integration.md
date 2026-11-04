@@ -147,6 +147,10 @@ came with each. A bug is marked **New** when it first appeared in that latest ru
 - **Agent audit:** its first version came with the project's latest audit import (the latest one of any audit in the project, so a small import after a large
   one makes the large one's bugs old).
 - A newer run or import makes the earlier ones' bugs old, also one that only has passing tests ("0 new"). A bug stays new whatever its review status.
+- **Agent proposals (manual tests):** a proposal is **New** when its first version came with the project's latest audit import *that carried a
+  `manual-tests.json`*. An import without that file (for example a bugs-only smoke test) says nothing about manual tests, so it does not make earlier
+  proposals old. The Agent proposals page shows the same kind of line at the top and a **New** filter. Test cases made from proposals are not marked.
+- Hover the **New** marker to see which run or import it refers to.
 
 The "N new" in the top is a button that shows exactly those bugs (all statuses); the **New** filter does the same for the CI run, the audit import or either.
 Nothing is stored for this: it is worked out from the runs and imports that are already recorded.
