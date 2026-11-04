@@ -20,7 +20,8 @@ export const WORKFLOW_STATUSES = ["open", "resolved_suspected", "closed"] as con
 export type WorkflowStatus = (typeof WORKFLOW_STATUSES)[number];
 export const BUG_SOURCES = ["ci", "agent_audit", "manual"] as const;
 
-export const CI_LIMITS = { bodyBytes: 5 * 1024 * 1024, results: 5000, error: 8000, step: 500, steps: 100, attachments: 20, tags: 20, tokensPerProject: 20 };
+/** `drainBytes`: an oversized request up to this size is read and thrown away before it is answered 413; a larger one is disconnected at once. */
+export const CI_LIMITS = { bodyBytes: 5 * 1024 * 1024, drainBytes: 64 * 1024 * 1024, results: 5000, error: 8000, step: 500, steps: 100, attachments: 20, tags: 20, tokensPerProject: 20 };
 
 // ---------- Hiding secrets ----------
 

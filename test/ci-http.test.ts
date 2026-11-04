@@ -106,6 +106,33 @@ describe("POST /api/projects/:id/ci/test-results over HTTP", () => {
     assert.equal(huge.status, 413);
   });
 
+  it("answers every oversized request with a clear 413 and Connection: close, never a reset connection", async () => {
+    const url = `/api/projects/${projectId}/ci/test-results`;
+    const big = JSON.stringify(payload({ runId: "too-big", results: [{ testKey: "k", title: "t", status: "failed", error: "x".repeat(6 * 1024 * 1024) }] }));
+    // The server used to answer at once and close, so the client's write was reset (ECONNRESET/EPIPE) in a fifth of the calls. It now reads the body first.
+    for (let i = 0; i < 25; i++) {
+      const res = await call(url, { method: "POST", headers: { ...JSON_H, Authorization: `Bearer ${token}` }, body: big });
+      assert.equal(res.status, 413, `call ${i + 1}`);
+      assert.equal(res.headers.get("connection"), "close");
+      assert.match(((await res.json()) as { error: string }).error, /larger than 5 MB/);
+    }
+  });
+
+  it("disconnects at once, without reading, a request that declares more than the hard limit", async () => {
+    const { connect } = await import("node:net");
+    const result = await new Promise<string>((resolve) => {
+      const s = connect(PORT, "127.0.0.1", () => {
+        s.write(`POST /api/projects/${projectId}/ci/test-results HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: ${200 * 1024 * 1024}\r\n\r\n{"runId":"x"`);
+      });
+      let got = "";
+      s.on("data", (d) => (got += d));
+      s.on("close", () => resolve(got.startsWith("HTTP/1.1 413") ? "answered" : "closed"));
+      s.on("error", () => resolve("closed"));
+      setTimeout(() => { s.destroy(); resolve("still open after 5 s"); }, 5000);
+    });
+    assert.notEqual(result, "still open after 5 s", "the server must not wait for 200 MB");
+  });
+
   it("a revoked token stops working at once", async () => {
     const list = (await (await admin(`/api/projects/${projectId}/ci/tokens`, undefined, "GET")).json()) as { id: number; revokedAt: string | null; prefix: string }[];
     assert.ok(list.length >= 1 && list.every((t) => !JSON.stringify(t).includes(token.slice(10))), "the list never contains the token");

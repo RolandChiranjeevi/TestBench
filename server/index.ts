@@ -76,6 +76,27 @@ app.addHook("onRequest", async (req, reply) => {
 });
 // Optional password login (TESTBENCH_PASSWORD). Registered right after the guard above, so it runs before every route and static file.
 registerAuth(app, auth);
+// A CI request that is too large is answered 413 only after its body has been read and thrown away. Answering and closing at once makes the
+// operating system reset the connection while the client is still writing, so the client sees ECONNRESET or EPIPE and never the 413.
+// Reading is bounded: above drainBytes, or if the client is too slow, the connection is dropped instead.
+app.addHook("onRequest", async (req, reply) => {
+  if (!isCiIngest(req.method, req.url)) return;
+  const declared = Number(req.headers["content-length"]);
+  if (!(declared > CI_LIMITS.bodyBytes)) return;
+  const drop = () => { req.raw.socket.destroy(); return reply.hijack(); };
+  if (declared > CI_LIMITS.drainBytes) return drop();
+  const drained = await new Promise<boolean>((resolve) => {
+    let done = false;
+    const finish = (ok: boolean) => { if (!done) { done = true; clearTimeout(timer); resolve(ok); } };
+    const timer = setTimeout(() => finish(false), 20_000);
+    req.raw.once("end", () => finish(true));
+    req.raw.once("error", () => finish(false));
+    req.raw.once("close", () => finish(false));
+    req.raw.resume();
+  });
+  if (!drained) return drop();
+  return reply.code(413).header("Connection", "close").send({ error: `The request is larger than ${CI_LIMITS.bodyBytes / 1024 / 1024} MB, the limit for one CI request. Send fewer passed tests, or split the run.` });
+});
 // Folder uploads send one file per screenshot/video, so the file count limit is generous.
 await app.register(multipart, { limits: { fileSize: 100 * 1024 * 1024, files: 1000 } });
 await app.register(fastifyStatic, { root: UPLOAD_DIR, prefix: "/uploads/", decorateReply: false });
