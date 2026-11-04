@@ -30,6 +30,20 @@ runs with `if: always()` so that failed tests are reported too. It handles probl
 If your Testbench is behind a domain, add it to `TESTBENCH_ALLOWED_HOSTS` (see the README). If it has a password (`TESTBENCH_PASSWORD`), the CI route still
 works without it: it never uses the login, it always requires the token.
 
+## Reaching Testbench from GitHub Actions over the internet
+
+GitHub's runners are not on your computer, so Testbench has to be reachable from outside, or the runner has to join your network. If you use a public
+address (Tailscale Funnel, Cloudflare Tunnel, a reverse proxy):
+
+1. **Set `TESTBENCH_PASSWORD` first.** Without one, a public address gives everyone the whole app.
+2. **Add the exact host name** of the address to `TESTBENCH_ALLOWED_HOSTS` (for example `my-machine.tailnet.ts.net`) and restart. Until you do, every request,
+   including the CI route, is answered `403 {"error":"Forbidden host"}`: the host check runs before the token check. Other names stay refused.
+3. **Publish only the CI route** if your tunnel can do it, and check from outside that `/`, `/login` and `/api/projects` do not answer. `tailscale funnel status`
+   shows what is published; a mount on `/` is the whole app.
+4. Use `https://<that name>` as `TESTBENCH_URL`, and a project token as `TESTBENCH_API_TOKEN`.
+
+Testbench and the tunnel only work while your computer is on; a report sent while it sleeps is lost (the script warns and the build is not failed).
+
 ## The request
 
 ```
