@@ -41,6 +41,7 @@ import { importRequirements, RequirementImportError } from "./reqimport.ts";
 import { requirementCoverage } from "./reqlinks.ts";
 import { normViewports, normWcag, viewportSchema, wcagCriterion, type Viewport } from "./shapes.ts";
 import { LIMITS as AUDIT_LIMITS, PackageError } from "./importers/auditpackage.ts";
+import { listCases } from "./newcases.ts";
 import { applyManualUpdate, createCaseFromProposal, deleteManualTest, getManualTest, ignoreManualUpdate, listManualTests, relinkManualRefs, reviewManualTest, updateManualTest } from "./manualtests.ts";
 import { addRequirementCases, createRequirement, kindProblem, REQUIREMENT_KINDS, getRequirement, linkCaseByTags, listRequirements, markReviewed, recordRevision, requirementsForCase, requirementSummary, setCaseRequirements, setRequirementCases, type RevisionChange } from "./requirements.ts";
 import { dashboardData, listMilestones, milestoneReport } from "./stats.ts";
@@ -226,21 +227,7 @@ app.delete("/api/suites/:id", (req) => {
 
 const caseRow = (row: Record<string, any>) => ({ ...row, tags: parseJson<string[]>(row.tags, []) });
 
-app.get("/api/projects/:id/cases", (req) => {
-  const rows = db
-    .prepare(`
-      SELECT c.*, s.name AS suite_name,
-        (SELECT COUNT(*) FROM automated_tests a WHERE a.case_id = c.id) AS automated_count,
-        (SELECT COUNT(*) FROM case_steps st WHERE st.case_id = c.id) AS step_count,
-        (SELECT COUNT(*) FROM requirement_cases rc WHERE rc.case_id = c.id) AS requirement_count,
-        (SELECT r.status FROM results r JOIN runs ru ON ru.id = r.run_id
-          WHERE r.case_id = c.id AND r.status != 'untested'
-          ORDER BY COALESCE(r.executed_at, ru.started_at) DESC, r.id DESC LIMIT 1) AS last_status
-      FROM cases c LEFT JOIN suites s ON s.id = c.suite_id
-      WHERE c.project_id = ? ORDER BY c.position, c.number`)
-    .all(idParam(req)) as Record<string, any>[];
-  return rows.map(caseRow);
-});
+app.get("/api/projects/:id/cases", (req) => listCases(idParam(req)));
 
 const stepSchema = z.object({ id: z.number().int().optional(), action: z.string().max(5000), expected: z.string().max(5000) });
 const caseBody = z.object({
