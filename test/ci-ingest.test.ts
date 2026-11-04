@@ -85,9 +85,19 @@ describe("idempotency", () => {
     const payload = { runId: "same-run", commitSha: "abc", branch: "main", repository: "org/repo", results: [result()] };
     const first = ingestCiResults(p.id, payload);
     const again = ingestCiResults(p.id, payload);
-    assert.deepEqual([first.replayed, again.replayed, again.bugsCreated], [false, true, 1]);
+    assert.deepEqual([first.replayed, first.bugsCreated, first.bugs[0].action], [false, 1, "created"]);
+    assert.deepEqual([again.replayed, again.bugsCreated, again.bugsUpdated, again.reopened, again.resolvedSuspected], [true, 0, 0, 0, 0], "a replay reports that nothing was done");
+    assert.deepEqual(again.bugs, [{ testKey: "e2e-checkout-empty-cart", bugId: first.bugs[0].bugId, action: "already_processed" }]);
+    assert.deepEqual(again.counts, first.counts, "what the run contained is still reported");
+    assert.equal(count("SELECT COUNT(*) AS n FROM bug_reports WHERE project_id = ?", p.id), 1, "no new bug");
     assert.equal(count("SELECT COUNT(*) AS n FROM ci_runs WHERE project_id = ?", p.id), 1);
-    assert.equal(count("SELECT COUNT(*) AS n FROM bug_occurrences o JOIN bug_reports b ON b.id = o.bug_report_id WHERE b.project_id = ?", p.id), 1);
+    assert.equal(count("SELECT COUNT(*) AS n FROM bug_occurrences o JOIN bug_reports b ON b.id = o.bug_report_id WHERE b.project_id = ?", p.id), 1, "no new occurrence");
+    assert.equal(count("SELECT COUNT(*) AS n FROM ci_results WHERE project_id = ?", p.id), 1);
+    // Asking a third time gives the same answer, and a new runId still updates the existing bug.
+    assert.deepEqual(ingestCiResults(p.id, payload).bugs, again.bugs);
+    const next = ingestCiResults(p.id, { ...payload, runId: "next-run" });
+    assert.deepEqual([next.replayed, next.bugsCreated, next.bugsUpdated, next.bugs[0].action, next.bugs[0].bugId], [false, 0, 1, "updated", first.bugs[0].bugId]);
+    assert.equal(count("SELECT COUNT(*) AS n FROM bug_occurrences o JOIN bug_reports b ON b.id = o.bug_report_id WHERE b.project_id = ?", p.id), 2);
   });
 
   it("the same runId with other content is refused, and nothing is changed", () => {

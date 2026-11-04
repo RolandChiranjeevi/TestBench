@@ -94,9 +94,12 @@ describe("POST /api/projects/:id/ci/test-results over HTTP", () => {
     const url = `/api/projects/${projectId}/ci/test-results`;
     const h = { ...JSON_H, Authorization: `Bearer ${token}` };
     const same = payload({ runId: "twice" });
-    const a = (await (await call(url, { method: "POST", headers: h, body: JSON.stringify(same) })).json()) as { replayed: boolean };
-    const b = (await (await call(url, { method: "POST", headers: h, body: JSON.stringify(same) })).json()) as { replayed: boolean };
+    type Answer = { replayed: boolean; bugsCreated: number; bugs: { action: string }[] };
+    const a = (await (await call(url, { method: "POST", headers: h, body: JSON.stringify(same) })).json()) as Answer;
+    const b = (await (await call(url, { method: "POST", headers: h, body: JSON.stringify(same) })).json()) as Answer;
     assert.deepEqual([a.replayed, b.replayed], [false, true]);
+    // The first call updated the bug the earlier test made (same testKey), so it creates none; the replay must never claim one either.
+    assert.deepEqual([a.bugsCreated, b.bugsCreated, a.bugs[0].action, b.bugs[0].action], [0, 0, "updated", "already_processed"]);
     const bad = await call(url, { method: "POST", headers: h, body: JSON.stringify({ runId: "no-results" }) });
     assert.equal(bad.status, 400);
     const huge = await call(url, { method: "POST", headers: h, body: JSON.stringify(payload({ runId: "huge", results: [{ testKey: "k", title: "t", status: "failed", error: "x".repeat(6 * 1024 * 1024) }] })) });

@@ -64,6 +64,9 @@ The answer says what happened:
   "bugsCreated": 1, "bugsUpdated": 0, "reopened": 0, "resolvedSuspected": 0, "bugs": [{ "testKey": "…", "bugId": 7, "action": "created" }] }
 ```
 
+If the same `runId` with the same content is sent again, nothing is changed and the answer says so: `replayed: true`, `bugsCreated`, `bugsUpdated`,
+`reopened` and `resolvedSuspected` are all `0`, and each bug has `"action": "already_processed"`. `counts` still describes what the run contained.
+
 Errors: `401` without a valid token for that project, `400` for an invalid payload (the message names the field), `409` when the `runId` was received before with
 other content, `413` above 5 MB, `429` after repeated wrong tokens.
 

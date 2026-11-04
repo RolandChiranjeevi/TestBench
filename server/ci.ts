@@ -141,7 +141,8 @@ export interface IngestSummary {
   bugsUpdated: number;
   reopened: number;
   resolvedSuspected: number;
-  bugs: { testKey: string; bugId: number; action: "created" | "updated" | "reopened" | "resolved_suspected" | "recorded" }[];
+  /** `already_processed` only on a replay: the run had been received before and nothing was changed. */
+  bugs: { testKey: string; bugId: number; action: "created" | "updated" | "reopened" | "resolved_suspected" | "recorded" | "already_processed" }[];
 }
 
 const union = (a: string[], b: string[]) => [...new Set([...a, ...b])].slice(0, 50);
@@ -173,7 +174,12 @@ export function ingestCiResults(projectId: number, input: unknown): IngestSummar
   const earlier = db.prepare("SELECT payload_hash, summary FROM ci_runs WHERE project_id = ? AND run_id = ?").get(projectId, p.runId) as { payload_hash: string; summary: string } | undefined;
   if (earlier) {
     if (earlier.payload_hash !== hash) throw new AuditError(409, `Run ${p.runId} was received before with other content. Use a new runId for a new run or a re-run.`);
-    return { ...parseJson<IngestSummary>(earlier.summary, {} as IngestSummary), replayed: true };
+    // Nothing was done this time: the counts of what the run contained stay, but nothing is reported as created, updated or reopened.
+    const before = parseJson<IngestSummary>(earlier.summary, { counts: { passed: 0, failed: 0, flaky: 0, skipped: 0 }, bugs: [] } as unknown as IngestSummary);
+    return {
+      runId: p.runId, replayed: true, counts: before.counts, bugsCreated: 0, bugsUpdated: 0, reopened: 0, resolvedSuspected: 0,
+      bugs: before.bugs.map((b) => ({ testKey: b.testKey, bugId: b.bugId, action: "already_processed" as const })),
+    };
   }
 
   return db.transaction((): IngestSummary => {
