@@ -2,14 +2,24 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, BookOpenCheck, Bot, ClipboardList, Copy, Folder, FolderOpen, Inbox, ListChecks, MoreHorizontal, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
-import { api, orderSuites, type BackupInfo, type CaseDetail, type CaseSummary, type Project, type RequirementDetail, type Suite } from "../api";
+import { api, orderSuites, parseDate, type BackupInfo, type CaseDetail, type CaseSummary, type Project, type RequirementDetail, type Suite } from "../api";
 import { ConfirmModal, Empty, Kbd, Modal, PriorityIcon, StatusIcon, useHotkeys, useToast, ListSkeleton } from "../components/ui";
 import { CaseEditor } from "./CaseEditor";
 import { NewRunModal } from "./Runs";
 import { TemplateModal } from "./Templates";
 import { LinkToRequirementModal } from "./Requirements";
 
-type Filter = "all" | "manual" | "automated" | "failing" | "unlinked";
+type Filter = "all" | "manual" | "automated" | "failing" | "unlinked" | "new" | "proposal";
+const NEW_CASE_WINDOW_DAYS = 7; // the same window as the server (server/newcases.ts)
+
+/** "Created 3 Nov (2 days ago)": says when, so the New chip explains itself. */
+function createdText(createdAt: string | undefined): string {
+  const d = parseDate(createdAt);
+  if (!d) return "New";
+  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+  const ago = days <= 0 ? "today" : days === 1 ? "1 day ago" : `${days} days ago`;
+  return `Created ${d.toLocaleDateString(undefined, { day: "numeric", month: "short" })} (${ago}). New for ${NEW_CASE_WINDOW_DAYS} days after it is created.`;
+}
 
 export function CasesPage() {
   const { pid } = useParams();
@@ -32,7 +42,7 @@ export function CasesPage() {
   // The dashboard tiles link here with ?filter=failing, ?filter=manual and so on.
   const [filter, setFilter] = useState<Filter>(() => {
     const f = params.get("filter");
-    return f === "manual" || f === "automated" || f === "failing" || f === "unlinked" ? f : "all";
+    return f === "manual" || f === "automated" || f === "failing" || f === "unlinked" || f === "new" || f === "proposal" ? f : "all";
   });
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [focus, setFocus] = useState(0);
@@ -121,6 +131,8 @@ export function CasesPage() {
       if (filter === "automated" && c.automated_count === 0) return false;
       if (filter === "failing" && c.last_status !== "failed" && c.last_status !== "blocked") return false;
       if (filter === "unlinked" && (c.requirement_count || c.status === "deprecated")) return false;
+      if (filter === "new" && !c.is_new) return false;
+      if (filter === "proposal" && !c.from_proposal) return false;
       if (!q) return true;
       return `${project?.key}-${c.number} ${c.title} ${c.tags.join(" ")}`.toLowerCase().includes(q);
     });
@@ -182,6 +194,8 @@ export function CasesPage() {
     manual: cases?.filter((c) => c.automated_count === 0).length ?? 0,
     automated: cases?.filter((c) => c.automated_count > 0).length ?? 0,
     failing: cases?.filter((c) => c.last_status === "failed" || c.last_status === "blocked").length ?? 0,
+    new: cases?.filter((c) => c.is_new).length ?? 0,
+    proposal: cases?.filter((c) => c.from_proposal).length ?? 0,
   };
   const noSuiteCount = cases?.filter((c) => c.suite_id == null).length ?? 0;
 
@@ -315,9 +329,9 @@ export function CasesPage() {
             </>
           ) : (
             <div className="tabs" role="tablist">
-              {(["all", "manual", "automated", "failing", "unlinked"] as const).map((f) => (
+              {(["all", "manual", "automated", "failing", "unlinked", "new", "proposal"] as const).map((f) => (
                 <button key={f} role="tab" aria-selected={filter === f} className={`tab${filter === f ? " active" : ""}`} onClick={() => setFilter(f)}>
-                  {{ all: "All", manual: "Manual only", automated: "Automated", failing: "Failing", unlinked: "No requirement" }[f]}
+                  {{ all: "All", manual: "Manual only", automated: "Automated", failing: "Failing", unlinked: "No requirement", new: "New", proposal: "From proposal" }[f]}
                   <span className="count">{counts[f]}</span>
                 </button>
               ))}
@@ -330,6 +344,14 @@ export function CasesPage() {
             </span>
           )}
         </div>
+        {cases && cases.length > 0 && (
+          <section aria-label="New test cases" className="row" style={{ flexShrink: 0, gap: 8, flexWrap: "wrap", minHeight: 24, padding: "6px 16px 6px 20px", borderBottom: "1px solid var(--border)", fontSize: "var(--fs-md)" }}>
+            {counts.new > 0
+              ? <button className="btn sm" onClick={() => setFilter("new")} aria-label={`${counts.new} new test ${counts.new === 1 ? "case" : "cases"} in the last ${NEW_CASE_WINDOW_DAYS} days: show ${counts.new === 1 ? "it" : "them"}`} title="Show the test cases created in this period">{counts.new} new</button>
+              : <span className="faint">0 new</span>}
+            <span>test {counts.new === 1 ? "case" : "cases"} in the last {NEW_CASE_WINDOW_DAYS} days</span>
+          </section>
+        )}
         <div className="content" ref={listRef}>
           {isLoading ? <ListSkeleton /> : flat.length === 0 ? (
             cases?.length ? (
@@ -383,6 +405,7 @@ export function CasesPage() {
                         {c.title}
                       </span>
                       <span className="meta">
+                        {c.is_new && <span className="chip accent" title={createdText(c.created_at)}>New</span>}
                         {!compact && c.status === "draft" && <span className="chip">Draft</span>}
                         {!!c.requirement_count && (
                           <span className="chip" title={`${c.requirement_count} linked requirement(s)`}><BookOpenCheck size={11} /> {c.requirement_count}{!compact && " req"}</span>

@@ -18,6 +18,8 @@ export interface CaseSummary {
   id: number; project_id: number; suite_id: number | null; number: number; title: string; priority: Priority;
   status: "draft" | "ready" | "deprecated"; tags: string[]; suite_name: string | null; automated_count: number;
   step_count: number; last_status: Status | null; updated_at: string; requirement_count?: number;
+  /** Created in the last 7 days, and made from an agent proposal. Only the list has them. */
+  created_at?: string; is_new?: boolean; from_proposal?: boolean;
 }
 export type CoverageState = "uncovered" | "failing" | "passing" | "partial" | "untested";
 export interface Coverage { state: CoverageState; cases: number; passing: number; failing: number; notRun: number }
