@@ -55,7 +55,7 @@ All settings are environment variables. None are required.
 | `TESTBENCH_DATA` | `./data` | Where the database, uploads and backups are kept. |
 | `TESTBENCH_PASSWORD` | none | Turns on the login page (at least 8 characters). |
 | `TESTBENCH_SESSION_DAYS` | `7` | How long a sign-in lasts. |
-| `TESTBENCH_ALLOWED_HOSTS` | none | Extra host names the app answers to, e.g. `testbench.example.com`. |
+| `TESTBENCH_ALLOWED_HOSTS` | none | Extra host names the app answers to, comma-separated, e.g. `testbench.example.com,my-machine.tailnet.ts.net`. Exact names only (no ports, no wildcards; case is ignored). `localhost`, `127.0.0.1` and `::1` are always allowed and every other name gets `403 {"error":"Forbidden host"}`. A name that points at a tunnel makes Testbench reachable from outside: read "A public address" below first. |
 | `TESTBENCH_TRUST_PROXY` | off | Set to `1` behind a reverse proxy so HTTPS is detected and the secure cookie flag is set. |
 | `TESTBENCH_ALLOW_NO_AUTH` | off | Set to `1` to allow listening beyond localhost without a password. Only for a port that is itself published on localhost only. |
 | `TESTBENCH_AUTO_BACKUP` | on | `0` turns the daily automatic backup off. `TESTBENCH_BACKUP_DIR` and `TESTBENCH_BACKUP_KEEP` (default 7) set where and how many. |
@@ -86,6 +86,18 @@ To host it on a server:
    ```
    Keep the port published on `127.0.0.1:4100` so only the proxy can reach it.
 3. **Keep a copy of the data elsewhere.** Automatic backups land in `/data/backups` on the same server; copy them off it.
+
+### A public address (Tailscale Funnel, Cloudflare Tunnel, a reverse proxy)
+
+A tunnel or Funnel that points at Testbench is an address on the internet. Until its name is in `TESTBENCH_ALLOWED_HOSTS` Testbench refuses it
+(`403 Forbidden host`), which is the check that stops a web page or a stranger from using the app under another name. **Adding the name
+removes that stop.** From then on everyone who knows the address reaches the whole app, and with no password that means every project, the
+backups and the integrations whose keys are in `.env`. So, in this order:
+
+1. Set `TESTBENCH_PASSWORD` (and restart) before you add the name.
+2. Add the exact name to `TESTBENCH_ALLOWED_HOSTS`, and `TESTBENCH_TRUST_PROXY=1` only if a proxy in front sets the real client address.
+3. Publish as little as possible. For CI only `POST /api/projects/<id>/ci/test-results` has to be reachable (see [docs/ci-integration.md](docs/ci-integration.md)).
+   Check what is published (`tailscale funnel status` shows a mount on `/` as the whole app) and test from outside that `/` and `/api/projects` do not answer.
 
 What the login does: the password is checked with scrypt in constant time; a sign-in is a signed, expiring cookie
 (`HttpOnly`, `SameSite=Strict`, `Secure` over HTTPS); five wrong passwords block an address for 15 minutes; everything including uploaded
