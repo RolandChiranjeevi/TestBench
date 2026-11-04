@@ -107,9 +107,9 @@ export function RequirementsPage() {
         {cov && cov.summary.active > 0 && (
           <div className="toolbar" style={{ gap: 8 }} aria-label="Coverage of active requirements">
             <span className="faint" style={{ whiteSpace: "nowrap" }}>{cov.summary.active} active</span>
-            <button className={`chip${scope === "no_test" ? " accent" : ""}`} aria-pressed={scope === "no_test"} onClick={() => setScope(scope === "no_test" ? "" : "no_test")} title="No test case and no accepted manual test is linked">{cov.summary.withoutTest} without a test</button>
+            <button className={`chip${scope === "no_test" ? " accent" : ""}`} aria-pressed={scope === "no_test"} onClick={() => setScope(scope === "no_test" ? "" : "no_test")} title="No test case is linked, and no accepted agent proposal">{cov.summary.withoutTest} without a test</button>
             <button className={`chip${scope === "open_bugs" ? " accent" : ""}`} aria-pressed={scope === "open_bugs"} onClick={() => setScope(scope === "open_bugs" ? "" : "open_bugs")} title="An accepted bug report names the requirement"><Bug size={11} /> {cov.summary.withOpenBugs} with open bugs</button>
-            {cov.summary.auditKnown && <button className={`chip${scope === "not_in_run" ? " accent" : ""}`} aria-pressed={scope === "not_in_run"} onClick={() => setScope(scope === "not_in_run" ? "" : "not_in_run")} title="No bug report or manual test of the latest run of an audit names the requirement"><ClipboardCheck size={11} /> {cov.summary.notInLatestRun} not in latest audit run</button>}
+            {cov.summary.auditKnown && <button className={`chip${scope === "not_in_run" ? " accent" : ""}`} aria-pressed={scope === "not_in_run"} onClick={() => setScope(scope === "not_in_run" ? "" : "not_in_run")} title="No bug report or agent proposal of the latest run of an audit names the requirement"><ClipboardCheck size={11} /> {cov.summary.notInLatestRun} not in latest audit run</button>}
             <span className="spacer" />
             <select className="select" style={{ width: "auto" }} aria-label="Kind" value={kind} onChange={(e) => setKind(e.target.value as "" | RequirementKind)}>
               <option value="">Kind: any</option>
@@ -122,7 +122,7 @@ export function RequirementsPage() {
             <summary style={{ cursor: "pointer" }}><AlertTriangle size={13} /> {cov.unresolved.length} reference{cov.unresolved.length === 1 ? "" : "s"} to requirements that do not exist in this project</summary>
             <div style={{ fontSize: "var(--fs-md)", marginTop: 6, display: "grid", gap: 2 }}>
               {cov.unresolved.map((u, i) => (
-                <div key={i}><span className="mono">{u.raw}</span> in {u.kind === "bug" ? "bug report" : "manual test"} “{u.title}” <span className="faint">— {u.reason}</span></div>
+                <div key={i}><span className="mono">{u.raw}</span> in {u.kind === "bug" ? "bug report" : "agent proposal"} “{u.title}” <span className="faint">— {u.reason}</span></div>
               ))}
             </div>
           </details>
@@ -157,7 +157,7 @@ export function RequirementsPage() {
                   {r.status === "draft" && <span className="chip">Draft</span>}
                   {!compact && r.kind !== "functional" && <span className="chip" title={r.wcag.length ? `WCAG ${r.wcag.join(", ")}` : undefined}>{KIND_LABEL[r.kind]}{r.wcag.length ? ` · WCAG ${r.wcag.length > 2 ? `${r.wcag.slice(0, 2).join(", ")}…` : r.wcag.join(", ")}` : ""}</span>}
                   {r.status === "approved" && r.links.bugs.open > 0 && <span className="chip" style={{ color: "var(--failed-fg)" }} title="Accepted bug reports name this requirement"><Bug size={11} /> {r.links.bugs.open} open</span>}
-                  {!compact && r.status === "approved" && r.links.manualTests.accepted + r.links.manualTests.proposed > 0 && <span className="chip" title={`${r.links.manualTests.accepted} accepted and ${r.links.manualTests.proposed} proposed manual test(s)`}><ClipboardCheck size={11} /> {r.links.manualTests.accepted}{r.links.manualTests.proposed ? ` +${r.links.manualTests.proposed}` : ""}</span>}
+                  {!compact && r.status === "approved" && r.links.manualTests.accepted + r.links.manualTests.proposed > 0 && <span className="chip" title={`${r.links.manualTests.accepted} accepted and ${r.links.manualTests.proposed} not yet reviewed agent proposal(s)`}><ClipboardCheck size={11} /> {r.links.manualTests.accepted}{r.links.manualTests.proposed ? ` +${r.links.manualTests.proposed}` : ""}</span>}
                   {!compact && r.status === "approved" && r.links.audit === "not_referenced" && <span className="chip" title="Not named by the latest run of any audit">Not in latest run</span>}
                   {r.attachmentCount > 0 && <span className="chip" title={`${r.attachmentCount} attachment(s)`}><Paperclip size={11} /> {r.attachmentCount}</span>}
                   {r.status !== "deprecated" && r.reviewCount > 0 && (
@@ -166,7 +166,7 @@ export function RequirementsPage() {
                     </span>
                   )}
                   {r.status !== "deprecated" && (r.coverage.state === "uncovered" && r.links.manualTests.accepted > 0
-                    ? <span className="chip status" title="No test case is linked, but an accepted manual test is"><span className="dot" style={{ background: "var(--blocked)" }} />Manual tests only</span>
+                    ? <span className="chip status" title="No test case is linked yet. An agent proposal is accepted: create a test case from it to run it"><span className="dot" style={{ background: "var(--blocked)" }} />Proposal accepted</span>
                     : <CoverageChip coverage={r.coverage} />)}
                 </span>
               </div>
@@ -349,19 +349,20 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
           </div>
         )}
         <section>
-          <div className="section-label"><ClipboardCheck size={13} /> Manual tests from agents <span className="faint">{data.linked.manualTests.length}</span></div>
-          {data.linked.manualTests.length === 0 ? <div className="muted" style={{ fontSize: "var(--fs-md)" }}>No manual test names this requirement. A test agent can propose one in an audit package (refs.requirements).</div> : (
+          <div className="section-label"><ClipboardCheck size={13} /> Agent proposals <span className="faint">{data.linked.manualTests.length}</span></div>
+          {data.linked.manualTests.length === 0 ? <div className="muted" style={{ fontSize: "var(--fs-md)" }}>No agent proposal names this requirement. A test agent can propose a manual test in an audit package (refs.requirements).</div> : (
             <div className="card">
               {data.linked.manualTests.map((m) => (
                 <Link key={m.id} to={`/p/${pid}/manual-tests?test=${m.id}`} className="row" style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)", color: "inherit" }}>
                   <span className="mono muted" style={{ width: 120 }}>{m.sourceId}</span>
                   <span className="truncate grow">{m.title}</span>
+                  {m.testCase && <span className="chip" title="The test case made from it, run in Runs">{m.testCase}</span>}
                   <span className="chip">{m.status}</span>
                 </Link>
               ))}
             </div>
           )}
-          <div className="faint" style={{ fontSize: "var(--fs-sm)", marginTop: 4 }}>Only accepted manual tests count as coverage.</div>
+          <div className="faint" style={{ fontSize: "var(--fs-sm)", marginTop: 4 }}>A proposal only counts once you accept it. Create a test case from it to run it; the test case, with its results, is what shows how well the requirement is tested.</div>
         </section>
         <section>
           <div className="section-label"><Bug size={13} /> Bug reports <span className="faint">{data.linked.bugs.length}</span></div>

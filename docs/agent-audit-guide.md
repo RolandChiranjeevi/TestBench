@@ -136,7 +136,7 @@ The exact schema is in [audit-package.md](audit-package.md#manual-testsjson); a 
 | `preconditions`, `description` | What must be in place, and why a person is needed. |
 | `refs` | `requirements` as in the export, `cases` (`SHOP-6`), `tests`. Only what you have seen. |
 
-Do not write a `status`, a result or "passed": they are ignored, and a manual test never says whether it passed. If a later audit no longer
+A person accepts a proposal and can turn it into a normal test case that is run in Testbench; you never do that and never see a result. Do not write a `status`, a result or "passed": they are ignored, and a manual test never says whether it passed. If a later audit no longer
 proposes a test, it is not removed; Testbench shows it as not present in the latest run. A test that breaks a rule refuses the **whole package**,
 so run the check below before you hand it over.
 

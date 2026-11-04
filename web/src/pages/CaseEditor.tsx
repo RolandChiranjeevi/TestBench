@@ -315,6 +315,11 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
           </button>
         </section>
 
+        {data.proposal && (
+          <div className="card" style={{ padding: "8px 12px", fontSize: "var(--fs-md)" }}>
+            Made from a proposal by a test agent: <Link to={`/p/${pid}/manual-tests?test=${data.proposal.id}`}>{data.proposal.title}</Link>. A newer version from the agent waits there until you choose to use it; it never changes this case by itself.
+          </div>
+        )}
         <section>
           <div className="section-label">
             <BookOpenCheck size={13} /> Requirements <span className="faint">{data.requirements.length}</span>

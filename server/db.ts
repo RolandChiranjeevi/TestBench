@@ -586,6 +586,9 @@ CREATE TABLE IF NOT EXISTS manual_test_sightings (
   PRIMARY KEY (manual_test_id, audit_import_id)
 );
 CREATE INDEX IF NOT EXISTS manual_test_sightings_import ON manual_test_sightings(audit_import_id);`);
+  // The test case a person made from an accepted proposal. Cleared if that case is removed, so a new one can be made.
+  if (!hasColumn("manual_tests", "case_id")) d.exec("ALTER TABLE manual_tests ADD COLUMN case_id INTEGER REFERENCES cases(id) ON DELETE SET NULL");
+  d.exec("CREATE INDEX IF NOT EXISTS manual_tests_case ON manual_tests(case_id)");
   // 1 when the package of that run had a manual-tests.json (even an empty one). Only then does a run say anything about manual tests.
   if (!hasColumn("audit_imports", "manual_listed")) d.exec("ALTER TABLE audit_imports ADD COLUMN manual_listed INTEGER NOT NULL DEFAULT 0");
   d.exec("CREATE INDEX IF NOT EXISTS bug_refs_req ON bug_refs(requirement_id)");

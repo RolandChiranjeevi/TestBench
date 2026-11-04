@@ -2,7 +2,7 @@
 
 A test agent (a person's script, or an AI agent) can leave an **audit package** behind: its findings, the evidence for them, the **manual
 test cases** it proposes and its own readable report. Testbench imports the package and shows every finding as a **proposal** on the
-**Bug reports** page and every manual test as a **proposal** on the **Manual tests** page. A person reads it and accepts or rejects it.
+**Bug reports** page and every manual test as a **proposal** on the **Agent proposals** page. A person reads it and accepts or rejects it.
 Nothing is sent to Jira or Linear by the import, nothing is run, and accepting is only a decision made in Testbench.
 
 What the agent should test against is the project's **requirements**, which it reads from Testbench: see [requirements.md](requirements.md).
@@ -97,6 +97,12 @@ Manual tests are checks an automatic run cannot decide: whether a screen reader 
 follows the visual order, whether an error message helps. The agent **proposes** the test. A person reviews it, runs it and judges the
 result. The agent never gives a result or a status, and Testbench does not run manual tests.
 
+A proposal is an **inbox**, not a second kind of test. The project has one place for tests that people run, **Test cases** (run in **Runs**),
+and automated tests from CI link to those cases. So the flow is: the agent proposes, a person **accepts**, then clicks **Create test case**.
+That makes a normal test case (`SHOP-12`) from the proposal: its steps, the expected result (on the last step), the priority, the tags
+`agent-proposed`, the category and `wcag-<criterion>`, and a link to every requirement the proposal names. It is run and edited like any other case, and
+**its results are what show how well a requirement is tested**. The proposal keeps pointing at its case, and the case points back at the proposal.
+
 ```json
 { "version": 1, "tests": [ {
   "sourceId": "checkout-screen-reader-focus-order",
@@ -131,7 +137,7 @@ package** and nothing is stored, bug reports included, with a message that names
 
 ## What the import does
 
-- **Manual tests are kept apart.** They are stored separately from the project's own test cases, from automated results and from bug reports, and show on their own page. They start as `proposed`; a person can accept, reject or reopen one, and can edit the title, description, preconditions, steps, expected result and priority. The agent's version and the person's version are separate: the agent's priority and the person's priority are two fields, what the agent wrote stays in the test's revisions, and a person's review is never taken as the agent's judgement. Nothing runs a manual test and nothing creates a result.
+- **Manual tests are kept apart until a person turns one into a test case.** They are stored separately from the project's own test cases, from automated results and from bug reports, and show on their own page. They start as `proposed`; a person can accept, reject or reopen one, and can edit the title, description, preconditions, steps, expected result and priority. The agent's version and the person's version are separate: the agent's priority and the person's priority are two fields, what the agent wrote stays in the test's revisions, and a person's review is never taken as the agent's judgement. Nothing runs a manual test and nothing creates a result.
 - **Everything starts as `proposed`.** The agent's own review (`agentReview`, and `audit.review`) is kept as information about where the report came from, and nothing more.
 - **Three separate judgements** are kept apart: the tool's impact (`toolImpact`), the agent's severity, and *your* severity, which you set when you review.
 - **References** are looked up only in the project you import into: `REQ-n` a requirement, `SHOP-n` a test case (the project's own key), `tests` an automated test by its full name or title. A reference that does not resolve is **shown as unresolved** (not found, another project's key, or ambiguous), and *Check again* resolves it later, for instance after the case has been created. A reference whose target was deleted later is shown as such.
@@ -148,6 +154,7 @@ A report or a manual test is identified by `(project, audit.id, sourceId)`. Ever
 | Changed content, report still untouched (proposed, never edited, not linked to an external issue) | The working copy is updated; the older version stays as a revision. |
 | Changed content, but you have **reviewed, edited or linked** it | **Your version is not touched.** The newer version waits on the report ("The agent sent a newer version") with a comparison, and you choose *Use the agent's version* or *Keep mine*. |
 | A report that is **not in the package** this time (it was in an earlier run of the same audit) | **Nothing happens to it.** It is not removed, closed, archived or marked as fixed. Testbench only shows that it was not seen in the latest run (**Not present in latest audit run**, with the run and date it was last seen). If it comes back, it is the same report, and the two rows above apply to a new version. |
+| A manual test **that has become a test case**, and the agent sends a newer version | The test case is **never changed by an import**. The newer version waits on the proposal; **Use the agent's version** (your choice) then also replaces the case's title, description, preconditions, steps and priority, keeping the case's number, its step rows and all results. **Keep mine** leaves the case alone. |
 | A **manual test** that is not in the package this time | Same as a report: nothing happens to it, and Testbench shows **Not present in latest audit run**. A package that has **no `manual-tests.json` at all** says nothing about manual tests, so nothing is marked missing; an **empty** list (`"tests": []`) does say that none were listed. |
 | The same bug in a **new** audit | A new report. If it has the same `fingerprint` as another, the two are pointed out to each other, and you can mark one as a duplicate of the other. Nothing is merged automatically. |
 
@@ -158,7 +165,7 @@ You can also record that an **existing external issue** (Jira, Linear or other) 
 - **A report**: confirmation is only needed when it is accepted or linked. Its evidence files go with it. The external issue is never touched.
 - **A run**: reports linked to it stay (they just lose the link).
 - **An audit**: untouched proposals and the stored audit report are removed. Reports you have reviewed, edited or linked **stay**, as standalone reports. They keep a note of the audit they came from (its id, title, agent, times, source) and all their evidence. If the same package is imported again, those reports are found again and re-attached to the audit.
-- **A manual test** can be deleted by a person; an accepted one asks for confirmation.
+- **A manual test** can be deleted by a person; an accepted one asks for confirmation. The test case made from it stays. If that test case is deleted, the proposal can become a test case again.
 - **An audit** also removes its untouched manual-test proposals. Manual tests a person has accepted, rejected or edited stay, as standalone tests with a note of where they came from.
 - **A project** removes everything, including the evidence files, after the usual safety backup.
 

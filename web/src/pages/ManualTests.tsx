@@ -13,7 +13,7 @@ const CATEGORY_LABEL: Record<Category, string> = { functional: "Functional", acc
 
 interface Item {
   id: number; sourceId: string; title: string; status: Status; category: Category; priority: Priority; wcag: string[]; viewports: string[];
-  importedAt: string; auditTitle: string; auditDeleted: boolean; unresolvedRefs: number; requirements: number; edited: boolean; pendingUpdate: boolean; presence: Presence;
+  importedAt: string; auditTitle: string; auditDeleted: boolean; unresolvedRefs: number; requirements: number; edited: boolean; pendingUpdate: boolean; presence: Presence; testCase: string | null;
 }
 interface List { items: Item[]; counts: Record<string, number>; presenceCounts: Record<Presence, number>; wcagCriteria: string[] }
 interface RunRef { run: number; importId: number; importedAt: string; source: string; github: { repo: string; runId: number; url: string } | null }
@@ -28,6 +28,7 @@ interface Detail {
   refs: Ref[]; revisions: { rev: number; imported_at: string }[];
   pendingUpdate: { rev: number; changes: { field: string; from: string; to: string }[] } | null;
   latestRun: { presence: Presence; reason: string; runs: number; latest: RunRef | null; lastSeen: RunRef | null };
+  testCase: { id: number; number: number; key: string; title: string; status: string; lastStatus: string | null } | null;
 }
 
 type Tab = Status | "all";
@@ -56,7 +57,7 @@ export function ManualTestsPage() {
   return (
     <>
       <div className="topbar">
-        <h1>Manual tests</h1>
+        <h1>Agent proposals</h1>
         <span className="spacer" />
         <button className="btn primary" onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</button>
       </div>
@@ -69,7 +70,7 @@ export function ManualTestsPage() {
           ))}
         </div>
         <span className="spacer" />
-        <input className="input" style={{ width: 200 }} placeholder="Search manual tests" aria-label="Search manual tests" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input className="input" style={{ width: 200 }} placeholder="Search proposals" aria-label="Search agent proposals" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
       <div className="toolbar" style={{ gap: 8 }}>
         <select className="select" style={{ width: "auto" }} aria-label="Category" value={category} onChange={(e) => setCategory(e.target.value)}>
@@ -95,12 +96,12 @@ export function ManualTestsPage() {
       <div className="content">
         <div className="faint" style={{ padding: "8px 20px", fontSize: "var(--fs-md)", display: "flex", gap: 8, alignItems: "center" }}>
           <UserCheck size={14} />
-          <span>A test agent proposes these. <strong>A person has to review and run them</strong>: Testbench never runs a manual test or decides its result.</span>
+          <span>Manual test cases proposed by a test agent. <strong>Accept one, then create a test case from it</strong>: the test case is what you run in Runs and what counts as coverage. Testbench never runs a test or decides its result.</span>
         </div>
         {isLoading ? (
           <ListSkeleton />
         ) : !data?.items.length ? (
-          <Empty icon={<ClipboardCheck size={20} />} title={filtered ? "No manual tests match these filters" : tab === "proposed" ? "Nothing waiting for review" : "No manual tests here"}
+          <Empty icon={<ClipboardCheck size={20} />} title={filtered ? "No proposals match these filters" : tab === "proposed" ? "Nothing waiting for review" : "No proposals here"}
             action={<button className="btn" onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</button>}>
             An audit package can carry a manual-tests.json: checks an automatic run cannot decide, such as reading order with a screen reader.
           </Empty>
@@ -116,7 +117,9 @@ export function ManualTestsPage() {
                 <span className="chip">{CATEGORY_LABEL[t.category]}</span>
                 {t.wcag.length > 0 && <span className="chip" title={`WCAG ${t.wcag.join(", ")}`}>WCAG {t.wcag.length > 2 ? `${t.wcag.slice(0, 2).join(", ")}…` : t.wcag.join(", ")}</span>}
                 {t.viewports.length > 0 && <span className="chip" title={t.viewports.join("; ")}>{t.viewports.length} viewport{t.viewports.length === 1 ? "" : "s"}</span>}
-                <span className="chip" style={{ color: "var(--blocked-fg)" }} title="Testbench does not run this. A person has to."><UserCheck size={11} /> {t.status === "proposed" ? "Needs your review" : t.status === "accepted" ? "Needs a person to run" : "Not used"}</span>
+                {t.testCase
+                  ? <span className="chip" title="The test case made from this proposal. Run it in Runs."><ClipboardCheck size={11} /> Test case {t.testCase}</span>
+                  : <span className="chip" style={{ color: "var(--blocked-fg)" }} title="Testbench does not run this. A person has to."><UserCheck size={11} /> {t.status === "proposed" ? "Needs your review" : t.status === "accepted" ? "Accepted: create a test case" : "Not used"}</span>}
                 <Severity value={t.priority} />
                 {tab === "all" && <StatusChip status={t.status} />}
                 <span className="faint" title={t.auditTitle}>{timeAgo(t.importedAt)}</span>
@@ -166,7 +169,7 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
   const run = <T,>(fn: () => Promise<T>, ok?: string) => fn().then((r) => { refresh(); if (ok) toast("success", ok); return r; }).catch((e: Error) => { toast("error", e.message); });
   const post = (path: string, body?: unknown, ok?: string) => run(() => api.post(`/api/manual-tests/${id}/${path}`, body), ok);
 
-  if (!t) return <Modal title="Manual test" onClose={onClose} width={820}><ListSkeleton rows={4} /></Modal>;
+  if (!t) return <Modal title="Agent proposal" onClose={onClose} width={820}><ListSkeleton rows={4} /></Modal>;
   const startEdit = () => {
     setDraft({ title: t.title, description: t.description, preconditions: t.preconditions, steps: t.steps.join("\n"), expected: t.expected });
     setEditing(true);
@@ -185,12 +188,25 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
       footer={<><button className="btn ghost" style={DANGER} onClick={() => setDeleting(true)}><Trash2 size={13} /> Delete</button><span className="spacer" /><button className="btn" onClick={onClose}>Close</button></>}
     >
       <div className="col" style={{ gap: 14 }}>
-        <div className="card" style={{ padding: 10, display: "flex", gap: 8, alignItems: "center" }}>
-          <UserCheck size={15} />
-          <span style={{ fontSize: "var(--fs-md)" }}>
-            {t.status === "proposed" ? "Proposed by a test agent. A person must review it before it is used, and a person has to run it." : t.status === "accepted" ? "Accepted. A person has to run this test and judge the result; Testbench does not." : "Rejected. It is kept for reference and is not used."}
-          </span>
-        </div>
+        {t.testCase ? (
+          <div className="card" style={{ padding: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <ClipboardCheck size={15} />
+            <span style={{ fontSize: "var(--fs-md)" }}>
+              This is now the test case <Link to={`/p/${pid}/cases?case=${t.testCase.id}`}><strong>{t.testCase.key}</strong></Link>. Run it in Runs; edit it there.
+              {t.testCase.lastStatus ? ` Latest result: ${t.testCase.lastStatus}.` : " It has not been run yet."}
+            </span>
+            <span className="spacer" />
+            <Link className="btn sm" to={`/p/${pid}/cases?case=${t.testCase.id}`}>Open the test case</Link>
+          </div>
+        ) : (
+          <div className="card" style={{ padding: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <UserCheck size={15} />
+            <span style={{ fontSize: "var(--fs-md)" }} className="grow">
+              {t.status === "proposed" ? "Proposed by a test agent. Review it first; a person has to run it." : t.status === "accepted" ? "Accepted. Create a test case from it to run it in Runs and have it count as coverage. Testbench does not run it or decide its result." : "Rejected. It is kept for reference and is not used."}
+            </span>
+            {t.status === "accepted" && <button className="btn primary sm" onClick={() => run(() => api.post(`/api/manual-tests/${id}/create-case`), "Test case created. Run it in Runs.")}><ClipboardCheck size={13} /> Create test case</button>}
+          </div>
+        )}
 
         {t.pendingUpdate && (
           <div className="card" style={{ padding: 12, borderColor: "var(--accent)" }}>
@@ -225,7 +241,7 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
           <div><div className="section-label">Agent's priority</div><Severity value={t.priority.agent} /></div>
           <div>
             <label className="section-label" htmlFor="human-prio">Your priority</label>
-            <select id="human-prio" className="select" value={t.priority.human ?? ""} onChange={(e) => run(() => api.patch(`/api/manual-tests/${id}`, { humanPriority: e.target.value || null }))}>
+            <select id="human-prio" className="select" disabled={!!t.testCase} value={t.priority.human ?? ""} onChange={(e) => run(() => api.patch(`/api/manual-tests/${id}`, { humanPriority: e.target.value || null }))}>
               <option value="">Not set (use the agent's)</option>
               {(["low", "medium", "high", "critical"] as const).map((s) => <option key={s} value={s}>{PRIORITY_LABEL[s]}</option>)}
             </select>
@@ -244,7 +260,7 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
           </div>
         ) : (
           <div className="col" style={{ gap: 10 }}>
-            <div className="row"><h2 style={{ margin: 0, fontSize: "var(--fs-lg)", overflowWrap: "anywhere" }}>{t.title}</h2><span className="spacer" /><button className="btn sm" onClick={startEdit}><Pencil size={12} /> Edit</button></div>
+            <div className="row"><h2 style={{ margin: 0, fontSize: "var(--fs-lg)", overflowWrap: "anywhere" }}>{t.title}</h2><span className="spacer" />{!t.testCase && <button className="btn sm" onClick={startEdit}><Pencil size={12} /> Edit</button>}</div>
             {edited && <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>You edited this {timeAgo(t.editedAt!)}. A later import will not overwrite it without asking.</div>}
             <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
               <span className="chip">{CATEGORY_LABEL[t.category]}</span>
@@ -278,7 +294,7 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
               {r.reason && <span className="faint">{r.reason}</span>}
             </div>
           ))}
-          {reqs === null ? (
+          {t.testCase ? null : reqs === null ? (
             <button className="btn sm" style={{ marginTop: 6 }} onClick={() => setReqs(reqRefs.map((r) => r.raw).join(", "))}>Edit requirements</button>
           ) : (
             <div className="row" style={{ gap: 6, marginTop: 6 }}>
@@ -301,9 +317,9 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
         </div>
       </div>
       {deleting && (
-        <ConfirmModal title="Delete this manual test?" confirmLabel="Delete test" onClose={() => setDeleting(false)}
+        <ConfirmModal title="Delete this proposal?" confirmLabel="Delete proposal" onClose={() => setDeleting(false)}
           onConfirm={() => run(() => api.del(`/api/manual-tests/${id}${t.status === "accepted" ? "?force=1" : ""}`), "Deleted").then(() => { setDeleting(false); onClose(); })}>
-          <p style={{ margin: 0 }}>This removes the test from Testbench. If the agent lists it again in a later package, it comes back as a new proposal.</p>
+          <p style={{ margin: 0 }}>This removes the proposal from Testbench{t.testCase ? `; the test case ${t.testCase.key} stays` : ""}. If the agent lists it again in a later package, it comes back as a new proposal.</p>
         </ConfirmModal>
       )}
     </Modal>

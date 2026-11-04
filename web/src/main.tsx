@@ -249,7 +249,7 @@ function ProjectLayout() {
   // Browser tab title: "Test cases · Demo Shop · Testbench", so tabs, history and screen readers say where you are.
   const section = loc.pathname.split("/")[3] ?? "";
   useEffect(() => {
-    const label = ({ dashboard: "Dashboard", requirements: "Requirements", cases: "Test cases", runs: "Runs", automated: "Automated tests", import: "Import results", bugs: "Bug reports", "manual-tests": "Manual tests", reports: "Sprint reports", backup: "Backup & restore" } as Record<string, string>)[section];
+    const label = ({ dashboard: "Dashboard", requirements: "Requirements", cases: "Test cases", runs: "Runs", automated: "Automated tests", import: "Import results", bugs: "Bug reports", "manual-tests": "Agent proposals", reports: "Sprint reports", backup: "Backup & restore" } as Record<string, string>)[section];
     document.title = [label, project?.name, "Testbench"].filter(Boolean).join(" · ");
     return () => { document.title = "Testbench"; };
   }, [section, project?.name]);
@@ -269,7 +269,7 @@ function ProjectLayout() {
   // How many reports from test agents wait for a decision (the same query the Bug reports page uses for its default tab).
   const { data: proposedBugs } = useQuery({ queryKey: ["bug-reports", pid, "proposed"], queryFn: () => api.get<{ counts: Record<string, number> }>(`/api/projects/${pid}/bug-reports?status=proposed`), staleTime: 30_000, enabled: !!pid });
 
-  // Manual tests the agent proposed that wait for a decision.
+  // Proposals (manual test cases) from the agent that wait for a decision.
   const { data: proposedManual } = useQuery({ queryKey: ["manual-tests", pid, "proposed"], queryFn: () => api.get<{ counts: Record<string, number> }>(`/api/projects/${pid}/manual-tests?status=proposed`), staleTime: 30_000, enabled: !!pid });
 
   if (isLoading) return null;
@@ -335,7 +335,7 @@ function ProjectLayout() {
         {link("automated", <Bot size={15} />, "Automated tests", "5")}
         {link("import", <Download size={15} />, "Import results", "6")}
         {link("bugs", <Bug size={15} />, "Bug reports", "9", proposedBugs?.counts.proposed ?? 0)}
-        {link("manual-tests", <ClipboardCheck size={15} />, "Manual tests", "0", proposedManual?.counts.proposed ?? 0)}
+        {link("manual-tests", <ClipboardCheck size={15} />, "Agent proposals", "0", proposedManual?.counts.proposed ?? 0)}
         <div className="sidebar-section">Reporting</div>
         {link("reports", <FileBarChart size={15} />, "Sprint reports", "7")}
         <div className="sidebar-section">Data</div>

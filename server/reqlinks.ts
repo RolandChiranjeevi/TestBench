@@ -90,7 +90,8 @@ export function requirementOverviews(projectId: number): Map<number, Requirement
 /** The manual tests and bug reports that name one requirement, for its detail view. */
 export function requirementLinks(requirementId: number) {
   const manualTests = db.prepare(`
-    SELECT DISTINCT m.id, m.source_id AS sourceId, m.title, m.review_status AS status, m.category, COALESCE(m.human_priority, m.agent_priority) AS priority
+    SELECT DISTINCT m.id, m.source_id AS sourceId, m.title, m.review_status AS status, m.category, COALESCE(m.human_priority, m.agent_priority) AS priority,
+      (SELECT p.key || '-' || c.number FROM cases c JOIN projects p ON p.id = c.project_id WHERE c.id = m.case_id) AS testCase
     FROM manual_test_refs x JOIN manual_tests m ON m.id = x.manual_test_id WHERE x.requirement_id = ? ORDER BY m.id`).all(requirementId);
   const bugs = db.prepare(`
     SELECT DISTINCT b.id, b.source_id AS sourceId, b.title, b.review_status AS status, COALESCE(b.human_severity, b.agent_severity) AS severity
