@@ -256,7 +256,8 @@ keyed by its stable test key; the same test failing again, on any branch, is add
 CI never closes a bug. Every bug has a workflow status (open, may be resolved, closed) and an assignee, separate from the review status. For GitHub Actions
 and Playwright (`test-results/results.json`) there is a ready example in `examples/github-actions/` and a one-file script, `scripts/ci-report.mjs`.
 The answer counts the bugs a run touched under `bugsCreated`, `bugsUpdated` (new result, no status change), `reopened` and `resolvedSuspected`; a bug is in exactly
-one of them, so a reopened bug is not also "updated". Details, limits and what is kept: [docs/ci-integration.md](docs/ci-integration.md).
+one of them, so a reopened bug is not also "updated". The bug list starts with the latest CI run and audit import and how many bugs came with each; those
+bugs are marked **New**, and "N new" or the New filter shows just them. Details, limits and what is kept: [docs/ci-integration.md](docs/ci-integration.md).
 
 ### Reports that are missing from the latest run
 
