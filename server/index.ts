@@ -14,7 +14,8 @@ import { autoBackupInfo, safetyBackup, startAutoBackup } from "./autobackup.ts";
 import { deleteCases, deleteProject, describeProject, DeletionError } from "./deletion.ts";
 import { moveSuite, SuiteMoveError } from "./suites.ts";
 import { bulkUpdateCases, CaseBulkError, duplicateCase } from "./casebulk.ts";
-import { authConfigFromEnv, registerAuth } from "./auth.ts";
+import { authConfigFromEnv, makeLimiter, registerAuth } from "./auth.ts";
+import { authenticateCiToken, CI_LIMITS, createCiToken, ingestCiResults, isCiIngest, listCiTokens, revokeCiToken, setTriage, WORKFLOW_STATUSES } from "./ci.ts";
 import { DATA_DIR, db, ensureMilestone, parseJson, snapshotCase, UPLOAD_DIR } from "./db.ts";
 import { seedDemo } from "./demo.ts";
 import { artifactsByRun, getToken, importRun, listRuns, parseWorkflowList, REPO_SLUG, type GithubSource } from "./importers/github.ts";
@@ -68,12 +69,34 @@ const app = Fastify({ logger: { level: "warn" }, trustProxy: process.env.TESTBEN
 app.addHook("onRequest", async (req, reply) => {
   const host = (req.headers.host ?? "").replace(/:\d+$/, "").toLowerCase();
   if (!ALLOWED_HOSTS.has(host)) return reply.code(403).send({ error: "Forbidden host" });
-  if (req.method !== "GET" && req.method !== "HEAD" && req.headers["x-testbench"] !== "1") {
+  // CI is not a browser: its route is authenticated by an API token instead of the header (a web page cannot add an Authorization token it does not have).
+  if (req.method !== "GET" && req.method !== "HEAD" && req.headers["x-testbench"] !== "1" && !isCiIngest(req.method, req.url)) {
     return reply.code(403).send({ error: "Missing X-Testbench header" });
   }
 });
 // Optional password login (TESTBENCH_PASSWORD). Registered right after the guard above, so it runs before every route and static file.
 registerAuth(app, auth);
+// A CI request that is too large is answered 413 only after its body has been read and thrown away. Answering and closing at once makes the
+// operating system reset the connection while the client is still writing, so the client sees ECONNRESET or EPIPE and never the 413.
+// Reading is bounded: above drainBytes, or if the client is too slow, the connection is dropped instead.
+app.addHook("onRequest", async (req, reply) => {
+  if (!isCiIngest(req.method, req.url)) return;
+  const declared = Number(req.headers["content-length"]);
+  if (!(declared > CI_LIMITS.bodyBytes)) return;
+  const drop = () => { req.raw.socket.destroy(); return reply.hijack(); };
+  if (declared > CI_LIMITS.drainBytes) return drop();
+  const drained = await new Promise<boolean>((resolve) => {
+    let done = false;
+    const finish = (ok: boolean) => { if (!done) { done = true; clearTimeout(timer); resolve(ok); } };
+    const timer = setTimeout(() => finish(false), 20_000);
+    req.raw.once("end", () => finish(true));
+    req.raw.once("error", () => finish(false));
+    req.raw.once("close", () => finish(false));
+    req.raw.resume();
+  });
+  if (!drained) return drop();
+  return reply.code(413).header("Connection", "close").send({ error: `The request is larger than ${CI_LIMITS.bodyBytes / 1024 / 1024} MB, the limit for one CI request. Send fewer passed tests, or split the run.` });
+});
 // Folder uploads send one file per screenshot/video, so the file count limit is generous.
 await app.register(multipart, { limits: { fileSize: 100 * 1024 * 1024, files: 1000 } });
 await app.register(fastifyStatic, { root: UPLOAD_DIR, prefix: "/uploads/", decorateReply: false });
@@ -911,8 +934,40 @@ app.post("/api/projects/:id/audit-import", async (req) => {
 });
 
 app.get("/api/projects/:id/bug-reports", (req) => {
-  const q = req.query as { status?: string; q?: string; presence?: string };
-  return audited(() => listBugReports(idParam(req), { status: q.status, q: q.q, presence: q.presence }));
+  const q = req.query as Record<string, string | undefined>;
+  return audited(() => listBugReports(idParam(req), {
+    status: q.status, q: q.q, presence: q.presence, source: q.source || undefined, workflow: q.workflow || undefined, severity: q.severity || undefined,
+    tag: q.tag || undefined, testKey: q.testKey || undefined, assignee: q.assignee || undefined,
+  }));
+});
+
+// ---- CI results: failed tests become bugs, keyed by the test's stable key (see server/ci.ts) ----
+const ciLimiter = makeLimiter({ max: 20, windowMs: 15 * 60_000 });
+app.post("/api/projects/:id/ci/test-results", { bodyLimit: CI_LIMITS.bodyBytes }, async (req, reply) => {
+  const id = idParam(req);
+  if (ciLimiter.blockedFor(req.ip) > 0) return reply.code(429).send({ error: "Too many failed attempts. Try again later." });
+  if (!authenticateCiToken(req.headers.authorization, id)) {
+    ciLimiter.fail(req.ip);
+    throw new HttpError(401, "A valid API token for this project is required: send it as Authorization: Bearer <token>");
+  }
+  return audited(() => ingestCiResults(id, req.body));
+});
+app.get("/api/projects/:id/ci/tokens", (req) => listCiTokens(idParam(req)));
+app.post("/api/projects/:id/ci/tokens", (req) => {
+  const id = idParam(req);
+  if (!db.prepare("SELECT 1 FROM projects WHERE id = ?").get(id)) throw new HttpError(404, "Project not found");
+  const body = z.object({ name: z.string().max(80) }).parse(req.body);
+  return audited(() => createCiToken(id, body.name));
+});
+app.post("/api/ci-tokens/:id/revoke", (req) => {
+  audited(() => revokeCiToken(idParam(req)));
+  return { ok: true };
+});
+app.post("/api/bug-reports/:id/triage", (req) => {
+  const id = idParam(req);
+  const body = z.object({ assignee: z.string().max(100).optional(), workflowStatus: z.enum(WORKFLOW_STATUSES).optional() }).parse(req.body);
+  audited(() => setTriage(id, body));
+  return getBugReport(id);
 });
 app.get("/api/projects/:id/audits", (req) => listAudits(idParam(req)));
 app.get("/api/projects/:id/audit-rejections", (req) => listRejectedPackages(idParam(req)));

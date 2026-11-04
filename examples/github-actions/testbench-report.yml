@@ -1,0 +1,51 @@
+# Example: report Playwright results to Testbench from GitHub Actions.
+#
+# Copy this job into your workflow and copy scripts/ci-report.mjs from Testbench into your repository (one file, no dependencies).
+# Then add to the repository (Settings > Secrets and variables > Actions):
+#   secret   TESTBENCH_API_TOKEN   a token made in Testbench (Bug reports > CI > Create token)
+#   secret   TESTBENCH_URL         the address of your Testbench, for example https://testbench.example.com
+#   variable TESTBENCH_PROJECT_ID  the project's number (shown in the CI dialog)
+# Playwright must write the JSON report: reporter: [['list'], ['json', { outputFile: 'test-results/results.json' }]]
+name: E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright tests
+        run: npx playwright test
+
+      # Traces and screenshots. The bug in Testbench links to this run, where they are listed under "Artifacts".
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: test-results/
+          retention-days: 14
+
+      # Runs even when the tests failed. Reporting problems are warnings, not failed builds (set TESTBENCH_STRICT: "1" to fail).
+      # A pull request from a fork gets no secrets; the script says so and does nothing.
+      - name: Report to Testbench
+        if: always()
+        env:
+          TESTBENCH_URL: ${{ secrets.TESTBENCH_URL }}
+          TESTBENCH_PROJECT_ID: ${{ vars.TESTBENCH_PROJECT_ID }}
+          TESTBENCH_API_TOKEN: ${{ secrets.TESTBENCH_API_TOKEN }}
+        run: node scripts/ci-report.mjs test-results/results.json

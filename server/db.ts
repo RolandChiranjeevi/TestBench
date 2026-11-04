@@ -608,6 +608,77 @@ CREATE TABLE IF NOT EXISTS project_destinations (
   // The exact content that was sent, as JSON (title, description, priority, team, attachments).
   if (!hasColumn("bug_publications", "content_sent")) d.exec("ALTER TABLE bug_publications ADD COLUMN content_sent TEXT NOT NULL DEFAULT ''");
 
+  // CI results as bug history. A bug has a place in a workflow (open, resolved_suspected, closed) and an assignee, whatever its source;
+  // review_status stays the separate "is this a real bug" decision. CI bugs are keyed by test_key (origin_audit_id '$ci', source_id = the key),
+  // so the existing unique index gives one bug per test and project.
+  if (!hasColumn("bug_reports", "source")) d.exec("ALTER TABLE bug_reports ADD COLUMN source TEXT NOT NULL DEFAULT 'agent_audit'");   // ci | agent_audit | manual
+  if (!hasColumn("bug_reports", "test_key")) d.exec("ALTER TABLE bug_reports ADD COLUMN test_key TEXT");
+  if (!hasColumn("bug_reports", "tags")) d.exec("ALTER TABLE bug_reports ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'");
+  if (!hasColumn("bug_reports", "workflow_status")) d.exec("ALTER TABLE bug_reports ADD COLUMN workflow_status TEXT NOT NULL DEFAULT 'open'");
+  if (!hasColumn("bug_reports", "assignee")) d.exec("ALTER TABLE bug_reports ADD COLUMN assignee TEXT NOT NULL DEFAULT ''");
+  if (!hasColumn("bug_reports", "last_ci_status")) d.exec("ALTER TABLE bug_reports ADD COLUMN last_ci_status TEXT");
+  if (!hasColumn("bug_reports", "last_ci_at")) d.exec("ALTER TABLE bug_reports ADD COLUMN last_ci_at TEXT");
+  if (!hasColumn("bug_reports", "ci_flaky")) d.exec("ALTER TABLE bug_reports ADD COLUMN ci_flaky INTEGER NOT NULL DEFAULT 0");
+  if (!hasColumn("bug_reports", "resolved_suspected_at")) d.exec("ALTER TABLE bug_reports ADD COLUMN resolved_suspected_at TEXT");
+  if (!hasColumn("bug_reports", "closed_at")) d.exec("ALTER TABLE bug_reports ADD COLUMN closed_at TEXT");
+  d.exec(`
+CREATE INDEX IF NOT EXISTS bug_reports_triage ON bug_reports(project_id, source, workflow_status);
+CREATE INDEX IF NOT EXISTS bug_reports_test_key ON bug_reports(project_id, test_key) WHERE test_key IS NOT NULL;
+-- API tokens for CI. Only a hash is kept; the token itself is shown once, when it is made. A token belongs to one project.
+CREATE TABLE IF NOT EXISTS ci_tokens (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  prefix TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_used_at TEXT,
+  revoked_at TEXT
+);
+-- One row per CI run received. run_id is the CI's own id; sending the same run again is recognised by it.
+CREATE TABLE IF NOT EXISTS ci_runs (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  run_id TEXT NOT NULL,
+  commit_sha TEXT NOT NULL DEFAULT '', branch TEXT NOT NULL DEFAULT '', repository TEXT NOT NULL DEFAULT '', pipeline_url TEXT NOT NULL DEFAULT '',
+  started_at TEXT, finished_at TEXT,
+  received_at TEXT NOT NULL DEFAULT (datetime('now')),
+  payload_hash TEXT NOT NULL,
+  counts TEXT NOT NULL DEFAULT '{}',
+  summary TEXT NOT NULL DEFAULT '{}',
+  UNIQUE (project_id, run_id)
+);
+-- One row per test of a run that Testbench keeps: every failed and flaky test, and the passes of tests that have a CI bug.
+CREATE TABLE IF NOT EXISTS ci_results (
+  id INTEGER PRIMARY KEY,
+  ci_run_id INTEGER NOT NULL REFERENCES ci_runs(id) ON DELETE CASCADE,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  test_key TEXT NOT NULL, title TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL,                      -- passed | failed | flaky
+  duration_ms INTEGER, error TEXT NOT NULL DEFAULT '',
+  steps TEXT NOT NULL DEFAULT '[]', attachments TEXT NOT NULL DEFAULT '[]', tags TEXT NOT NULL DEFAULT '[]',
+  UNIQUE (ci_run_id, test_key)
+);
+CREATE INDEX IF NOT EXISTS ci_results_key ON ci_results(project_id, test_key);
+-- A failed or flaky result that belongs to a bug.
+CREATE TABLE IF NOT EXISTS bug_occurrences (
+  id INTEGER PRIMARY KEY,
+  bug_report_id INTEGER NOT NULL REFERENCES bug_reports(id) ON DELETE CASCADE,
+  ci_result_id INTEGER NOT NULL REFERENCES ci_results(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (bug_report_id, ci_result_id)
+);
+-- What changed a bug's workflow, and who: a person or CI.
+CREATE TABLE IF NOT EXISTS bug_events (
+  id INTEGER PRIMARY KEY,
+  bug_report_id INTEGER NOT NULL REFERENCES bug_reports(id) ON DELETE CASCADE,
+  at TEXT NOT NULL DEFAULT (datetime('now')),
+  actor TEXT NOT NULL,                       -- ci | user
+  kind TEXT NOT NULL,                        -- created | reopened | resolved_suspected | workflow | assignee
+  detail TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS bug_events_bug ON bug_events(bug_report_id);`);
+
   // Make sure every sprint named on a run has a sprint record.
   const named = d.prepare("SELECT DISTINCT project_id, milestone FROM runs WHERE milestone != ''").all() as { project_id: number; milestone: string }[];
   for (const r of named) ensureMilestone(r.project_id, r.milestone, d);
