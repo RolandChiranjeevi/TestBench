@@ -423,7 +423,7 @@ and is never stored.
 
 ## Keyboard
 
-`1`–`8` switch pages · `C` new case/run · `J`/`K` move · `X` select · `R` run selected ·
+`1`–`9` and `0` switch pages, in the order of the sidebar (the number is shown next to each page) · `C` new case/run · `J`/`K` move · `X` select · `R` run selected ·
 `P`/`F`/`B`/`S` pass/fail/block/skip while executing · `⌘V` paste a screenshot.
 
 ## License
