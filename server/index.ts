@@ -937,7 +937,7 @@ app.get("/api/projects/:id/bug-reports", (req) => {
   const q = req.query as Record<string, string | undefined>;
   return audited(() => listBugReports(idParam(req), {
     status: q.status, q: q.q, presence: q.presence, source: q.source || undefined, workflow: q.workflow || undefined, severity: q.severity || undefined,
-    tag: q.tag || undefined, testKey: q.testKey || undefined, assignee: q.assignee || undefined,
+    tag: q.tag || undefined, testKey: q.testKey || undefined, assignee: q.assignee || undefined, new: q.new || undefined,
   }));
 });
 
