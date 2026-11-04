@@ -110,7 +110,8 @@ const resultSchema = z.object({
   title: text(500).min(1),
   status: z.enum(["passed", "failed", "skipped", "flaky"]),
   durationMs: z.number().int().min(0).max(86_400_000 * 7).optional(),
-  error: text(200_000).optional(),
+  // A passed test often has no error, and some reporters send null for that. Both mean "no error".
+  error: text(200_000).nullish(),
   steps: z.array(text(2000)).max(CI_LIMITS.steps).optional(),
   attachments: z.array(attachmentSchema).max(CI_LIMITS.attachments).optional(),
   tags: z.array(text(50).min(1)).max(CI_LIMITS.tags).optional(),

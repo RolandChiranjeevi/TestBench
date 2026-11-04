@@ -122,6 +122,28 @@ describe("idempotency", () => {
   });
 });
 
+describe("a result without an error", () => {
+  it("accepts error as null or missing for a passed test, and stores it as an empty string", () => {
+    const p = proj();
+    run(p, [result({ testKey: "k" })]);
+    const s = run(p, [result({ testKey: "k", status: "passed", error: null }), result({ testKey: "other", status: "passed", error: undefined }), result({ testKey: "skipped-one", status: "skipped", error: null })]);
+    assert.deepEqual([s.counts.passed, s.counts.skipped, s.resolvedSuspected], [2, 1, 1]);
+    assert.equal((db.prepare("SELECT error FROM ci_results WHERE project_id = ? AND test_key = 'k' ORDER BY id DESC").get(p.id) as { error: string }).error, "");
+  });
+
+  it("accepts error: null on a failed test too, and still makes the bug", () => {
+    const p = proj();
+    const s = run(p, [result({ testKey: "f", error: null })]);
+    assert.equal(s.bugsCreated, 1);
+    assert.equal(bugOf(p.id, "f").actual, "");
+  });
+
+  it("still refuses an error that is not text", () => {
+    const p = proj();
+    assert.throws(() => run(p, [result({ error: 42 })]), /error/);
+  });
+});
+
 describe("flaky tests", () => {
   it("are marked flaky and start at low severity, never high", () => {
     const p = proj();
