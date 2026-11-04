@@ -3,6 +3,7 @@ import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { db, parseJson, UPLOAD_DIR } from "./db.ts";
 import { BUG_SOURCES, bugEvents, ciDetail, WORKFLOW_STATUSES, type WorkflowStatus } from "./ci.ts";
+import { latestRuns, newBugIds } from "./latestruns.ts";
 import type { FileBag } from "./importers/bag.ts";
 import { AuditError, hashOf, resolveOne, resolveRefs, toSqlDate, type ResolvedRef } from "./auditcommon.ts";
 export { AuditError } from "./auditcommon.ts";
@@ -367,9 +368,12 @@ const PRESENCE_EXPR = `CASE WHEN c.import_id IS NULL OR c.tracked = 0 THEN 'no_l
   WHEN EXISTS (SELECT 1 FROM bug_sightings s WHERE s.bug_report_id = b.id AND s.audit_import_id = c.import_id) THEN CASE WHEN c.n >= 2 THEN 'present' ELSE 'no_later_run' END
   ELSE 'missing' END`;
 
-export interface BugListFilter { status?: string; q?: string; presence?: string; source?: string; workflow?: string; severity?: string; tag?: string; testKey?: string; assignee?: string }
+/** `new`: only the bugs that came with the latest CI run (`ci`), the latest audit import (`audit`) or either (`any`). */
+export interface BugListFilter { status?: string; q?: string; presence?: string; source?: string; workflow?: string; severity?: string; tag?: string; testKey?: string; assignee?: string; new?: string }
 
 export function listBugReports(projectId: number, opts: BugListFilter = {}) {
+  if (opts.new && !["ci", "audit", "any"].includes(opts.new)) throw new AuditError(400, "new must be ci, audit or any");
+  const fresh = newBugIds(projectId);
   if (opts.presence && !PRESENCE_VALUES.includes(opts.presence as Presence)) throw new AuditError(400, `presence must be one of ${PRESENCE_VALUES.join(", ")}`);
   if (opts.source && !(BUG_SOURCES as readonly string[]).includes(opts.source)) throw new AuditError(400, `source must be one of ${BUG_SOURCES.join(", ")}`);
   if (opts.workflow && !(WORKFLOW_STATUSES as readonly string[]).includes(opts.workflow)) throw new AuditError(400, `workflow must be one of ${WORKFLOW_STATUSES.join(", ")}`);
@@ -384,6 +388,11 @@ export function listBugReports(projectId: number, opts: BugListFilter = {}) {
   if (opts.tag) { where.push("EXISTS (SELECT 1 FROM json_each(b.tags) t WHERE t.value = ?)"); args.push(opts.tag); }
   if (opts.testKey) { where.push("b.test_key = ?"); args.push(opts.testKey); }
   if (opts.assignee) { where.push(opts.assignee === "none" ? "b.assignee = ''" : "b.assignee = ?"); if (opts.assignee !== "none") args.push(opts.assignee); }
+  if (opts.new) {
+    const ids = opts.new === "ci" ? [...fresh.ci] : opts.new === "audit" ? [...fresh.audit] : [...fresh.ci, ...fresh.audit];
+    where.push("b.id IN (SELECT value FROM json_each(?))");
+    args.push(JSON.stringify(ids));
+  }
   if (opts.q?.trim()) { where.push("(b.title LIKE ? OR b.description LIKE ? OR b.source_id LIKE ? OR b.test_key LIKE ?)"); const like = `%${opts.q.trim().replace(/[%_]/g, "")}%`; args.push(like, like, like, like); }
   const base = [...args];
   const baseWhere = [...where];
@@ -416,7 +425,11 @@ export function listBugReports(projectId: number, opts: BugListFilter = {}) {
       })() : null,
       unresolvedRefs: r.unresolved_refs, attachments: r.attachments, attachmentProblems: r.attachment_problems,
       pendingUpdate: r.latest_rev > r.applied_rev && r.latest_rev > r.ignored_rev, published: r.publications > 0, presence: r.presence as Presence,
+      /** Where the bug is new: in the project's latest CI run or latest audit import. null when it came with an earlier one. */
+      newIn: fresh.ci.has(r.id) ? ("ci" as const) : fresh.audit.has(r.id) ? ("audit" as const) : null,
     })),
+    /** The latest run or import of each source, and how many bugs came with it (all statuses, whichever filter is on). */
+    latestRuns: latestRuns(projectId, fresh),
     presenceCounts,
     counts: Object.fromEntries(counts.map((c) => [c.s, c.n])) as Record<string, number>,
   };

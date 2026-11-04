@@ -138,6 +138,19 @@ the report's text, so it does not stop later imports from updating it. The bug l
 Source (CI, Agent audit or Manual), the latest CI status, the number of failed runs, branch and commit, a link to the CI run, the error, attachment links, the
 latest result per branch and the history of runs. The list filters on source, workflow, severity, tag and exact test key.
 
+### What is new since the latest run
+
+The top of the bug list shows the latest CI run and the latest audit import of the project (and the latest manual bug, if there is one), with how many bugs
+came with each. A bug is marked **New** when it first appeared in that latest run or import:
+
+- **CI:** its first occurrence came with the project's latest CI run. A bug that fails again, or is reopened, in a later run is not new.
+- **Agent audit:** its first version came with the project's latest audit import (the latest one of any audit in the project, so a small import after a large
+  one makes the large one's bugs old).
+- A newer run or import makes the earlier ones' bugs old, also one that only has passing tests ("0 new"). A bug stays new whatever its review status.
+
+The "N new" in the top is a button that shows exactly those bugs (all statuses); the **New** filter does the same for the CI run, the audit import or either.
+Nothing is stored for this: it is worked out from the runs and imports that are already recorded.
+
 ## Safety and limits
 
 - The route is authenticated by the token on every call. It is the only route that skips the browser guards (login cookie and `X-Testbench` header); a token opens nothing else.

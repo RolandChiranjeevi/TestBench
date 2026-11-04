@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Bug, Check, EyeOff, ExternalLink, FileText, FolderOpen, KeyRound, Link2, Paperclip, Pencil, Send, Settings, Trash2, Upload } from "lucide-react";
-import { api, formatDateTime, timeAgo, type Priority } from "../api";
+import { api, formatDateTime, parseDate, timeAgo, type Priority } from "../api";
 import { ConfirmModal, Empty, ListSkeleton, Modal, PriorityIcon, PRIORITY_LABEL, useToast } from "../components/ui";
 
 type Status = "proposed" | "accepted" | "rejected" | "duplicate";
@@ -11,7 +11,15 @@ interface Item {
   auditTitle: string; auditDeleted: boolean; unresolvedRefs: number; attachments: number; attachmentProblems: number; pendingUpdate: boolean; published: boolean; presence: Presence;
   source: Source; testKey: string | null; tags: string[]; workflowStatus: Workflow; assignee: string;
   ci: { lastStatus: CiStatus | null; lastAt: string | null; flaky: boolean; failedRuns: number; branch: string; commit: string; pipelineUrl: string } | null;
+  /** Where the bug is new: it came with the project's latest CI run or latest audit import. */
+  newIn: "ci" | "audit" | null;
 }
+interface LatestRuns {
+  ci: { runId: string; receivedAt: string; branch: string; commit: string; pipelineUrl: string; counts: { passed: number; failed: number; flaky: number; skipped: number }; newCount: number } | null;
+  audit: { auditTitle: string; importedAt: string; newCount: number } | null;
+  manual: { id: number; title: string; at: string } | null;
+}
+type NewFilter = "" | "ci" | "audit" | "any";
 type Source = "ci" | "agent_audit" | "manual";
 type Workflow = "open" | "resolved_suspected" | "closed";
 type CiStatus = "passed" | "failed" | "flaky";
@@ -33,7 +41,7 @@ const safeLink = (u: string) => /^https?:\/\//i.test(u);
 type Presence = "present" | "missing" | "no_later_run";
 interface RunRef { run: number; importId: number; importedAt: string; source: string; recorded: boolean; github: { repo: string; runId: number; url: string } | null }
 interface LatestRun { presence: Presence; reason: string; runs: number; latest: RunRef | null; lastSeen: RunRef | null }
-interface List { items: Item[]; counts: Record<string, number>; presenceCounts: Record<Presence, number> }
+interface List { items: Item[]; counts: Record<string, number>; presenceCounts: Record<Presence, number>; latestRuns: LatestRuns }
 interface Ref { id: number; kind: string; raw: string; state: string; reason: string; label: string; target: { kind: string; id: number } | null }
 interface Attachment { id: number; declared_path: string; filename: string; mime: string; size: number; label: string; stored_name: string | null; state: string; reason: string; active: number }
 interface Detail {
@@ -107,7 +115,8 @@ export function BugReportsPage() {
   const [importing, setImporting] = useState(false);
   const [destinationOpen, setDestinationOpen] = useState(false);
   const [presence, setPresence] = useState<"" | Presence>("");
-  const [filter, setFilter] = useState({ source: "", workflow: "", severity: "", tag: "", testKey: "" });
+  const NO_FILTER = { source: "", workflow: "", severity: "", tag: "", testKey: "", new: "" as NewFilter };
+  const [filter, setFilter] = useState(NO_FILTER);
   const [tokensOpen, setTokensOpen] = useState(false);
   const { data: dest } = useQuery({ queryKey: ["destination", pid], queryFn: () => api.get<{ destination: Destination | null; serverKey: boolean }>(`/api/projects/${pid}/destination`) });
   const open = Number(params.get("bug")) || null;
@@ -120,6 +129,8 @@ export function BugReportsPage() {
   const counts = data?.counts ?? {};
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   const setOpen = (id: number | null) => setParams((p) => { if (id) p.set("bug", String(id)); else p.delete("bug"); return p; }, { replace: true });
+  // "N new" in the Latest runs strip: all statuses (an accepted bug is still new), no other filter, so that the list is exactly those N bugs.
+  const showNew = (kind: "ci" | "audit") => { setTab("all"); setPresence(""); setFilter({ ...NO_FILTER, new: kind }); };
 
   return (
     <>
@@ -132,6 +143,7 @@ export function BugReportsPage() {
         <button className="btn" onClick={() => setTokensOpen(true)} title="API tokens that let your CI send test results here"><KeyRound size={14} /> CI</button>
         <button className="btn primary" onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</button>
       </div>
+      {tab !== "audits" && data && <LatestRunsStrip r={data.latestRuns} onShowNew={showNew} />}
       <div className="toolbar">
         <div className="tabs" role="tablist">
           {(["proposed", "accepted", "rejected", "duplicate", "all", "audits"] as const).map((t) => (
@@ -170,7 +182,13 @@ export function BugReportsPage() {
           </select>
           <input className="input" style={{ width: 130 }} aria-label="Tag" placeholder="Tag" value={filter.tag} onChange={(e) => setFilter({ ...filter, tag: e.target.value })} />
           <input className="input" style={{ width: 220 }} aria-label="Test key" placeholder="Test key (exact)" value={filter.testKey} onChange={(e) => setFilter({ ...filter, testKey: e.target.value })} />
-          {filtered && <button className="btn ghost sm" onClick={() => setFilter({ source: "", workflow: "", severity: "", tag: "", testKey: "" })}>Clear filters</button>}
+          <select className="select" style={{ width: "auto" }} aria-label="New" value={filter.new} onChange={(e) => setFilter({ ...filter, new: e.target.value as NewFilter })} title="Bugs that came with the latest CI run or the latest audit import">
+            <option value="">New: any</option>
+            <option value="ci">New in latest CI run</option>
+            <option value="audit">New in latest audit</option>
+            <option value="any">New in latest run or import</option>
+          </select>
+          {filtered && <button className="btn ghost sm" onClick={() => setFilter(NO_FILTER)}>Clear filters</button>}
         </div>
       )}
       <div className="content">
@@ -192,6 +210,7 @@ export function BugReportsPage() {
               <span className="id mono truncate" style={{ width: 88 }} title={b.testKey ?? b.sourceId}>{b.source === "ci" ? `#${b.id}` : b.sourceId}</span>
               <span className="title">{b.title}</span>
               <span className="meta">
+                {b.newIn && <span className="chip accent" title={b.newIn === "ci" ? "First seen in the latest CI run" : "First reported in the latest audit import"}>New</span>}
                 {b.source === "ci" && <span className="chip" title={`Reported by CI. Test key: ${b.testKey}`}>CI</span>}
                 {b.ci?.lastStatus && (
                   <span className="chip" style={{ color: CI_STATUS_COLOR[b.ci.lastStatus] }} title="The latest CI result of this test">
@@ -463,6 +482,61 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
         </ConfirmModal>
       )}
     </Modal>
+  );
+}
+
+// ---------- Latest runs ----------
+
+/** Today as a time of day ("10:15"), otherwise as a date ("3 Nov"). */
+function whenShort(s: string | null | undefined): string {
+  const d = parseDate(s);
+  if (!d) return "—";
+  return d.toDateString() === new Date().toDateString()
+    ? d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+    : d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
+/**
+ * The latest CI run and the latest audit import of the project, and how many bugs came with each. "N new" shows exactly those bugs.
+ * A bug is new when it first appeared in that latest run or import; a newer run or import makes the earlier ones' bugs old.
+ */
+function LatestRunsStrip({ r, onShowNew }: { r: LatestRuns; onShowNew: (kind: "ci" | "audit") => void }) {
+  if (!r.ci && !r.audit && !r.manual) return null;
+  const newCount = (n: number, kind: "ci" | "audit", what: string) =>
+    n > 0
+      ? <button className="btn sm" onClick={() => onShowNew(kind)} aria-label={`${n} new ${n === 1 ? "bug" : "bugs"} from the latest ${what}: show ${n === 1 ? "it" : "them"}`} title={`Show the bugs that came with this ${what}`}>{n} new</button>
+      : <span className="faint">0 new</span>;
+  const sep = <span className="faint" aria-hidden="true">·</span>;
+  const row = { gap: 8, flexWrap: "wrap" as const, minHeight: 24 };
+  return (
+    <section aria-label="Latest runs" style={{ flexShrink: 0, padding: "6px 16px 6px 20px", borderBottom: "1px solid var(--border)", display: "grid", gap: 2, fontSize: "var(--fs-md)" }}>
+      {r.ci && (
+        <div className="row" style={row}>
+          <strong style={{ fontWeight: 500 }}>Latest CI run</strong>
+          {sep}<span title={formatDateTime(r.ci.receivedAt)}>{whenShort(r.ci.receivedAt)}</span>
+          {r.ci.branch && <>{sep}<span className="mono">{r.ci.branch}</span></>}
+          {r.ci.commit && <>{sep}<span className="mono">{r.ci.commit.slice(0, 8)}</span></>}
+          {sep}<span className="faint">{r.ci.counts.passed} passed{r.ci.counts.failed > 0 && `, ${r.ci.counts.failed} failed`}{r.ci.counts.flaky > 0 && `, ${r.ci.counts.flaky} flaky`}</span>
+          {sep}{newCount(r.ci.newCount, "ci", "CI run")}
+          {r.ci.pipelineUrl && <CiLink url={r.ci.pipelineUrl}>run</CiLink>}
+        </div>
+      )}
+      {r.audit && (
+        <div className="row" style={row}>
+          <strong style={{ fontWeight: 500 }}>Latest audit</strong>
+          {sep}<span title={formatDateTime(r.audit.importedAt)}>{whenShort(r.audit.importedAt)}</span>
+          {sep}<span style={{ overflowWrap: "anywhere" }}>{r.audit.auditTitle}</span>
+          {sep}{newCount(r.audit.newCount, "audit", "audit import")}
+        </div>
+      )}
+      {r.manual && (
+        <div className="row" style={row}>
+          <strong style={{ fontWeight: 500 }}>Latest manual</strong>
+          {sep}<span title={formatDateTime(r.manual.at)}>{whenShort(r.manual.at)}</span>
+          {sep}<span style={{ overflowWrap: "anywhere" }}>{r.manual.title}</span>
+        </div>
+      )}
+    </section>
   );
 }
 
