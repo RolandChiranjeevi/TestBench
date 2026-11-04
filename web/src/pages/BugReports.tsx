@@ -210,7 +210,7 @@ export function BugReportsPage() {
               <span className="id mono truncate" style={{ width: 88 }} title={b.testKey ?? b.sourceId}>{b.source === "ci" ? `#${b.id}` : b.sourceId}</span>
               <span className="title">{b.title}</span>
               <span className="meta">
-                {b.newIn && <span className="chip accent" title={b.newIn === "ci" ? "First seen in the latest CI run" : "First reported in the latest audit import"}>New</span>}
+                {b.newIn && <span className="chip accent" title={newWhy(b.newIn, data?.latestRuns)}>New</span>}
                 {b.source === "ci" && <span className="chip" title={`Reported by CI. Test key: ${b.testKey}`}>CI</span>}
                 {b.ci?.lastStatus && (
                   <span className="chip" style={{ color: CI_STATUS_COLOR[b.ci.lastStatus] }} title="The latest CI result of this test">
@@ -488,12 +488,18 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
 // ---------- Latest runs ----------
 
 /** Today as a time of day ("10:15"), otherwise as a date ("3 Nov"). */
-function whenShort(s: string | null | undefined): string {
+export function whenShort(s: string | null | undefined): string {
   const d = parseDate(s);
   if (!d) return "—";
   return d.toDateString() === new Date().toDateString()
     ? d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
     : d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
+/** Why a bug is marked New: names the run or import it came with, so the marker explains itself. */
+function newWhy(kind: "ci" | "audit", r: LatestRuns | undefined): string {
+  if (kind === "ci") return `First seen in the latest CI run${r?.ci ? ` (${[whenShort(r.ci.receivedAt), r.ci.branch, r.ci.commit.slice(0, 8)].filter(Boolean).join(" · ")})` : ""}. It stops being new when a newer run arrives.`;
+  return `First reported in the latest audit import${r?.audit ? ` (${whenShort(r.audit.importedAt)} · ${r.audit.auditTitle})` : ""}. It stops being new when a newer import arrives.`;
 }
 
 /**
