@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Bug, Check, EyeOff, ExternalLink, FileText, FolderOpen, Link2, Paperclip, Pencil, Send, Settings, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, Bug, Check, EyeOff, ExternalLink, FileText, FolderOpen, KeyRound, Link2, Paperclip, Pencil, Send, Settings, Trash2, Upload } from "lucide-react";
 import { api, formatDateTime, timeAgo, type Priority } from "../api";
 import { ConfirmModal, Empty, ListSkeleton, Modal, PriorityIcon, PRIORITY_LABEL, useToast } from "../components/ui";
 
@@ -9,7 +9,26 @@ type Status = "proposed" | "accepted" | "rejected" | "duplicate";
 interface Item {
   id: number; sourceId: string; title: string; status: Status; severity: Priority | null; foundAt: string | null; importedAt: string;
   auditTitle: string; auditDeleted: boolean; unresolvedRefs: number; attachments: number; attachmentProblems: number; pendingUpdate: boolean; published: boolean; presence: Presence;
+  source: Source; testKey: string | null; tags: string[]; workflowStatus: Workflow; assignee: string;
+  ci: { lastStatus: CiStatus | null; lastAt: string | null; flaky: boolean; failedRuns: number; branch: string; commit: string; pipelineUrl: string } | null;
 }
+type Source = "ci" | "agent_audit" | "manual";
+type Workflow = "open" | "resolved_suspected" | "closed";
+type CiStatus = "passed" | "failed" | "flaky";
+interface CiHistoryItem {
+  id: number; status: CiStatus; error: string; durationMs: number | null; steps: string[]; attachments: { name: string; url: string; type: string }[];
+  runId: string; commit: string; branch: string; repository: string; pipelineUrl: string; at: string;
+}
+interface CiDetail {
+  testKey: string; lastStatus: CiStatus | null; lastAt: string | null; flaky: boolean; failedRuns: number; flakyRuns: number;
+  branches: { branch: string; status: CiStatus; commit: string; pipelineUrl: string; at: string }[]; lastFailure: CiHistoryItem | null; history: CiHistoryItem[];
+}
+const SOURCE_LABEL: Record<Source, string> = { ci: "CI", agent_audit: "Agent audit", manual: "Manual" };
+const WORKFLOW_LABEL: Record<Workflow, string> = { open: "Open", resolved_suspected: "May be resolved", closed: "Closed" };
+const CI_STATUS_LABEL: Record<CiStatus, string> = { passed: "Passed", failed: "Failed", flaky: "Flaky" };
+const CI_STATUS_COLOR: Record<CiStatus, string> = { passed: "var(--passed-fg)", failed: "var(--failed-fg)", flaky: "var(--blocked-fg)" };
+const shortSha = (s: string) => s.slice(0, 7);
+const safeLink = (u: string) => /^https?:\/\//i.test(u);
 /** Where a report stands against the latest run of its audit. */
 type Presence = "present" | "missing" | "no_later_run";
 interface RunRef { run: number; importId: number; importedAt: string; source: string; recorded: boolean; github: { repo: string; runId: number; url: string } | null }
@@ -22,12 +41,14 @@ interface Detail {
   title: string; description: string; steps: string[]; expected: string; actual: string; environment: string; url: string;
   severity: { tool: { tool: string; value: string; ruleId?: string } | null; agent: Priority | null; human: Priority | null; effective: Priority | null };
   confidence: number | null; agentReview: { status: string; method: string; notes: string } | null; foundAt: string | null; importedAt: string; fingerprint: string;
-  origin: { title?: string; agent?: { name?: string; version?: string; model?: string }; review?: { status: string; method: string; reviewer: string } | null; source?: string; github?: { repo: string; runId: number } | null };
+  origin: { repository?: string; title?: string; agent?: { name?: string; version?: string; model?: string }; review?: { status: string; method: string; reviewer: string } | null; source?: string; github?: { repo: string; runId: number } | null };
   originAuditId: string; audit: { id: number; title: string; run_state: string; has_report: number } | null; runId: number | null;
   refs: Ref[]; attachments: Attachment[]; revisions: { rev: number; imported_at: string }[]; latestRun: LatestRun;
   pendingUpdate: { rev: number; changes: { field: string; from: string; to: string }[]; evidenceAdded: number; evidenceRemoved: number } | null;
   duplicateOf: { id: number; title: string } | null; duplicates: { id: number; title: string }[]; similar: { id: number; title: string; status: string }[];
   publications: Publication[];
+  source: Source; testKey: string | null; tags: string[]; workflowStatus: Workflow; assignee: string; resolvedSuspectedAt: string | null; closedAt: string | null;
+  ci: CiDetail | null; events: { at: string; actor: string; kind: string; detail: string }[];
 }
 interface Publication {
   id: number; destination: string; destination_ref: string; mode: string; state: string; external_id: string; external_url: string;
@@ -86,10 +107,16 @@ export function BugReportsPage() {
   const [importing, setImporting] = useState(false);
   const [destinationOpen, setDestinationOpen] = useState(false);
   const [presence, setPresence] = useState<"" | Presence>("");
+  const [filter, setFilter] = useState({ source: "", workflow: "", severity: "", tag: "", testKey: "" });
+  const [tokensOpen, setTokensOpen] = useState(false);
   const { data: dest } = useQuery({ queryKey: ["destination", pid], queryFn: () => api.get<{ destination: Destination | null; serverKey: boolean }>(`/api/projects/${pid}/destination`) });
   const open = Number(params.get("bug")) || null;
   const statusParam = tab === "audits" ? "proposed" : tab;
-  const { data, isLoading } = useQuery({ queryKey: ["bug-reports", pid, statusParam, presence], queryFn: () => api.get<List>(`/api/projects/${pid}/bug-reports?status=${statusParam}${presence ? `&presence=${presence}` : ""}`), placeholderData: keepPreviousData });
+  const query = new URLSearchParams({ status: statusParam });
+  if (presence) query.set("presence", presence);
+  for (const [k, v] of Object.entries(filter)) if (v.trim()) query.set(k, v.trim());
+  const filtered = Object.values(filter).some((v) => v.trim());
+  const { data, isLoading } = useQuery({ queryKey: ["bug-reports", pid, statusParam, presence, filter], queryFn: () => api.get<List>(`/api/projects/${pid}/bug-reports?${query}`), placeholderData: keepPreviousData });
   const counts = data?.counts ?? {};
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   const setOpen = (id: number | null) => setParams((p) => { if (id) p.set("bug", String(id)); else p.delete("bug"); return p; }, { replace: true });
@@ -102,6 +129,7 @@ export function BugReportsPage() {
         <button className="btn" onClick={() => setDestinationOpen(true)} title="Where accepted reports are published">
           <Settings size={14} /> {dest?.destination ? `Linear · ${dest.destination.team.key}` : "Set up publishing"}
         </button>
+        <button className="btn" onClick={() => setTokensOpen(true)} title="API tokens that let your CI send test results here"><KeyRound size={14} /> CI</button>
         <button className="btn primary" onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</button>
       </div>
       <div className="toolbar">
@@ -125,6 +153,26 @@ export function BugReportsPage() {
           </>
         )}
       </div>
+      {tab !== "audits" && (
+        <div className="toolbar" style={{ gap: 8 }}>
+          <select className="select" style={{ width: "auto" }} aria-label="Source" value={filter.source} onChange={(e) => setFilter({ ...filter, source: e.target.value })}>
+            <option value="">Source: any</option>
+            {(Object.keys(SOURCE_LABEL) as Source[]).map((s) => <option key={s} value={s}>{SOURCE_LABEL[s]}</option>)}
+          </select>
+          <select className="select" style={{ width: "auto" }} aria-label="Workflow status" value={filter.workflow} onChange={(e) => setFilter({ ...filter, workflow: e.target.value })}>
+            <option value="">Workflow: any</option>
+            {(Object.keys(WORKFLOW_LABEL) as Workflow[]).map((s) => <option key={s} value={s}>{WORKFLOW_LABEL[s]}</option>)}
+          </select>
+          <select className="select" style={{ width: "auto" }} aria-label="Severity" value={filter.severity} onChange={(e) => setFilter({ ...filter, severity: e.target.value })}>
+            <option value="">Severity: any</option>
+            {(["critical", "high", "medium", "low"] as const).map((s) => <option key={s} value={s}>{PRIORITY_LABEL[s]}</option>)}
+            <option value="none">Not set</option>
+          </select>
+          <input className="input" style={{ width: 130 }} aria-label="Tag" placeholder="Tag" value={filter.tag} onChange={(e) => setFilter({ ...filter, tag: e.target.value })} />
+          <input className="input" style={{ width: 220 }} aria-label="Test key" placeholder="Test key (exact)" value={filter.testKey} onChange={(e) => setFilter({ ...filter, testKey: e.target.value })} />
+          {filtered && <button className="btn ghost sm" onClick={() => setFilter({ source: "", workflow: "", severity: "", tag: "", testKey: "" })}>Clear filters</button>}
+        </div>
+      )}
       <div className="content">
         {tab === "audits" ? (
           <AuditsPanel pid={pid!} />
@@ -133,7 +181,7 @@ export function BugReportsPage() {
         ) : !data?.items.length ? (
           <Empty
             icon={<Bug size={20} />}
-            title={presence ? "No reports match this run filter" : tab === "proposed" ? "Nothing waiting for review" : "No bug reports here"}
+            title={presence || filtered ? "No reports match these filters" : tab === "proposed" ? "Nothing waiting for review" : "No bug reports here"}
             action={<button className="btn" onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</button>}
           >
             Reports from a test agent arrive as proposals. Nothing is accepted or sent anywhere until you decide.
@@ -141,9 +189,23 @@ export function BugReportsPage() {
         ) : (
           data.items.map((b) => (
             <button key={b.id} className="list-row" style={{ width: "100%", textAlign: "left" }} onClick={() => setOpen(b.id)}>
-              <span className="id mono truncate" style={{ width: 88 }} title={b.sourceId}>{b.sourceId}</span>
+              <span className="id mono truncate" style={{ width: 88 }} title={b.testKey ?? b.sourceId}>{b.source === "ci" ? `#${b.id}` : b.sourceId}</span>
               <span className="title">{b.title}</span>
               <span className="meta">
+                {b.source === "ci" && <span className="chip" title={`Reported by CI. Test key: ${b.testKey}`}>CI</span>}
+                {b.ci?.lastStatus && (
+                  <span className="chip" style={{ color: CI_STATUS_COLOR[b.ci.lastStatus] }} title="The latest CI result of this test">
+                    {CI_STATUS_LABEL[b.ci.lastStatus]}{b.ci.failedRuns > 0 && ` · ${b.ci.failedRuns} failed run${b.ci.failedRuns === 1 ? "" : "s"}`}
+                  </span>
+                )}
+                {b.ci?.flaky && b.ci.lastStatus !== "flaky" && <span className="chip" style={{ color: "var(--blocked-fg)" }} title="The test passed on retry, so it is unstable. It starts at low severity.">Flaky</span>}
+                {b.ci?.branch && <span className="chip mono" title={`Latest failure: ${b.ci.branch} at ${b.ci.commit}`}>{b.ci.branch}{b.ci.commit && ` · ${shortSha(b.ci.commit)}`}</span>}
+                {b.workflowStatus !== "open" && (
+                  <span className="chip" style={b.workflowStatus === "resolved_suspected" ? { color: "var(--passed-fg)" } : undefined} title={b.workflowStatus === "resolved_suspected" ? "The test is green again. Check it and close the bug if it is fixed." : "Closed"}>
+                    {WORKFLOW_LABEL[b.workflowStatus]}
+                  </span>
+                )}
+                {b.assignee && <span className="chip" title="Assigned to">{b.assignee}</span>}
                 {b.pendingUpdate && <span className="chip accent" title="The agent sent a newer version. Review it.">Update waiting</span>}
                 {b.unresolvedRefs > 0 && <span className="chip" title="References that match no requirement or test case in this project"><AlertTriangle size={11} /> {b.unresolvedRefs} unresolved</span>}
                 {(b.attachments > 0 || b.attachmentProblems > 0) && (
@@ -164,6 +226,7 @@ export function BugReportsPage() {
       {open && <DetailModal id={open} pid={pid!} onClose={() => setOpen(null)} onOpen={setOpen} />}
       {importing && <ImportModal pid={pid!} onClose={() => setImporting(false)} />}
       {destinationOpen && <DestinationModal pid={pid!} onClose={() => setDestinationOpen(false)} />}
+      {tokensOpen && <CiTokensModal pid={pid!} onClose={() => setTokensOpen(false)} />}
     </>
   );
 }
@@ -205,7 +268,7 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
 
   return (
     <Modal
-      title={<span className="row" style={{ gap: 8 }}><span className="mono faint">{b.sourceId}</span><StatusChip status={b.status} /></span>}
+      title={<span className="row" style={{ gap: 8 }}>{b.source === "ci" ? <span className="chip">CI</span> : <span className="mono faint">{b.sourceId}</span>}<StatusChip status={b.status} /></span>}
       onClose={onClose}
       width={820}
       footer={
@@ -248,10 +311,13 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
             <button className="btn" onClick={() => setPublishing(true)}><Send size={14} /> Publish to Linear…</button>
           )}
         </div>
-        <RunStanding r={b.latestRun} />
+        {b.source === "agent_audit" && <RunStanding r={b.latestRun} />}
         {b.reviewNote && <div className="faint">Note: {b.reviewNote}{b.reviewedAt ? ` · ${timeAgo(b.reviewedAt)}` : ""}</div>}
         {b.duplicateOf && <div>Duplicate of <button className="btn ghost sm" onClick={() => onOpen(b.duplicateOf!.id)}>{b.duplicateOf.title}</button></div>}
         <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>Accepting is only your decision in Testbench. Publishing to Linear is a separate step: you get a preview of exactly what is sent and approve it first.</div>
+
+        <TriageCard b={b} onChange={(body) => post("triage", body)} />
+        {b.ci && <CiSection ci={b.ci} workflow={b.workflowStatus} />}
 
         {/* Three separate judgements */}
         <div className="card" style={{ padding: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
@@ -345,6 +411,31 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
         )}
         {b.duplicates.length > 0 && <div className="faint">Marked as duplicates of this: {b.duplicates.map((d) => d.title).join(", ")}</div>}
 
+        {b.events.length > 0 && (
+          <div className="field">
+            <div className="section-label">Workflow history</div>
+            <div style={{ display: "grid", gap: 2, fontSize: "var(--fs-md)" }}>
+              {b.events.map((e, i) => (
+                <div key={i} className="row" style={{ gap: 8, alignItems: "baseline" }}>
+                  <span className="faint" style={{ minWidth: 76 }} title={formatDateTime(e.at)}>{timeAgo(e.at)}</span>
+                  <span className="chip">{e.actor === "ci" ? "CI" : "You"}</span>
+                  <span style={{ overflowWrap: "anywhere" }}>{e.detail}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {b.source === "ci" ? (
+          <div className="field">
+            <div className="section-label"><FileText size={12} /> Where it came from</div>
+            <div className="faint" style={{ fontSize: "var(--fs-md)", display: "grid", gap: 2 }}>
+              <div>Reported by CI{b.origin.repository ? ` for ${b.origin.repository}` : ""}. One report per test: every failing run, branch and commit is added to it.</div>
+              <div>Test key: <span className="mono" style={{ overflowWrap: "anywhere" }}>{b.testKey}</span></div>
+              <div>First seen {timeAgo(b.importedAt)}</div>
+            </div>
+          </div>
+        ) : (
         <div className="field">
           <div className="section-label"><FileText size={12} /> Where it came from</div>
           <div className="faint" style={{ fontSize: "var(--fs-md)", display: "grid", gap: 2 }}>
@@ -358,6 +449,7 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
             <div>{b.revisions.length} revision{b.revisions.length === 1 ? "" : "s"} received</div>
           </div>
         </div>
+        )}
       </div>
       {publishing && <PublishModal id={id} pid={pid} onClose={() => setPublishing(false)} />}
       {deleting && (
@@ -368,6 +460,176 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
           onConfirm={() => run(() => api.del(`/api/bug-reports/${id}${guarded ? "?force=1" : ""}`), "Deleted").then(() => { setDeleting(false); onClose(); })}
         >
           <p style={{ margin: 0 }}>This removes the report and its evidence files from Testbench.{guarded ? " It is accepted or linked to an external issue; that issue is not touched." : ""} If the agent sends the same package again, it will come back as a new proposal.</p>
+        </ConfirmModal>
+      )}
+    </Modal>
+  );
+}
+
+// ---------- Workflow and CI ----------
+
+/** Where the bug stands (open, may be resolved, closed) and who has it. Only a person changes these, and CI never closes a bug. */
+function TriageCard({ b, onChange }: { b: Detail; onChange: (body: { assignee?: string; workflowStatus?: Workflow }) => void }) {
+  return (
+    <div className="card" style={{ padding: 12, display: "grid", gap: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+        <div>
+          <label className="section-label" htmlFor="workflow">Workflow</label>
+          <select id="workflow" className="select" value={b.workflowStatus} onChange={(e) => onChange({ workflowStatus: e.target.value as Workflow })}>
+            {(Object.keys(WORKFLOW_LABEL) as Workflow[]).map((s) => <option key={s} value={s}>{WORKFLOW_LABEL[s]}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="section-label" htmlFor="assignee">Assigned to</label>
+          <input
+            key={b.assignee} id="assignee" className="input" defaultValue={b.assignee} placeholder="Unassigned" maxLength={100}
+            onBlur={(e) => { if (e.target.value.trim() !== b.assignee) onChange({ assignee: e.target.value }); }}
+            onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+          />
+        </div>
+      </div>
+      {b.workflowStatus === "resolved_suspected" && (
+        <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+          <span style={{ flex: 1, minWidth: 220 }}>
+            The test is green again{b.resolvedSuspectedAt ? ` (${timeAgo(b.resolvedSuspectedAt)})` : ""}. CI never closes a bug: check it and decide.
+          </span>
+          <button className="btn primary sm" onClick={() => onChange({ workflowStatus: "closed" })}>Close bug</button>
+          <button className="btn sm" onClick={() => onChange({ workflowStatus: "open" })}>Still a problem</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CiLink({ url, children }: { url: string; children: React.ReactNode }) {
+  return safeLink(url) ? <a href={url} target="_blank" rel="noreferrer noopener">{children} <ExternalLink size={11} /></a> : <>{children}</>;
+}
+
+/** What CI has reported about this bug's test: the latest failure with its error and links, each branch, and the history of runs. */
+function CiSection({ ci, workflow }: { ci: CiDetail; workflow: Workflow }) {
+  const [all, setAll] = useState(false);
+  const f = ci.lastFailure;
+  const history = all ? ci.history : ci.history.slice(0, 8);
+  return (
+    <div className="field">
+      <div className="section-label">CI</div>
+      <div className="col" style={{ gap: 10 }}>
+        <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+          {ci.lastStatus && <span className="chip" style={{ color: CI_STATUS_COLOR[ci.lastStatus] }}>Latest: {CI_STATUS_LABEL[ci.lastStatus]}</span>}
+          <span className="chip">{ci.failedRuns} failed run{ci.failedRuns === 1 ? "" : "s"}</span>
+          {ci.flakyRuns > 0 && <span className="chip" style={{ color: "var(--blocked-fg)" }}>{ci.flakyRuns} flaky</span>}
+          {ci.flaky && <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>Flaky tests start at low severity and are never raised by CI.</span>}
+          {workflow === "closed" && <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>Closed. A new failure will open it again.</span>}
+        </div>
+        {f && (
+          <div className="col" style={{ gap: 6 }}>
+            <div className="row" style={{ gap: 8, flexWrap: "wrap", fontSize: "var(--fs-md)" }}>
+              <strong>Latest {f.status === "flaky" ? "flaky result" : "failure"}</strong>
+              <span className="mono">{f.branch || "unknown branch"}{f.commit && ` · ${shortSha(f.commit)}`}</span>
+              <span className="faint" title={formatDateTime(f.at)}>{timeAgo(f.at)}</span>
+              {f.pipelineUrl && <CiLink url={f.pipelineUrl}>CI run</CiLink>}
+            </div>
+            {f.error && <pre className="mono" style={{ margin: 0, padding: 10, maxHeight: 200, overflow: "auto", whiteSpace: "pre-wrap", overflowWrap: "anywhere", border: "1px solid var(--border)", borderRadius: "var(--radius)", background: "var(--bg-subtle, transparent)" }}>{f.error}</pre>}
+            {f.attachments.length > 0 && (
+              <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+                <Paperclip size={12} />
+                {f.attachments.map((a, i) => <span key={i} className="row" style={{ gap: 4 }}><span className="chip">{a.type || "file"}</span><CiLink url={a.url}>{a.name}</CiLink></span>)}
+              </div>
+            )}
+          </div>
+        )}
+        {ci.branches.length > 0 && (
+          <div>
+            <div className="section-label">By branch (latest result)</div>
+            <div style={{ display: "grid", gap: 2, fontSize: "var(--fs-md)" }}>
+              {ci.branches.map((x) => (
+                <div key={x.branch} className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                  <span className="chip" style={{ color: CI_STATUS_COLOR[x.status], minWidth: 64 }}>{CI_STATUS_LABEL[x.status]}</span>
+                  <span className="mono">{x.branch || "unknown branch"}{x.commit && ` · ${shortSha(x.commit)}`}</span>
+                  <span className="faint">{timeAgo(x.at)}</span>
+                  {x.pipelineUrl && <CiLink url={x.pipelineUrl}>CI run</CiLink>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {ci.history.length > 0 && (
+          <div>
+            <div className="section-label">History ({ci.history.length}{ci.history.length === 100 ? "+" : ""})</div>
+            <div style={{ display: "grid", gap: 2, fontSize: "var(--fs-md)" }}>
+              {history.map((h) => (
+                <div key={h.id} className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                  <span className="chip" style={{ color: CI_STATUS_COLOR[h.status], minWidth: 64 }}>{CI_STATUS_LABEL[h.status]}</span>
+                  <span className="mono">{h.branch || "unknown branch"}{h.commit && ` · ${shortSha(h.commit)}`}</span>
+                  <span className="faint" title={formatDateTime(h.at)}>{timeAgo(h.at)}</span>
+                  {h.pipelineUrl && <CiLink url={h.pipelineUrl}>CI run</CiLink>}
+                  {h.error && <span className="faint truncate" style={{ maxWidth: 360 }} title={h.error}>{h.error.split("\n")[0]}</span>}
+                </div>
+              ))}
+            </div>
+            {ci.history.length > 8 && <button className="btn ghost sm" style={{ marginTop: 4 }} onClick={() => setAll(!all)}>{all ? "Show fewer" : `Show all ${ci.history.length}`}</button>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface CiToken { id: number; name: string; prefix: string; createdAt: string; lastUsedAt: string | null; revokedAt: string | null }
+
+/** API tokens for CI. A token is shown once, when it is made; only a hash is kept. */
+function CiTokensModal({ pid, onClose }: { pid: string; onClose: () => void }) {
+  const toast = useToast();
+  const qc = useQueryClient();
+  const { data: tokens } = useQuery({ queryKey: ["ci-tokens", pid], queryFn: () => api.get<CiToken[]>(`/api/projects/${pid}/ci/tokens`) });
+  const [name, setName] = useState("GitHub Actions");
+  const [made, setMade] = useState<string | null>(null);
+  const [revoking, setRevoking] = useState<CiToken | null>(null);
+  const reload = () => qc.invalidateQueries({ queryKey: ["ci-tokens", pid] });
+  const create = () => api.post<{ token: string }>(`/api/projects/${pid}/ci/tokens`, { name }).then((r) => { setMade(r.token); reload(); }).catch((e: Error) => toast("error", e.message));
+  const copy = (text: string) => { try { void navigator.clipboard.writeText(text).then(() => toast("success", "Copied"), () => toast("error", "Could not copy")); } catch { toast("error", "Could not copy"); } };
+  const active = (tokens ?? []).filter((t) => !t.revokedAt);
+  return (
+    <Modal title="CI: send test results here" onClose={onClose} width={640} footer={<><span className="spacer" /><button className="btn" onClick={onClose}>Close</button></>}>
+      <div className="col" style={{ gap: 14 }}>
+        <div className="faint" style={{ fontSize: "var(--fs-md)" }}>
+          Your CI posts test results to <span className="mono">/api/projects/{pid}/ci/test-results</span> with <span className="mono">Authorization: Bearer &lt;token&gt;</span>.
+          A failed test becomes one bug, keyed by its test key; later failures are added to it. A test that turns green is only marked "may be resolved". A token works for this project only.
+        </div>
+        {made && (
+          <div className="card" style={{ padding: 12, borderColor: "var(--accent)", display: "grid", gap: 8 }}>
+            <strong>Copy the token now. It is not shown again.</strong>
+            <div className="row" style={{ gap: 8 }}>
+              <input className="input grow mono" readOnly aria-label="New token" value={made} onFocus={(e) => e.currentTarget.select()} />
+              <button className="btn" onClick={() => copy(made)}>Copy</button>
+            </div>
+            <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>Store it as a secret in your CI (for GitHub Actions: <span className="mono">TESTBENCH_TOKEN</span>), never in the code. Project number for <span className="mono">TESTBENCH_PROJECT_ID</span>: <span className="mono">{pid}</span>.</div>
+          </div>
+        )}
+        <div className="row" style={{ gap: 8 }}>
+          <input className="input grow" aria-label="Token name" maxLength={80} value={name} onChange={(e) => setName(e.target.value)} placeholder="Name, for example GitHub Actions" />
+          <button className="btn primary" disabled={!name.trim()} onClick={create}><KeyRound size={14} /> Create token</button>
+        </div>
+        <div className="field">
+          <div className="section-label">Tokens</div>
+          {!tokens?.length && <span className="faint">No tokens yet.</span>}
+          {tokens?.map((t) => (
+            <div key={t.id} className="row" style={{ gap: 8, padding: "3px 0", flexWrap: "wrap", opacity: t.revokedAt ? 0.6 : 1 }}>
+              <strong>{t.name}</strong>
+              <span className="mono faint">{t.prefix}…</span>
+              <span className="faint">created {timeAgo(t.createdAt)}</span>
+              <span className="faint">{t.lastUsedAt ? `last used ${timeAgo(t.lastUsedAt)}` : "never used"}</span>
+              <span className="spacer" />
+              {t.revokedAt ? <span className="chip">Revoked</span> : <button className="btn sm" onClick={() => setRevoking(t)}>Revoke</button>}
+            </div>
+          ))}
+          {tokens && active.length === 0 && tokens.length > 0 && <div className="faint">No active tokens: CI cannot send results.</div>}
+        </div>
+      </div>
+      {revoking && (
+        <ConfirmModal title="Revoke this token?" confirmLabel="Revoke token" onClose={() => setRevoking(null)}
+          onConfirm={() => api.post(`/api/ci-tokens/${revoking.id}/revoke`, {}).then(() => { reload(); setRevoking(null); }).catch((e: Error) => toast("error", e.message))}>
+          <p style={{ margin: 0 }}>CI that uses “{revoking.name}” stops working at once and has to be given a new token. Bugs already created stay.</p>
         </ConfirmModal>
       )}
     </Modal>

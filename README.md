@@ -249,6 +249,14 @@ are in [docs/audit-package.md](docs/audit-package.md). How a test agent should w
 new versions instead of duplicates, is in [docs/agent-audit-guide.md](docs/agent-audit-guide.md); `npm run audit:package -- <folder> --write` fills in and
 checks a package, and `examples/agent-audit-run/` holds two runs of the same audit.
 
+### CI results as bugs
+
+Your CI can send its test results to `POST /api/projects/:id/ci/test-results` with a project token (**Bug reports → CI**). A failing test becomes one bug,
+keyed by its stable test key; the same test failing again, on any branch, is added to that bug. A test that turns green is only marked *may be resolved*:
+CI never closes a bug. Every bug has a workflow status (open, may be resolved, closed) and an assignee, separate from the review status. For GitHub Actions
+and Playwright (`test-results/results.json`) there is a ready example in `examples/github-actions/` and a one-file script, `scripts/ci-report.mjs`.
+Details, limits and what is kept: [docs/ci-integration.md](docs/ci-integration.md).
+
 ### Reports that are missing from the latest run
 
 Testbench remembers which reports each run of an audit (each import of a package with the same audit id) contained. When a report is not in the

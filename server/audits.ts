@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { db, parseJson, UPLOAD_DIR } from "./db.ts";
+import { BUG_SOURCES, bugEvents, ciDetail, WORKFLOW_STATUSES, type WorkflowStatus } from "./ci.ts";
 import type { FileBag } from "./importers/bag.ts";
 import { AuditError, hashOf, resolveOne, resolveRefs, toSqlDate, type ResolvedRef } from "./auditcommon.ts";
 export { AuditError } from "./auditcommon.ts";
@@ -366,18 +367,34 @@ const PRESENCE_EXPR = `CASE WHEN c.import_id IS NULL OR c.tracked = 0 THEN 'no_l
   WHEN EXISTS (SELECT 1 FROM bug_sightings s WHERE s.bug_report_id = b.id AND s.audit_import_id = c.import_id) THEN CASE WHEN c.n >= 2 THEN 'present' ELSE 'no_later_run' END
   ELSE 'missing' END`;
 
-export function listBugReports(projectId: number, opts: { status?: string; q?: string; presence?: string } = {}) {
+export interface BugListFilter { status?: string; q?: string; presence?: string; source?: string; workflow?: string; severity?: string; tag?: string; testKey?: string; assignee?: string }
+
+export function listBugReports(projectId: number, opts: BugListFilter = {}) {
   if (opts.presence && !PRESENCE_VALUES.includes(opts.presence as Presence)) throw new AuditError(400, `presence must be one of ${PRESENCE_VALUES.join(", ")}`);
+  if (opts.source && !(BUG_SOURCES as readonly string[]).includes(opts.source)) throw new AuditError(400, `source must be one of ${BUG_SOURCES.join(", ")}`);
+  if (opts.workflow && !(WORKFLOW_STATUSES as readonly string[]).includes(opts.workflow)) throw new AuditError(400, `workflow must be one of ${WORKFLOW_STATUSES.join(", ")}`);
+  if (opts.severity && !["low", "medium", "high", "critical", "none"].includes(opts.severity)) throw new AuditError(400, "severity must be low, medium, high, critical or none");
   const where = ["b.project_id = ?"];
   const args: (string | number)[] = [projectId];
   if (opts.status && opts.status !== "all") { where.push("b.review_status = ?"); args.push(opts.status); }
-  if (opts.q?.trim()) { where.push("(b.title LIKE ? OR b.description LIKE ? OR b.source_id LIKE ?)"); const like = `%${opts.q.trim().replace(/[%_]/g, "")}%`; args.push(like, like, like); }
+  if (opts.source) { where.push("b.source = ?"); args.push(opts.source); }
+  if (opts.workflow) { where.push("b.workflow_status = ?"); args.push(opts.workflow); }
+  if (opts.severity) where.push(opts.severity === "none" ? "COALESCE(b.human_severity, b.agent_severity) IS NULL" : "COALESCE(b.human_severity, b.agent_severity) = ?");
+  if (opts.severity && opts.severity !== "none") args.push(opts.severity);
+  if (opts.tag) { where.push("EXISTS (SELECT 1 FROM json_each(b.tags) t WHERE t.value = ?)"); args.push(opts.tag); }
+  if (opts.testKey) { where.push("b.test_key = ?"); args.push(opts.testKey); }
+  if (opts.assignee) { where.push(opts.assignee === "none" ? "b.assignee = ''" : "b.assignee = ?"); if (opts.assignee !== "none") args.push(opts.assignee); }
+  if (opts.q?.trim()) { where.push("(b.title LIKE ? OR b.description LIKE ? OR b.source_id LIKE ? OR b.test_key LIKE ?)"); const like = `%${opts.q.trim().replace(/[%_]/g, "")}%`; args.push(like, like, like, like); }
   const base = [...args];
   const baseWhere = [...where];
   if (opts.presence) { where.push(`${PRESENCE_EXPR} = ?`); args.push(opts.presence); }
   const rows = db.prepare(`
     WITH ${PRESENCE_CTE}
     SELECT b.id, b.source_id, b.title, b.review_status, b.agent_severity, b.human_severity, b.found_at, b.imported_at, b.audit_id, b.origin, b.latest_rev, b.applied_rev, b.ignored_rev,
+      b.source, b.test_key, b.tags, b.workflow_status, b.assignee, b.last_ci_status, b.last_ci_at, b.ci_flaky,
+      (SELECT COUNT(*) FROM bug_occurrences o JOIN ci_results x ON x.id = o.ci_result_id WHERE o.bug_report_id = b.id AND x.status = 'failed') AS failed_runs,
+      (SELECT r.branch || char(31) || r.commit_sha || char(31) || r.pipeline_url FROM bug_occurrences o JOIN ci_results x ON x.id = o.ci_result_id JOIN ci_runs r ON r.id = x.ci_run_id
+        WHERE o.bug_report_id = b.id ORDER BY o.id DESC LIMIT 1) AS last_occurrence,
       ${PRESENCE_EXPR} AS presence,
       (SELECT COUNT(*) FROM bug_refs r WHERE r.bug_report_id = b.id AND r.state != 'resolved') AS unresolved_refs,
       (SELECT COUNT(*) FROM bug_attachments x WHERE x.bug_report_id = b.id AND x.active = 1 AND x.state = 'stored') AS attachments,
@@ -391,7 +408,12 @@ export function listBugReports(projectId: number, opts: { status?: string; q?: s
   return {
     items: rows.map((r) => ({
       id: r.id, sourceId: r.source_id, title: r.title, status: r.review_status as ReviewStatus, severity: effective(r), foundAt: r.found_at, importedAt: r.imported_at,
-      auditTitle: json<{ title?: string }>(r.origin, {}).title ?? "", auditDeleted: r.audit_id == null,
+      auditTitle: json<{ title?: string }>(r.origin, {}).title ?? "", auditDeleted: r.audit_id == null && r.source === "agent_audit",
+      source: r.source as string, testKey: r.test_key as string | null, tags: json<string[]>(r.tags, []), workflowStatus: r.workflow_status as WorkflowStatus, assignee: r.assignee as string,
+      ci: r.source === "ci" ? (() => {
+        const [branch = "", commit = "", pipelineUrl = ""] = String(r.last_occurrence ?? "").split("\u001f");
+        return { lastStatus: r.last_ci_status as string | null, lastAt: r.last_ci_at as string | null, flaky: !!r.ci_flaky, failedRuns: r.failed_runs as number, branch, commit, pipelineUrl };
+      })() : null,
       unresolvedRefs: r.unresolved_refs, attachments: r.attachments, attachmentProblems: r.attachment_problems,
       pendingUpdate: r.latest_rev > r.applied_rev && r.latest_rev > r.ignored_rev, published: r.publications > 0, presence: r.presence as Presence,
     })),
@@ -473,6 +495,9 @@ export function getBugReport(id: number) {
     confidence: b.confidence, agentReview: json(b.agent_review, null), foundAt: b.found_at, importedAt: b.imported_at,
     fingerprint: b.fingerprint, recurrenceHint: b.recurrence_hint,
     origin: json<Record<string, any>>(b.origin, {}), originAuditId: b.origin_audit_id, audit, runId: b.run_id, resultId: b.result_id,
+    source: b.source as string, testKey: b.test_key as string | null, tags: json<string[]>(b.tags, []),
+    workflowStatus: b.workflow_status as WorkflowStatus, assignee: b.assignee as string, resolvedSuspectedAt: b.resolved_suspected_at as string | null, closedAt: b.closed_at as string | null,
+    ci: ciDetail(b as Parameters<typeof ciDetail>[0]), events: bugEvents(id),
     refs, attachments, revisions, pendingUpdate: pending,
     duplicateOf: dupOf ?? null,
     duplicates: db.prepare("SELECT id, title FROM bug_reports WHERE duplicate_of_id = ?").all(id) as { id: number; title: string }[],
