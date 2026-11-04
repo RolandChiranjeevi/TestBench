@@ -1078,7 +1078,7 @@ app.get("/api/audits/:id/report", (req, reply) => {
 
 // ---- Manual test cases proposed by a test agent (manual-tests.json in an audit package). A person reviews and runs them; nothing here runs a test. ----
 app.get("/api/projects/:id/manual-tests", (req) => {
-  const q = req.query as { status?: string; q?: string; category?: string; priority?: string; wcag?: string; presence?: string };
+  const q = req.query as { status?: string; q?: string; category?: string; priority?: string; wcag?: string; presence?: string; new?: string };
   return audited(() => listManualTests(idParam(req), q));
 });
 app.get("/api/manual-tests/:id", (req) => audited(() => getManualTest(idParam(req))));

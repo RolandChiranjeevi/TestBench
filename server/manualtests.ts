@@ -4,6 +4,7 @@ import type { ManualCategory, ManualTestItem, ParsedPackage } from "./importers/
 import { MANUAL_CATEGORIES } from "./importers/auditpackage.ts";
 import { PRIORITIES, type Viewport } from "./shapes.ts";
 import type { Presence } from "./audits.ts";
+import { newManualTests } from "./latestruns.ts";
 import { addRequirementCases, latestStatusByCase } from "./requirements.ts";
 
 /**
@@ -226,13 +227,14 @@ const json = <T>(s: string | null, fallback: T): T => parseJson<T>(s, fallback);
 const effective = (r: Record<string, any>) => (r.human_priority ?? r.agent_priority) as Priority;
 export const MANUAL_STATUSES: ManualStatus[] = ["proposed", "accepted", "rejected"];
 
-export interface ManualListOpts { status?: string; q?: string; category?: string; priority?: string; wcag?: string; presence?: string }
+export interface ManualListOpts { status?: string; q?: string; category?: string; priority?: string; wcag?: string; presence?: string; new?: string }
 
 export function listManualTests(projectId: number, opts: ManualListOpts = {}) {
   const bad = (what: string, values: readonly string[]) => new AuditError(400, `${what} must be one of ${values.join(", ")}`);
   if (opts.presence && !["present", "missing", "no_later_run"].includes(opts.presence)) throw bad("presence", ["present", "missing", "no_later_run"]);
   if (opts.category && !(MANUAL_CATEGORIES as readonly string[]).includes(opts.category)) throw bad("category", MANUAL_CATEGORIES);
   if (opts.priority && !(PRIORITIES as readonly string[]).includes(opts.priority)) throw bad("priority", PRIORITIES);
+  if (opts.new && opts.new !== "any") throw new AuditError(400, "new must be any");
   if (opts.status && opts.status !== "all" && !MANUAL_STATUSES.includes(opts.status as ManualStatus)) throw bad("status", [...MANUAL_STATUSES, "all"]);
   const where = ["m.project_id = ?"];
   const args: (string | number)[] = [projectId];
@@ -242,6 +244,8 @@ export function listManualTests(projectId: number, opts: ManualListOpts = {}) {
   if (opts.wcag === "any") where.push("json_array_length(m.wcag) > 0");
   else if (opts.wcag) { where.push("EXISTS (SELECT 1 FROM json_each(m.wcag) j WHERE j.value = ?)"); args.push(opts.wcag); }
   if (opts.q?.trim()) { where.push("(m.title LIKE ? OR m.description LIKE ? OR m.source_id LIKE ?)"); const like = `%${opts.q.trim().replace(/[%_]/g, "")}%`; args.push(like, like, like); }
+  const fresh = newManualTests(projectId);
+  if (opts.new) { where.push("m.id IN (SELECT value FROM json_each(?))"); args.push(JSON.stringify([...fresh.ids])); }
   const base = [...args];
   const baseWhere = [...where];
   if (opts.presence) { where.push(`${PRESENCE_EXPR} = ?`); args.push(opts.presence); }
@@ -264,8 +268,9 @@ export function listManualTests(projectId: number, opts: ManualListOpts = {}) {
       priority: effective(r), wcag: json<string[]>(r.wcag, []), viewports: json<Viewport[]>(r.viewports, []).map(viewportText),
       importedAt: r.imported_at, auditTitle: json<{ title?: string }>(r.origin, {}).title ?? "", auditDeleted: r.audit_id == null,
       unresolvedRefs: r.unresolved_refs, requirements: r.requirements, edited: !!r.edited_at, testCase: r.case_number ? `${r.project_key}-${r.case_number}` : null,
-      pendingUpdate: r.latest_rev > r.applied_rev && r.latest_rev > r.ignored_rev, presence: r.presence as Presence,
+      pendingUpdate: r.latest_rev > r.applied_rev && r.latest_rev > r.ignored_rev, presence: r.presence as Presence, isNew: fresh.ids.has(r.id),
     })),
+    latest: fresh.latest,
     presenceCounts,
     counts: Object.fromEntries(counts.map((c) => [c.s, c.n])) as Record<string, number>,
     wcagCriteria: [...criteria].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
