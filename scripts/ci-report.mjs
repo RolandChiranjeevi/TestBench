@@ -2,10 +2,12 @@
 // Sends the result of a Playwright run (JSON reporter) from GitHub Actions to Testbench, where failed tests become bugs.
 // One file, no dependencies: copy it into the repository whose tests you run.
 //
-//   TESTBENCH_URL=https://testbench.example.com TESTBENCH_PROJECT_ID=3 TESTBENCH_TOKEN=... node ci-report.mjs [test-results/results.json]
+//   TESTBENCH_URL=https://testbench.example.com TESTBENCH_PROJECT_ID=3 TESTBENCH_API_TOKEN=... node ci-report.mjs [test-results/results.json]
 //
-// The token comes from the environment (a GitHub secret), is sent only in the Authorization header and is never printed.
-// A failure to report is a warning, not a failed build, unless TESTBENCH_STRICT=1.
+// The token comes from the environment (a GitHub secret; TESTBENCH_TOKEN works too), is sent only in the Authorization header and is never printed.
+// A failure to report is a warning, not a failed build, unless TESTBENCH_STRICT=1. A missing, empty or invalid report is such a failure; a report
+// without any tests is reported as a notice and nothing is sent. If the failed and flaky results alone are too large for one request, nothing is sent
+// (passed and skipped results are dropped first, and a warning says so).
 //
 // Optional: TESTBENCH_RUN_SUFFIX (needed when one workflow run reports from several jobs), TESTBENCH_ARTIFACT_URL (where the uploaded
 // traces and screenshots can be found; defaults to the workflow run page), TESTBENCH_TAGS (extra tags, comma-separated).
@@ -61,11 +63,11 @@ export function resultsFromReport(report, { artifactUrl = "", extraTags = [] } =
         }
         results.push({
           testKey: key,
-          title: titlePath.join(" › "),
+          title: titlePath.join(" › ").slice(0, 500), // the server refuses longer titles, and one long title must not make it refuse the whole run
           status,
           durationMs: Math.round(attempts.reduce((s, r) => s + (r.duration ?? 0), 0)),
           error: status === "failed" || status === "flaky" ? clean(err?.message ?? err?.stack ?? failing.status).slice(0, 4000) : "",
-          steps: (failing.steps ?? []).map((s) => clean(s.title)).filter(Boolean).slice(0, 20),
+          steps: status === "failed" || status === "flaky" ? (failing.steps ?? []).map((s) => clean(s.title)).filter(Boolean).slice(0, 20) : [],
           attachments: attachments.slice(0, 20),
           tags: [...new Set([...(test.projectName ? [test.projectName] : []), ...(spec.tags ?? []), ...extraTags])].slice(0, 20),
         });
@@ -109,6 +111,31 @@ export function buildPayload(report, env = process.env, event = {}) {
   return { payload: { ...run, results }, omitted: all.length - results.length };
 }
 
+// Testbench refuses a request above 5 MiB. Stay a little under it so that the headers and rounding never tip it over.
+export const MAX_BODY_BYTES = 5 * 1024 * 1024 - 16 * 1024;
+const bytes = (x) => Buffer.byteLength(JSON.stringify(x));
+
+/**
+ * Makes the payload fit in one request. Failed and flaky results always stay; passed and skipped results are dropped when there is no room.
+ * Returns payload: null when even the failed and flaky ones alone are too large (nothing is sent then).
+ */
+export function fitPayload(payload, max = MAX_BODY_BYTES) {
+  const size = bytes(payload);
+  if (size <= max) return { payload, size, droppedGreen: 0 };
+  const important = payload.results.filter((r) => r.status === "failed" || r.status === "flaky");
+  const rest = payload.results.filter((r) => r.status !== "failed" && r.status !== "flaky");
+  let used = bytes({ ...payload, results: important });
+  if (used > max) return { payload: null, size: used, droppedGreen: rest.length };
+  const kept = [];
+  for (const r of rest) {
+    const n = bytes(r) + 1;
+    if (used + n > max) continue;
+    kept.push(r);
+    used += n;
+  }
+  return { payload: { ...payload, results: [...important, ...kept] }, size: used, droppedGreen: rest.length - kept.length };
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function send(url, token, payload) {
@@ -118,12 +145,14 @@ async function send(url, token, payload) {
       const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) });
       const text = await res.text();
       if (res.ok) return JSON.parse(text);
-      last = `HTTP ${res.status}: ${text.slice(0, 300)}`;
+      last = res.status === 413
+        ? "Testbench refused the request as too large (the limit is 5 MB per request). Send fewer passed tests or split the run."
+        : `HTTP ${res.status}: ${text.slice(0, 300)}`;
       if (res.status < 500 && res.status !== 429) break; // a refusal will not change by trying again
     } catch (e) {
       last = `could not reach Testbench (${e instanceof Error ? e.message : "network error"})`;
     }
-    await sleep(attempt * 2000);
+    await sleep(attempt * (Number(process.env.TESTBENCH_RETRY_DELAY_MS) || 2000));
   }
   throw new Error(last);
 }
@@ -137,31 +166,55 @@ async function main() {
     process.exit(strict ? 1 : 0);
   };
 
+  const reporterHint = "Add the JSON reporter: reporter: [['json', { outputFile: 'test-results/results.json' }]]";
   let report;
   try {
-    report = JSON.parse(readFileSync(file, "utf8"));
+    const raw = readFileSync(file, "utf8");
+    if (!raw.trim()) return fail(`${file} is empty (the test run probably stopped before it wrote a report). ${reporterHint}`);
+    report = JSON.parse(raw);
   } catch (e) {
-    return fail(`could not read ${file}: ${e instanceof Error ? e.message : e}. Add the JSON reporter: reporter: [['json', { outputFile: 'test-results/results.json' }]]`);
+    return fail(`could not read ${file}: ${e instanceof Error ? e.message : e}. ${reporterHint}`);
   }
+  if (!report || typeof report !== "object" || Array.isArray(report)) return fail(`${file} is not a Playwright JSON report. ${reporterHint}`);
   let event = {};
   try {
     if (process.env.GITHUB_EVENT_PATH) event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
   } catch { /* the event file is optional */ }
-  const { payload, omitted } = buildPayload(report, process.env, event);
+  const built = buildPayload(report, process.env, event);
+  const omitted = built.omitted;
+  const fit = fitPayload(built.payload);
+  const payload = fit.payload;
   if (dry) {
-    console.log(JSON.stringify(payload, null, 2));
+    console.log(JSON.stringify(payload ?? built.payload, null, 2));
     return;
   }
 
-  const { TESTBENCH_URL: base, TESTBENCH_PROJECT_ID: project, TESTBENCH_TOKEN: token } = process.env;
+  if (built.payload.results.length === 0) {
+    if (strict) return fail(`${file} contains no tests, so there is nothing to report.`);
+    console.log(`Testbench: ${file} contains no tests, so nothing was sent.`);
+    return;
+  }
+
+  const { TESTBENCH_URL: base, TESTBENCH_PROJECT_ID: project } = process.env;
+  const token = process.env.TESTBENCH_API_TOKEN || process.env.TESTBENCH_TOKEN;
   if (!token) {
     // Pull requests from forks do not get the repository's secrets. That is expected, not an error.
-    console.log("Testbench: TESTBENCH_TOKEN is not set (a pull request from a fork gets no secrets), so nothing was reported.");
+    console.log("Testbench: TESTBENCH_API_TOKEN is not set (a pull request from a fork gets no secrets), so nothing was reported.");
     return;
   }
   if (!base || !/^\d+$/.test(project ?? "")) return fail("set TESTBENCH_URL and TESTBENCH_PROJECT_ID (the number in the project's address)");
   if (omitted > 0) console.log(`::notice::Testbench: ${omitted} passed tests were left out (at most ${MAX_RESULTS} results per run).`);
+  const mb = (n) => (n / 1024 / 1024).toFixed(1);
+  if (!payload) {
+    return fail(`the failed and flaky results alone are ${mb(fit.size)} MB, above the 5 MB limit for one request, so nothing was sent. Shorten the error output of the failing tests or split the run.`);
+  }
+  if (fit.droppedGreen > 0) {
+    console.log(`::warning::Testbench: the report was larger than 5 MB, so ${fit.droppedGreen} passed or skipped results were left out. ` +
+      "A bug whose test passed may therefore not be marked as possibly resolved this time.");
+  }
 
+  const n = (st) => payload.results.filter((r) => r.status === st).length;
+  console.log(`Testbench: sending ${payload.results.length} results (${n("failed")} failed, ${n("flaky")} flaky, ${n("passed")} passed, ${n("skipped")} skipped) for ${payload.branch || "unknown branch"} at ${payload.commitSha.slice(0, 8) || "unknown commit"}.`);
   try {
     const s = await send(`${base.replace(/\/$/, "")}/api/projects/${project}/ci/test-results`, token, payload);
     const c = s.counts ?? {};

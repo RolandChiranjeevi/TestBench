@@ -603,7 +603,7 @@ function CiTokensModal({ pid, onClose }: { pid: string; onClose: () => void }) {
               <input className="input grow mono" readOnly aria-label="New token" value={made} onFocus={(e) => e.currentTarget.select()} />
               <button className="btn" onClick={() => copy(made)}>Copy</button>
             </div>
-            <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>Store it as a secret in your CI (for GitHub Actions: <span className="mono">TESTBENCH_TOKEN</span>), never in the code. Project number for <span className="mono">TESTBENCH_PROJECT_ID</span>: <span className="mono">{pid}</span>.</div>
+            <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>Store it as a secret in your CI (for GitHub Actions: <span className="mono">TESTBENCH_API_TOKEN</span>, with the address in <span className="mono">TESTBENCH_URL</span>), never in the code. Project number for <span className="mono">TESTBENCH_PROJECT_ID</span>: <span className="mono">{pid}</span>.</div>
           </div>
         )}
         <div className="row" style={{ gap: 8 }}>

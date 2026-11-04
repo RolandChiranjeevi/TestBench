@@ -5,7 +5,7 @@ import { db } from "../server/db.ts";
 import { makeProject } from "./helpers.ts";
 import { ingestCiResults } from "../server/ci.ts";
 // @ts-expect-error a plain .mjs script without types
-import { buildPayload, testKeyOf } from "../scripts/ci-report.mjs";
+import { buildPayload, fitPayload, MAX_BODY_BYTES, testKeyOf } from "../scripts/ci-report.mjs";
 
 // A trimmed Playwright JSON report: one passing test, one failing test with a trace and a screenshot, one flaky test and one skipped.
 const report = {
@@ -70,6 +70,24 @@ describe("scripts/ci-report.mjs", () => {
     const twice = { suites: [{ title: "a.spec.ts", file: "a.spec.ts", specs: [1, 2].map(() => ({ title: "same", file: "a.spec.ts", tests: [{ projectName: "p", status: "expected", results: [{ status: "passed" }] }] })) }] };
     const keys = buildPayload(twice, env).payload.results.map((r: any) => r.testKey);
     assert.equal(new Set(keys).size, 2);
+  });
+
+  it("fits a large report in one request: passed results go first, failed and flaky ones stay, and an impossible report is not sent", () => {
+    const res = (key: string, status: string, error = "") => ({ testKey: key, title: key, status, error, steps: [], attachments: [], tags: [] });
+    const base = { runId: "r", commitSha: "c", branch: "b", repository: "o/r" };
+    const small = { ...base, results: [res("a", "failed", "boom"), res("b", "passed")] };
+    assert.deepEqual(fitPayload(small), { payload: small, size: Buffer.byteLength(JSON.stringify(small)), droppedGreen: 0 }, "a payload that fits is untouched");
+
+    const big = { ...base, results: [res("p1", "passed", "x".repeat(300)), res("f1", "failed", "boom"), res("p2", "passed", "x".repeat(300)), res("fl", "flaky", "slow"), res("s1", "skipped")] };
+    const limit = Buffer.byteLength(JSON.stringify({ ...base, results: [big.results[1], big.results[3], big.results[0]] })) + 5;
+    const fit = fitPayload(big, limit);
+    assert.deepEqual(fit.payload!.results.map((r: any) => r.testKey), ["f1", "fl", "p1"], "failed and flaky first, then as many green results as fit, in order");
+    assert.equal(fit.droppedGreen, 2, "p2 and s1 did not fit");
+    assert.ok(Buffer.byteLength(JSON.stringify(fit.payload)) <= limit);
+
+    const tooBig = fitPayload({ ...base, results: [res("f1", "failed", "y".repeat(2000)), res("p1", "passed")] }, 500);
+    assert.equal(tooBig.payload, null, "when the failed ones alone do not fit, nothing is sent");
+    assert.ok(MAX_BODY_BYTES < 5 * 1024 * 1024, "stays under the server's 5 MiB limit");
   });
 
   it("what it builds is accepted by the server and makes the bugs it should, again and again", () => {

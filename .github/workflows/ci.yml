@@ -27,6 +27,16 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      # Example of reporting test results to a Testbench instance (see docs/ci-integration.md and examples/github-actions/).
+      # This repository has no Playwright suite of its own, so the step is skipped unless test-results/results.json exists;
+      # it needs the secrets TESTBENCH_URL and TESTBENCH_API_TOKEN and the variable TESTBENCH_PROJECT_ID, and it never fails the build.
+      - name: Report test results to Testbench
+        if: always() && hashFiles('test-results/results.json') != ''
+        env:
+          TESTBENCH_URL: ${{ secrets.TESTBENCH_URL }}
+          TESTBENCH_PROJECT_ID: ${{ vars.TESTBENCH_PROJECT_ID }}
+          TESTBENCH_API_TOKEN: ${{ secrets.TESTBENCH_API_TOKEN }}
+        run: node scripts/ci-report.mjs test-results/results.json
       # Known vulnerabilities in what ships. Reported but not blocking: a new advisory should not fail an unrelated change.
       - name: Dependency audit (runtime dependencies)
         run: npm audit --omit=dev --audit-level=high

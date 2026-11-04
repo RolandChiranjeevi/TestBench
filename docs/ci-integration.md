@@ -14,6 +14,19 @@ git push → CI runs the tests → CI sends the results → Testbench makes or u
 3. Send the results. For GitHub Actions and Playwright see [the example](../examples/github-actions/testbench-report.yml) and
    [`scripts/ci-report.mjs`](../scripts/ci-report.mjs): one file without dependencies that reads `test-results/results.json` (Playwright's JSON reporter).
 
+The script reads its settings from the environment: `TESTBENCH_URL` and `TESTBENCH_API_TOKEN` (both as GitHub secrets), `TESTBENCH_PROJECT_ID` (a variable),
+and optionally `TESTBENCH_STRICT=1` (reporting problems fail the build), `TESTBENCH_RUN_SUFFIX`, `TESTBENCH_ARTIFACT_URL` and `TESTBENCH_TAGS`. It always
+runs with `if: always()` so that failed tests are reported too. It handles problems like this, and never prints the token:
+
+| Situation | What the script does |
+| --- | --- |
+| Report missing, empty or not JSON | A warning with a hint to add Playwright's JSON reporter; nothing is sent; the build is not failed (unless strict). |
+| Report without any tests | A notice; nothing is sent. |
+| No token (a pull request from a fork gets no secrets) | A notice; nothing is sent. |
+| Report larger than 5 MB | Passed and skipped results are left out first, as many as fit are kept, and a warning says how many were left out. |
+| Failed and flaky results alone larger than 5 MB | Nothing is sent. A warning says how large they are; shorten the error output or split the run. |
+| Testbench answers 401, 413 or 5xx, or cannot be reached | A warning with the reason (401 and 413 are not retried; network errors and 5xx are tried three times). |
+
 If your Testbench is behind a domain, add it to `TESTBENCH_ALLOWED_HOSTS` (see the README). If it has a password (`TESTBENCH_PASSWORD`), the CI route still
 works without it: it never uses the login, it always requires the token.
 
@@ -115,6 +128,7 @@ latest result per branch and the history of runs. The list filters on source, wo
 
 - The route is authenticated by the token on every call. It is the only route that skips the browser guards (login cookie and `X-Testbench` header); a token opens nothing else.
 - Tokens are stored as hashes, shown once, never logged, and the list of tokens never contains them.
+- A request above 5 MB is answered `413` with `Connection: close`, after the server has read and discarded the body, so the client gets the 413 and not a reset connection. A request that declares more than 64 MB is disconnected at once. `scripts/ci-report.mjs` keeps its request under the limit by leaving out passed and skipped results first (and says so); if the failed and flaky results alone are too large it sends nothing and tells you.
 - At most 5 MB per request and 5000 results, 100 steps, 20 attachments and 20 tags per result. Errors are cut at 8000 characters.
 - Error text, steps and attachment names are scanned for things that look like credentials (bearer tokens, GitHub, AWS and Slack keys, `password=` and similar,
   `user:password@` in URLs) and those parts are replaced with `[redacted]`. This is a safety net, not a guarantee: do not let tests print secrets or production data.
