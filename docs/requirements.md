@@ -85,3 +85,48 @@ Read-only. By default it returns the **active** requirements; `?status=draft`, `
 - Use `id` in `refs.requirements` of a manual test or a bug report. It is the stable id when the requirement has one, otherwise `REQ-n`.
 - `coverage` and `links` are there so the agent can **choose and prioritise** (start with critical requirements that have no test) and avoid proposing what exists. They are counts of what people have decided plus what the agent itself proposed, **not a verdict**: there is no "met", "passing" or "fulfilled" in the export, and the agent has no way to set one.
 - The shape is the same as the import file, so an exported file can be edited and imported again, and changes nothing until it is edited.
+
+## Reading the requirements with an agent token
+
+The export above needs the login. For an agent that runs on its own there is a separate, read-only route with its own kind of token, `tbag_`
+(a CI token, `tbci_`, does not work here and an agent token does not work for CI):
+
+```
+GET /api/agent/projects/<project id>/requirements
+Authorization: Bearer <agent token>
+```
+
+It returns the **active** requirements of the token's project, five fields each, and nothing else:
+
+```json
+{
+  "format": "testbench-agent-requirements", "version": 1, "project": "SHOP", "generatedAt": "…", "filter": { "status": "active" },
+  "note": "These are the active requirements of the project. readiness only says whether acceptance criteria were found…",
+  "requirements": [ { "requirement_id": "CHECKOUT-1", "title": "…", "source": "JIRA-12", "readiness": "ready", "acceptance_criteria": ["…", "…"] } ]
+}
+```
+
+- `requirement_id` is the stable id, or `REQ-<number>` when there is none. `?kind=accessibility` narrows to one kind; `?status=active` is accepted and anything else
+  (`?status=all`, an unknown parameter) is refused with `400`.
+- **Acceptance criteria are read from the description**, because a requirement has no field for them (the editor says "Add acceptance criteria here"). A label is the words
+  *Acceptance criteria* (any case, in bold or as a heading) alone on a line, or followed by a colon. After a label alone the criteria are the list items below it; after a label
+  with a colon the text on the same line is one criterion and list items directly under it are more. No label, or a label with nothing under it, gives no criteria.
+- `readiness` is `ready` when at least one criterion was found and `needs-clarification` when none was. **It does not say that a criterion is measurable, and nothing here says that a
+  requirement is met.** The agent judges the criteria itself.
+- `401` for a missing, malformed, unknown or revoked token (and for a CI token), `403` for a valid agent token of another project, `429` after repeated wrong tokens (a limiter of its
+  own). The token opens this one route and nothing else: no other route, no write, no other project. Every other route keeps asking for the login.
+
+**Making and revoking tokens** (signed in; no screen for it yet, so with `curl`):
+
+```bash
+# 1. sign in (the cookie file holds the session; X-Testbench is required for every change)
+curl -c cookies.txt -H 'X-Testbench: 1' -H 'Content-Type: application/json' -d '{"password":"<password>"}' http://127.0.0.1:4100/api/login
+# 2. make a token: it is in this answer only, once
+curl -b cookies.txt -H 'X-Testbench: 1' -H 'Content-Type: application/json' -d '{"name":"qa-agent"}' http://127.0.0.1:4100/api/projects/<project id>/agent/tokens
+# list (prefix and dates, never the token) and revoke
+curl -b cookies.txt http://127.0.0.1:4100/api/projects/<project id>/agent/tokens
+curl -b cookies.txt -X POST -H 'X-Testbench: 1' -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:4100/api/agent-tokens/<token id>/revoke
+```
+
+Only a hash is stored, a project can have **five active tokens**, and revoking is the only way to end one (there is no expiry yet). Testbench has **no roles**: anyone who can sign in can
+make and revoke agent tokens for every project. Keep the token in an environment variable or a secret, never in a file in a repository.

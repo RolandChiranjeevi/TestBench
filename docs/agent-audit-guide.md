@@ -18,6 +18,9 @@ prioritise** what you test and to **propose manual tests** for requirements that
 curl http://127.0.0.1:4100/api/projects/<project id>/agent/requirements        # the active requirements, read-only
 ```
 
+An agent that runs on its own reads them with an **agent token** instead of the login: `GET /api/agent/projects/<project id>/requirements` with `Authorization: Bearer <token>` returns the active
+requirements with `requirement_id`, `title`, `source`, `readiness` and `acceptance_criteria` (see [requirements.md](requirements.md#reading-the-requirements-with-an-agent-token)). `readiness` only says that criteria were found, not that they are measurable.
+
 - Test the **critical and high** requirements first, and start with those where `coverage.hasTest` is `false`.
 - A requirement with `coverage.openBugs > 0` already has accepted findings: look for what is *new*, do not repeat them.
 - A requirement with `coverage.manualTestsProposed > 0` has a manual test waiting for a person; do not propose the same test again. Keep the `sourceId` if you re-send it.
