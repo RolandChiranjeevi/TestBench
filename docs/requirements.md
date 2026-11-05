@@ -109,8 +109,10 @@ It returns the **active** requirements of the token's project, five fields each,
 - `requirement_id` is the stable id, or `REQ-<number>` when there is none. `?kind=accessibility` narrows to one kind; `?status=active` is accepted and anything else
   (`?status=all`, an unknown parameter) is refused with `400`.
 - **Acceptance criteria are read from the description**, because a requirement has no field for them (the editor says "Add acceptance criteria here"). A label is the words
-  *Acceptance criteria* (any case, in bold or as a heading) alone on a line, or followed by a colon. After a label alone the criteria are the list items below it; after a label
-  with a colon the text on the same line is one criterion and list items directly under it are more. No label, or a label with nothing under it, gives no criteria.
+  *Acceptance criteria* (any case, in bold or as a heading) alone on a line, or followed by a colon. After a label alone the criteria are the list items below it, and plain text lines
+  directly under the label (no blank line between) count together as one criterion, so a sentence wrapped over several lines is one criterion; it ends at a blank line, a heading,
+  another label or a list item. After a label with a colon the text on the same line is one criterion and list items directly under it are more. No label, or a label with nothing
+  under it, gives no criteria.
 - `readiness` is `ready` when at least one criterion was found and `needs-clarification` when none was. **It does not say that a criterion is measurable, and nothing here says that a
   requirement is met.** The agent judges the criteria itself.
 - `401` for a missing, malformed, unknown or revoked token (and for a CI token), `403` for a valid agent token of another project, `429` after repeated wrong tokens (a limiter of its
