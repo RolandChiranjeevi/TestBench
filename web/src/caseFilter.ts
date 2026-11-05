@@ -39,3 +39,18 @@ export function caseCounts(cases: CaseSummary[]): Record<CaseTab | "new" | "prop
     unlinked: n(TAB_CONDITION.unlinked), new: n(isNew), proposal: n(isFromProposal),
   };
 }
+
+/**
+ * From a proposal to the test case made from it. The link opens the Test cases page with that case selected and the From agent proposal switch on.
+ * The switch travels as navigation state, not in the address: the page keeps all its other filters in memory and this does not add a URL scheme for them.
+ * A proposal without a test case gets no link.
+ */
+export interface CasesNavState { fromProposal?: boolean }
+export function proposalCaseLink(projectId: number | string, caseId: number | null | undefined): { to: string; state: CasesNavState } | null {
+  if (caseId == null) return null;
+  return { to: `/p/${projectId}/cases?case=${caseId}`, state: { fromProposal: true } };
+}
+/** Whether the page was opened from a proposal. Anything that is not exactly our state (a plain visit, an older history entry) is "no". */
+export function openedFromProposal(state: unknown): boolean {
+  return typeof state === "object" && state !== null && (state as CasesNavState).fromProposal === true;
+}

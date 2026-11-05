@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useLocation, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, BookOpenCheck, Bot, ClipboardList, Copy, Folder, FolderOpen, Inbox, Lightbulb, ListChecks, MoreHorizontal, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
 import { api, orderSuites, parseDate, type BackupInfo, type CaseDetail, type CaseSummary, type Project, type RequirementDetail, type Suite } from "../api";
 import { ConfirmModal, Empty, Kbd, Modal, PriorityIcon, StatusIcon, useHotkeys, useToast, ListSkeleton } from "../components/ui";
-import { caseCounts, filterCases, type CaseTab } from "../caseFilter";
+import { caseCounts, filterCases, openedFromProposal, type CaseTab } from "../caseFilter";
 import { CaseEditor } from "./CaseEditor";
 import { NewRunModal } from "./Runs";
 import { TemplateModal } from "./Templates";
@@ -28,6 +28,7 @@ export function CasesPage() {
   const qc = useQueryClient();
   const toast = useToast();
   const [params, setParams] = useSearchParams();
+  const location = useLocation();
   const selectedId = params.get("case") ? Number(params.get("case")) : null;
   // With the editor open the list gets narrow, so drop secondary metadata.
   const compact = selectedId != null;
@@ -47,7 +48,8 @@ export function CasesPage() {
   });
   // Two switches that combine with the tab, with each other and with the search.
   const [onlyNew, setOnlyNew] = useState(false);
-  const [onlyProposal, setOnlyProposal] = useState(false);
+  // On when the page was opened from an agent proposal (its "Test case" link), see proposalCaseLink in caseFilter.ts.
+  const [onlyProposal, setOnlyProposal] = useState(() => openedFromProposal(location.state));
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [focus, setFocus] = useState(0);
   const newFor = params.get("newFor") ? Number(params.get("newFor")) : null;
@@ -150,6 +152,13 @@ export function CasesPage() {
   const flat = useMemo(() => groups.flatMap((g) => g.items), [groups]);
 
   useEffect(() => setFocus((f) => Math.min(f, Math.max(0, flat.length - 1))), [flat.length]);
+  // Opened with a case selected (from a proposal, a link or a reload): put the list focus on that row once, so it is scrolled into view next to the open editor.
+  const focusedFor = useRef<number | null>(null);
+  useEffect(() => {
+    if (selectedId == null || focusedFor.current === selectedId) return;
+    const idx = flat.findIndex((c) => c.id === selectedId);
+    if (idx >= 0) { focusedFor.current = selectedId; setFocus(idx); }
+  }, [selectedId, flat]);
   useEffect(() => {
     listRef.current?.querySelector(".list-row.focused")?.scrollIntoView({ block: "nearest" });
   }, [focus]);
