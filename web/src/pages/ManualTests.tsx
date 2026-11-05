@@ -4,6 +4,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Check, ClipboardCheck, EyeOff, Pencil, Trash2, Upload, UserCheck } from "lucide-react";
 import { api, formatDateTime, formatViewport, timeAgo, type Priority, type Viewport } from "../api";
 import { ConfirmModal, Empty, ListSkeleton, Modal, PriorityIcon, PRIORITY_LABEL, useToast } from "../components/ui";
+import { proposalCaseLink } from "../caseFilter";
 import { ImportModal, Severity, StatusChip, useRefresh, whenShort } from "./BugReports";
 
 type Status = "proposed" | "accepted" | "rejected";
@@ -195,6 +196,7 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
   };
   const save = () => run(() => api.patch(`/api/manual-tests/${id}`, { ...draft, steps: draft.steps.split("\n").map((s) => s.trim()).filter(Boolean) }), "Saved").then(() => setEditing(false));
   const unresolved = t.refs.filter((r) => r.state !== "resolved");
+  const caseLink = proposalCaseLink(pid ?? "", t.testCase?.id);
   const field = (label: string, value: string) => value ? <div className="field"><div className="section-label">{label}</div><div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{value}</div></div> : null;
   const edited = !!t.editedAt;
   const reqRefs = t.refs.filter((r) => r.kind === "requirement");
@@ -211,11 +213,11 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
           <div className="card" style={{ padding: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <ClipboardCheck size={15} />
             <span style={{ fontSize: "var(--fs-md)" }}>
-              This is now the test case <Link to={`/p/${pid}/cases?case=${t.testCase.id}`}><strong>{t.testCase.key}</strong></Link>. Run it in Runs; edit it there.
+              This is now the test case <Link to={caseLink!.to} state={caseLink!.state}><strong>{t.testCase.key}</strong></Link>. Run it in Runs; edit it there.
               {t.testCase.lastStatus ? ` Latest result: ${t.testCase.lastStatus}.` : " It has not been run yet."}
             </span>
             <span className="spacer" />
-            <Link className="btn sm" to={`/p/${pid}/cases?case=${t.testCase.id}`}>Open the test case</Link>
+            <Link className="btn sm" to={caseLink!.to} state={caseLink!.state}>Open the test case</Link>
           </div>
         ) : (
           <div className="card" style={{ padding: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
