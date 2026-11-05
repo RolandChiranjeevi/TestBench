@@ -4,6 +4,7 @@ import { CONTRACT_VERSION, readCanonicalPackage, sha256File, validateContract, t
 import { EVIDENCE_EXT, MANUAL_CATEGORIES } from "./auditpackage.ts";
 import { checkPackageDir, type BuildReport } from "./auditbuild.ts";
 import { PRIORITIES } from "../shapes.ts";
+import { BUG_FIELD_SPEC, BugMappingError, mapBug, type MappedBug } from "./auditbugmap.ts";
 
 /**
  * Export adapter: turns a finished audit package of the qa-run audit contract (version 1.2) into the package format that
@@ -44,6 +45,8 @@ export interface ExportResult {
   contract: ContractReport;
   testbench: BuildReport;
   provenance: Json;
+  /** Everything the adapter could not map safely, with the bug_proposal_id and the field. The export is still written; nothing was made up. */
+  warnings: string[];
 }
 
 /** How a plan item's test type becomes a manual-test category of the import format. Documented in provenance.json. */
@@ -53,7 +56,6 @@ export const TYPE_TO_CATEGORY: Record<string, (typeof MANUAL_CATEGORIES)[number]
   Internationalisation: "other", Performance: "other",
 };
 const PRIORITY_RANK: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 };
-const SEVERITY = ["low", "medium", "high", "critical"];
 
 /** Field mapping from contract 1.2 to the import format, written into provenance.json as is. */
 export const FIELD_MAP = [
@@ -66,6 +68,7 @@ export const FIELD_MAP = [
   { from: "evidence/* files", to: "evidence/* and manifest.files[] {path, sha256, size}", how: "copied byte for byte; sha256 and size computed from the copy" },
   { from: "report.md", to: "report.md (parts.narrative)", how: "copied byte for byte" },
   { from: "bugs.json [array]", to: "bugs.json {version: 1, bugs: [...]}", how: "wrapped" },
+  { from: "each bug proposal field", to: "bugs[]", how: "through BUG_FIELD_SPEC (provenance.bugMapping.spec): a missing or unexpected field gives a warning with the bug_proposal_id and the field, the Testbench field is left empty, and provenance.bugMapping records it" },
   { from: "bug_proposal_id", to: "bugs[].sourceId", how: "copied" },
   { from: "title", to: "bugs[].title", how: "copied" },
   { from: "steps_to_reproduce", to: "bugs[].steps", how: "copied" },
@@ -149,45 +152,6 @@ export function manualDefaults(t: Json, m: Json, bugs: Json[]) {
   };
 }
 
-function convertBug(b: Json, m: Json, evById: Map<string, Json>) {
-  const exs = new Map<string, Json>(m.executions.map((x: Json) => [x.execution_id, x]));
-  const firstFail = (b.execution_ids ?? []).map((e: string) => exs.get(e)).find((x: Json) => x?.status === "fail");
-  const env = b.environment ?? {};
-  const link = b.requirement_link ?? {};
-  const reqId = link.requirement_id ?? b.requirement_id;
-  const severity = String(b.severity?.level ?? b.severity ?? "").toLowerCase();
-  const lines = [
-    `Converted from audit contract ${CONTRACT_VERSION} bug proposal ${b.bug_proposal_id} in audit ${m.audit_id}.`,
-    b.finding_category && `Finding category: ${b.finding_category}`,
-    reqId && `Requirement: ${reqId}${link.acceptance_criterion ? `, criterion: ${link.acceptance_criterion}` : ""}`,
-    link.test_plan_item_id && `Test plan item: ${link.test_plan_item_id}`,
-    (b.execution_ids ?? []).length && `Executions: ${b.execution_ids.join(", ")}`,
-    b.preconditions && `Preconditions: ${text(b.preconditions)}`,
-    (env.browser || env.viewport) && `Browser / viewport: ${text(env.browser)} ${text(env.viewport)}`.trim(),
-    b.reproduction_rate && `Reproduction rate: ${text(b.reproduction_rate)}`,
-    b.agent_confidence && `Agent confidence: ${text(b.agent_confidence)}`,
-    `Duplicate check: ${b.duplicate_check ?? "not stated"}${b.possible_duplicate_of ? `, possible duplicate of ${b.possible_duplicate_of}` : ""}${b.duplicate_check_notes ? ` (${b.duplicate_check_notes})` : ""}`,
-  ].filter(Boolean);
-  return {
-    sourceId: b.bug_proposal_id,
-    title: text(b.title),
-    description: lines.join("\n"),
-    steps: list(b.steps_to_reproduce ?? b.steps),
-    expected: text(b.expected_result),
-    actual: text(b.actual_result),
-    environment: typeof env === "string" ? env : text(env.test_environment),
-    url: text(typeof env === "object" ? env.url ?? b.url : b.url),
-    ...(SEVERITY.includes(severity) ? { agentSeverity: severity } : {}),
-    ...(firstFail?.finished_at ? { foundAt: firstFail.finished_at } : {}),
-    refs: { requirements: reqId ? [reqId] : [], cases: [], tests: [] },
-    evidence: (b.evidence_ids ?? [])
-      .map((id: string) => evById.get(id))
-      .filter((e: Json) => e && String(e.location).startsWith("evidence/"))
-      .slice(0, 20)
-      .map((e: Json) => ({ path: e.location, label: `${e.evidence_id}: ${text(e.description)}`.slice(0, 200) })),
-  };
-}
-
 function convertManualTest(t: Json, m: Json, bugs: Json[], generated: Json[]) {
   const d = manualDefaults(t, m, bugs);
   generated.push(
@@ -237,12 +201,23 @@ export function exportToTestbench(opts: ExportOptions): ExportResult {
   const contract = validateContract(pkg, { complete: true });
   if (!contract.ok) throw Object.assign(new ExportError(`The input is not a valid finished audit contract ${CONTRACT_VERSION} package:\n  ${contract.errors.join("\n  ")}`), { contract });
   const m = pkg.manifest;
+  const evById = new Map<string, Json>(m.evidence.map((e: Json) => [e.evidence_id, e]));
 
-  // 2. Build in a staging folder next to the output, and move it into place only when complete.
+  // 2. Map the bug proposals field by field, before anything is written. A bug that cannot be given a sourceId or a title stops the export here;
+  // any other missing or deviating field is a warning and leaves the Testbench field empty (see auditbugmap.ts).
+  let mapped: MappedBug[];
+  try {
+    mapped = pkg.bugs.map((b, i) => mapBug(b, i, m, evById));
+  } catch (e) {
+    if (e instanceof BugMappingError) throw new ExportError(`A bug proposal cannot be mapped safely, so nothing was written: ${e.message}`);
+    throw e;
+  }
+  const warnings = mapped.flatMap((x) => x.warnings);
+
+  // 3. Build in a staging folder next to the output, and move it into place only when complete.
   const staging = `${output}.partial-${process.pid}`;
   rmSync(staging, { recursive: true, force: true });
   mkdirSync(join(staging, "evidence"), { recursive: true });
-  const evById = new Map<string, Json>(m.evidence.map((e: Json) => [e.evidence_id, e]));
   const generated: Json[] = [];
   const notMapped = [...NOT_MAPPED];
 
@@ -272,7 +247,19 @@ export function exportToTestbench(opts: ExportOptions): ExportResult {
   copyFileSync(join(input, "report.md"), join(staging, "report.md"));
 
   // 6. bugs.json
-  const bugs = pkg.bugs.map((b) => convertBug(b, m, evById));
+  // Evidence that was not copied (a file type Testbench does not accept) is dropped from the bug with a warning, so bugs[].evidence never names a file that
+  // is not in manifest.files[].
+  const copied = new Set(files.map((f) => f.path));
+  for (const x of mapped) {
+    for (const e of x.bug.evidence.filter((ev: Json) => !copied.has(ev.path))) {
+      const w = `bug ${x.bug.sourceId}: evidence file ${e.path} was not exported (its file type is not accepted as evidence), so it is not in bugs[].evidence`;
+      x.warnings.push(w);
+      warnings.push(w);
+      x.report.notes.push(`${e.path} was not exported`);
+    }
+    x.bug.evidence = x.bug.evidence.filter((ev: Json) => copied.has(ev.path));
+  }
+  const bugs = mapped.map((x) => x.bug);
   writeJson(join(staging, "bugs.json"), { version: 1, bugs });
 
   // 7, 9. manual-tests.json, with generated priority and category.
@@ -309,7 +296,7 @@ export function exportToTestbench(opts: ExportOptions): ExportResult {
       path: relative(dirname(output), input) || ".",
       auditId: m.audit_id,
       contractVersion: CONTRACT_VERSION,
-      contractValidation: { ok: contract.ok, errors: contract.errors, warnings: contract.warnings, counts: contract.counts },
+      contractValidation: { ok: contract.ok, errors: contract.errors, warnings: contract.warnings, counts: contract.counts, reportCounts: contract.reportCounts },
       files: Object.fromEntries(["manifest.json", "bugs.json", "manual-tests.json", "report.md"].map((f) => [f, sha256File(join(input, f))])),
     },
     target: { importer: "server/importers/auditpackage.ts", format: "testbench-audit-package", version: 1 },
@@ -323,6 +310,8 @@ export function exportToTestbench(opts: ExportOptions): ExportResult {
     categoryMap: TYPE_TO_CATEGORY,
     generated,
     notMapped,
+    bugMapping: { spec: BUG_FIELD_SPEC, bugs: mapped.map((x) => x.report) },
+    exportWarnings: warnings,
     evidence: evidenceProv,
     delivery: "none: this export is a local folder; nothing was sent to Testbench",
   };
@@ -335,5 +324,5 @@ export function exportToTestbench(opts: ExportOptions): ExportResult {
   // 11. Testbench's own package check, the same code the import uses, without writing.
   const testbench = checkPackageDir(output, { write: false });
   const written = ["manifest.json", "bugs.json", "manual-tests.json", "report.md", "provenance.json", ...files.map((f) => f.path)];
-  return { output, files: written, contract, testbench, provenance };
+  return { output, files: written, contract, testbench, provenance, warnings };
 }

@@ -25,12 +25,23 @@ export interface CanonicalPackage {
   evidenceFiles: string[];
 }
 
+export interface ReportCounts {
+  /** Numbers read reliably from the Summary of report.md, by name: the five execution statuses, "bug proposals", "manual test proposals" and "coverage gaps". */
+  readable: Record<string, number>;
+  /** Names whose number was not found, or was stated in conflicting ways. They are not compared with the package: a warning, never an error. */
+  unreadable: { name: string; reason: string }[];
+}
+
 export interface ContractReport {
   ok: boolean;
   errors: string[];
   warnings: string[];
   counts: Record<string, number>;
+  /** What V-20 could read from report.md and what it could not (documented in provenance.json). */
+  reportCounts: ReportCounts;
 }
+
+const NO_REPORT_COUNTS: ReportCounts = { readable: {}, unreadable: [] };
 
 export class ContractError extends Error {}
 
@@ -60,6 +71,56 @@ const SCOPE_FIELDS = ["objective", "target", "included_requirement_ids", "exclud
 /** Secrets and personal data that must never be in a package (V-17). Binary evidence (images, video) is not searched. */
 const SECRET = /tbci_|tbag_|bearer\s+\S|authorization:|api[_-]?key|password\s*[:=]|set-cookie|cookie\s*[:=]|[\w.+-]+@[\w-]+\.[a-z]{2,}/i;
 const BINARY = /\.(png|jpe?g|gif|webp|mp4|webm|pdf|zip)$/i;
+
+/** The words that name each number V-20 compares, as regular expressions. */
+const COUNT_WORDS: Record<string, string> = {
+  pass: "pass(?:ed|es)?",
+  fail: "fail(?:ed|s|ures?)?",
+  blocked: "blocked",
+  skipped: "skipped",
+  inconclusive: "inconclusive",
+  "bug proposals": "bug\\s+proposals?",
+  "manual test proposals": "manual\\s+test\\s+proposals?",
+  "coverage gaps": "coverage\\s+gaps?",
+};
+
+/** The text of the Summary section: from its heading to the next heading of the same or a higher level. Null when there is none. */
+function summarySection(report: string): string | null {
+  const lines = report.split(/\r?\n/);
+  const start = lines.findIndex((l) => /^#{1,6}\s+Summary\s*#*\s*$/.test(l));
+  if (start < 0) return null;
+  const level = /^#+/.exec(lines[start])![0].length;
+  const out: string[] = [];
+  for (const l of lines.slice(start + 1)) {
+    const h = /^(#{1,6})\s+\S/.exec(l);
+    if (h && h[1].length <= level) break;
+    out.push(l);
+  }
+  return out.join("\n");
+}
+
+/**
+ * Reads the numbers of V-20 from the Summary of report.md without depending on how they are written: "**14 pass**", "14 passed",
+ * "pass: 14", a table row "| pass | 14 |", "Bug proposals = 0" and "2 manual test proposals" are all understood. A name is `readable` when exactly
+ * one number is stated for it, and `unreadable` when none is found or the Summary states more than one different number. Only the Summary is
+ * searched, so a number elsewhere in the report cannot be taken for a count. Nothing is derived or guessed from anything else.
+ */
+export function readReportCounts(report: string): ReportCounts {
+  const text = summarySection(report);
+  if (text === null) return { readable: {}, unreadable: Object.keys(COUNT_WORDS).map((name) => ({ name, reason: "the report has no Summary section" })) };
+  const plain = text.replace(/[*_`~]/g, "");
+  const readable: Record<string, number> = {};
+  const unreadable: { name: string; reason: string }[] = [];
+  for (const [name, word] of Object.entries(COUNT_WORDS)) {
+    const numbers = new Set<number>();
+    const before = new RegExp(`(?<![\\w.\\-/])(\\d+)\\s+(?:${word})\\b`, "gi"); // 14 pass
+    const after = new RegExp(`\\b(?:${word})\\b\\s*[:=|]\\s*(\\d+)\\b`, "gi"); // pass: 14, | pass | 14 |
+    for (const re of [before, after]) for (const m of plain.matchAll(re)) numbers.add(Number(m[1]));
+    if (numbers.size === 1) readable[name] = [...numbers][0];
+    else unreadable.push({ name, reason: numbers.size === 0 ? "not found" : `ambiguous: ${[...numbers].sort((a, b) => a - b).join(" and ")}` });
+  }
+  return { readable, unreadable };
+}
 
 const readJson = (path: string, name: string): Json => {
   try {
@@ -98,14 +159,14 @@ export function validateContract(pkg: CanonicalPackage, opts: { complete?: boole
   const m = pkg.manifest;
   const counts: Record<string, number> = Object.fromEntries(EXEC_STATUSES.map((s) => [s, 0]));
 
-  if (!m || typeof m !== "object" || Array.isArray(m)) return { ok: false, errors: ["V-02: manifest.json is not an object"], warnings, counts };
+  if (!m || typeof m !== "object" || Array.isArray(m)) return { ok: false, errors: ["V-02: manifest.json is not an object"], warnings, counts, reportCounts: NO_REPORT_COUNTS };
   if (!Array.isArray(pkg.bugs)) err("V-02", "bugs.json must be an array");
   if (!Array.isArray(pkg.manualTests)) err("V-02", "manual-tests.json must be an array");
   if (m.audit_id !== basename(pkg.dir) || !/^AUD-\d{8}-\d{2}$/.test(m.audit_id ?? "")) err("V-02", `audit_id ${JSON.stringify(m.audit_id)} must be AUD-YYYYMMDD-nn and match the folder name`);
   if (m.contract_version !== CONTRACT_VERSION) err("V-02", `contract_version is ${JSON.stringify(m.contract_version)}, expected ${CONTRACT_VERSION}`);
   const arrays = ["requirements", "test_plan_items", "executions", "actions", "evidence", "coverage_gaps", "testbench_backlog", "limitations"];
   for (const k of arrays) if (!Array.isArray(m[k])) err("V-02", `manifest.${k} must be an array`);
-  if (errors.length) return { ok: false, errors, warnings, counts };
+  if (errors.length) return { ok: false, errors, warnings, counts, reportCounts: NO_REPORT_COUNTS };
   const bugs: Json[] = pkg.bugs;
   const mtps: Json[] = pkg.manualTests;
 
@@ -206,13 +267,23 @@ export function validateContract(pkg: CanonicalPackage, opts: { complete?: boole
   // V-18, V-19 content
   for (const p of mtps) if (!p.objective || !(p.steps ?? []).length || !p.expected_result) err("V-19", `${p.manual_test_proposal_id} needs objective, steps and expected_result`);
 
-  // V-20, V-11 counts and headings in report.md
-  for (const s of EXEC_STATUSES) if (!new RegExp(`\\*\\*${counts[s]} ${s}\\*\\*`).test(pkg.report)) err("V-20", `report.md does not state **${counts[s]} ${s}**`);
-  if (!new RegExp(`Bug proposals: \\*\\*${bugs.length}\\*\\*`).test(pkg.report)) err("V-20", "report.md bug proposal count");
-  if (!new RegExp(`Manual test proposals: \\*\\*${mtps.length}\\*\\*`).test(pkg.report)) err("V-20", "report.md manual test proposal count");
-  if (!new RegExp(`Coverage gaps: \\*\\*${m.coverage_gaps.length}\\*\\*`).test(pkg.report)) err("V-20", "report.md coverage gap count");
-  const pos = REPORT_HEADINGS.map((h) => pkg.report.indexOf(`## ${h}\n`));
-  if (pos.includes(-1) || pos.some((p, i) => i > 0 && p < pos[i - 1])) err("V-20", "report.md headings are missing or out of order");
+  // V-20: the numbers in the Summary of report.md match the package. They are read without depending on the report's formatting. A number that
+  // cannot be read reliably (not found, or stated in conflicting ways) is a warning and is not compared; one that contradicts the package is an error.
+  const reportCounts = readReportCounts(pkg.report);
+  const actual: Record<string, number> = { ...counts, "bug proposals": bugs.length, "manual test proposals": mtps.length, "coverage gaps": m.coverage_gaps.length };
+  for (const [name, n] of Object.entries(reportCounts.readable)) {
+    if (n !== actual[name]) err("V-20", `the Summary of report.md states ${n} ${name}, but the package has ${actual[name]}`);
+  }
+  if (reportCounts.unreadable.length) {
+    warnings.push(`V-20: ${reportCounts.unreadable.length} number(s) could not be read reliably from the Summary of report.md and were not compared with the package: ${reportCounts.unreadable.map((u) => `${u.name} (${u.reason})`).join("; ")}`);
+  }
+
+  // Contract 5.4: the headings of report.md, in this order. Any heading level and spacing is accepted.
+  const reportLines = pkg.report.split(/\r?\n/);
+  const pos = REPORT_HEADINGS.map((h) => reportLines.findIndex((l) => new RegExp(`^#{1,6}\\s+${h}\\s*#*\\s*$`).test(l)));
+  const missingHeadings = REPORT_HEADINGS.filter((_, i) => pos[i] < 0);
+  if (missingHeadings.length) err("5.4", `report.md misses the heading(s) ${missingHeadings.join(", ")}`);
+  else if (pos.some((p, i) => i > 0 && p < pos[i - 1])) err("5.4", "the headings of report.md are out of order");
 
   // V-21 boundaries
   if (!Array.isArray(m.external_actions) || m.external_actions.length) err("V-21", "external_actions must be []");
@@ -261,5 +332,5 @@ export function validateContract(pkg: CanonicalPackage, opts: { complete?: boole
   if (missing.length) (opts.complete ? errors : warnings).push(`COMPLETE: no executions at ${missing.join(", ")}`);
   if (m.validation?.result !== "pass") warnings.push(`manifest.validation.result is ${JSON.stringify(m.validation?.result)}; this check is run again here and does not rely on it`);
 
-  return { ok: errors.length === 0, errors, warnings, counts };
+  return { ok: errors.length === 0, errors, warnings, counts, reportCounts };
 }
