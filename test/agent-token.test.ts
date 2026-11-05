@@ -160,6 +160,25 @@ describe("acceptance criteria read from the description", () => {
     assert.deepEqual(ac("Acceptance criteria:"), { criteria: [], readiness: "needs-clarification" });
   });
 
+  it("one plain sentence under a label on its own line is one criterion, with no bullet and nothing after the colon", () => {
+    assert.deepEqual(ac("Acceptance criteria:\nVarje formulärkontroll ska vara identifierbar och inspekterbar."), {
+      criteria: ["Varje formulärkontroll ska vara identifierbar och inspekterbar."],
+      readiness: "ready",
+    });
+    assert.deepEqual(ac("Acceptance criteria\nVarje formulärkontroll ska vara identifierbar och inspekterbar.").criteria, ["Varje formulärkontroll ska vara identifierbar och inspekterbar."]);
+    assert.deepEqual(ac("## Acceptance criteria\n   Varje formulärkontroll   ska vara identifierbar  \n").criteria, ["Varje formulärkontroll ska vara identifierbar"]);
+  });
+
+  it("a criterion over two lines is joined into one, and the block ends at a blank line, a heading or another label", () => {
+    assert.deepEqual(ac("Intro.\n\nAcceptance criteria:\nEn ny todo visas sist i listan\n  och räknaren ökar med ett.\n\nAnteckningar som inte är kriterier."), {
+      criteria: ["En ny todo visas sist i listan och räknaren ökar med ett."],
+      readiness: "ready",
+    });
+    assert.deepEqual(ac("Acceptance criteria:\nFörsta raden\nandra raden\n## Notes\nnot a criterion").criteria, ["Första raden andra raden"]);
+    assert.deepEqual(ac("Acceptance criteria:\nFörsta kriteriet\nAcceptance criteria: andra kriteriet").criteria, ["Första kriteriet", "andra kriteriet"]);
+    assert.deepEqual(ac("Acceptance criteria:\nFörsta kriteriet\nAcceptance criteria:\nandra kriteriet").criteria, ["Första kriteriet", "andra kriteriet"]);
+  });
+
   it("several paragraphs: only the labelled block counts, and it ends where the list ends", () => {
     const text = "Intro paragraph with - a dash in it.\n\n- an unrelated bullet before the label\n\nAcceptance criteria:\n- One\n- Two\n\nNotes for the team.\n- not a criterion\n\n## Open questions\n- nor this";
     assert.deepEqual(ac(text).criteria, ["One", "Two"]);

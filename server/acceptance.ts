@@ -3,7 +3,9 @@
  * This reads them back out of the description, with one deterministic rule, so that an agent can see what a requirement says it must satisfy.
  *
  *  - A label is the words "Acceptance criteria" (any case, optionally in bold or as a heading) either alone on a line, or followed by a colon.
- *  - After a label alone on a line the criteria are the list items below it (-, *, + or 1. / 1)), blank lines before the list are allowed.
+ *  - After a label alone on a line the criteria are the list items below it (-, *, + or 1. / 1)), blank lines before the list are allowed. Plain text lines
+ *    directly under it, with no blank line between, count together as ONE criterion (a sentence wrapped over several lines), until a blank line, a heading,
+ *    another label or a list item. Text after a blank line is not a criterion.
  *  - After a label with a colon the text on the same line is one criterion, and list items directly below it are more criteria.
  *  - A block ends at a heading, at a blank line after the criteria (unless the next text is another list item) or at any other text.
  *  - Several labelled blocks add up. No label, or a label with nothing under it, means no criteria.
@@ -34,13 +36,22 @@ export function parseAcceptance(description: string): Acceptance {
     if (inline) block.push(clean(inline[1]));
     let listStarted = false;
     let blank = false;
+    // Plain text straight under a label that stands alone: one criterion (a wrapped sentence). Only before any blank line and any list item.
+    let prose: string[] | null = only ? [] : null;
+    const endProse = () => { if (prose && prose.length) block.push(clean(prose.join(" "))); prose = null; };
     let j = i + 1;
     for (; j < lines.length; j++) {
       const line = lines[j];
-      if (!line.trim()) { blank = true; continue; }
-      if (HEADING.test(line)) break;
+      if (!line.trim()) { endProse(); blank = true; continue; }
+      if (HEADING.test(line)) { endProse(); break; }
       const item = LIST_ITEM.exec(line);
+      if (prose && !item && !blank) {
+        if (LABEL_ONLY.test(line) || LABEL_INLINE.test(line)) { endProse(); break; }
+        prose.push(line.trim());
+        continue;
+      }
       if (item) {
+        endProse();
         // After a label with text on its line, a list must follow it directly. After a label alone, blank lines before and between items are fine.
         if (blank && inline && !listStarted) break;
         block.push(clean(item[1]));
@@ -52,6 +63,7 @@ export function parseAcceptance(description: string): Acceptance {
       if (/^\s{2,}\S/.test(line) && !blank && block.length > 0) { block[block.length - 1] = clean(`${block[block.length - 1]} ${line.trim()}`); continue; }
       break;
     }
+    endProse();
     criteria.push(...block.filter(Boolean));
     i = j - 1;
   }
