@@ -152,7 +152,8 @@ came with each. A bug is marked **New** when it first appeared in that latest ru
   proposals old. The Agent proposals page shows the same kind of line at the top and a **New** filter. A test case made from a proposal follows the rule for test cases below, not the proposal's.
 - **Test cases:** different on purpose. A case is made by a person (by hand, as a copy, or from an accepted agent proposal), never by a CI run or an
   import, so there is no run it first appeared in. A case is **New** for 7 days after `created_at` (a copy counts, since it gets a new `created_at`;
-  editing a case does not). The Test cases page has a **New** tab, a **From proposal** tab and an "N new test cases in the last 7 days" line.
+  editing a case does not). The Test cases page has the same kind of line, a **New** switch and a **From agent proposal** switch that combine with the tabs
+  and the search. See "What is new" in the README.
 - Hover the **New** marker to see which run or import it refers to.
 
 The "N new" in the top is a button that shows exactly those bugs (all statuses); the **New** filter does the same for the CI run, the audit import or either.
