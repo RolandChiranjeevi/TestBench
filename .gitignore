@@ -10,3 +10,5 @@ agentdb.rvf*
 .env
 .env.*
 !.env.example
+# Local exports to the Testbench import format (npm run audit:export:testbench); regenerated from audits/
+.testbench-export/

@@ -14,7 +14,8 @@
     "test": "tsx --test test/*.test.ts",
     "check:contrast": "node scripts/check-contrast.mjs",
     "check:layout": "node scripts/check-layout.mjs",
-    "audit:package": "tsx scripts/audit-package.ts"
+    "audit:package": "tsx scripts/audit-package.ts",
+    "audit:export:testbench": "tsx scripts/audit-export-testbench.ts"
   },
   "dependencies": {
     "@fastify/multipart": "^10.1.4",
