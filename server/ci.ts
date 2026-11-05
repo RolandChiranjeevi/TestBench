@@ -28,7 +28,7 @@ export const CI_LIMITS = { bodyBytes: 5 * 1024 * 1024, drainBytes: 64 * 1024 * 1
 const SECRET_PATTERNS: [RegExp, string][] = [
   [/\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/gi, "Bearer [redacted]"],
   [/\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g, "[redacted]"],
-  [/\btbci_[A-Za-z0-9_-]{20,}\b/g, "[redacted]"],
+  [/\btb(?:ci|ag)_[A-Za-z0-9_-]{20,}\b/g, "[redacted]"],
   [/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, "[redacted]"],
   [/\bxox[abprs]-[A-Za-z0-9-]{10,}\b/g, "[redacted]"],
   [/\bsk-[A-Za-z0-9_-]{20,}\b/g, "[redacted]"],

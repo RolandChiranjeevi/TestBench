@@ -635,6 +635,19 @@ CREATE TABLE IF NOT EXISTS ci_tokens (
   last_used_at TEXT,
   revoked_at TEXT
 );
+-- Read-only tokens for a test agent (tbag_). A separate table and a separate kind of token from ci_tokens: a CI token never works for the agent and the
+-- other way round. Only a hash is kept; the token itself is shown once, when it is made. A token belongs to one project.
+CREATE TABLE IF NOT EXISTS agent_tokens (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  prefix TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_used_at TEXT,
+  revoked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS agent_tokens_project ON agent_tokens(project_id);
 -- One row per CI run received. run_id is the CI's own id; sending the same run again is recognised by it.
 CREATE TABLE IF NOT EXISTS ci_runs (
   id INTEGER PRIMARY KEY,

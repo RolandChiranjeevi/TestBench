@@ -42,6 +42,9 @@ import { requirementCoverage } from "./reqlinks.ts";
 import { normViewports, normWcag, viewportSchema, wcagCriterion, type Viewport } from "./shapes.ts";
 import { LIMITS as AUDIT_LIMITS, PackageError } from "./importers/auditpackage.ts";
 import { listCases } from "./newcases.ts";
+import { LOGGER_OPTIONS } from "./logging.ts";
+import { authenticateAgentToken, createAgentToken, listAgentTokens, revokeAgentToken } from "./agenttokens.ts";
+import { agentRequirementsForToken, parseAgentQuery } from "./agentapi.ts";
 import { applyManualUpdate, createCaseFromProposal, deleteManualTest, getManualTest, ignoreManualUpdate, listManualTests, relinkManualRefs, reviewManualTest, updateManualTest } from "./manualtests.ts";
 import { addRequirementCases, createRequirement, kindProblem, REQUIREMENT_KINDS, getRequirement, linkCaseByTags, listRequirements, markReviewed, recordRevision, requirementsForCase, requirementSummary, setCaseRequirements, setRequirementCases, type RevisionChange } from "./requirements.ts";
 import { dashboardData, listMilestones, milestoneReport } from "./stats.ts";
@@ -63,7 +66,8 @@ if (!["127.0.0.1", "::1", "localhost"].includes(HOST) && !auth && process.env.TE
 // Host names the app answers to. Behind a reverse proxy add your domain: TESTBENCH_ALLOWED_HOSTS=testbench.example.com
 const ALLOWED_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", ...(process.env.TESTBENCH_ALLOWED_HOSTS ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean)]);
 
-const app = Fastify({ logger: { level: "warn" }, trustProxy: process.env.TESTBENCH_TRUST_PROXY === "1" });
+// The Authorization header (an API token) and the cookie (a login) are never written to the log: see server/logging.ts.
+const app = Fastify({ logger: LOGGER_OPTIONS, trustProxy: process.env.TESTBENCH_TRUST_PROXY === "1" });
 
 // Any web page can send "simple" cross-site requests to localhost. Reject foreign Host headers
 // (DNS rebinding) and require a custom header on writes, which forces a CORS preflight we never approve.
@@ -948,6 +952,37 @@ app.post("/api/projects/:id/ci/tokens", (req) => {
 });
 app.post("/api/ci-tokens/:id/revoke", (req) => {
   audited(() => revokeCiToken(idParam(req)));
+  return { ok: true };
+});
+// ---- Agent tokens: read-only tokens for a test agent. The token route below is separate from the login-protected export
+// (GET /api/projects/:id/agent/requirements, unchanged) and works for nothing else. See server/agenttokens.ts and server/agentapi.ts. ----
+const agentLimiter = makeLimiter({ max: 20, windowMs: 15 * 60_000 });
+app.get("/api/agent/projects/:id/requirements", async (req, reply) => {
+  const id = idParam(req);
+  if (agentLimiter.blockedFor(req.ip) > 0) return reply.code(429).send({ error: "Too many failed attempts. Try again later." });
+  const auth = authenticateAgentToken(req.headers.authorization, id);
+  if (auth === "invalid") {
+    agentLimiter.fail(req.ip);
+    throw new HttpError(401, "A valid agent token is required: send it as Authorization: Bearer <token>");
+  }
+  if (auth === "other_project") {
+    agentLimiter.fail(req.ip);
+    throw new HttpError(403, "This token does not belong to this project");
+  }
+  const opts = audited(() => parseAgentQuery(req.query));
+  reply.header("Cache-Control", "no-store");
+  return audited(() => agentRequirementsForToken(id, opts));
+});
+// Made and revoked by whoever is signed in (there are no roles). The token is in the answer to the creating call only; the list never has it.
+app.get("/api/projects/:id/agent/tokens", (req) => listAgentTokens(idParam(req)));
+app.post("/api/projects/:id/agent/tokens", (req, reply) => {
+  const id = idParam(req);
+  const body = z.object({ name: z.string().max(200) }).parse(req.body);
+  reply.header("Cache-Control", "no-store");
+  return audited(() => createAgentToken(id, body.name));
+});
+app.post("/api/agent-tokens/:id/revoke", (req) => {
+  audited(() => revokeAgentToken(idParam(req)));
   return { ok: true };
 });
 app.post("/api/bug-reports/:id/triage", (req) => {

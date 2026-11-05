@@ -89,7 +89,7 @@ To host it on a server:
 
 ### Access at a glance
 
-Four things stand between a request and your data. Each answers the same way every time and says no more than it has to:
+Five things stand between a request and your data. Each answers the same way every time and says no more than it has to:
 
 | Layer | Setting | What happens |
 | --- | --- | --- |
@@ -97,6 +97,7 @@ Four things stand between a request and your data. Each answers the same way eve
 | Login | `TESTBENCH_PASSWORD` | Without a valid cookie every page, API route, upload and report gets `401 {"error":"Sign in required"}` (pages go to `/login`). A wrong or missing password gets `401 {"error":"Wrong password"}`; five wrong ones from one address get `429` for 15 minutes. |
 | Browser guard | built in | A change (any request that is not GET or HEAD) without the `X-Testbench` header gets `403`. |
 | CI token | **Bug reports → CI** | Only `POST /api/projects/<id>/ci/test-results`, with `Authorization: Bearer <token>`. It needs neither the login nor the header, works for one project and that route only, and an invalid or missing token gets `401`. |
+| Agent token | `docs/requirements.md` | Only `GET /api/agent/projects/<id>/requirements`, with `Authorization: Bearer tbag_…`: the active requirements of that project, read-only. It needs neither the login nor the header, opens nothing else, and a missing, wrong or revoked token gets `401`, a token of another project `403`. Made and revoked by whoever is signed in (there are no roles), at most five per project. |
 
 Through a Tailscale Funnel the same rules apply to whatever you publish. With only the CI paths mounted (one mount per project, each pointing at its own `/api/projects/<id>/ci/test-results`), every other path on the public address answers `404` from Funnel and never reaches Testbench, and the CI paths still need the token. The Funnel name (for example `my-machine.tailnet.ts.net`) has to be in `TESTBENCH_ALLOWED_HOSTS`, or CI gets `403`.
 
