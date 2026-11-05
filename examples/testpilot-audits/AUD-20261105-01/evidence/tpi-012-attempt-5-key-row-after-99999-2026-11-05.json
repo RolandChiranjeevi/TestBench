@@ -1,0 +1,4 @@
+{
+  "rowHtml": "<tr data-name=\"TP-Key\"> <td><span class=\"pos pos-n\">6</span></td> <td class=\"name\" title=\"TP-Key\">TP-Key</td> <td class=\"num total\">0</td> <td class=\"act\"><button type=\"button\" class=\"btn icon edit\" data-testid=\"editBtn\" aria-label=\"Edit TP-Key\" title=\"Edit\"></button></td> <td class=\"num\" data-raw=\"1666:39\">0</td><td class=\"num\"></td><td class=\"num\"></td><td class=\"num\"></td><td class=\"num\"></td><td class=\"num\"></td><td class=\"num\"></td><td class=\"num\"></td><td class=\"num\"></td><td class=\"num\"></td> </tr>",
+  "status": "Saved: 0 pts"
+}

@@ -1,0 +1,16 @@
+{
+  "rows": [
+    "TP-Bo",
+    "TP-Cia",
+    "TP-Anna",
+    "TP-V768",
+    "TP-V375",
+    "TP-Key"
+  ],
+  "input": "TP-Csv \"Quote\"",
+  "visibleMessages": [
+    "Enter results and follow the standings",
+    "Name must contain valid letters",
+    "Click a row to load that competitor into \"Enter result\". Positions are counted within each competition and ties share a position."
+  ]
+}

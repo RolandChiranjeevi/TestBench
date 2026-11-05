@@ -1,0 +1,14 @@
+{
+  "attempt": "99999",
+  "input": "99999",
+  "ariaInvalid": null,
+  "visibleMessages": [
+    "Enter results and follow the standings",
+    "Saved: 0 pts",
+    "Click a row to load that competitor into \"Enter result\". Positions are counted within each competition and ties share a position."
+  ],
+  "keyTotal": "0",
+  "keyCells": [
+    "0"
+  ]
+}

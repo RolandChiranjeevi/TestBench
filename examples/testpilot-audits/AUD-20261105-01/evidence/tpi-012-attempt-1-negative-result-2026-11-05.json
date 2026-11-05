@@ -1,0 +1,39 @@
+{
+  "attempt": "-1",
+  "input": "-1",
+  "ariaInvalid": "true",
+  "describedby": null,
+  "msgs": [
+    {
+      "tag": "P",
+      "role": null,
+      "cls": "",
+      "text": "Result cannot be negative",
+      "visible": true
+    },
+    {
+      "tag": "P",
+      "role": "status",
+      "cls": "",
+      "text": "",
+      "visible": false
+    },
+    {
+      "tag": "DIV",
+      "role": null,
+      "cls": "",
+      "text": "",
+      "visible": false
+    },
+    {
+      "tag": "DIV",
+      "role": null,
+      "cls": "",
+      "text": "",
+      "visible": false
+    }
+  ],
+  "keyTotal": "0",
+  "keyCells": [],
+  "saveBtnDisabled": false
+}

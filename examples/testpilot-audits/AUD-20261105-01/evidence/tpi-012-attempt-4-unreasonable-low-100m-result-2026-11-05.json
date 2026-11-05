@@ -1,0 +1,12 @@
+{
+  "attempt": "0.5",
+  "input": "0.5",
+  "ariaInvalid": null,
+  "visibleMessages": [
+    "Enter results and follow the standings",
+    "Faster than the world record for 100m: 9.58 s",
+    "Click a row to load that competitor into \"Enter result\". Positions are counted within each competition and ties share a position."
+  ],
+  "keyTotal": "0",
+  "keyCells": []
+}

@@ -1,0 +1,4 @@
+75. [POST] http://localhost:8080/api/competitions/c1/competitors => [400] 
+77. [POST] http://localhost:8080/api/competitions/c1/competitors => [400] 
+
+Note: 3 static requests not shown, run with "static" option to see them.
