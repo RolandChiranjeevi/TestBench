@@ -259,12 +259,12 @@ function ProjectLayout() {
     "2": () => navigate(`/p/${pid}/requirements`),
     "3": () => navigate(`/p/${pid}/cases`),
     "4": () => navigate(`/p/${pid}/runs`),
-    "5": () => navigate(`/p/${pid}/automated`),
-    "6": () => navigate(`/p/${pid}/import`),
-    "7": () => navigate(`/p/${pid}/reports`),
-    "8": () => navigate(`/p/${pid}/backup`),
-    "9": () => navigate(`/p/${pid}/bugs`),
-    "0": () => navigate(`/p/${pid}/manual-tests`),
+    "5": () => navigate(`/p/${pid}/bugs`),
+    "6": () => navigate(`/p/${pid}/manual-tests`),
+    "7": () => navigate(`/p/${pid}/automated`),
+    "8": () => navigate(`/p/${pid}/import`),
+    "9": () => navigate(`/p/${pid}/reports`),
+    "0": () => navigate(`/p/${pid}/backup`),
   });
   // How many reports from test agents wait for a decision (the same query the Bug reports page uses for its default tab).
   const { data: proposedBugs } = useQuery({ queryKey: ["bug-reports", pid, "proposed"], queryFn: () => api.get<{ counts: Record<string, number> }>(`/api/projects/${pid}/bug-reports?status=proposed`), staleTime: 30_000, enabled: !!pid });
@@ -332,14 +332,14 @@ function ProjectLayout() {
         {link("requirements", <BookOpenCheck size={15} />, "Requirements", "2")}
         {link("cases", <ListChecks size={15} />, "Test cases", "3")}
         {link("runs", <Play size={15} />, "Runs", "4")}
-        {link("automated", <Bot size={15} />, "Automated tests", "5")}
-        {link("import", <Download size={15} />, "Import results", "6")}
-        {link("bugs", <Bug size={15} />, "Bug reports", "9", proposedBugs?.counts.proposed ?? 0)}
-        {link("manual-tests", <ClipboardCheck size={15} />, "Agent proposals", "0", proposedManual?.counts.proposed ?? 0)}
+        {link("bugs", <Bug size={15} />, "Bug reports", "5", proposedBugs?.counts.proposed ?? 0)}
+        {link("manual-tests", <ClipboardCheck size={15} />, "Agent proposals", "6", proposedManual?.counts.proposed ?? 0)}
+        {link("automated", <Bot size={15} />, "Automated tests", "7")}
+        {link("import", <Download size={15} />, "Import results", "8")}
         <div className="sidebar-section">Reporting</div>
-        {link("reports", <FileBarChart size={15} />, "Sprint reports", "7")}
+        {link("reports", <FileBarChart size={15} />, "Sprint reports", "9")}
         <div className="sidebar-section">Data</div>
-        {link("backup", <Archive size={15} />, "Backup & restore", "8")}
+        {link("backup", <Archive size={15} />, "Backup & restore", "0")}
 
         <div className="sidebar-footer">
           {/* Nudge when there is no recent backup: the data lives only on this computer. */}
