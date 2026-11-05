@@ -87,6 +87,21 @@ To host it on a server:
    Keep the port published on `127.0.0.1:4100` so only the proxy can reach it.
 3. **Keep a copy of the data elsewhere.** Automatic backups land in `/data/backups` on the same server; copy them off it.
 
+### Access at a glance
+
+Four things stand between a request and your data. Each answers the same way every time and says no more than it has to:
+
+| Layer | Setting | What happens |
+| --- | --- | --- |
+| Host check | built in, extended by `TESTBENCH_ALLOWED_HOSTS` | A request for any other host name gets `403 {"error":"Forbidden host"}` before anything else, the CI route included. |
+| Login | `TESTBENCH_PASSWORD` | Without a valid cookie every page, API route, upload and report gets `401 {"error":"Sign in required"}` (pages go to `/login`). A wrong or missing password gets `401 {"error":"Wrong password"}`; five wrong ones from one address get `429` for 15 minutes. |
+| Browser guard | built in | A change (any request that is not GET or HEAD) without the `X-Testbench` header gets `403`. |
+| CI token | **Bug reports → CI** | Only `POST /api/projects/<id>/ci/test-results`, with `Authorization: Bearer <token>`. It needs neither the login nor the header, works for one project and that route only, and an invalid or missing token gets `401`. |
+
+Through a Tailscale Funnel the same rules apply to whatever you publish. With only the CI paths mounted (one mount per project, each pointing at its own `/api/projects/<id>/ci/test-results`), every other path on the public address answers `404` from Funnel and never reaches Testbench, and the CI paths still need the token. The Funnel name (for example `my-machine.tailnet.ts.net`) has to be in `TESTBENCH_ALLOWED_HOSTS`, or CI gets `403`.
+
+Limits to know: the 15-minute block counts per address, so behind a proxy or tunnel that shows every visitor as one address, wrong passwords from anyone count against everyone; and with `TESTBENCH_TRUST_PROXY=1` the address comes from `X-Forwarded-For`, which a client can set unless the proxy overwrites it.
+
 ### A public address (Tailscale Funnel, Cloudflare Tunnel, a reverse proxy)
 
 A tunnel or Funnel that points at Testbench is an address on the internet. Until its name is in `TESTBENCH_ALLOWED_HOSTS` Testbench refuses it
@@ -303,6 +318,56 @@ report is marked **unclear** and nothing is retried by itself: **Check status** 
 the same id, so one report can never become two issues. A refusal from Linear leaves no local record. Files are attached after the issue exists;
 a file that fails is listed and can be retried without touching the issue. Testbench keeps the issue id, link, time and the exact content sent.
 There is no status sync and no bulk publishing. Jira is not available for this yet.
+
+## What is new
+
+**New** marks what arrived since the latest run or import, or since a few days ago. It means something a little different on each list, because the lists
+get their rows in different ways. Nothing is stored for it: it is worked out each time a list is shown.
+
+| List | A row is New when | It stops being New when |
+| --- | --- | --- |
+| Bug reports | its first CI occurrence came with the project's latest CI run, or its first version came with the project's latest audit import | a newer CI run or audit import arrives, also one that found nothing new |
+| Agent proposals | its first version came with the project's latest audit import that carried a `manual-tests.json` | a newer import with proposals arrives; an import without that file changes nothing |
+| Test cases | `cases.created_at` is within the last 7 days | seven days have passed |
+
+- **Test cases are time-based on purpose.** A case is made by a person (by hand, as a copy, or from an accepted proposal), never by a CI run or an import,
+  so there is no run it first appeared in. The window is `NEW_CASE_WINDOW_DAYS` (7) in `server/newcases.ts`, read against the current time.
+- Only `created_at` counts. Editing a case (`updated_at`) never makes it New, a copy is New because it gets its own `created_at`, and demo-seeded cases
+  follow the same rule.
+- A bug or proposal stays New whatever its review status. A case made from a proposal is New by its own `created_at`, not by when the proposal was imported.
+- Bug reports and Agent proposals start with a line for the latest run or import and an "N new" button that shows just those rows; Test cases have the
+  same line and a **New** switch. Hover a **New** marker to see what it refers to. The rules for bugs and proposals in detail: [docs/ci-integration.md](docs/ci-integration.md).
+
+## Test cases from agent proposals
+
+On **Agent proposals**, accept a proposal and press **Create test case**. The case is added to the project (status *ready*, no suite, with the proposal's steps),
+and applying a newer version of the proposal later updates the text of that case. One proposal makes one case; a second try is refused.
+
+- **The link** is stored on the proposal, in `manual_tests.case_id`. The case itself has no origin column, so "from an agent proposal" means that a row of
+  `manual_tests` points at it.
+- **On Test cases** a case made from a proposal has a **proposal** chip, and the **From agent proposal** switch (with its count) shows just those cases.
+  The switch combines with **New**, with the tabs (All, Manual only, Automated, Failing, No requirement) and with the search, and never changes the order.
+  The count and the filter use the same condition.
+- **Deleting the case** sets `case_id` back to empty (`ON DELETE SET NULL`). The proposal keeps its review status, and because it has no case any more, a
+  new case can be made from it.
+
+## Navigation
+
+The sidebar follows the work: plan and run tests first, then what comes back and needs review, then the automation feed, then reports and data. The number
+beside each page is its keyboard shortcut.
+
+| # | Page | Group |
+| --- | --- | --- |
+| 1 | Dashboard | Workspace |
+| 2 | Requirements | Workspace |
+| 3 | Test cases | Workspace |
+| 4 | Runs | Workspace |
+| 5 | Bug reports | Workspace (what comes back) |
+| 6 | Agent proposals | Workspace (what comes back) |
+| 7 | Automated tests | Workspace (automation) |
+| 8 | Import results | Workspace (automation) |
+| 9 | Sprint reports | Reporting |
+| 0 | Backup & restore | Data |
 
 ## Deleting cases and projects
 
