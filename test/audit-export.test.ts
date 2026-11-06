@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { readCanonicalPackage, readReportCounts, validateContract } from "../server/importers/auditcontract.ts";
-import { ExportError, exportToTestbench, PROVENANCE_FORMAT } from "../server/importers/testbenchexport.ts";
+import { ExportError, exportToTestbench, PROVENANCE_FORMAT, testPlanSection, withTestPlan } from "../server/importers/testbenchexport.ts";
 import { checkPackageDir } from "../server/importers/auditbuild.ts";
 
 // A small but complete audit contract 1.2 package: one viewport, one failing check with a bug proposal, one manual test from a coverage gap.
@@ -140,7 +140,8 @@ describe("export to the Testbench import format", () => {
       assert.deepEqual(bytes, readFileSync(join(p.dir, f.path)), `${f.path} is a byte-for-byte copy`);
     }
     assert.deepEqual(m.files.map((f: any) => f.path).sort(), ["evidence/dom.txt", "evidence/shot.png"]);
-    assert.deepEqual(readFileSync(join(p.out, "report.md")), readFileSync(join(p.dir, "report.md")));
+    const canonicalManifest = json(join(p.dir, "manifest.json"));
+    assert.equal(readFileSync(join(p.out, "report.md"), "utf8"), readFileSync(join(p.dir, "report.md"), "utf8").replace("## Execution results", `${testPlanSection(canonicalManifest, 2)}\n## Execution results`), "report.md is the canonical one plus the generated Test plan section, nothing else");
   });
 
   it("maps bug proposals and manual tests, and marks generated values", () => {
@@ -377,5 +378,71 @@ describe("bug proposals are mapped through an explicit, validated field table", 
     const badId = contractPackage((_m, bugs) => { bugs[0].bug_proposal_id = "bug-1"; });
     assert.throws(() => exportToTestbench({ input: badId.dir, output: badId.out, project: "RS" }), (e: unknown) => e instanceof ExportError && /V-03/.test(e.message));
     assert.equal(existsSync(join(badId.root, "export")), false);
+  });
+});
+
+describe("the Test plan section of the exported report.md", () => {
+  const sha = (t: string) => createHash("sha256").update(t).digest("hex");
+  const run = (reportEdit?: (text: string) => string) => {
+    const p = contractPackage();
+    if (reportEdit) writeFileSync(join(p.dir, "report.md"), reportEdit(readFileSync(join(p.dir, "report.md"), "utf8")));
+    const before = hashTree(p.dir);
+    const r = exportToTestbench({ input: p.dir, output: p.out, project: "RS" });
+    return { p, r, before, canonical: readFileSync(join(p.dir, "report.md"), "utf8"), exported: readFileSync(join(p.out, "report.md"), "utf8"), prov: json(join(p.out, "provenance.json")), manifest: json(join(p.dir, "manifest.json")) };
+  };
+
+  it("lists every plan item with all its fields and every coverage gap, before Execution results", () => {
+    const { r, exported, canonical, prov, manifest, p, before } = run();
+    const lines = exported.split("\n");
+    for (const line of [
+      "## Test plan",
+      "2 plan items for 2 requirements. Generated from the manifest of the audit package (test_plan_items and coverage_gaps) when it was exported for Testbench; the report.md of the package itself is unchanged.",
+      "- TPI-001 | REQ-1 | Functional | risk: High | priority: High | readiness: ready", "  Complete one",
+      "- TPI-002 | REQ-2 | Accessibility | risk: Low | priority: Low | readiness: ready", "  Names",
+      "### Coverage gaps (from the manifest)", "- CG-001 | REQ-2", "  no screen reader",
+    ]) assert.ok(lines.includes(line), `has the line: ${line.slice(0, 60)}`);
+    const at = (h: string) => lines.indexOf(h);
+    assert.ok(at("## Requirements and readiness") < at("## Test plan") && at("## Test plan") < at("## Execution results"), "between Requirements and Execution results");
+    assert.equal(exported, canonical.replace("## Execution results", `${testPlanSection(manifest, 2)}\n## Execution results`), "the canonical text plus the section, nothing else");
+    assert.doesNotMatch(canonical, /Test plan/, "the canonical report has no Test plan section");
+    assert.deepEqual(hashTree(p.dir), before, "the canonical package is unchanged");
+    assert.deepEqual(prov.report, { canonicalSha256: sha(canonical), exportedSha256: sha(exported), generatedSections: ["Test plan"], placement: "before Execution results" });
+    assert.deepEqual(r.report, { generated: true, where: "before Execution results" });
+    assert.equal(r.testbench.ok, true, r.testbench.errors.join("; "));
+  });
+
+  it("does not add a second plan when the report already has one", () => {
+    const { r, exported, canonical, prov } = run((t) => t.replace("## Execution results", "## Test plan\nmy own plan\n\n## Execution results"));
+    assert.equal(exported, canonical);
+    assert.equal(exported.match(/^## Test plan$/gm)?.length, 1);
+    assert.deepEqual([prov.report.generatedSections, r.report.generated], [[], false]);
+    assert.match(prov.report.placement, /already has a Test plan section/);
+  });
+
+  it("puts the section at the end when there is no Execution results heading, and follows the heading level and the line ending", () => {
+    const m = { test_plan_items: [{ test_plan_item_id: "TPI-001", requirement_id: "REQ-1", type: "Functional", risk: "High", priority: "High", readiness: "ready", title: "T" }], coverage_gaps: [] };
+    const end = withTestPlan("# R\n\n## Summary\ntext\n", m);
+    assert.equal(end.generated, true);
+    assert.match(end.where, /end of the report/);
+    assert.equal(end.text, `# R\n\n## Summary\ntext\n\n${testPlanSection(m, 2)}`);
+    assert.match(end.text, /### Coverage gaps \(from the manifest\)\n\nNone recorded\.\n$/);
+
+    const deeper = withTestPlan("# R\n\n### Summary\ntext\n\n### Execution results\nrows\n", m);
+    assert.match(deeper.text, /\n### Test plan\n/);
+    assert.match(deeper.text, /\n#### Coverage gaps \(from the manifest\)\n/);
+    assert.ok(deeper.text.indexOf("### Test plan") < deeper.text.indexOf("### Execution results"));
+
+    const crlf = withTestPlan("# R\r\n\r\n## Summary\r\ntext\r\n\r\n## Execution results\r\nrows\r\n", m);
+    assert.equal(crlf.text.replace(/\r\n/g, "").includes("\n"), false, "every line ending is still CRLF");
+    assert.match(crlf.text, /## Test plan\r\n/);
+  });
+
+  it("leaves the report alone when the manifest has no plan items and no coverage gaps, and says '(not stated)' for a missing field", () => {
+    const none = withTestPlan("# R\n\n## Execution results\nrows\n", { test_plan_items: [], coverage_gaps: [] });
+    assert.deepEqual([none.generated, none.text], [false, "# R\n\n## Execution results\nrows\n"]);
+    assert.match(none.where, /no plan items or coverage gaps/);
+    const thin = testPlanSection({ test_plan_items: [{ test_plan_item_id: "TPI-009" }], coverage_gaps: [{ coverage_gap_id: "CG-009" }] });
+    assert.match(thin, /- TPI-009 \| \(not stated\) \| \(not stated\) \| risk: \(not stated\) \| priority: \(not stated\) \| readiness: \(not stated\)\n  \(not stated\)\n/);
+    assert.match(thin, /- CG-009 \| \(not stated\)\n  \(not stated\)\n$/);
   });
 });

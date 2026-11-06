@@ -30,6 +30,7 @@ try {
   for (const w of r.contract.warnings) console.log(`contract warning: ${w}`);
   console.log(`Wrote ${r.files.length} files to ${r.output}`);
   for (const w of r.warnings) console.log(`export warning: ${w}`);
+  console.log(`report.md: ${r.report.generated ? "Test plan section inserted" : "left as it is"} (${r.report.where})`);
   for (const g of r.provenance.generated) console.log(`adapter-generated: ${g.target} = ${g.value}`);
   console.log(`Testbench check: audit ${r.testbench.auditId ?? "?"} for project ${r.testbench.project ?? "?"}, ${r.testbench.sourceIds.length} finding(s), ${r.testbench.manualSourceIds.length} manual test(s)`);
   for (const w of r.testbench.warnings) console.log(`testbench warning: ${w}`);
