@@ -66,7 +66,7 @@ Example:
   "baseUrl": "http://localhost:4100",
   "projectId": "3",
   "requirementsSource": "testbench",
-  "requirementsPath": "/api/projects/3/agent/requirements",
+  "requirementsPath": "/api/agent/projects/3/requirements",
   "tokenEnvVar": "TESTBENCH_API_TOKEN",
   "deliveryEnabled": false
 }
