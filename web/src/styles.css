@@ -433,7 +433,6 @@ table.table { width: 100%; border-collapse: collapse; }
   .sidebar > div:first-child { width: 100%; display: flex; justify-content: center; }
   .project-switch { width: 40px; padding: 0; justify-content: center; }
   .sidebar-footer { padding: 8px 0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
-  .sidebar-footer .signout { width: 34px; padding: 0; margin: 0; }
 }
 
 /* Phones: the sidebar becomes a menu that slides over the page */

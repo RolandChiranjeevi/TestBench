@@ -2,9 +2,9 @@ import { StrictMode, useEffect, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, BookOpenCheck, Bot, Bug, ChevronDown, ClipboardCheck, Download, FileBarChart, FlaskConical, LayoutDashboard, ListChecks, LogOut, Menu, Pencil, Play, Plus, Sparkles, Trash2 } from "lucide-react";
+import { Archive, BookOpenCheck, Bot, Bug, ChevronDown, ClipboardCheck, Download, FileBarChart, FlaskConical, LayoutDashboard, ListChecks, Menu, Play, Plus, Settings, Sparkles } from "lucide-react";
 import { api, timeAgo, type BackupInfo, type Project } from "./api";
-import { ConfirmModal, Empty, Modal, ToastProvider, useHotkeys, useToast } from "./components/ui";
+import { Empty, Modal, ToastProvider, useHotkeys, useToast } from "./components/ui";
 import { CasesPage } from "./pages/Cases";
 import { RequirementsPage } from "./pages/Requirements";
 import { RunsPage } from "./pages/Runs";
@@ -13,7 +13,7 @@ import { AutomatedPage } from "./pages/Automated";
 import { ImportPage } from "./pages/Import";
 import { DashboardPage } from "./pages/Dashboard";
 import { ReportsPage } from "./pages/Reports";
-import { BackupPage } from "./pages/Backup";
+import { SettingsPage } from "./pages/Settings";
 import { BugReportsPage } from "./pages/BugReports";
 import { ManualTestsPage } from "./pages/ManualTests";
 import "./styles.css";
@@ -142,84 +142,6 @@ function NewProjectModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function RenameProjectModal({ project, onClose }: { project: Project; onClose: () => void }) {
-  const [name, setName] = useState(project.name);
-  const qc = useQueryClient();
-  const toast = useToast();
-  const save = useMutation({
-    mutationFn: () => api.patch<Project>(`/api/projects/${project.id}`, { name: name.trim() }),
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ["projects"] });
-      onClose();
-    },
-    onError: (e: Error) => toast("error", e.message),
-  });
-  const valid = !!name.trim() && name.trim() !== project.name;
-  return (
-    <Modal
-      title="Rename project"
-      onClose={onClose}
-      width={440}
-      footer={<button className="btn primary" disabled={!valid || save.isPending} onClick={() => save.mutate()}>Save</button>}
-    >
-      <form className="col" style={{ gap: 12 }} onSubmit={(e) => { e.preventDefault(); if (valid) save.mutate(); }}>
-        <div className="field">
-          <label htmlFor="rname">Name</label>
-          <input id="rname" className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} />
-          <span className="muted" style={{ fontSize: "var(--fs-sm)" }}>
-            The key <code className="inline">{project.key}</code> stays the same, because case IDs and <code className="inline">@{project.key}-12</code> tags in your tests use it.
-          </span>
-        </div>
-        <button type="submit" hidden />
-      </form>
-    </Modal>
-  );
-}
-
-/** Deleting a project is permanent: the key has to be typed, and the server saves a backup first when automatic backups are on. */
-function DeleteProjectModal({ project, onClose }: { project: Project; onClose: () => void }) {
-  const qc = useQueryClient();
-  const navigate = useNavigate();
-  const toast = useToast();
-  const { data: backup } = useQuery({ queryKey: ["backup-info"], queryFn: () => api.get<BackupInfo>("/api/backup/info"), staleTime: 60_000 });
-  const { data: preview } = useQuery({
-    queryKey: ["deletion-preview", project.id],
-    queryFn: () => api.get<{ counts: { cases: number; runs: number; requirements: number; automatedTests: number } }>(`/api/projects/${project.id}/deletion-preview`),
-  });
-  const del = useMutation({
-    mutationFn: () => api.post<{ name: string; deleted: { cases: number; runs: number }; backup: string | null }>(`/api/projects/${project.id}/delete`, { confirm: project.key }),
-    onSuccess: (r) => {
-      qc.clear();
-      toast("success", `Deleted "${r.name}" (${r.deleted.cases} cases, ${r.deleted.runs} runs).${r.backup ? ` A backup was saved first (${r.backup}).` : ""}`);
-      onClose();
-      navigate("/");
-    },
-    onError: (e: Error) => toast("error", e.message),
-  });
-  const c = preview?.counts;
-  return (
-    <ConfirmModal
-      title={`Delete "${project.name}"?`}
-      confirmLabel="Delete project permanently"
-      requireText={project.key}
-      busy={del.isPending}
-      onConfirm={() => del.mutate()}
-      onClose={onClose}
-    >
-      <p style={{ margin: 0 }}>
-        This permanently deletes the project and everything in it
-        {c ? `: ${c.cases} test cases, ${c.runs} runs, ${c.requirements} requirements and ${c.automatedTests} automated tests` : ""}.
-        Sprints, templates, the release checklists, and all uploaded screenshots, traces and attachments go too.
-      </p>
-      <p className="muted" style={{ margin: 0 }}>
-        {backup?.auto.enabled
-          ? "A backup is saved first. To get the project back, restore that backup from Backup & restore."
-          : "Automatic backups are turned off, so nothing is saved first. This cannot be undone."}
-      </p>
-    </ConfirmModal>
-  );
-}
-
 function ProjectLayout() {
   const { data: projects, isLoading } = useProjects();
   const { pid } = useParams();
@@ -228,9 +150,6 @@ function ProjectLayout() {
   const [menu, setMenu] = useState(false);
   const { data: backup } = useQuery({ queryKey: ["backup-info"], queryFn: () => api.get<BackupInfo>("/api/backup/info"), staleTime: 60_000 });
   const [creating, setCreating] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const { data: auth } = useQuery({ queryKey: ["auth"], queryFn: () => api.get<{ enabled: boolean; authenticated: boolean }>("/api/auth/status"), staleTime: 60_000 });
   // On phone-sized screens the sidebar is a menu that slides over the page. Any navigation or Escape closes it.
   const loc = useLocation();
   const [navOpen, setNavOpen] = useState(false);
@@ -249,7 +168,7 @@ function ProjectLayout() {
   // Browser tab title: "Test cases · Demo Shop · Testbench", so tabs, history and screen readers say where you are.
   const section = loc.pathname.split("/")[3] ?? "";
   useEffect(() => {
-    const label = ({ dashboard: "Dashboard", requirements: "Requirements", cases: "Test cases", runs: "Runs", automated: "Automated tests", import: "Import results", bugs: "Bug reports", "manual-tests": "Agent proposals", reports: "Sprint reports", backup: "Backup & restore" } as Record<string, string>)[section];
+    const label = ({ dashboard: "Dashboard", requirements: "Requirements", cases: "Test cases", runs: "Runs", automated: "Automated tests", import: "Import results", bugs: "Bug reports", "manual-tests": "Agent proposals", reports: "Sprint reports", settings: "Settings" } as Record<string, string>)[section];
     document.title = [label, project?.name, "Testbench"].filter(Boolean).join(" · ");
     return () => { document.title = "Testbench"; };
   }, [section, project?.name]);
@@ -264,7 +183,7 @@ function ProjectLayout() {
     "7": () => navigate(`/p/${pid}/automated`),
     "8": () => navigate(`/p/${pid}/import`),
     "9": () => navigate(`/p/${pid}/reports`),
-    "0": () => navigate(`/p/${pid}/backup`),
+    "0": () => navigate(`/p/${pid}/settings`),
   });
   // How many reports from test agents wait for a decision (the same query the Bug reports page uses for its default tab).
   const { data: proposedBugs } = useQuery({ queryKey: ["bug-reports", pid, "proposed"], queryFn: () => api.get<{ counts: Record<string, number> }>(`/api/projects/${pid}/bug-reports?status=proposed`), staleTime: 30_000, enabled: !!pid });
@@ -312,15 +231,8 @@ function ProjectLayout() {
                   </button>
                 ))}
                 <div style={{ borderTop: "1px solid var(--border)", margin: "4px 0" }} />
-                <button className="nav-item" onClick={() => { setMenu(false); setRenaming(true); }}>
-                  <Pencil size={14} /> Rename this project
-                </button>
                 <button className="nav-item" onClick={() => { setMenu(false); setCreating(true); }}>
                   <Plus size={14} /> New project
-                </button>
-                <div style={{ borderTop: "1px solid var(--border)", margin: "4px 0" }} />
-                <button className="nav-item" style={{ color: "var(--failed-fg)" }} onClick={() => { setMenu(false); setDeleting(true); }}>
-                  <Trash2 size={14} /> Delete this project…
                 </button>
               </div>
             </>
@@ -338,14 +250,14 @@ function ProjectLayout() {
         {link("import", <Download size={15} />, "Import results", "8")}
         <div className="sidebar-section">Reporting</div>
         {link("reports", <FileBarChart size={15} />, "Sprint reports", "9")}
-        <div className="sidebar-section">Data</div>
-        {link("backup", <Archive size={15} />, "Backup & restore", "0")}
+        <div className="sidebar-section">Manage</div>
+        {link("settings", <Settings size={15} />, "Settings", "0")}
 
         <div className="sidebar-footer">
           {/* Nudge when there is no recent backup: the data lives only on this computer. */}
           {backup && (
             <NavLink
-              to={`/p/${project.id}/backup`}
+              to={`/p/${project.id}/settings/data`}
               className="row"
               title={backup.lastBackupAt ? `Backed up ${timeAgo(backup.lastBackupAt)}` : "Not backed up yet"}
               style={{ gap: 6, marginBottom: 4, color: !backup.lastBackupAt || Date.now() - new Date(backup.lastBackupAt).getTime() > 7 * 864e5 ? "var(--blocked-fg)" : undefined }}
@@ -354,19 +266,12 @@ function ProjectLayout() {
             </NavLink>
           )}
           <span className="footer-text">{project.case_count} cases · {project.run_count} runs</span>
-          {auth?.enabled && (
-            <button className="btn ghost sm signout" title="Sign out" style={{ marginTop: 6 }} onClick={async () => { await api.post("/api/logout"); window.location.href = "/login"; }}>
-              <LogOut size={13} /> <span className="nav-label">Sign out</span>
-            </button>
-          )}
         </div>
       </aside>
       <main className="main">
         <Outlet />
       </main>
       {creating && <NewProjectModal onClose={() => setCreating(false)} />}
-      {renaming && <RenameProjectModal project={project} onClose={() => setRenaming(false)} />}
-      {deleting && <DeleteProjectModal project={project} onClose={() => setDeleting(false)} />}
     </div>
   );
 }
@@ -383,7 +288,9 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/p/:pid" element={<ProjectLayout />}>
               <Route index element={<Navigate to="dashboard" replace />} />
               <Route path="dashboard" element={<DashboardPage />} />
-              <Route path="backup" element={<BackupPage />} />
+              <Route path="settings" element={<SettingsPage />} />
+              <Route path="settings/:section" element={<SettingsPage />} />
+              <Route path="backup" element={<Navigate to="../settings/data" replace />} />
               <Route path="reports" element={<ReportsPage />} />
               <Route path="reports/:mid" element={<ReportsPage />} />
               <Route path="requirements" element={<RequirementsPage />} />
