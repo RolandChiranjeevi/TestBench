@@ -380,6 +380,36 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
           <div className="faint" style={{ fontSize: "var(--fs-sm)", marginTop: 4 }}>Only accepted bug reports count as open.</div>
         </section>
         <section>
+          <div className="section-label"><ClipboardCheck size={13} /> Planned in audits <span className="faint">{data.linked.planItems.length}</span></div>
+          {data.linked.planItems.length === 0 ? <div className="muted" style={{ fontSize: "var(--fs-md)" }}>No audit plan names this requirement.</div> : (
+            <div className="card">
+              {data.linked.planItems.map((x) => (
+                <div key={`${x.auditId}-${x.sourceId}`} className="row" style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)", gap: 8, flexWrap: "wrap" }}>
+                  <span className="mono muted" style={{ width: 120 }}>{x.sourceId}</span>
+                  <span className="grow" style={{ overflowWrap: "anywhere" }}>{x.title}</span>
+                  {x.type && <span className="chip">{x.type}</span>}
+                  <span className="faint" title={x.auditTitle || x.agentAuditId}>{x.agentAuditId}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="faint" style={{ fontSize: "var(--fs-sm)", marginTop: 4 }}>A plan item says what an audit planned to check. It is not a test: it does not make this requirement covered.</div>
+        </section>
+        <section>
+          <div className="section-label"><AlertTriangle size={13} /> Coverage gaps <span className="faint">{data.linked.coverageGaps.length}</span></div>
+          {data.linked.coverageGaps.length === 0 ? <div className="muted" style={{ fontSize: "var(--fs-md)" }}>No audit reports a coverage gap for this requirement.</div> : (
+            <div className="card">
+              {data.linked.coverageGaps.map((g) => (
+                <div key={`${g.auditId}-${g.sourceId}`} style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)" }}>
+                  <div className="row" style={{ gap: 8 }}><span className="mono muted">{g.sourceId}</span><span className="faint" title={g.auditTitle || g.agentAuditId}>{g.agentAuditId}</span></div>
+                  <div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{g.description}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="faint" style={{ fontSize: "var(--fs-sm)", marginTop: 4 }}>What an audit did not verify about this requirement, and why.</div>
+        </section>
+        <section>
           <div className="section-label">Test cases <span className="faint">{data.cases.length}</span></div>
           {data.cases.length === 0 ? (
             <div className="muted" style={{ fontSize: "var(--fs-md)", marginBottom: 8 }}>No test cases linked yet. This requirement is not covered.</div>

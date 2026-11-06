@@ -25,6 +25,9 @@ export const LIMITS = {
   bugs: 200,
   manualTests: 200,
   manualTestsBytes: 10 * 1024 * 1024,
+  planItems: 500,
+  coverageGaps: 500,
+  testPlanBytes: 10 * 1024 * 1024,
   manifestBytes: 1024 * 1024,
   bugsBytes: 20 * 1024 * 1024,
   narrativeBytes: 5 * 1024 * 1024,
@@ -71,7 +74,7 @@ const manifestSchema = z.object({
     github: z.object({ repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/), runId: z.number().int().positive() }).optional(),
   }),
   files: z.array(z.object({ path: z.string().min(1).max(300), sha256: z.string().regex(/^[a-fA-F0-9]{64}$/), size: z.number().int().min(0) })).max(LIMITS.files).default([]),
-  parts: z.object({ bugs: str(300).optional(), manualTests: str(300).optional(), narrative: str(300).optional(), results: z.array(str(300)).optional() }).default({}),
+  parts: z.object({ bugs: str(300).optional(), manualTests: str(300).optional(), testPlan: str(300).optional(), narrative: str(300).optional(), results: z.array(str(300)).optional() }).default({}),
 });
 
 const bugSchema = z.object({
@@ -121,15 +124,54 @@ const manualTestSchema = z
   .transform((t) => ({ ...t, wcag: normWcag(t.wcag), viewports: normViewports(t.viewports) }));
 const manualTestsFileSchema = z.object({ version: z.literal(1), tests: z.array(z.unknown()).max(LIMITS.manualTests) });
 
+export const PLAN_READINESS = ["ready", "needs-clarification"] as const;
+/**
+ * The status vocabulary of an execution. Reserved for a later step: nothing imports executions yet, and a plan item carries no result.
+ * `inconclusive` is a status of its own: it is neither skipped nor untested.
+ */
+export const RESULT_STATUSES = ["pass", "fail", "blocked", "skipped", "inconclusive"] as const;
+/** What a plan item or a coverage gap says about requirements. Only requirements, matched against the project's own by number (REQ-3) or stable id when they are shown. */
+const planRefs = z.object({ requirements: refList }).default({ requirements: [] });
+
+/**
+ * One planned check of an audit (test-plan.json). Everything but `sourceId` and `title` is optional, so a plan with only the basics imports, and
+ * so does one with all of it. It is a plan, not a test case: nothing here says that the check was run.
+ */
+const planItemSchema = z.object({
+  sourceId: idText,
+  title: z.string().trim().min(1).max(200),
+  type: str(50).default(""),
+  risk: str(200).default(""),
+  priority: str(50).default(""),
+  readiness: z.enum(PLAN_READINESS).optional(),
+  preconditions: str(5000).default(""),
+  testData: str(2000).default(""),
+  steps: z.array(str(1000)).max(50).default([]),
+  acceptanceCriteria: str(5000).default(""),
+  automation: str(200).default(""),
+  refs: planRefs,
+});
+/** Something the audit did not verify, and why. */
+const coverageGapSchema = z.object({ sourceId: idText, description: z.string().trim().min(1).max(5000), refs: planRefs });
+const testPlanFileSchema = z.object({
+  version: z.literal(1),
+  planItems: z.array(z.unknown()).max(LIMITS.planItems).default([]),
+  coverageGaps: z.array(z.unknown()).max(LIMITS.coverageGaps).default([]),
+});
+
 export type Manifest = z.infer<typeof manifestSchema>;
 export type BugItem = z.infer<typeof bugSchema>;
 export type ManualTestItem = z.infer<typeof manualTestSchema>;
+export type PlanItem = z.infer<typeof planItemSchema>;
+export type CoverageGapItem = z.infer<typeof coverageGapSchema>;
 
 export interface ParsedPackage {
   manifest: Manifest;
   bugs: BugItem[];
   /** The manual tests of the package; null when it has no manual-tests.json at all (which says nothing about earlier manual tests). */
   manualTests: ManualTestItem[] | null;
+  /** The test plan of the package; null when it has no test-plan.json at all (which says nothing about an earlier plan of the same audit). */
+  testPlan: { planItems: PlanItem[]; coverageGaps: CoverageGapItem[] } | null;
   /** Prefix of the package inside the bag: "" for the root, "folder/" when everything sits in one folder. */
   root: string;
   bag: FileBag;
@@ -237,6 +279,39 @@ export function parsePackage(bag: FileBag): ParsedPackage {
     });
   }
 
+  let testPlan: ParsedPackage["testPlan"] = null;
+  let testPlanPath: string | null = null;
+  let testPlanBytes: Uint8Array | null = null;
+  const declaredPlan = manifest.parts.testPlan;
+  if (declaredPlan !== undefined && !safeRelPath(declaredPlan)) throw new PackageError("parts.testPlan is not a safe path");
+  const planName = safeRelPath(declaredPlan ?? "test-plan.json");
+  if (planName && (declaredPlan !== undefined || bag.names.includes(root + planName))) {
+    testPlanPath = planName;
+    const tp = readJson(bag, root + planName, LIMITS.testPlanBytes, planName);
+    testPlanBytes = tp.bytes;
+    const file = testPlanFileSchema.safeParse(tp.value);
+    if (!file.success) throw new PackageError(`${planName}: ${issues(file.error)}`);
+    const named = (raw: unknown) => (typeof (raw as { sourceId?: unknown })?.sourceId === "string" ? ` (${(raw as { sourceId: string }).sourceId})` : "");
+    const plan = { planItems: [] as PlanItem[], coverageGaps: [] as CoverageGapItem[] };
+    const seenItems = new Set<string>();
+    file.data.planItems.forEach((raw, i) => {
+      const r = planItemSchema.safeParse(raw);
+      if (!r.success) throw new PackageError(`${planName}: plan item #${i + 1}${named(raw)}: ${issues(r.error)}`);
+      if (seenItems.has(r.data.sourceId)) throw new PackageError(`${planName}: plan item sourceId "${r.data.sourceId}" appears twice`);
+      seenItems.add(r.data.sourceId);
+      plan.planItems.push(r.data);
+    });
+    const seenGaps = new Set<string>();
+    file.data.coverageGaps.forEach((raw, i) => {
+      const r = coverageGapSchema.safeParse(raw);
+      if (!r.success) throw new PackageError(`${planName}: coverage gap #${i + 1}${named(raw)}: ${issues(r.error)}`);
+      if (seenGaps.has(r.data.sourceId)) throw new PackageError(`${planName}: coverage gap sourceId "${r.data.sourceId}" appears twice`);
+      seenGaps.add(r.data.sourceId);
+      plan.coverageGaps.push(r.data);
+    });
+    testPlan = plan;
+  }
+
   const warnings: string[] = [];
   let narrative: Uint8Array | null = null;
   const narrativePath = manifest.parts.narrative ? safeRelPath(manifest.parts.narrative) : bag.names.includes(root + "report.md") ? "report.md" : null;
@@ -249,11 +324,11 @@ export function parsePackage(bag: FileBag): ParsedPackage {
   }
   if (manifest.parts.results?.length) warnings.push("The package lists test results. Test results are not imported from an audit package in this version; use the normal import for them.");
   if (bag.names.includes(root + "cases.json")) warnings.push("cases.json is present but test cases are not imported from an audit package in this version.");
-  const listed = new Set([...declared.keys(), manifestPath.slice(root.length), bugsPath, ...(manualPath ? [manualPath] : []), ...(narrativePath ? [narrativePath] : [])]);
+  const listed = new Set([...declared.keys(), manifestPath.slice(root.length), bugsPath, ...(manualPath ? [manualPath] : []), ...(testPlanPath ? [testPlanPath] : []), ...(narrativePath ? [narrativePath] : [])]);
   const unlisted = bag.names.filter((n) => n.startsWith(root) && !listed.has(n.slice(root.length))).length;
   if (unlisted) warnings.push(`${unlisted} file${unlisted === 1 ? "" : "s"} in the package ${unlisted === 1 ? "is" : "are"} not listed in the manifest and ${unlisted === 1 ? "was" : "were"} ignored`);
 
-  return { manifest, bugs, manualTests, root, bag, packageSha256: sha256(Buffer.concat([m.bytes, b.bytes, ...(manualBytes ? [manualBytes] : [])])), narrative, declared, warnings };
+  return { manifest, bugs, manualTests, testPlan, root, bag, packageSha256: sha256(Buffer.concat([m.bytes, b.bytes, ...(manualBytes ? [manualBytes] : []), ...(testPlanBytes ? [testPlanBytes] : [])])), narrative, declared, warnings };
 }
 
 export interface EvidenceCheck {

@@ -589,6 +589,38 @@ CREATE INDEX IF NOT EXISTS manual_test_sightings_import ON manual_test_sightings
   // The test case a person made from an accepted proposal. Cleared if that case is removed, so a new one can be made.
   if (!hasColumn("manual_tests", "case_id")) d.exec("ALTER TABLE manual_tests ADD COLUMN case_id INTEGER REFERENCES cases(id) ON DELETE SET NULL");
   d.exec("CREATE INDEX IF NOT EXISTS manual_tests_case ON manual_tests(case_id)");
+  // The test plan of an audit (test-plan.json): its plan items and coverage gaps. They belong to the audit and are never test cases, runs or results: they say what
+  // was planned and what was not verified, not what was tested. The latest import of the same audit replaces them. `result` is reserved for the executions of a
+  // later step and is always NULL for now; `inconclusive` is a status of its own there, not a kind of skipped or untested.
+  d.exec(`
+CREATE TABLE IF NOT EXISTS audit_plan_items (
+  id INTEGER PRIMARY KEY,
+  audit_id INTEGER NOT NULL REFERENCES audits(id) ON DELETE CASCADE,
+  source_id TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  test_type TEXT NOT NULL DEFAULT '',
+  risk TEXT NOT NULL DEFAULT '',
+  priority TEXT NOT NULL DEFAULT '',
+  readiness TEXT NOT NULL DEFAULT '' CHECK (readiness IN ('', 'ready', 'needs-clarification')),
+  preconditions TEXT NOT NULL DEFAULT '',
+  test_data TEXT NOT NULL DEFAULT '',
+  steps TEXT NOT NULL DEFAULT '[]',
+  acceptance_criteria TEXT NOT NULL DEFAULT '',
+  automation TEXT NOT NULL DEFAULT '',
+  requirement_refs TEXT NOT NULL DEFAULT '[]',
+  result TEXT CHECK (result IS NULL OR result IN ('pass', 'fail', 'blocked', 'skipped', 'inconclusive')),
+  UNIQUE (audit_id, source_id)
+);
+CREATE TABLE IF NOT EXISTS audit_coverage_gaps (
+  id INTEGER PRIMARY KEY,
+  audit_id INTEGER NOT NULL REFERENCES audits(id) ON DELETE CASCADE,
+  source_id TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  description TEXT NOT NULL,
+  requirement_refs TEXT NOT NULL DEFAULT '[]',
+  UNIQUE (audit_id, source_id)
+);`);
   // 1 when the package of that run had a manual-tests.json (even an empty one). Only then does a run say anything about manual tests.
   if (!hasColumn("audit_imports", "manual_listed")) d.exec("ALTER TABLE audit_imports ADD COLUMN manual_listed INTEGER NOT NULL DEFAULT 0");
   d.exec("CREATE INDEX IF NOT EXISTS bug_refs_req ON bug_refs(requirement_id)");

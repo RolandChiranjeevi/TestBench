@@ -100,7 +100,7 @@ export function checkPackageDir(dir: string, opts: { write?: boolean; previousDi
   manifest.format = "testbench-audit-package";
   manifest.version = 1;
   manifest.files = evidence.map(([path, bytes]) => ({ path, sha256: sha256(bytes), size: bytes.length }));
-  manifest.parts = { bugs: "bugs.json", ...(files.has("manual-tests.json") ? { manualTests: "manual-tests.json" } : {}), ...(files.has("report.md") ? { narrative: "report.md" } : {}) };
+  manifest.parts = { bugs: "bugs.json", ...(files.has("manual-tests.json") ? { manualTests: "manual-tests.json" } : {}), ...(files.has("test-plan.json") ? { testPlan: "test-plan.json" } : {}), ...(files.has("report.md") ? { narrative: "report.md" } : {}) };
   const manifestBytes = Buffer.from(JSON.stringify(manifest, null, 2) + "\n");
   files.set("manifest.json", manifestBytes);
 

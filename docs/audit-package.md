@@ -34,6 +34,7 @@ The artifact can be uploaded by any job, in the same workflow run as the tests o
 manifest.json      required: the audit, and every file with its sha256 and size
 bugs.json          required: the findings
 manual-tests.json  optional: manual test cases for a person to review and run
+test-plan.json     optional: the plan of the audit: plan items and coverage gaps
 report.md          optional: the agent's readable audit. Stored and shown as plain text, never interpreted.
 evidence/...       files that findings point to (screenshots, logs, ...)
 ```
@@ -59,7 +60,7 @@ imported from a package; if they are present, the preview says so. Test results 
     "github": { "repo": "owner/repo", "runId": 123456 }
   },
   "files": [ { "path": "evidence/a.png", "sha256": "<64 hex characters>", "size": 1234 } ],
-  "parts": { "bugs": "bugs.json", "manualTests": "manual-tests.json", "narrative": "report.md" }
+  "parts": { "bugs": "bugs.json", "manualTests": "manual-tests.json", "testPlan": "test-plan.json", "narrative": "report.md" }
 }
 ```
 
@@ -134,6 +135,48 @@ That makes a normal test case (`SHOP-12`) from the proposal: its steps, the expe
 
 At most 200 tests and 10 MB. Unknown fields are ignored, **including any status or result**. A test that breaks a rule refuses the **whole
 package** and nothing is stored, bug reports included, with a message that names the test and the field.
+
+### test-plan.json
+
+The plan of the audit, optional: what the audit planned to check, and what it did not verify. It is shown in the **Audits** tab (**Test plan**) and on each requirement it names.
+
+```json
+{ "version": 1,
+  "planItems": [ {
+    "sourceId": "TPI-001",
+    "title": "Add a todo, the exact text is shown in the list",
+    "type": "Functional", "risk": "High", "priority": "High", "readiness": "ready",
+    "preconditions": "The list is empty",
+    "testData": "QA-AUDIT-1",
+    "steps": ["Type the text in the new-todo field", "Press Enter"],
+    "acceptanceCriteria": "A todo with the exact text is shown in the list",
+    "automation": "Yes, exploration",
+    "refs": { "requirements": ["REQ-1"] }
+  } ],
+  "coverageGaps": [ {
+    "sourceId": "CG-001",
+    "description": "Validation (empty, long, special characters) is not verified: other test data is out of scope.",
+    "refs": { "requirements": ["REQ-LOCAL-002"] }
+  } ] }
+```
+
+| Field | Rule |
+|---|---|
+| `planItems[].sourceId`, `coverageGaps[].sourceId` | Required: the item's stable id in the file (`TPI-001`, `CG-001`): letters, digits and `. _ : - /`, at most 120 characters, unique in its list. |
+| `planItems[].title` | Required, at most 200 characters. |
+| `coverageGaps[].description` | Required: what was not verified and why, at most 5000 characters. |
+| `type`, `risk`, `priority`, `automation` | Optional text (50, 200, 50 and 200 characters). |
+| `readiness` | Optional: `ready` or `needs-clarification`. |
+| `preconditions`, `testData`, `acceptanceCriteria` | Optional text (5000, 2000 and 5000 characters). |
+| `steps` | Optional, at most 50 steps of at most 1000 characters. |
+| `refs.requirements` | Optional: requirements named as `REQ-3` or by the stable id they were imported with (`REQ-LOCAL-002`). Matched against the project's requirements when they are shown, so a requirement created after the import is found without another import. A reference that matches nothing is shown as not found. |
+
+At most 500 plan items and 500 coverage gaps, and 10 MB. A file that breaks a rule refuses the **whole package** and nothing is stored. Name the file in `parts.testPlan` or call it `test-plan.json`; it needs no entry in `files`.
+
+- **It is a plan, not a test.** Plan items are kept apart from test cases, runs and results, and never count towards a requirement having a test.
+- **The latest import of the same audit wins.** A package with a `test-plan.json` replaces that audit's plan (an empty file empties it); a package without one says nothing about the plan and leaves it as it is. The preview counts new, unchanged, updated and removed items.
+- **Deleting the audit deletes its plan.**
+- **Reserved:** `inconclusive` is reserved as a status of its own (with `pass`, `fail`, `blocked` and `skipped`) for the executions of a later version. Plan items carry no result yet.
 
 ## What the import does
 

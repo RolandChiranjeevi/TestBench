@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Bug, Check, EyeOff, ExternalLink, FileText, FolderOpen, KeyRound, Link2, Paperclip, Pencil, Send, Settings, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, Bug, Check, ClipboardList, EyeOff, ExternalLink, FileText, FolderOpen, KeyRound, Link2, Paperclip, Pencil, Send, Settings, Trash2, Upload } from "lucide-react";
 import { api, formatDateTime, parseDate, timeAgo, type Priority } from "../api";
 import { ConfirmModal, Empty, ListSkeleton, Modal, PriorityIcon, PRIORITY_LABEL, useToast } from "../components/ui";
 
@@ -74,7 +74,7 @@ interface Preview {
 const fmtSize = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`);
 interface Audit {
   id: number; agentAuditId: string; title: string; agent: string; startedAt: string | null; source: string; github: { repo: string; runId: number } | null;
-  runState: string; hasReport: boolean; bugs: number; proposed: number; imports: number; lastImportedAt: string;
+  runState: string; hasReport: boolean; bugs: number; proposed: number; imports: number; lastImportedAt: string; planItems: number; coverageGaps: number;
 }
 interface Summary {
   dryRun: boolean; audit: { agentAuditId: string; title: string; agent: string; isNew: boolean; github: { repo: string; runId: number } | null; runState: string };
@@ -933,9 +933,10 @@ function AuditsPanel({ pid }: { pid: string }) {
   const { data: audits, isLoading } = useQuery({ queryKey: ["audits", pid], queryFn: () => api.get<Audit[]>(`/api/projects/${pid}/audits`) });
   const { data: rejected } = useQuery({ queryKey: ["audit-rejections", pid], queryFn: () => api.get<{ artifactId: number; name: string; note: string; seenAt: string; repo: string }[]>(`/api/projects/${pid}/audit-rejections`) });
   const [report, setReport] = useState<Audit | null>(null);
+  const [plan, setPlan] = useState<Audit | null>(null);
   const [del, setDel] = useState<Audit | null>(null);
   const { data: text } = useQuery({ queryKey: ["audit-report", report?.id], enabled: !!report, queryFn: async () => { const r = await fetch(`/api/audits/${report!.id}/report`); return r.ok ? r.text() : "The report could not be loaded."; } });
-  const { data: preview } = useQuery({ queryKey: ["audit-deletion", del?.id], enabled: !!del, queryFn: () => api.get<{ title: string; deleted: number; kept: number; manualDeleted: number; manualKept: number }>(`/api/audits/${del!.id}/deletion-preview`) });
+  const { data: preview } = useQuery({ queryKey: ["audit-deletion", del?.id], enabled: !!del, queryFn: () => api.get<{ title: string; deleted: number; kept: number; manualDeleted: number; manualKept: number; plan?: { planItems: number; coverageGaps: number } }>(`/api/audits/${del!.id}/deletion-preview`) });
   const remove = useMutation({
     mutationFn: () => api.del<{ deleted: number; kept: number }>(`/api/audits/${del!.id}`),
     onSuccess: (r) => { refresh(); setDel(null); toast("success", `Audit deleted. ${r.deleted} untouched proposal${r.deleted === 1 ? "" : "s"} removed, ${r.kept} report${r.kept === 1 ? "" : "s"} kept.`); },
@@ -950,12 +951,14 @@ function AuditsPanel({ pid }: { pid: string }) {
             <strong style={{ overflowWrap: "anywhere" }}>{a.title || a.agentAuditId}</strong>
             <span className="chip">{a.source === "github" ? "GitHub" : "Upload"}</span>
             <span className="spacer" />
+            {a.planItems + a.coverageGaps > 0 && <button className="btn sm" onClick={() => setPlan(a)}><ClipboardList size={12} /> Test plan</button>}
             {a.hasReport && <button className="btn sm" onClick={() => setReport(a)}><FileText size={12} /> Audit report</button>}
             <button className="btn ghost sm" style={DANGER} onClick={() => setDel(a)}><Trash2 size={12} /> Delete</button>
           </div>
           <div className="faint" style={{ fontSize: "var(--fs-md)", marginTop: 4, display: "grid", gap: 2 }}>
             <div><span className="mono">{a.agentAuditId}</span> · {a.agent || "agent unknown"} · last imported {timeAgo(a.lastImportedAt)} ({a.imports} import{a.imports === 1 ? "" : "s"})</div>
             <div>{a.bugs} report{a.bugs === 1 ? "" : "s"}, {a.proposed} still proposed · {RUN_STATE[a.runState] ?? a.runState}{a.github ? ` (${a.github.repo}#${a.github.runId})` : ""}</div>
+            {a.planItems + a.coverageGaps > 0 && <div>Test plan: {a.planItems} plan item{a.planItems === 1 ? "" : "s"}, {a.coverageGaps} coverage gap{a.coverageGaps === 1 ? "" : "s"}</div>}
           </div>
         </div>
       ))}
@@ -974,18 +977,77 @@ function AuditsPanel({ pid }: { pid: string }) {
           <pre className="snippet" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: "60vh" }}>{text ?? "Loading…"}</pre>
         </Modal>
       )}
+      {plan && <PlanModal audit={plan} pid={pid} onClose={() => setPlan(null)} />}
       {del && (
         <ConfirmModal title="Delete this audit?" confirmLabel="Delete audit" busy={remove.isPending} onClose={() => setDel(null)} onConfirm={() => remove.mutate()}>
           {preview ? (
             <p style={{ margin: 0 }}>
               {preview.deleted} untouched proposal{preview.deleted === 1 ? "" : "s"} and the stored audit report will be removed.{" "}
               {preview.kept > 0 ? `${preview.kept} report${preview.kept === 1 ? " is" : "s are"} kept (reviewed, edited or linked), with their evidence and a note of where they came from.` : "No reports are kept."}{" "}
-              {preview.manualDeleted + preview.manualKept > 0 && `Agent proposals: ${preview.manualDeleted} untouched proposal${preview.manualDeleted === 1 ? "" : "s"} removed, ${preview.manualKept} kept (reviewed or edited).`}
+              {preview.manualDeleted + preview.manualKept > 0 && `Agent proposals: ${preview.manualDeleted} untouched proposal${preview.manualDeleted === 1 ? "" : "s"} removed, ${preview.manualKept} kept (reviewed or edited).`}{" "}
+              {!!preview.plan && preview.plan.planItems + preview.plan.coverageGaps > 0 && `The test plan (${preview.plan.planItems} plan item${preview.plan.planItems === 1 ? "" : "s"}, ${preview.plan.coverageGaps} coverage gap${preview.plan.coverageGaps === 1 ? "" : "s"}) is removed too.`}
             </p>
           ) : <p style={{ margin: 0 }}>Checking…</p>}
         </ConfirmModal>
       )}
     </div>
+  );
+}
+
+interface PlanLink { raw: string; state: string; label: string; requirementId: number | null; reason: string }
+interface PlanView {
+  audit: { id: number; agentAuditId: string; title: string };
+  planItems: { sourceId: string; title: string; type: string; risk: string; priority: string; readiness: string; preconditions: string; testData: string; steps: string[]; acceptanceCriteria: string; automation: string; result: string | null; requirements: PlanLink[] }[];
+  coverageGaps: { sourceId: string; description: string; requirements: PlanLink[] }[];
+}
+
+/** The test plan of one audit: its plan items and the coverage gaps, with the requirements they name matched against the project's requirements as they are now. */
+function PlanModal({ audit, pid, onClose }: { audit: Audit; pid: string; onClose: () => void }) {
+  const { data, isLoading } = useQuery({ queryKey: ["audit-plan", audit.id], queryFn: () => api.get<PlanView>(`/api/audits/${audit.id}/plan`) });
+  const reqs = (links: PlanLink[]) => links.length === 0 ? <span className="faint">No requirement named.</span> : links.map((r) => r.requirementId
+    ? <Link key={r.raw} className="chip" to={`/p/${pid}/requirements?req=${r.requirementId}`} onClick={onClose}>{r.label}</Link>
+    : <span key={r.raw} className="chip" style={{ color: "var(--blocked-fg)" }} title={r.reason}>{r.raw} · not found</span>);
+  const field = (label: string, value: string) => value ? <div className="field"><div className="section-label">{label}</div><div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{value}</div></div> : null;
+  return (
+    <Modal title={`Test plan · ${audit.title || audit.agentAuditId}`} onClose={onClose} width={820} footer={<button className="btn" onClick={onClose}>Close</button>}>
+      {isLoading || !data ? <ListSkeleton rows={3} /> : (
+        <div className="col" style={{ gap: 12, maxHeight: "65vh", overflowY: "auto" }}>
+          <div className="faint" style={{ fontSize: "var(--fs-md)" }}>
+            A plan says what the audit planned to check and what it did not verify. It is not a test run, and it does not make a requirement covered. The latest import of this audit replaces it.
+          </div>
+          <div className="section-label"><ClipboardList size={12} /> Plan items <span className="faint">{data.planItems.length}</span></div>
+          {data.planItems.length === 0 && <span className="faint">No plan items.</span>}
+          {data.planItems.map((x) => (
+            <div key={x.sourceId} className="card" style={{ padding: 12 }}>
+              <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                <span className="mono muted">{x.sourceId}</span>
+                <strong style={{ overflowWrap: "anywhere" }}>{x.title}</strong>
+                <span className="spacer" />
+                {x.type && <span className="chip">{x.type}</span>}
+                {x.priority && <span className="chip">priority {x.priority}</span>}
+                {x.risk && <span className="chip">risk {x.risk}</span>}
+                {x.readiness && <span className="chip">{x.readiness}</span>}
+                {x.result && <span className="chip">{x.result}</span>}
+              </div>
+              <div className="row" style={{ gap: 6, flexWrap: "wrap", marginTop: 6 }}>{reqs(x.requirements)}</div>
+              {field("Preconditions", x.preconditions)}
+              {field("Test data", x.testData)}
+              {x.steps.length > 0 && <div className="field"><div className="section-label">Steps</div><ol style={{ margin: 0, paddingLeft: 20 }}>{x.steps.map((s, i) => <li key={i} style={{ overflowWrap: "anywhere" }}>{s}</li>)}</ol></div>}
+              {field("Acceptance criteria", x.acceptanceCriteria)}
+              {field("Automation", x.automation)}
+            </div>
+          ))}
+          <div className="section-label"><AlertTriangle size={12} /> Coverage gaps <span className="faint">{data.coverageGaps.length}</span></div>
+          {data.coverageGaps.length === 0 && <span className="faint">No coverage gaps.</span>}
+          {data.coverageGaps.map((g) => (
+            <div key={g.sourceId} className="card" style={{ padding: 12 }}>
+              <div className="row" style={{ gap: 8, flexWrap: "wrap" }}><span className="mono muted">{g.sourceId}</span><span className="spacer" />{reqs(g.requirements)}</div>
+              <div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", marginTop: 6 }}>{g.description}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
   );
 }
 
