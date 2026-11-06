@@ -34,7 +34,7 @@ import { createJiraIssue, JiraError, jiraEnabled, jiraStatus } from "./jira.ts";
 import { buildPreview, checkPublication, getDestination, lookupTeams, publishBug, PublishError, removeDestination, retryAttachments, saveDestination } from "./publish.ts";
 import {
   applyPendingUpdate, AuditError, auditReportText, deleteAudit, deleteBugReport, getBugReport, ignorePendingUpdate, importAuditPackage, linkExternalIssue,
-  listAudits, listBugReports, listRejectedPackages, markDuplicate, previewAuditDeletion, relinkBugRefs, reviewBugReport, unlinkExternalIssue, updateBugReport,
+  getAuditPlan, listAudits, listBugReports, listRejectedPackages, markDuplicate, previewAuditDeletion, relinkBugRefs, reviewBugReport, unlinkExternalIssue, updateBugReport,
 } from "./audits.ts";
 import { agentRequirements } from "./agentexport.ts";
 import { importRequirements, RequirementImportError } from "./reqimport.ts";
@@ -1086,6 +1086,7 @@ app.post("/api/bug-reports/:id/relink", (req) => {
 });
 app.delete("/api/bug-reports/:id", (req) => audited(() => (deleteBugReport(idParam(req), (req.query as { force?: string }).force === "1"), { ok: true })));
 
+app.get("/api/audits/:id/plan", (req) => audited(() => getAuditPlan(idParam(req))));
 app.get("/api/audits/:id/deletion-preview", (req) => {
   const { removable: _ids, manualRemovable: _mids, ...preview } = audited(() => previewAuditDeletion(idParam(req)));
   return preview;

@@ -9,6 +9,8 @@ import { AuditError, hashOf, resolveOne, resolveRefs, toSqlDate, type ResolvedRe
 export { AuditError } from "./auditcommon.ts";
 import { manualTestsOfAudit, planManualTests, writeManualTests, type PlannedManual } from "./manualtests.ts";
 import { inspectEvidence, PackageError, parsePackage, readEvidence, safeRelPath, type BugItem, type EvidenceCheck, type ParsedPackage } from "./importers/auditpackage.ts";
+import { auditPlan, planCounts, planTestPlan, storeTestPlan } from "./auditplan.ts";
+import type { PlannedTestPlan } from "./auditplan.ts";
 
 /**
  * Audit packages and the bug reports in them.
@@ -49,6 +51,8 @@ export interface ImportSummary {
   counts: { new: number; unchanged: number; updated: number; pending: number };
   evidence: { ok: number; problems: number };
   unresolvedRefs: number;
+  /** The test plan of the package (test-plan.json), compared with the audit's stored plan. `listed` is false when the package has none: the audit's earlier plan is then left as it is. */
+  testPlan: { listed: boolean; planItems: PlannedTestPlan["planItems"]; coverageGaps: PlannedTestPlan["coverageGaps"]; unresolvedRefs: number };
   /** The manual tests of the package. `listed` is false when it has no manual-tests.json. */
   manualTests: {
     listed: boolean; counts: { new: number; unchanged: number; updated: number; pending: number }; unresolvedRefs: number;
@@ -174,7 +178,7 @@ function planImport(pkg: ParsedPackage, ctx: ImportContext) {
   const run = gh ? (db.prepare("SELECT id FROM runs WHERE project_id = ? AND source = 'github' AND external_id = ?").get(project.id, externalRunId(gh.repo, gh.runId)) as { id: number } | undefined) : undefined;
   const runState: "linked" | "pending" | "none" = !gh ? "none" : run ? "linked" : "pending";
   const manual = planManualTests(pkg, project);
-  return { project, planned, manual, warnings, gh, run: run?.id ?? null, runState };
+  return { project, planned, manual, warnings, gh, run: run?.id ?? null, runState, testPlan: planTestPlan(pkg, project) };
 }
 
 function summarize(pkg: ParsedPackage, ctx: ImportContext, plan: ReturnType<typeof planImport>, dryRun: boolean, auditId: number | null, isNew: boolean): ImportSummary {
@@ -194,6 +198,7 @@ function summarize(pkg: ParsedPackage, ctx: ImportContext, plan: ReturnType<type
     dryRun,
     audit: { agentAuditId: a.id, title: a.title, agent: [a.agent.name, a.agent.version].filter(Boolean).join(" "), isNew, source: ctx.source, github: plan.gh ? { repo: plan.gh.repo, runId: plan.gh.runId } : null, runState: plan.runState },
     counts, evidence: { ok, problems }, unresolvedRefs: unresolved, warnings: plan.warnings, items, auditId,
+    testPlan: { listed: plan.testPlan.listed, planItems: plan.testPlan.planItems, coverageGaps: plan.testPlan.coverageGaps, unresolvedRefs: plan.testPlan.unresolvedRefs },
     manualTests: {
       listed: pkg.manualTests !== null,
       counts: plan.manual.reduce((c, m) => { c[m.action === "update" ? "updated" : m.action] += 1; return c; }, { new: 0, unchanged: 0, updated: 0, pending: 0 }),
@@ -327,6 +332,7 @@ export function importAuditPackage(bag: FileBag, ctx: ImportContext, opts: { dry
       }
       relinkBugRefs(ctx.projectId);
       writeManualTests(plan.manual, { projectId: ctx.projectId, auditId, agentAuditId: a.id, origin, importId });
+      storeTestPlan(auditId, plan.testPlan); // the latest import of the audit wins; no test-plan.json leaves the stored plan alone
       summary = summarize(pkg, ctx, plan, false, auditId, !existingAudit);
       db.prepare("UPDATE audit_imports SET new_count = ?, unchanged_count = ?, updated_count = ?, pending_count = ? WHERE id = ?")
         .run(summary.counts.new, summary.counts.unchanged, summary.counts.updated, summary.counts.pending, importId);
@@ -530,7 +536,7 @@ export function listAudits(projectId: number) {
     id: a.id, agentAuditId: a.agent_audit_id, title: a.title, agent: [a.agent_name, a.agent_version].filter(Boolean).join(" "), model: a.agent_model,
     startedAt: a.started_at, finishedAt: a.finished_at, reviewStatus: a.review_status, reviewMethod: a.review_method,
     source: a.source, github: a.github_repo ? { repo: a.github_repo, runId: a.github_run_id, artifactId: a.github_artifact_id } : null,
-    runId: a.run_id, runState: a.run_state === "linked" && a.run_id == null ? "deleted" : a.run_state, hasReport: !!a.narrative_stored_name, bugs: a.bugs, proposed: a.proposed, imports: a.imports, lastImportedAt: a.last_imported_at,
+    runId: a.run_id, runState: a.run_state === "linked" && a.run_id == null ? "deleted" : a.run_state, hasReport: !!a.narrative_stored_name, bugs: a.bugs, proposed: a.proposed, imports: a.imports, lastImportedAt: a.last_imported_at, ...planCounts(a.id),
   }));
 }
 
@@ -677,6 +683,12 @@ export function deleteBugReport(id: number, force = false) {
 }
 
 /** Which reports an audit deletion would remove and which it would keep. Only untouched proposals go; reviewed, edited or linked ones stay. */
+/** The plan of one audit for its view (plan items, coverage gaps and the requirements they name, matched as they are now). */
+export function getAuditPlan(auditId: number) {
+  const p = auditPlan(auditId);
+  if (!p) throw new AuditError(404, "Audit not found");
+  return p;
+}
 export function previewAuditDeletion(auditId: number) {
   const a = db.prepare("SELECT id, title FROM audits WHERE id = ?").get(auditId) as { id: number; title: string } | undefined;
   if (!a) throw new AuditError(404, "Audit not found");
@@ -686,6 +698,7 @@ export function previewAuditDeletion(auditId: number) {
   return {
     title: a.title, removable: removable.map((b) => b.id), deleted: removable.length, kept: bugs.length - removable.length,
     manualRemovable: manual.removable, manualDeleted: manual.deleted, manualKept: manual.kept,
+    plan: planCounts(auditId),
   };
 }
 

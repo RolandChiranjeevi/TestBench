@@ -44,6 +44,10 @@ export interface RequirementDetail extends Omit<Requirement, "caseIds" | "active
   linked: {
     manualTests: { id: number; sourceId: string; title: string; status: "proposed" | "accepted" | "rejected"; category: string; priority: Priority; testCase: string | null }[];
     bugs: { id: number; sourceId: string; title: string; status: "proposed" | "accepted" | "rejected" | "duplicate"; severity: Priority | null }[];
+    /** Planned in the test plan of an audit. A plan, not a test: it never makes a requirement covered. */
+    planItems: { sourceId: string; title: string; type: string; risk: string; priority: string; readiness: string; auditId: number; agentAuditId: string; auditTitle: string }[];
+    /** What an audit did not verify about this requirement, and why. */
+    coverageGaps: { sourceId: string; description: string; auditId: number; agentAuditId: string; auditTitle: string }[];
   };
   cases: { id: number; number: number; title: string; priority: Priority; status: CaseSummary["status"]; suite_name: string | null; last_status: Status | null; review_needed: boolean }[];
   history: RequirementRevision[];

@@ -1,4 +1,5 @@
 import { db } from "./db.ts";
+import { planForRequirement } from "./auditplan.ts";
 
 /**
  * What is linked to a requirement besides the project's own test cases: manual tests and bug reports that name it (REQ-n or its stable id),
@@ -96,7 +97,8 @@ export function requirementLinks(requirementId: number) {
   const bugs = db.prepare(`
     SELECT DISTINCT b.id, b.source_id AS sourceId, b.title, b.review_status AS status, COALESCE(b.human_severity, b.agent_severity) AS severity
     FROM bug_refs x JOIN bug_reports b ON b.id = x.bug_report_id WHERE x.requirement_id = ? ORDER BY b.id`).all(requirementId);
-  return { manualTests, bugs };
+  // The test plan of audits is shown here too, but never counted as a test: see `withoutTest` in requirementOverviews.
+  return { manualTests, bugs, ...planForRequirement(requirementId) };
 }
 
 /** Headline numbers and the references to requirements that match nothing, with the reason. Deprecated requirements are left out of the numbers. */
