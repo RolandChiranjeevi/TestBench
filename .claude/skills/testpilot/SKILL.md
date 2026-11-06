@@ -11,6 +11,13 @@ Those are in `../references/audit-contract.md` and apply as written there.
 
 Paths in this file are relative to this `SKILL.md`.
 
+## Commands
+
+- `discover`: inspect a target and propose a test scope. See `commands/discover.md`.
+- `deliver`: transform a validated audit package and import it to TestBench
+  after user confirmation (dry-run first, then real import). See
+  `commands/deliver.md`.
+
 ## Boundaries
 
 The agent proposes. People decide.
