@@ -1,14 +1,14 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
-import { CONTRACT_VERSION, readCanonicalPackage, sha256File, validateContract, type CanonicalPackage, type ContractReport } from "./auditcontract.ts";
+import { SUPPORTED_CONTRACT_VERSIONS, readCanonicalPackage, sha256File, validateContract, type CanonicalPackage, type ContractReport } from "./auditcontract.ts";
 import { EVIDENCE_EXT, MANUAL_CATEGORIES } from "./auditpackage.ts";
 import { checkPackageDir, type BuildReport } from "./auditbuild.ts";
 import { PRIORITIES } from "../shapes.ts";
 import { BUG_FIELD_SPEC, BugMappingError, mapBug, type MappedBug } from "./auditbugmap.ts";
 
 /**
- * Export adapter: turns a finished audit package of the qa-run audit contract (version 1.2) into the package format that
+ * Export adapter: turns a finished audit package of the qa-run audit contract (version 1.2 or 1.3) into the package format that
  * Testbench imports (server/importers/auditpackage.ts). The contract package stays the canonical record and is only read;
  * everything is written to a separate output folder, together with provenance.json, which says where every value came
  * from, which values the adapter generated, and which contract fields have no place in the import format.
@@ -33,7 +33,7 @@ export class ExportError extends Error {}
 export interface ExportOptions {
   input: string;
   output: string;
-  /** Testbench project key (for example RS). Contract 1.2 has no field for it, so the person running the export names it. */
+  /** Testbench project key (for example RS). The contract has no field for it, so the person running the export names it. */
   project: string;
   /** Replace an output folder that an earlier run of this adapter wrote. Any other existing folder is refused. */
   overwrite?: boolean;
@@ -90,6 +90,8 @@ export const FIELD_MAP = [
   { from: "objective, reason_manual, origin, evidence_ids", to: "tests[].description", how: "written as text lines" },
   { from: "(none)", to: "tests[].priority", how: "adapter-generated, see generated[]" },
   { from: "(none)", to: "tests[].category", how: "adapter-generated, see generated[]" },
+  { from: "test_plan_items[] (contract 1.3 only)", to: "test-plan.json planItems[] (manifest.parts.testPlan)", how: "mapped by PLAN_FIELD_MAP; a 1.2 package has no structured plan fields and gets the report section only" },
+  { from: "coverage_gaps[] (contract 1.3 only)", to: "test-plan.json coverageGaps[]", how: "mapped by PLAN_FIELD_MAP" },
   { from: "scope.viewports", to: "tests[].viewports", how: "only for a responsive test, which the import format requires to name a viewport" },
 ];
 
@@ -113,6 +115,19 @@ export const NOT_MAPPED = [
   { field: "bugs[].duplicate_check, possible_duplicate_of, duplicate_check_notes", reason: "no duplicate-check fields; written into the description" },
   { field: "bugs[].execution_ids, tests[].origin, tests[].evidence_ids", reason: "no links to executions or origins; written into the description as text" },
   { field: "tests[].evidence_ids as files", reason: "a manual test in the import format has no evidence list, so evidence only cited by a manual test is not stored by Testbench" },
+];
+
+/** Contract 1.3 test plan -> test-plan.json (contract section 9), written into provenance.json as is. */
+export const PLAN_FIELD_MAP = [
+  { from: "test_plan_items[].test_plan_item_id", to: "planItems[].sourceId", how: "copied" },
+  { from: "title, type, risk, priority, readiness, preconditions", to: "the same names", how: "copied; readiness only when it is ready or needs-clarification" },
+  { from: "steps", to: "planItems[].steps", how: "copied" },
+  { from: "test_data", to: "planItems[].testData", how: "renamed" },
+  { from: "acceptance_criteria", to: "planItems[].acceptanceCriteria", how: "renamed" },
+  { from: "automation {suitable, mode | reason}", to: "planItems[].automation", how: "text: 'Yes, <mode>' or 'No: <reason>'" },
+  { from: "requirement_id", to: "planItems[].refs.requirements", how: "a one-item list" },
+  { from: "coverage_gaps[].coverage_gap_id", to: "coverageGaps[].sourceId", how: "copied" },
+  { from: "coverage_gaps[].description, requirement_id", to: "coverageGaps[].description, refs.requirements", how: "copied; the id as a one-item list" },
 ];
 
 const text = (v: unknown): string => (v == null ? "" : Array.isArray(v) ? v.map(text).filter(Boolean).join("\n") : typeof v === "object" ? JSON.stringify(v) : String(v));
@@ -164,7 +179,7 @@ function convertManualTest(t: Json, m: Json, bugs: Json[], generated: Json[]) {
   const lines = [
     text(t.objective),
     t.reason_manual && `Why a person is needed: ${text(t.reason_manual)}`,
-    `Converted from audit contract ${CONTRACT_VERSION} manual test proposal ${t.manual_test_proposal_id} in audit ${m.audit_id}; origin: ${t.origin?.type} ${t.origin?.id}.`,
+    `Converted from audit contract ${m.contract_version} manual test proposal ${t.manual_test_proposal_id} in audit ${m.audit_id}; origin: ${t.origin?.type} ${t.origin?.id}.`,
     (t.evidence_ids ?? []).length && `Evidence in the audit: ${t.evidence_ids.join(", ")}`,
     `Priority and category were set by the export adapter (${d.rule}).`,
   ].filter(Boolean);
@@ -229,6 +244,52 @@ export function withTestPlan(report: string, m: Json): { text: string; generated
   return { text: [...lines.slice(0, at), ...section, "", ...lines.slice(at)].join(eol), generated: true, where: "before Execution results" };
 }
 
+/** The contract's automation object as the import's text. Anything that is not the object of section 5.9 gives "" and a warning, never a guess. */
+function automationText(a: Json): string | null {
+  if (a && typeof a === "object" && !Array.isArray(a)) {
+    if (a.suitable === true && typeof a.mode === "string" && a.mode.trim()) return `Yes, ${a.mode.trim()}`;
+    if (a.suitable === false && typeof a.reason === "string" && a.reason.trim()) return `No: ${a.reason.trim()}`;
+  }
+  return null;
+}
+
+/**
+ * Contract 1.3 manifest -> test-plan.json (contract section 9). Fields are renamed from snake_case to the import's names; nothing is invented:
+ * a value the contract does not give stays empty and is reported. Over-long values are not cut: Testbench's own package check reports a plan it would refuse.
+ */
+export function mapTestPlan(m: Json): { file: { version: 1; planItems: Json[]; coverageGaps: Json[] }; warnings: string[] } {
+  const warnings: string[] = [];
+  const planItems = (m.test_plan_items ?? []).map((t: Json) => {
+    const id = text(t.test_plan_item_id);
+    let automation = "";
+    if (t.automation != null) {
+      const a = automationText(t.automation);
+      if (a === null) warnings.push(`plan item ${id}: automation is not in the form of contract section 5.9, so it is left empty`);
+      else automation = a;
+    }
+    return {
+      sourceId: id,
+      title: text(t.title),
+      type: text(t.type),
+      risk: text(t.risk),
+      priority: text(t.priority),
+      ...(t.readiness === "ready" || t.readiness === "needs-clarification" ? { readiness: t.readiness } : {}),
+      preconditions: text(t.preconditions),
+      testData: text(t.test_data),
+      steps: list(t.steps),
+      acceptanceCriteria: text(t.acceptance_criteria),
+      automation,
+      refs: { requirements: t.requirement_id ? [text(t.requirement_id)] : [] },
+    };
+  });
+  const coverageGaps = (m.coverage_gaps ?? []).map((g: Json) => ({
+    sourceId: text(g.coverage_gap_id),
+    description: text(g.description),
+    refs: { requirements: g.requirement_id ? [text(g.requirement_id)] : [] },
+  }));
+  return { file: { version: 1, planItems, coverageGaps }, warnings };
+}
+
 const writeJson = (path: string, v: unknown) => writeFileSync(path, JSON.stringify(v, null, 2) + "\n");
 
 /** Converts, checks with Testbench's own package check, and returns what was done. Throws ExportError before writing anything when the input is not a valid finished contract package. */
@@ -248,8 +309,10 @@ export function exportToTestbench(opts: ExportOptions): ExportResult {
   // 1. Read and validate the canonical package first. Nothing is written when it fails.
   const pkg: CanonicalPackage = readCanonicalPackage(input);
   const contract = validateContract(pkg, { complete: true });
-  if (!contract.ok) throw Object.assign(new ExportError(`The input is not a valid finished audit contract ${CONTRACT_VERSION} package:\n  ${contract.errors.join("\n  ")}`), { contract });
+  if (!contract.ok) throw Object.assign(new ExportError(`The input is not a valid finished audit contract ${SUPPORTED_CONTRACT_VERSIONS.join(" or ")} package:\n  ${contract.errors.join("\n  ")}`), { contract });
   const m = pkg.manifest;
+  const version: string = m.contract_version;
+  const hasPlan = version === "1.3";
   const evById = new Map<string, Json>(m.evidence.map((e: Json) => [e.evidence_id, e]));
 
   // 2. Map the bug proposals field by field, before anything is written. A bug that cannot be given a sourceId or a title stops the export here;
@@ -268,7 +331,10 @@ export function exportToTestbench(opts: ExportOptions): ExportResult {
   rmSync(staging, { recursive: true, force: true });
   mkdirSync(join(staging, "evidence"), { recursive: true });
   const generated: Json[] = [];
-  const notMapped = [...NOT_MAPPED];
+  const notMapped = NOT_MAPPED.filter((n) => !(hasPlan && /^manifest\.(test_plan_items|coverage_gaps)\[\]/.test(n.field)));
+  if (hasPlan) {
+    notMapped.push({ field: "test-plan.md", reason: "the text form of the plan, for a person; the structured plan travels as test-plan.json and the report keeps its Test plan section" });
+  }
 
   // 4, 5. Evidence: byte-for-byte copies, sha256 and size taken from the copy and compared with the original.
   const files: { path: string; sha256: string; size: number }[] = [];
@@ -317,6 +383,14 @@ export function exportToTestbench(opts: ExportOptions): ExportResult {
   const tests = pkg.manualTests.map((t) => convertManualTest(t, m, pkg.bugs, generated));
   writeJson(join(staging, "manual-tests.json"), { version: 1, tests });
 
+  // test-plan.json (contract 1.3): the structured plan. A 1.2 package has no structured plan fields; its plan is only the report section.
+  let planMap: ReturnType<typeof mapTestPlan> | null = null;
+  if (hasPlan) {
+    planMap = mapTestPlan(m);
+    warnings.push(...planMap.warnings);
+    writeJson(join(staging, "test-plan.json"), planMap.file);
+  }
+
   // 3. manifest.json in the import format.
   const title = (/^#\s+(.+)$/m.exec(pkg.report)?.[1] ?? `Audit ${m.audit_id}`).trim().slice(0, 200);
   const starts = m.executions.map((x: Json) => x.started_at).filter(Boolean).sort();
@@ -333,7 +407,7 @@ export function exportToTestbench(opts: ExportOptions): ExportResult {
       agent: { name: text(m.agent?.name), version: "", model: text(m.agent?.model) },
     },
     files,
-    parts: { bugs: "bugs.json", manualTests: "manual-tests.json", narrative: "report.md" },
+    parts: { bugs: "bugs.json", manualTests: "manual-tests.json", ...(planMap ? { testPlan: "test-plan.json" } : {}), narrative: "report.md" },
   };
   writeJson(join(staging, "manifest.json"), manifest);
 
@@ -346,19 +420,21 @@ export function exportToTestbench(opts: ExportOptions): ExportResult {
     source: {
       path: relative(dirname(output), input) || ".",
       auditId: m.audit_id,
-      contractVersion: CONTRACT_VERSION,
+      contractVersion: version,
       contractValidation: { ok: contract.ok, errors: contract.errors, warnings: contract.warnings, counts: contract.counts, reportCounts: contract.reportCounts },
-      files: Object.fromEntries(["manifest.json", "bugs.json", "manual-tests.json", "report.md"].map((f) => [f, sha256File(join(input, f))])),
+      files: Object.fromEntries(["manifest.json", "bugs.json", "manual-tests.json", "report.md", ...(hasPlan ? ["test-plan.md"] : [])].map((f) => [f, sha256File(join(input, f))])),
     },
     target: { importer: "server/importers/auditpackage.ts", format: "testbench-audit-package", version: 1 },
-    project: { key: opts.project, origin: "operator-supplied --project; contract 1.2 has no Testbench project key" },
+    project: { key: opts.project, origin: "operator-supplied --project; the audit contract has no Testbench project key" },
     idMap: {
       audit: [{ contract: "audit_id", value: m.audit_id, testbench: "audit.id" }],
       bugs: pkg.bugs.map((b) => ({ bug_proposal_id: b.bug_proposal_id, sourceId: b.bug_proposal_id })),
+      ...(planMap ? { planItems: planMap.file.planItems.map((p) => ({ test_plan_item_id: p.sourceId, sourceId: p.sourceId, requirement_id: p.refs.requirements[0] ?? null })), coverageGaps: planMap.file.coverageGaps.map((g) => ({ coverage_gap_id: g.sourceId, sourceId: g.sourceId, requirement_id: g.refs.requirements[0] ?? null })) } : {}),
       manualTests: pkg.manualTests.map((t) => ({ manual_test_proposal_id: t.manual_test_proposal_id, sourceId: t.manual_test_proposal_id, requirement_id: t.requirement_id, refsRequirements: t.requirement_id ? [t.requirement_id] : [] })),
     },
     report: { canonicalSha256: sha256File(join(input, "report.md")), exportedSha256: createHash("sha256").update(narrative.text).digest("hex"), generatedSections: narrative.generated ? ["Test plan"] : [], placement: narrative.where },
     fieldMap: FIELD_MAP,
+    ...(planMap ? { testPlan: { file: "test-plan.json", planItems: planMap.file.planItems.length, coverageGaps: planMap.file.coverageGaps.length, spec: PLAN_FIELD_MAP, warnings: planMap.warnings } } : {}),
     categoryMap: TYPE_TO_CATEGORY,
     generated,
     notMapped,
@@ -375,6 +451,6 @@ export function exportToTestbench(opts: ExportOptions): ExportResult {
 
   // 11. Testbench's own package check, the same code the import uses, without writing.
   const testbench = checkPackageDir(output, { write: false });
-  const written = ["manifest.json", "bugs.json", "manual-tests.json", "report.md", "provenance.json", ...files.map((f) => f.path)];
+  const written = ["manifest.json", "bugs.json", "manual-tests.json", ...(planMap ? ["test-plan.json"] : []), "report.md", "provenance.json", ...files.map((f) => f.path)];
   return { output, files: written, contract, testbench, provenance, warnings, report: { generated: narrative.generated, where: narrative.where } };
 }

@@ -1,4 +1,4 @@
-// Converts a finished audit package of the qa-run audit contract (version 1.2) into the package format Testbench imports,
+// Converts a finished audit package of the qa-run audit contract (version 1.2 or 1.3) into the package format Testbench imports,
 // in a separate folder, and runs Testbench's own package check on the result. The input package is only read. Nothing is delivered.
 //   npm run audit:export:testbench -- --input <contract package> --output <new folder> --project <Testbench key> [--overwrite]
 // Exit code 0: exported and Testbench would accept it. 1: the input is not a valid finished package, or Testbench would refuse the export. 2: wrong usage.
@@ -20,7 +20,7 @@ const output = flags.get("--output");
 const project = flags.get("--project");
 if (bad || !input || !output || !project) {
   console.error("Usage: npm run audit:export:testbench -- --input <contract package> --output <new folder> --project <Testbench project key> [--overwrite]");
-  if (!project && input && output) console.error("--project is required: audit contract 1.2 has no Testbench project key (for example RS).");
+  if (!project && input && output) console.error("--project is required: the audit contract has no Testbench project key (for example RS).");
   process.exit(2);
 }
 

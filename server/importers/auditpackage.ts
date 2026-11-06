@@ -159,6 +159,28 @@ const testPlanFileSchema = z.object({
   coverageGaps: z.array(z.unknown()).max(LIMITS.coverageGaps).default([]),
 });
 
+const PLAN_FILE_KEYS = ["version", "planItems", "coverageGaps"];
+const PLAN_ITEM_KEYS = Object.keys(planItemSchema.shape);
+const GAP_KEYS = Object.keys(coverageGapSchema.shape);
+const REF_KEYS = ["requirements"];
+const camel = (k: string) => k.replace(/[_-]+([a-z0-9])/gi, (_, c: string) => c.toUpperCase());
+
+/**
+ * The names in test-plan.json that the import does not know. The schemas strip an unknown name, so a plan item written with `test_data`
+ * instead of `testData` would import without that field and without a message. This lists them instead, with the likely intended name
+ * ("test_data" -> "testData"). It only reports: what the import ignores is still ignored.
+ */
+function unknownNames(value: unknown, known: string[], label: string): string[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  const out: string[] = [];
+  for (const k of Object.keys(value)) {
+    if (known.includes(k)) continue;
+    const guess = camel(k);
+    out.push(known.includes(guess) ? `${label}: "${k}" is not a name the import knows and was ignored; did you mean "${guess}"?` : `${label}: "${k}" is not a name the import knows and was ignored`);
+  }
+  return out;
+}
+
 export type Manifest = z.infer<typeof manifestSchema>;
 export type BugItem = z.infer<typeof bugSchema>;
 export type ManualTestItem = z.infer<typeof manualTestSchema>;
@@ -279,6 +301,7 @@ export function parsePackage(bag: FileBag): ParsedPackage {
     });
   }
 
+  const warnings: string[] = [];
   let testPlan: ParsedPackage["testPlan"] = null;
   let testPlanPath: string | null = null;
   let testPlanBytes: Uint8Array | null = null;
@@ -292,6 +315,7 @@ export function parsePackage(bag: FileBag): ParsedPackage {
     const file = testPlanFileSchema.safeParse(tp.value);
     if (!file.success) throw new PackageError(`${planName}: ${issues(file.error)}`);
     const named = (raw: unknown) => (typeof (raw as { sourceId?: unknown })?.sourceId === "string" ? ` (${(raw as { sourceId: string }).sourceId})` : "");
+    warnings.push(...unknownNames(tp.value, PLAN_FILE_KEYS, planName));
     const plan = { planItems: [] as PlanItem[], coverageGaps: [] as CoverageGapItem[] };
     const seenItems = new Set<string>();
     file.data.planItems.forEach((raw, i) => {
@@ -299,6 +323,8 @@ export function parsePackage(bag: FileBag): ParsedPackage {
       if (!r.success) throw new PackageError(`${planName}: plan item #${i + 1}${named(raw)}: ${issues(r.error)}`);
       if (seenItems.has(r.data.sourceId)) throw new PackageError(`${planName}: plan item sourceId "${r.data.sourceId}" appears twice`);
       seenItems.add(r.data.sourceId);
+      const at = `${planName}: plan item ${r.data.sourceId}`;
+      warnings.push(...unknownNames(raw, PLAN_ITEM_KEYS, at), ...unknownNames((raw as { refs?: unknown }).refs, REF_KEYS, `${at} refs`));
       plan.planItems.push(r.data);
     });
     const seenGaps = new Set<string>();
@@ -307,12 +333,13 @@ export function parsePackage(bag: FileBag): ParsedPackage {
       if (!r.success) throw new PackageError(`${planName}: coverage gap #${i + 1}${named(raw)}: ${issues(r.error)}`);
       if (seenGaps.has(r.data.sourceId)) throw new PackageError(`${planName}: coverage gap sourceId "${r.data.sourceId}" appears twice`);
       seenGaps.add(r.data.sourceId);
+      const at = `${planName}: coverage gap ${r.data.sourceId}`;
+      warnings.push(...unknownNames(raw, GAP_KEYS, at), ...unknownNames((raw as { refs?: unknown }).refs, REF_KEYS, `${at} refs`));
       plan.coverageGaps.push(r.data);
     });
     testPlan = plan;
   }
 
-  const warnings: string[] = [];
   let narrative: Uint8Array | null = null;
   const narrativePath = manifest.parts.narrative ? safeRelPath(manifest.parts.narrative) : bag.names.includes(root + "report.md") ? "report.md" : null;
   if (manifest.parts.narrative && !narrativePath) warnings.push("parts.narrative is not a safe path; the audit report was not stored");
