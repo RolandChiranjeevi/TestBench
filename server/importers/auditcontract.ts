@@ -4,14 +4,20 @@ import { createHash } from "node:crypto";
 
 /**
  * Read-only check of an audit package written by the qa-run skill against its own contract
- * (`.claude/skills/references/audit-contract.md`, version 1.2). This is NOT Testbench's import format: that is
+ * (`.claude/skills/references/audit-contract.md`, versions 1.2 and 1.3). This is NOT Testbench's import format: that is
  * server/importers/auditpackage.ts, and server/importers/testbenchexport.ts converts the one into the other.
  *
  * Nothing here writes. Rule V-32 (an evidence file was not changed after registration) cannot be checked from the
  * package alone, because the contract stores no hash for evidence; it is reported as a warning, not as a pass.
+ *
+ * A package keeps the `contract_version` it was written against and is checked against that version's rules: 1.2 as before, 1.3 with the
+ * test plan (test-plan.md, report section "Test plan", rules V-33 to V-35).
  */
 
-export const CONTRACT_VERSION = "1.2";
+/** The newest contract version this check knows. */
+export const CONTRACT_VERSION = "1.3";
+export const SUPPORTED_CONTRACT_VERSIONS = ["1.2", "1.3"] as const;
+const hasTestPlan = (version: unknown) => version === "1.3";
 
 // The package is free-form JSON written by an agent; every field is checked before it is used.
 type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -22,6 +28,8 @@ export interface CanonicalPackage {
   bugs: Json[];
   manualTests: Json[];
   report: string;
+  /** test-plan.md (contract 1.3); null when the package has none. Only a 1.3 package must have it (V-01). */
+  testPlan: string | null;
   evidenceFiles: string[];
 }
 
@@ -66,6 +74,27 @@ const REQUIREMENT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const ISO_UTC = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z$/;
 const REPORT_HEADINGS = ["Summary", "Scope and environment", "Requirements and readiness", "Execution results", "Bug proposals", "Manual test proposals",
   "Coverage gaps and not verified", "Limitations", "TestBench backlog", "Evidence index", "Human review handover"];
+/** From 1.3 the report has a Test plan section after Requirements and readiness (contract 5.4). */
+const reportHeadings = (version: unknown) => (hasTestPlan(version) ? [...REPORT_HEADINGS.slice(0, 3), "Test plan", ...REPORT_HEADINGS.slice(3)] : REPORT_HEADINGS);
+const AUTOMATION_MODES = ["mcp-exploration", "saved-test", "both"];
+const nonEmpty = (v: unknown) => typeof v === "string" && v.trim() !== "";
+/** The ids of one kind, in order of first appearance, found in a text. */
+const idsIn = (text: string, re: RegExp) => [...new Set(text.match(re) ?? [])];
+/** The text of the section under a heading: up to the next heading of the same or a higher level. Null when the heading is not there. */
+function sectionOf(report: string, heading: string): string | null {
+  const lines = report.split(/\r?\n/);
+  const start = lines.findIndex((l) => new RegExp(`^#{1,6}\\s+${heading}\\s*#*\\s*$`).test(l));
+  if (start < 0) return null;
+  const level = /^#+/.exec(lines[start])![0].length;
+  const out: string[] = [];
+  for (const l of lines.slice(start + 1)) {
+    const h = /^(#{1,6})\s+\S/.exec(l);
+    if (h && h[1].length <= level) break;
+    out.push(l);
+  }
+  return out.join("\n");
+}
+const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
 const SCOPE_FIELDS = ["objective", "target", "included_requirement_ids", "excluded_requirement_ids", "allowed_check_types", "viewports", "state_changes",
   "test_data_constraints", "out_of_scope", "stop_conditions", "confirmed_at", "confirmed_by"];
 /** Secrets and personal data that must never be in a package (V-17). Binary evidence (images, video) is not searched. */
@@ -136,12 +165,14 @@ export function readCanonicalPackage(dir: string): CanonicalPackage {
     if (!existsSync(join(dir, f))) throw new ContractError(`V-01: ${f} is missing in ${dir}`);
   }
   if (!statSync(join(dir, "evidence")).isDirectory()) throw new ContractError("V-01: evidence is not a folder");
+  const planPath = join(dir, "test-plan.md");
   return {
     dir,
     manifest: readJson(join(dir, "manifest.json"), "manifest.json"),
     bugs: readJson(join(dir, "bugs.json"), "bugs.json"),
     manualTests: readJson(join(dir, "manual-tests.json"), "manual-tests.json"),
     report: readFileSync(join(dir, "report.md"), "utf8"),
+    testPlan: existsSync(planPath) ? readFileSync(planPath, "utf8") : null,
     evidenceFiles: readdirSync(join(dir, "evidence")).filter((f) => !f.startsWith(".")).sort(),
   };
 }
@@ -163,11 +194,13 @@ export function validateContract(pkg: CanonicalPackage, opts: { complete?: boole
   if (!Array.isArray(pkg.bugs)) err("V-02", "bugs.json must be an array");
   if (!Array.isArray(pkg.manualTests)) err("V-02", "manual-tests.json must be an array");
   if (m.audit_id !== basename(pkg.dir) || !/^AUD-\d{8}-\d{2}$/.test(m.audit_id ?? "")) err("V-02", `audit_id ${JSON.stringify(m.audit_id)} must be AUD-YYYYMMDD-nn and match the folder name`);
-  if (m.contract_version !== CONTRACT_VERSION) err("V-02", `contract_version is ${JSON.stringify(m.contract_version)}, expected ${CONTRACT_VERSION}`);
+  if (!(SUPPORTED_CONTRACT_VERSIONS as readonly unknown[]).includes(m.contract_version)) err("V-02", `contract_version is ${JSON.stringify(m.contract_version)}, expected ${SUPPORTED_CONTRACT_VERSIONS.map((v) => `"${v}"`).join(" or ")}`);
+  const plan = hasTestPlan(m.contract_version);
   const arrays = ["requirements", "test_plan_items", "executions", "actions", "evidence", "coverage_gaps", "testbench_backlog", "limitations"];
   for (const k of arrays) if (!Array.isArray(m[k])) err("V-02", `manifest.${k} must be an array`);
   if (errors.length) return { ok: false, errors, warnings, counts, reportCounts: NO_REPORT_COUNTS };
   const bugs: Json[] = pkg.bugs;
+  if (plan && pkg.testPlan === null) err("V-01", "test-plan.md is missing (required from contract 1.3)");
   const mtps: Json[] = pkg.manualTests;
 
   // V-03 identifiers: format and uniqueness
@@ -255,10 +288,10 @@ export function validateContract(pkg: CanonicalPackage, opts: { complete?: boole
     if (!ISO_UTC.test(e.captured_at ?? "")) err("V-16", `${e.evidence_id} captured_at`);
   }
   for (const f of files) if (!referenced.has(f)) err("V-15", `evidence/${f} is not referenced by any evidence object`);
-  warnings.push("V-32 cannot be checked from the package alone: contract 1.2 stores no hash for evidence files.");
+  warnings.push(`V-32 cannot be checked from the package alone: contract ${m.contract_version} stores no hash for evidence files.`);
 
   // V-17 secrets and personal data in text files
-  const textFiles = ["manifest.json", "bugs.json", "manual-tests.json", "report.md", ...pkg.evidenceFiles.map((f) => `evidence/${f}`)];
+  const textFiles = ["manifest.json", "bugs.json", "manual-tests.json", "report.md", ...(plan && pkg.testPlan !== null ? ["test-plan.md"] : []), ...pkg.evidenceFiles.map((f) => `evidence/${f}`)];
   for (const f of textFiles) {
     if (BINARY.test(f)) continue;
     if (SECRET.test(readFileSync(join(pkg.dir, f), "utf8"))) err("V-17", `a secret or personal-data pattern is in ${f}`);
@@ -280,10 +313,54 @@ export function validateContract(pkg: CanonicalPackage, opts: { complete?: boole
 
   // Contract 5.4: the headings of report.md, in this order. Any heading level and spacing is accepted.
   const reportLines = pkg.report.split(/\r?\n/);
-  const pos = REPORT_HEADINGS.map((h) => reportLines.findIndex((l) => new RegExp(`^#{1,6}\\s+${h}\\s*#*\\s*$`).test(l)));
-  const missingHeadings = REPORT_HEADINGS.filter((_, i) => pos[i] < 0);
+  const headings = reportHeadings(m.contract_version);
+  const pos = headings.map((h) => reportLines.findIndex((l) => new RegExp(`^#{1,6}\\s+${h}\\s*#*\\s*$`).test(l)));
+  // The Test plan section belongs to V-35 (1.3); every other missing heading is a 5.4 error.
+  const missingHeadings = headings.filter((h, i) => pos[i] < 0 && h !== "Test plan");
+  if (plan && pos[headings.indexOf("Test plan")] < 0) err("V-35", "report.md has no Test plan section");
   if (missingHeadings.length) err("5.4", `report.md misses the heading(s) ${missingHeadings.join(", ")}`);
-  else if (pos.some((p, i) => i > 0 && p < pos[i - 1])) err("5.4", "the headings of report.md are out of order");
+  else if (pos.filter((p) => p >= 0).some((p, i, a) => i > 0 && p < a[i - 1])) err("5.4", "the headings of report.md are out of order");
+
+  // V-33, V-34, V-35 the test plan (1.3)
+  if (plan) {
+    const ids = {
+      tpi: m.test_plan_items.map((t: Json) => t.test_plan_item_id).filter((v: unknown) => typeof v === "string") as string[],
+      cg: m.coverage_gaps.map((g: Json) => g.coverage_gap_id).filter((v: unknown) => typeof v === "string") as string[],
+    };
+    const TPI = /\bTPI-\d{3,}\b/g;
+    const CG = /\bCG-\d{3,}\b/g;
+    if (pkg.testPlan !== null) {
+      // V-33: test-plan.md names exactly the plan items and coverage gaps of the manifest.
+      for (const [name, found, want] of [["plan item", idsIn(pkg.testPlan, TPI), ids.tpi], ["coverage gap", idsIn(pkg.testPlan, CG), ids.cg]] as const) {
+        const missing = want.filter((x) => !found.includes(x));
+        const extra = found.filter((x) => !want.includes(x));
+        if (missing.length) err("V-33", `test-plan.md does not name the ${name}(s) ${missing.join(", ")}`);
+        if (extra.length) err("V-33", `test-plan.md names ${name}(s) that are not in the manifest: ${extra.join(", ")}`);
+      }
+    }
+    // V-35: the Test plan section of report.md has the manifest's plan items and coverage gaps, in the same order.
+    const section = sectionOf(pkg.report, "Test plan");
+    if (section !== null) {
+      for (const [name, found, want] of [["plan items", idsIn(section, TPI), ids.tpi], ["coverage gaps", idsIn(section, CG), ids.cg]] as const) {
+        if (!sameList(found, want)) err("V-35", `the Test plan section of report.md lists the ${name} ${found.join(", ") || "(none)"}, the manifest has ${want.join(", ") || "(none)"}`);
+      }
+    }
+    // V-34: a plan item of a ready requirement is complete; one of a needs-clarification requirement has no steps.
+    for (const t of m.test_plan_items) {
+      const id = t.test_plan_item_id;
+      const readiness = reqs.get(t.requirement_id)?.readiness;
+      if (readiness === "needs-clarification") {
+        if (!Array.isArray(t.steps) || t.steps.length) err("V-34", `${id} belongs to a needs-clarification requirement and must have steps: []`);
+      } else if (readiness === "ready") {
+        if (!Array.isArray(t.steps) || !t.steps.length || !t.steps.every(nonEmpty)) err("V-34", `${id} needs steps: at least one, each a non-empty string`);
+        for (const f of ["preconditions", "test_data", "acceptance_criteria"]) if (!nonEmpty(t[f])) err("V-34", `${id} needs a non-empty ${f} (write None when there is none)`);
+        const a = t.automation;
+        if (!a || typeof a !== "object" || Array.isArray(a) || typeof a.suitable !== "boolean") err("V-34", `${id} needs automation as an object with a boolean suitable`);
+        else if (a.suitable && !AUTOMATION_MODES.includes(a.mode)) err("V-34", `${id} automation.mode must be one of ${AUTOMATION_MODES.join(", ")}`);
+        else if (!a.suitable && !nonEmpty(a.reason)) err("V-34", `${id} automation.reason is needed when suitable is false`);
+      }
+    }
+  }
 
   // V-21 boundaries
   if (!Array.isArray(m.external_actions) || m.external_actions.length) err("V-21", "external_actions must be []");

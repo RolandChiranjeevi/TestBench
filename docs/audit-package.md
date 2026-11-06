@@ -173,6 +173,7 @@ The plan of the audit, optional: what the audit planned to check, and what it di
 
 At most 500 plan items and 500 coverage gaps, and 10 MB. A file that breaks a rule refuses the **whole package** and nothing is stored. Name the file in `parts.testPlan` or call it `test-plan.json`; it needs no entry in `files`.
 
+- **A name the import does not know gets a warning.** An unknown name in `test-plan.json` (in the file, a plan item, a coverage gap or a `refs`) is ignored, and the preview and the import result say which one, with the likely intended name: `test_data` gives `did you mean "testData"?`. The rest of the item is imported.
 - **It is a plan, not a test.** Plan items are kept apart from test cases, runs and results, and never count towards a requirement having a test.
 - **The latest import of the same audit wins.** A package with a `test-plan.json` replaces that audit's plan (an empty file empties it); a package without one says nothing about the plan and leaves it as it is. The preview counts new, unchanged, updated and removed items.
 - **Deleting the audit deletes its plan.**
