@@ -196,8 +196,13 @@ function ProjectSection({ pid }: { pid: number }) {
         <div className="row" style={{ gap: 28, flexWrap: "wrap" }}>
           <div className="stat"><span className="value">{project.name}</span><span className="label">name</span></div>
           <div className="stat"><span className="value mono">{project.key}</span><span className="label">key</span></div>
+          <div className="stat"><span className="value mono">{project.id}</span><span className="label">id</span></div>
           <div className="stat"><span className="value">{project.case_count}</span><span className="label">cases</span></div>
           <div className="stat"><span className="value">{project.run_count}</span><span className="label">runs</span></div>
+        </div>
+        <div className="faint" style={{ fontSize: "var(--fs-md)" }}>
+          The id is what an agent's configuration calls <code className="inline">projectId</code>, and what the API addresses contain (<code className="inline">/api/projects/{project.id}/…</code>).
+          The key is what case IDs use. The id never changes, even when the project is renamed.
         </div>
         <div className="row"><button className="btn" onClick={() => setRenaming(true)}><Pencil size={14} /> Rename</button></div>
       </Card>
