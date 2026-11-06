@@ -1,4 +1,5 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { CONTRACT_VERSION, readCanonicalPackage, sha256File, validateContract, type CanonicalPackage, type ContractReport } from "./auditcontract.ts";
 import { EVIDENCE_EXT, MANUAL_CATEGORIES } from "./auditpackage.ts";
@@ -45,6 +46,8 @@ export interface ExportResult {
   contract: ContractReport;
   testbench: BuildReport;
   provenance: Json;
+  /** What was done to report.md: the Test plan section is generated into the exported copy, never into the canonical package. */
+  report: { generated: boolean; where: string };
   /** Everything the adapter could not map safely, with the bug_proposal_id and the field. The export is still written; nothing was made up. */
   warnings: string[];
 }
@@ -66,7 +69,7 @@ export const FIELD_MAP = [
   { from: "max(executions[].finished_at)", to: "manifest.audit.finishedAt", how: "derived" },
   { from: "manifest.agent.name / .model", to: "manifest.audit.agent.name / .model", how: "copied; agent.version is empty (not in the contract)" },
   { from: "evidence/* files", to: "evidence/* and manifest.files[] {path, sha256, size}", how: "copied byte for byte; sha256 and size computed from the copy" },
-  { from: "report.md", to: "report.md (parts.narrative)", how: "copied byte for byte" },
+  { from: "report.md", to: "report.md (parts.narrative)", how: "copied, with a Test plan section (the manifest's test_plan_items and coverage_gaps) inserted before Execution results unless the report has one; the canonical report.md is unchanged" },
   { from: "bugs.json [array]", to: "bugs.json {version: 1, bugs: [...]}", how: "wrapped" },
   { from: "each bug proposal field", to: "bugs[]", how: "through BUG_FIELD_SPEC (provenance.bugMapping.spec): a missing or unexpected field gives a warning with the bug_proposal_id and the field, the Testbench field is left empty, and provenance.bugMapping records it" },
   { from: "bug_proposal_id", to: "bugs[].sourceId", how: "copied" },
@@ -180,6 +183,52 @@ function convertManualTest(t: Json, m: Json, bugs: Json[], generated: Json[]) {
   };
 }
 
+/**
+ * The Test plan section of the exported report.md. Testbench shows the report as plain text in the Audits tab, so the plan is a list, not a
+ * table: every plan item on one line with all its fields, the title under it, and the coverage gaps of the manifest after it.
+ * `level` is the heading level of the section (the level of the "Execution results" heading it is inserted before).
+ */
+export function testPlanSection(m: Json, level = 2): string {
+  const items: Json[] = m.test_plan_items ?? [];
+  const gaps: Json[] = m.coverage_gaps ?? [];
+  const requirements = new Set(items.map((t) => t.requirement_id));
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const v = (x: unknown) => (x == null || String(x).trim() === "" ? "(not stated)" : String(x).trim());
+  const lines = [
+    `${"#".repeat(level)} Test plan`,
+    "",
+    `${plural(items.length, "plan item")} for ${plural(requirements.size, "requirement")}. Generated from the manifest of the audit package (test_plan_items and coverage_gaps) when it was exported for Testbench; the report.md of the package itself is unchanged.`,
+    "",
+  ];
+  for (const t of items) {
+    lines.push(`- ${v(t.test_plan_item_id)} | ${v(t.requirement_id)} | ${v(t.type)} | risk: ${v(t.risk)} | priority: ${v(t.priority)} | readiness: ${v(t.readiness)}`, `  ${v(t.title)}`);
+  }
+  lines.push("", `${"#".repeat(level + 1)} Coverage gaps (from the manifest)`, "");
+  if (!gaps.length) lines.push("None recorded.");
+  for (const g of gaps) lines.push(`- ${v(g.coverage_gap_id)} | ${v(g.requirement_id)}`, `  ${v(g.description)}`);
+  return lines.join("\n") + "\n";
+}
+
+/**
+ * Puts the Test plan section into a report: before the "Execution results" heading, because a plan comes before its results, or at the end when
+ * the report has no such heading. A report that already has a "Test plan" heading, and a manifest with neither plan items nor coverage gaps, are left
+ * exactly as they are. The report's own line ending is kept.
+ */
+export function withTestPlan(report: string, m: Json): { text: string; generated: boolean; where: string } {
+  if (!(m.test_plan_items ?? []).length && !(m.coverage_gaps ?? []).length) return { text: report, generated: false, where: "not added: the manifest has no plan items or coverage gaps" };
+  const eol = report.includes("\r\n") ? "\r\n" : "\n";
+  const lines = report.split(/\r?\n/);
+  if (lines.some((l) => /^#{1,6}\s+Test plan\s*#*\s*$/i.test(l))) return { text: report, generated: false, where: "not added: the report already has a Test plan section" };
+  const at = lines.findIndex((l) => /^#{1,6}\s+Execution results\s*#*\s*$/i.test(l));
+  if (at < 0) {
+    const section = testPlanSection(m).replace(/\n$/, "").split("\n");
+    return { text: `${report.replace(/\s+$/, "")}${eol}${eol}${section.join(eol)}${eol}`, generated: true, where: "end of the report (it has no Execution results heading)" };
+  }
+  const level = /^#+/.exec(lines[at])![0].length;
+  const section = testPlanSection(m, level).replace(/\n$/, "").split("\n");
+  return { text: [...lines.slice(0, at), ...section, "", ...lines.slice(at)].join(eol), generated: true, where: "before Execution results" };
+}
+
 const writeJson = (path: string, v: unknown) => writeFileSync(path, JSON.stringify(v, null, 2) + "\n");
 
 /** Converts, checks with Testbench's own package check, and returns what was done. Throws ExportError before writing anything when the input is not a valid finished contract package. */
@@ -243,8 +292,10 @@ export function exportToTestbench(opts: ExportOptions): ExportResult {
     evidenceProv.push({ path: rel, evidence_id: ev?.evidence_id ?? null, type: ev?.type ?? null, captured_at: ev?.captured_at ?? null, sha256: hash, size });
   }
 
-  // report.md travels unchanged as the narrative.
-  copyFileSync(join(input, "report.md"), join(staging, "report.md"));
+  // report.md travels as the narrative with one generated section inserted: the Test plan, taken from the manifest (see withTestPlan). The canonical
+  // report.md is only read.
+  const narrative = withTestPlan(pkg.report, m);
+  writeFileSync(join(staging, "report.md"), narrative.text);
 
   // 6. bugs.json
   // Evidence that was not copied (a file type Testbench does not accept) is dropped from the bug with a warning, so bugs[].evidence never names a file that
@@ -306,6 +357,7 @@ export function exportToTestbench(opts: ExportOptions): ExportResult {
       bugs: pkg.bugs.map((b) => ({ bug_proposal_id: b.bug_proposal_id, sourceId: b.bug_proposal_id })),
       manualTests: pkg.manualTests.map((t) => ({ manual_test_proposal_id: t.manual_test_proposal_id, sourceId: t.manual_test_proposal_id, requirement_id: t.requirement_id, refsRequirements: t.requirement_id ? [t.requirement_id] : [] })),
     },
+    report: { canonicalSha256: sha256File(join(input, "report.md")), exportedSha256: createHash("sha256").update(narrative.text).digest("hex"), generatedSections: narrative.generated ? ["Test plan"] : [], placement: narrative.where },
     fieldMap: FIELD_MAP,
     categoryMap: TYPE_TO_CATEGORY,
     generated,
@@ -324,5 +376,5 @@ export function exportToTestbench(opts: ExportOptions): ExportResult {
   // 11. Testbench's own package check, the same code the import uses, without writing.
   const testbench = checkPackageDir(output, { write: false });
   const written = ["manifest.json", "bugs.json", "manual-tests.json", "report.md", "provenance.json", ...files.map((f) => f.path)];
-  return { output, files: written, contract, testbench, provenance, warnings };
+  return { output, files: written, contract, testbench, provenance, warnings, report: { generated: narrative.generated, where: narrative.where } };
 }
