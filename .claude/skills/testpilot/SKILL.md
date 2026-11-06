@@ -19,6 +19,8 @@ Paths in this file are relative to this `SKILL.md`.
   `commands/plan.md`.
 - `run`: execute the approved test plan with Playwright, review visual design
   when needed and collect evidence. See `commands/run.md`.
+- `report`: analyse the results, create bug and manual-test proposals and build
+  the audit package. See `commands/report.md`.
 - `deliver`: transform a validated audit package and import it to TestBench
   after user confirmation (dry-run first, then real import). See
   `commands/deliver.md`.
@@ -141,97 +143,19 @@ See `commands/run.md`, step 2.
 
 ### 5. Analyse the results
 
-Check that every status follows the contract (section 2).
-
-Check each `fail` against its requirement.
-
-Attempt at least one reproduction or evidence re-check using the recorded steps,
-viewport, state and evidence.
-
-If reproduction or evidence re-check does not support the deviation, reclassify
-the result as `inconclusive` unless independent evidence still supports it.
-
-Reclassify anything caused by a selector, timeout, fixture or environment as
-`blocked` or `inconclusive`.
-
-Group findings that share a cause.
-
-Perform the duplicate check for every proposed bug:
-
-- Compare against known open bugs through the configured TestBench integration.
-- No bug data available: `duplicate_check` is `not_available` and
-  `possible_duplicate_of` is `null`.
-- No plausible match: `duplicate_check` is `no_match` and
-  `possible_duplicate_of` is `null`.
-- Plausible match: `duplicate_check` is `possible_match` and
-  `possible_duplicate_of` is the existing bug identifier. Explain the matching
-  evidence and differences in `duplicate_check_notes`.
-- Uncertain match: `duplicate_check` is `uncertain_match`, keep the new proposal
-  with status `proposed`, set `possible_duplicate_of` to the most likely
-  existing bug identifier, and set agent confidence to `Low` or `Medium`.
-
-Never close, merge, reject or change an existing bug, and never set the status
-`duplicate`.
+See `commands/report.md`, step 1.
 
 ### 6. Create bug proposals
 
-Follow `../bug-reporting/SKILL.md` for each `fail` that has evidence against its
-requirement, and for each visual or accessibility finding that has evidence.
-
-Use `../bug-reporting/templates/bug-report.md` for all of them.
-
-Status is `proposed`.
+See `commands/report.md`, step 2.
 
 ### 7. Propose manual test cases
 
-Create a `manual_test_proposal_id` for checks that are `manual-only`, for
-coverage gaps and for follow-up around each bug.
-
-Each has an objective, steps and expected result.
-
-Status is `proposed`.
-
-Each manual test proposal MUST have an `origin` object:
-
-```json
-{
-  "type": "coverage_gap",
-  "id": "CG-002"
-}
-```
-
-`type` MUST be one of `execution`, `bug_proposal` or `coverage_gap`.
-
-`id` MUST be the matching `execution_id`, `bug_proposal_id` or
-`coverage_gap_id`.
+See `commands/report.md`, step 3.
 
 ### 8. Build the audit package
 
-Complete the package folder `<audit_id>/` created before execution.
-
-Ensure it contains:
-
-```text
-manifest.json
-report.md
-test-plan.md
-bugs.json
-manual-tests.json
-evidence/
-```
-
-Store or reference each evidence artifact in `evidence/` exactly as required by
-the contract.
-
-Register every artifact with its `evidence_id`, type, source and integrity
-information where the contract requires it.
-
-Include `actions[]` in `manifest.json` for every state-changing action performed
-during the audit.
-
-`report.md` has a Test plan section after Requirements and readiness (contract 5.4). It lists the plan items and
-coverage gaps of the manifest, in the manifest's order. Set `contract_version` to the version of
-`../references/audit-contract.md`.
+See `commands/report.md`, step 4.
 
 ### 9. Validate against the contract
 

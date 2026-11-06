@@ -13,12 +13,13 @@ discover → plan → run → report → validate → transform → deliver
 | discover | `commands/discover.md` | Inspect a target and propose a scope. Stops for approval. |
 | plan | `commands/plan.md` | Inputs, requirements, scope, test plan and coverage gaps. Two approvals: scope first, then the test plan. |
 | run | `commands/run.md` | Playwright checks, visual design review and evidence. Needs the approved scope and test plan first. |
-| report, validate | audit flow, steps 5–9 in `SKILL.md` | Analysis, bug and manual-test proposals, package, contract validation. |
+| report | `commands/report.md` | Analysis, bug and manual-test proposals, and the audit package. Needs a finished run first. |
+| validate | audit flow, step 9 in `SKILL.md` | Contract validation. `deliver` needs `validation.result == "pass"`. |
 | transform | `tools/build_testbench_package.py` | Turns the audit package into a TestBench import zip. |
 | deliver | `commands/deliver.md` | Builds the zip, dry-run, asks you, then imports. |
 
-`discover`, `plan`, `run` and `deliver` are separate command files today. The rest
-(report, validate) run as steps of the audit flow in
+`discover`, `plan`, `run`, `report` and `deliver` are separate command files today.
+The rest (validate) runs as a step of the audit flow in
 `.claude/skills/testpilot/SKILL.md`. The audit contract is
 `.claude/skills/references/audit-contract.md`.
 
