@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, Download, History, Loader2, RotateCcw, ShieldAlert } from "lucide-react";
@@ -7,7 +7,21 @@ import { useToast } from "../components/ui";
 
 const formatBytes = (n: number) => (n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${(n / 1024).toFixed(0)} KB` : n < 1024 ** 3 ? `${(n / 1024 ** 2).toFixed(1)} MB` : `${(n / 1024 ** 3).toFixed(2)} GB`);
 
-export function BackupPage() {
+/** The page title and the scrolling area, unless the page is shown inside Settings, which has its own. */
+function Shell({ embedded, children }: { embedded: boolean; children: ReactNode }) {
+  if (embedded) return <>{children}</>;
+  return (
+    <>
+      <div className="topbar">
+        <h1>Backup &amp; restore</h1>
+      </div>
+      <div className="content">{children}</div>
+    </>
+  );
+}
+
+/** `embedded`: shown inside Settings, which has the page title and the scrolling area. */
+export function BackupPage({ embedded = false }: { embedded?: boolean }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const toast = useToast();
@@ -40,11 +54,7 @@ export function BackupPage() {
   };
 
   return (
-    <>
-      <div className="topbar">
-        <h1>Backup &amp; restore</h1>
-      </div>
-      <div className="content">
+    <Shell embedded={embedded}>
         <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16, maxWidth: 760 }}>
           <div className="card">
             <div className="card-header" role="heading" aria-level={2}><Archive size={15} /> Back up everything</div>
@@ -139,7 +149,6 @@ export function BackupPage() {
             </div>
           )}
         </div>
-      </div>
-    </>
+    </Shell>
   );
 }
