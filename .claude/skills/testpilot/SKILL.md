@@ -14,6 +14,9 @@ Paths in this file are relative to this `SKILL.md`.
 ## Commands
 
 - `discover`: inspect a target and propose a test scope. See `commands/discover.md`.
+- `plan`: collect inputs and requirements, agree on a scope and build the test
+  plan; stops for scope approval and for test plan approval. See
+  `commands/plan.md`.
 - `deliver`: transform a validated audit package and import it to TestBench
   after user confirmation (dry-run first, then real import). See
   `commands/deliver.md`.
@@ -54,7 +57,6 @@ The configuration MUST provide:
 - `projectId`
 - `requirementsSource`
 - `tokenEnvVar`
-- `deliveryPath`
 - `deliveryEnabled`
 
 Example:
@@ -65,7 +67,6 @@ Example:
   "projectId": "3",
   "requirementsSource": "testbench",
   "requirementsPath": "/api/projects/3/agent/requirements",
-  "deliveryPath": "/api/projects/3/audit-packages",
   "tokenEnvVar": "TESTBENCH_API_TOKEN",
   "deliveryEnabled": false
 }
@@ -80,102 +81,12 @@ or other secret in a prompt, report, evidence file, or audit package.
 If no TestBench project is configured, use user-supplied requirements with
 `REQ-LOCAL-<nnn>` and leave delivery as `not_configured`.
 
-## Fetching TestBench requirements
+## Plan phase
 
-When `requirementsSource` is `testbench`, fetch active requirements from:
-
-```text
-GET {baseUrl}{requirementsPath}
-Authorization: Bearer <value of tokenEnvVar>
-```
-
-Use the token named by `tokenEnvVar` as a Bearer token.
-
-Rules:
-
-- Request only active requirements for the configured `projectId`.
-- Preserve the TestBench `requirement_id` exactly.
-- Set each requirement's `source` to `testbench`.
-- Treat a 401 response as an authentication problem and stop for user guidance.
-- Treat a 403 response as a project-access problem and stop for user guidance.
-- Do not fall back to invented requirements.
-- Do not use a CI token for an endpoint it is not authorised to access.
-- Do not retry repeatedly after an authentication or authorisation failure.
-
-If the requirements endpoint is unavailable or not configured, stop and ask the
-user whether to:
-
-- use user-supplied requirements as `REQ-LOCAL-<nnn>`
-- use an exported requirements file, if one is configured
-- create a TestBench backlog item for the missing endpoint
-
-Do not invent requirements or acceptance criteria.
-
-## Inputs to confirm
-
-Before starting, confirm:
-
-- target URL
-- environment and build
-- how to log in; never request or store passwords in reports or test code
-- test data
-- viewports; default 375, 768 and 1440 CSS px
-- requirement source
-- whether state-changing checks are allowed
-
-If something is missing, ask. Do not guess.
-
-## Audit scope
-
-Before creating the test plan, create an audit scope and ask the user to confirm
-it. Do not plan or run anything until it is confirmed.
-
-The scope contains:
-
-- Audit objective
-- Target URL and environment
-- Included and excluded requirement IDs
-- Allowed check types, using the `Test type` values of the plan
-- Viewports
-- Whether state-changing checks are allowed, and which ones
-- Test-data constraints
-- Known out-of-scope areas
-- Stop conditions, including any added by the user
-
-If the user only asks for “a QA pass” without a scope, propose a small,
-risk-based scope first and ask for confirmation. Do not assume that all active
-requirements are to be tested in one run.
-
-Record the confirmed scope as the `scope` object of `manifest.json` (contract
-section 5.6) and in `report.md`, including included and excluded requirement
-IDs.
-
-A change of scope during the run requires a new confirmation.
-
-When a scope limit is ambiguous, ask the user before performing the action.
-
-Do not interpret a per-audit limit as a per-viewport limit, or a per-viewport
-limit as a per-audit limit unless the scope explicitly says so.
-
-Record a confirmed scope change as an entry in `manifest.limitations[]` stating
-the change and its new confirmation, and describe it in `report.md`.
-
-## Execution order
-
-Do not begin browser execution until the confirmed scope, requirement list, test
-plan and coverage gaps have been created and recorded in the audit workspace or
-package draft.
-
-Create the package folder and begin `manifest.json` before the first execution.
-
-The package is completed and validated after execution, but its core records
-MUST exist before execution begins.
-
-The test plan MUST exist before the first execution is recorded.
-
-If execution begins before the plan is complete, pause the audit, create or
-complete the plan, and ask the user whether to retain or discard the already
-collected results.
+Requirements, inputs, audit scope, the test plan and the execution-order
+prerequisites are defined in `commands/plan.md`. The plan phase ends only after
+the user has approved both the scope and the test plan. Do not begin browser
+execution before that.
 
 ## Stop conditions
 
@@ -212,33 +123,11 @@ problems as product defects.
 
 ### 1. Fetch active requirements
 
-Read the active requirements from TestBench through the integration the project
-has configured.
-
-If TestBench is configured, use the requirements-fetch rules above.
-
-If no TestBench integration is configured, use the requirements the user
-supplied and give them `REQ-LOCAL-<nnn>`.
-
-Record each requirement's source.
-
-If a requirement has no measurable acceptance criteria, mark it
-`needs-clarification`. Do not invent criteria.
-
-Output: requirement list with `requirement_id` and readiness.
+See `commands/plan.md`, step 2.
 
 ### 2. Create the test plan
 
-Start only after the audit scope is confirmed.
-
-Follow `../test-planning/SKILL.md` and read
-`../references/testheuristics.md` first.
-
-Every plan item has a `requirement_id` and a `test_plan_item_id`.
-
-State which heuristics informed the plan. Heuristics are not requirements.
-
-Output: a test plan in the template and coverage gaps.
+See `commands/plan.md`, step 4.
 
 ### 3. Run functional Playwright checks
 
@@ -468,13 +357,7 @@ MCP exploration is not a saved automated test.
 
 ## Test design references
 
-Before generating the test plan, read `../references/testheuristics.md`.
-
-Apply relevant heuristics when identifying test cases.
-
-Do not treat heuristics as product requirements.
-
-State which heuristics informed the test plan.
+See `commands/plan.md`, step 4 (Test design references).
 
 ## Result accuracy
 
