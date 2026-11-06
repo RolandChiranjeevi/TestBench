@@ -99,6 +99,65 @@ for t in test_list:
                  'cases': [], 'tests': []},
     })
 
+def text(v):
+    return v.strip() if isinstance(v, str) else ''
+
+def automation_text(a):
+    """The contract's automation object (section 5.9) as the import's text; anything else gives '' (and a warning)."""
+    if isinstance(a, dict):
+        if a.get('suitable') is True and text(a.get('mode')):
+            return f"Yes, {text(a['mode'])}"
+        if a.get('suitable') is False and text(a.get('reason')):
+            return f"No: {text(a['reason'])}"
+    return None
+
+def req_refs(rid):
+    return {'requirements': [rid] if isinstance(rid, str) and rid else []}
+
+def build_test_plan(manifest):
+    """Contract 1.3 manifest -> test-plan.json, by the mapping in contract section 9 (snake_case -> camelCase)."""
+    items = []
+    for t in manifest.get('test_plan_items', []):
+        auto = ''
+        if t.get('automation') is not None:
+            auto = automation_text(t['automation'])
+            if auto is None:
+                auto = ''
+                print(f"Varning: {t.get('test_plan_item_id')}: automation har inte kontraktets form (avsnitt 5.9) och lämnas tom", file=sys.stderr)
+        item = {
+            'sourceId': text(t.get('test_plan_item_id')),
+            'title': text(t.get('title')),
+            'type': text(t.get('type')),
+            'risk': text(t.get('risk')),
+            'priority': text(t.get('priority')),
+            'preconditions': text(t.get('preconditions')),
+            'testData': text(t.get('test_data')),
+            'steps': str_list(t.get('steps')),
+            'acceptanceCriteria': text(t.get('acceptance_criteria')),
+            'automation': auto,
+            'refs': req_refs(t.get('requirement_id')),
+        }
+        if t.get('readiness') in ('ready', 'needs-clarification'):
+            item['readiness'] = t['readiness']
+        items.append(item)
+    gaps = [{
+        'sourceId': text(g.get('coverage_gap_id')),
+        'description': text(g.get('description')),
+        'refs': req_refs(g.get('requirement_id')),
+    } for g in manifest.get('coverage_gaps', [])]
+    return {'version': 1, 'planItems': items, 'coverageGaps': gaps}
+
+# Contract 1.3 packages carry a structured test plan; 1.2 packages do not, and get no test-plan.json.
+plan_json = None
+if m.get('contract_version') == '1.3':
+    if (pkg / 'test-plan.md').is_file():
+        plan_json = json.dumps(build_test_plan(m), indent=2)
+    else:
+        print('Varning: kontrakt 1.3 kräver test-plan.md, som saknas; ingen test-plan.json skrivs', file=sys.stderr)
+if plan_json is not None:
+    plan_bytes = plan_json.encode('utf-8')
+    files.append({'path': 'test-plan.json', 'sha256': hashlib.sha256(plan_bytes).hexdigest(), 'size': len(plan_bytes)})
+
 tb_manifest = {
     'format': 'testbench-audit-package',
     'version': 1,
@@ -116,6 +175,7 @@ tb_manifest = {
     'parts': {
         'bugs': 'bugs.json',
         'manualTests': 'manual-tests.json',
+        **({'testPlan': 'test-plan.json'} if plan_json is not None else {}),
         'narrative': 'report.md',
     },
 }
@@ -127,6 +187,8 @@ staging.mkdir()
 (staging / 'manifest.json').write_text(json.dumps(tb_manifest, indent=2))
 (staging / 'bugs.json').write_text(json.dumps({'version': 1, 'bugs': tb_bugs}, indent=2))
 (staging / 'manual-tests.json').write_text(json.dumps({'version': 1, 'tests': tb_tests}, indent=2))
+if plan_json is not None:
+    (staging / 'test-plan.json').write_bytes(plan_bytes)
 shutil.copy(pkg / 'report.md', staging / 'report.md')
 for rel, data in evidence_files:
     dest = staging / rel
@@ -140,4 +202,9 @@ with zipfile.ZipFile(out_zip, 'w', zipfile.ZIP_DEFLATED) as z:
         if p.is_file():
             z.write(p, p.relative_to(staging))
 
-print(f'Skapade {out_zip} med {len(files)} evidence-filer, {len(tb_bugs)} buggar, {len(tb_tests)} manuella tester')
+n_plan = 1 if plan_json is not None else 0
+plan_note = ''
+if plan_json is not None:
+    plan = json.loads(plan_json)
+    plan_note = f", testplan med {len(plan['planItems'])} poster och {len(plan['coverageGaps'])} luckor"
+print(f'Skapade {out_zip} med {len(files) - n_plan} evidence-filer, {len(tb_bugs)} buggar, {len(tb_tests)} manuella tester{plan_note}')

@@ -1,7 +1,7 @@
 # Audit contract
 
 Single shared source for identifiers, statuses, evidence types, audit package files and
-validation rules. Contract version: `1.2`.
+validation rules. Contract version: `1.3`.
 
 Every QA skill (`qa-run`, `test-planning`, `functional-test-runner`, `bug-reporting`,
 `visual-design-review`) refers to this file. No skill may define its own version of these
@@ -9,6 +9,12 @@ identifiers, statuses, evidence types or package files. If a skill needs a new v
 it here and update `contract_version`.
 
 Paths in skills are relative to the skill's own `SKILL.md`: `../references/audit-contract.md`.
+
+Changes in 1.3: a plan item carries structured fields (`preconditions`, `test_data`, `steps`,
+`acceptance_criteria`, `automation`, section 5.9), `test-plan.md` is a package file, `report.md` has a
+"Test plan" section, rules V-33 to V-35, and section 9 maps the plan to the Testbench import format.
+A package keeps the `contract_version` it was written against; the new fields are not read into
+older packages.
 
 ---
 
@@ -220,6 +226,7 @@ The package is one folder named after the `audit_id`:
 <audit_id>/
   manifest.json
   report.md
+  test-plan.md
   bugs.json
   manual-tests.json
   evidence/
@@ -234,7 +241,7 @@ The package is one folder named after the `audit_id`:
 | `target` | `{ "url", "environment", "build" }`. Unknown values are `null`, not guessed. |
 | `scope` | Confirmed audit scope object. See section 5.6. |
 | `requirements[]` | `{ requirement_id, title, source, readiness, acceptance_criteria }`. `source` is `testbench` or `local`. |
-| `test_plan_items[]` | `{ test_plan_item_id, requirement_id, title, risk, priority, type, readiness }`. |
+| `test_plan_items[]` | `{ test_plan_item_id, requirement_id, title, risk, priority, type, readiness, preconditions, test_data, steps[], acceptance_criteria, automation }`. The last five were added in 1.3: see section 5.9. |
 | `executions[]` | `{ execution_id, test_plan_item_id, requirement_id, status, reason, started_at, finished_at, url, viewport, mode, evidence_ids[], summary }`. `mode` is `mcp-exploration` or `saved-test`. |
 | `actions[]` | State-changing actions performed during the audit. See section 5.8. Added in 1.2. |
 | `evidence[]` | Evidence objects (section 4.2). |
@@ -278,9 +285,12 @@ An array. Each element: `manual_test_proposal_id`, `title`, `requirement_id`, `o
 
 ### 5.4 `report.md`
 
-Headings, in this order: Summary, Scope and environment, Requirements and readiness, Execution results,
+Headings, in this order: Summary, Scope and environment, Requirements and readiness, Test plan, Execution results,
 Bug proposals, Manual test proposals, Coverage gaps and not verified, Limitations, TestBench backlog,
 Evidence index, Human review handover.
+
+The Test plan section (added in 1.3) lists every plan item of the manifest with its id, requirement, type, risk,
+priority, readiness and title, and then the coverage gaps. It repeats the manifest; it adds nothing to it.
 
 The summary uses the execution statuses of section 2.1 and never combines `blocked`, `skipped` or
 `inconclusive` into `pass` or `fail`. Automated scans that find nothing are described as:
@@ -384,13 +394,36 @@ Rules:
   execution with the appropriate `blocked`, `inconclusive` or `fail` status.
   Do not create an action entry for an action that was not performed.
 
+### 5.9 Test plan
+
+Added in 1.3. The plan is recorded twice, for two readers: structured in `manifest.json`, which is the
+record, and as text in `test-plan.md`, which a person reads. They say the same thing. `test-plan.md` is
+written with `../test-planning/templates/test-plan.md` and is required in every package.
+
+Each element of `manifest.test_plan_items[]` has these fields, besides the ones in section 5.1:
+
+| Field | Type | Content |
+|---|---|---|
+| `preconditions` | string | State, user, data and environment needed before step 1. Write `None` when there are none, so that a missing value can be told from an empty one. |
+| `test_data` | string | The exact values, or the rule for choosing them. `None` when there is no test data. No real personal data and no secrets. |
+| `steps` | array of strings | The actions, in order, one action per string. |
+| `acceptance_criteria` | string | The measurable condition for `pass`, taken from the requirement. For a check that comes only from a heuristic and has no criterion in the requirement, say so. |
+| `automation` | object | `{ "suitable": true, "mode": "mcp-exploration" }` (`mode` is `mcp-exploration`, `saved-test` or `both`), or `{ "suitable": false, "reason": "..." }`. |
+
+A plan item of a requirement with `readiness: "needs-clarification"` has no steps. It is skipped with reason
+`needs-clarification` (section 2.3), `steps` is `[]`, and `acceptance_criteria` says what is missing.
+Do not invent steps or criteria for it.
+
+`coverage_gaps[]` (section 5.1) is unchanged: `{ coverage_gap_id, requirement_id, description }`, and the
+description states what is not verified and why.
+
 ## 6. Validation rules
 
 An audit package is complete only if all rules pass. Record the result in `manifest.json` `validation`.
 A package with `result: "fail"` is not delivered.
 
 **Package**
-- V-01 The folder contains `manifest.json`, `report.md`, `bugs.json`, `manual-tests.json` and `evidence/`.
+- V-01 The folder contains `manifest.json`, `report.md`, `test-plan.md`, `bugs.json`, `manual-tests.json` and `evidence/`.
 - V-02 The JSON files parse. `audit_id` matches the folder name and the format in section 1.
   `contract_version` equals the version of this file.
 
@@ -450,6 +483,14 @@ A package with `result: "fail"` is not delivered.
 - V-32 Every evidence file referenced by an evidence object MUST retain its
   original filename and content after registration. A renamed, overwritten or
   replaced evidence file is a validation failure.
+- V-33 `test-plan.md` names every `test_plan_item_id` and every `coverage_gap_id` of the manifest, and no
+  plan item or coverage gap that is not in the manifest.
+- V-34 Every plan item of a requirement with `readiness: "ready"` has `steps` with at least one non-empty
+  string, non-empty `preconditions`, `test_data` and `acceptance_criteria`, and an `automation` object that
+  follows section 5.9 (`mode` when `suitable` is `true`, `reason` when it is `false`). A plan item of a
+  `needs-clarification` requirement has `steps: []`.
+- V-35 `report.md` has the Test plan section, and the plan items and coverage gaps in it are those of the
+  manifest, in the same order.
 
 ## 7. Agent boundaries
 
@@ -480,3 +521,33 @@ It adds a `testbench_backlog` item:
 | `status` | `proposed` |
 
 These items are listed in `report.md` under "TestBench backlog" and are kept apart from bug proposals.
+
+## 9. Mapping to the Testbench import format
+
+Informative. Testbench imports an audit package in its own format (`format: "testbench-audit-package"`,
+described in Testbench's `docs/audit-package.md`); the audit contract is not that format. The export
+adapter converts one to the other and leaves the contract package untouched. For the plan it writes an
+optional `test-plan.json`, `{ "version": 1, "planItems": [...], "coverageGaps": [...] }`:
+
+| Contract (snake_case) | Testbench `test-plan.json` (camelCase) |
+|---|---|
+| `test_plan_items[].test_plan_item_id` | `planItems[].sourceId` |
+| `title`, `type`, `risk`, `priority`, `readiness`, `steps`, `preconditions` | the same names |
+| `test_data` | `testData` |
+| `acceptance_criteria` | `acceptanceCriteria` |
+| `automation` (object) | `automation` (text): `Yes, <mode>` or `No: <reason>` |
+| `requirement_id` | `refs.requirements`, a list with that one id |
+| `coverage_gaps[].coverage_gap_id` | `coverageGaps[].sourceId` |
+| `coverage_gaps[].description`, `requirement_id` | `description`, `refs.requirements` |
+
+- The import has limits: `title` at most 200 characters, `steps` at most 50 of at most 1000 characters,
+  `preconditions` and `acceptance_criteria` at most 5000, `test_data` at most 2000, `automation` (as text) at most 200, and
+  a description at most 5000. Keep the plan within them.
+- Use the Testbench names exactly. The import ignores a name it does not know without a message: `test_data`
+  written in place of `testData` is dropped, and the plan item imports without it.
+- Testbench keeps the plan apart from test cases, runs and results. A plan item says what was planned, not that
+  it was tested, and never counts as a test. A requirement named as `REQ-3` or by the stable id it was imported with
+  (for example `REQ-LOCAL-002`) is found when the plan is shown.
+- `executions[]`, `actions[]`, `scope` and the rest of the manifest have no place in the plan part; they are
+  not changed by this mapping.
+- `inconclusive` (section 2.1) is reserved in Testbench as a status of its own, for the executions of a later version.

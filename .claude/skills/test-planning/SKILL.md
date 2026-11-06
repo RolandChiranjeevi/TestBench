@@ -23,7 +23,9 @@ Use them as written. Do not define your own. Paths are relative to this `SKILL.m
    data variations and regression risks by risk category. State which heuristics were used.
 5. Create plan items. Each item gets a `test_plan_item_id` and exactly one `requirement_id`.
 6. For each item record: risk, priority, test type, preconditions, test data, steps, acceptance criteria and
-   whether it suits automation.
+   whether it suits automation. These are fields of the plan item in `manifest.json` (contract section 5.9),
+   not only columns of the template. Use the field names of the contract exactly (`test_data`,
+   `acceptance_criteria`, not `testData` or free variants): Testbench ignores a name it does not know.
 7. Create coverage gaps. Give each gap a `coverage_gap_id` in the format
    `CG-<nnn>`.
 
@@ -39,7 +41,10 @@ Use them as written. Do not define your own. Paths are relative to this `SKILL.m
    - `description`
 
    The description MUST state what is not verified and why.
-8. Fill in `templates/test-plan.md`.
+8. Fill in `templates/test-plan.md` and save it as `test-plan.md` in the audit package. It says the same as
+   `manifest.test_plan_items[]` and `manifest.coverage_gaps[]`: every `test_plan_item_id` and every
+   `coverage_gap_id` of the manifest appears in it, and no id that is not in the manifest (V-33). Write each
+   coverage gap with its `coverage_gap_id`, not as a bare bullet.
 
 ## Plan item fields
 | Field | Content |
@@ -49,13 +54,20 @@ Use them as written. Do not define your own. Paths are relative to this `SKILL.m
 | Risk | High / Medium / Low, with a short reason (impact and likelihood). |
 | Priority | High / Medium / Low. Not the same as risk: priority is the order of execution. |
 | Test type | Functional, Validation, Authorization, State, Concurrency, Responsive, Internationalisation, Accessibility, Performance, Visual. |
-| Preconditions | State, user, data and environment needed before step 1. |
-| Test data | Exact values or the rule for choosing them. No real personal data or secrets. |
-| Acceptance criteria | The measurable condition for `pass`, taken from the requirement. |
-| Automation | Yes / No, with the reason if No. If Yes, state whether the check is intended as an `mcp-exploration` check, a `saved-test`, or both. |
+| `preconditions` | String. State, user, data and environment needed before step 1. Write `None` when there are none; never leave it empty. |
+| `test_data` | String. Exact values or the rule for choosing them. `None` when there is no test data. No real personal data or secrets. |
+| `steps` | Array of strings, one action per string, in order. |
+| `acceptance_criteria` | String. The measurable condition for `pass`, taken from the requirement. For a check that comes only from a heuristic and has no criterion in the requirement, say so. |
+| `automation` | Object, not text. `{ "suitable": true, "mode": "mcp-exploration" }` (`mode` is `mcp-exploration`, `saved-test` or `both`), or `{ "suitable": false, "reason": "..." }`. |
 
-A plan item for a `needs-clarification` requirement has no steps. It states what is missing and is run as
-`skipped` with reason `needs-clarification`.
+In the template's table, write `automation` as text (`Yes, saved-test` or `No: <reason>`); in the manifest it is the object.
+
+A plan item for a `needs-clarification` requirement has no steps: `steps` is `[]`, `acceptance_criteria` says
+what is missing, and it is run as `skipped` with reason `needs-clarification`. Do not invent steps or criteria for it.
+A plan item for a `ready` requirement has at least one step and a non-empty value in every field above (V-34).
+
+Keep the values within the limits of Testbench's import (contract section 9): `title` 200 characters, at most
+50 steps of 1000 characters, `preconditions` and `acceptance_criteria` 5000, `test_data` 2000.
 
 ## Scope alignment
 
@@ -73,6 +85,8 @@ or recommend a scope change. Do not silently expand the audit.
 ## Rules
 - Do not invent requirements or acceptance criteria. Ask first.
 - Every plan item has a `requirement_id` and a `test_plan_item_id`.
+- The plan is recorded in two places that agree: `manifest.test_plan_items[]` (the record) and `test-plan.md`
+  (what a person reads). `report.md` repeats the plan in its Test plan section (V-35).
 - Include boundary and negative tests.
 - Keep each test case independently executable.
 - Use the template exactly.

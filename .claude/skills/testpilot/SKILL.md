@@ -233,6 +233,7 @@ Ensure it contains:
 ```text
 manifest.json
 report.md
+test-plan.md
 bugs.json
 manual-tests.json
 evidence/
@@ -247,10 +248,14 @@ information where the contract requires it.
 Include `actions[]` in `manifest.json` for every state-changing action performed
 during the audit.
 
+`report.md` has a Test plan section after Requirements and readiness (contract 5.4). It lists the plan items and
+coverage gaps of the manifest, in the manifest's order. Set `contract_version` to the version of
+`../references/audit-contract.md`.
+
 ### 9. Validate against the contract
 
 Run every rule in `../references/audit-contract.md` section 6 and the final
-quality checklist below.
+quality checklist below, including V-33 to V-35 for the test plan.
 
 Fix errors and validate again.
 
@@ -403,6 +408,10 @@ partial pass.
 - [ ] Every state-changing action is recorded in `manifest.actions[]` and
   matches an allowed action and limit in the confirmed scope
 - [ ] The test plan and coverage gaps were created before the first execution
+- [ ] Every plan item has `preconditions`, `test_data`, `steps`, `acceptance_criteria` and an `automation`
+  object (contract 5.9); a `needs-clarification` item has `steps: []`
+- [ ] `test-plan.md` and the Test plan section of `report.md` list the same plan items and coverage gaps as the
+  manifest (V-33, V-35)
 - [ ] No evidence file was renamed, overwritten, replaced, or given a
   fabricated timestamp after registration
 - [ ] The report clearly states whether an automated accessibility scan was
