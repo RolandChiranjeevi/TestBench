@@ -815,7 +815,7 @@ function DeleteCasesModal({ cases, projectKey, backupOn, onClose, onDone }: {
         <li>Steps and links to requirements and run templates are removed.</li>
         <li>Results already recorded in past runs are kept, but lose their link to the case.</li>
         <li>Automated tests linked to them become unlinked.</li>
-        <li><strong>This cannot be undone.</strong> {n >= 5 ? (backupOn ? "A backup is saved first, so you can restore it from Backup & restore." : "Automatic backups are off, so nothing is saved first.") : ""}</li>
+        <li><strong>This cannot be undone.</strong> {n >= 5 ? (backupOn ? "A backup is saved first, so you can restore it from Settings, Data." : "Automatic backups are off, so nothing is saved first.") : ""}</li>
       </ul>
     </ConfirmModal>
   );

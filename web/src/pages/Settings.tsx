@@ -6,6 +6,7 @@ import { api, timeAgo, type Project } from "../api";
 import { ConfirmModal, Empty, Kbd, useToast } from "../components/ui";
 import { DeleteProjectModal, RenameProjectModal } from "../components/ProjectModals";
 import { BackupPage } from "./Backup";
+import { NAV_SHORTCUTS, PAGE_SHORTCUTS } from "../shortcuts";
 
 interface AgentToken { id: number; name: string; prefix: string; createdAt: string; lastUsedAt: string | null; revokedAt: string | null }
 /** The answer to creating a token. `token` is in it this once and is never stored by the server (only its hash) or by this page. */
@@ -69,7 +70,8 @@ function AgentAccess({ pid }: { pid: number }) {
   const [copied, setCopied] = useState(false);
   const [revoking, setRevoking] = useState<AgentToken | null>(null);
   const key = ["agent-tokens", pid];
-  const { data: tokens, isLoading } = useQuery({ queryKey: key, queryFn: () => api.get<AgentToken[]>(`/api/projects/${pid}/agent/tokens`) });
+  // Refetched every 15 seconds while the page is open, so "Last used" follows an agent that is working.
+  const { data: tokens, isLoading } = useQuery({ queryKey: key, queryFn: () => api.get<AgentToken[]>(`/api/projects/${pid}/agent/tokens`), refetchInterval: 15_000 });
   const create = useMutation({ mutationFn: (n: string) => api.post<NewAgentToken>(`/api/projects/${pid}/agent/tokens`, { name: n }) });
   const revoke = useMutation({
     mutationFn: (id: number) => api.post(`/api/agent-tokens/${id}/revoke`),
@@ -219,11 +221,8 @@ function ProjectSection({ pid }: { pid: number }) {
 // ---------- Keyboard shortcuts ----------
 
 const SHORTCUTS: [string, [string, string][]][] = [
-  ["Go to (anywhere in a project)", [["1", "Dashboard"], ["2", "Requirements"], ["3", "Test cases"], ["4", "Runs"], ["5", "Bug reports"], ["6", "Agent proposals"], ["7", "Automated tests"], ["8", "Import results"], ["9", "Sprint reports"], ["0", "Settings"]]],
-  ["Test cases", [["c", "New case"], ["/", "Search"], ["j / ↓", "Next"], ["k / ↑", "Previous"], ["Enter / o", "Open"], ["x", "Select"], ["r", "Run the selected cases"]]],
-  ["Requirements", [["c", "New requirement"], ["/", "Search"]]],
-  ["Runs", [["c", "New run"]]],
-  ["Run detail", [["j / ↓", "Next result"], ["k / ↑", "Previous result"], ["p", "Passed, then next"], ["f", "Failed"], ["b", "Blocked"], ["s", "Skipped, then next"]]],
+  ["Go to (anywhere in a project)", NAV_SHORTCUTS.map((s) => [s.key, s.label] as [string, string])],
+  ...PAGE_SHORTCUTS,
 ];
 
 function Shortcuts() {
