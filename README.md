@@ -27,7 +27,7 @@ docker compose up -d
 ```
 
 Open <http://localhost:4100>. On the welcome page, **Load demo project** shows what it looks like. Your data lives in the Docker volume
-`testbench-data`; **Backup & restore** in the app downloads it as one zip. To update: `git pull && docker compose up -d --build`.
+`testbench-data`; **Settings, Data** in the app downloads it as one zip. To update: `git pull && docker compose up -d --build`.
 
 **From source** (Node 24):
 
@@ -39,7 +39,7 @@ npm run build && npm start   # http://localhost:4100
 ```
 
 PDF export uses an installed Google Chrome (`TESTBENCH_CHROME_CHANNEL=msedge` for Edge, or `TESTBENCH_CHROME_PATH` for any Chromium).
-Data lives in `data/testbench.db` (SQLite) and `data/uploads/`; back up that folder, or use **Backup & restore**.
+Data lives in `data/testbench.db` (SQLite) and `data/uploads/`; back up that folder, or use **Settings, Data**.
 
 By default Testbench only listens on this computer (127.0.0.1) and has no login, which is right for a personal tool.
 To share it with other people, read **Running it for a team** below.
@@ -133,7 +133,7 @@ Testbench is young. These are the limits to expect today:
 - **Backups stay on the same disk by default.** Point `TESTBENCH_BACKUP_DIR` at a synced folder, or copy them elsewhere.
 - **Automatic import is GitHub only.** For GitLab, Jenkins and others, upload the report files (Playwright JSON or JUnit XML) on **Import results**.
 - **No import of existing cases yet.** You can export cases (CSV, Markdown, JSON) but not bring them in from a spreadsheet or another tool.
-- **Some basics are missing:** deleting or archiving a project, and undo for deletes (deleting asks for confirmation instead).
+- **Some basics are missing:** archiving a project, and undo for deletes. Deleting a project asks you to type its key and saves a backup first; deleting cases asks for confirmation.
 - **PDF reports need Chrome or Chromium.** The Docker image includes it.
 - **Large data is untested.** It has not been tried with tens of thousands of cases or hundreds of thousands of results.
 - **Tested mainly** on macOS and Docker, in Chrome. CI builds and smoke-tests the Docker image on Linux (x64). The layout is not designed for phones.
@@ -354,7 +354,7 @@ and applying a newer version of the proposal later updates the text of that case
 
 ## Navigation
 
-The sidebar follows the work: plan and run tests first, then what comes back and needs review, then the automation feed, then reports and data. The number
+The sidebar follows the work: plan and run tests first, then what comes back and needs review, then the automation feed, then reports, then Settings. The number
 beside each page is its keyboard shortcut.
 
 | # | Page | Group |
@@ -368,7 +368,9 @@ beside each page is its keyboard shortcut.
 | 7 | Automated tests | Workspace (automation) |
 | 8 | Import results | Workspace (automation) |
 | 9 | Sprint reports | Reporting |
-| 0 | Backup & restore | Data |
+| 0 | Settings | Manage |
+
+Settings has five sections: **Agent access** (make and revoke the agent tokens of the project; a new token is shown once), **Project** (name, key and id, rename, delete), **Data** (backup and restore), **Keyboard shortcuts** and **Account** (sign out). The id is what an agent's configuration calls `projectId` and what the API addresses contain; the key is what case IDs use.
 
 ## Deleting cases and projects
 
@@ -377,11 +379,11 @@ the search and filter) and press Delete. A dialog lists what is affected first. 
 case; results already recorded in past runs stay in their run (so reports and history keep their numbers) but lose the link to the case, and
 automated tests that were linked to it become unlinked.
 
-**Whole project:** project menu, "Delete this project…". You have to type the project key to confirm. Everything in the project goes, including
+**Whole project:** Settings, Project, "Delete this project…". You have to type the project key to confirm. Everything in the project goes, including
 runs, requirements, sprints, checklists and the uploaded files.
 
 **Safety net:** deleting a project, or 5 or more cases at once, first saves a backup named `testbench-before-delete-<date>.zip` next to the
-automatic ones (newest 10 kept) and refuses to delete if that backup fails. Restore it from Backup & restore. If you turned automatic backups off
+automatic ones (newest 10 kept) and refuses to delete if that backup fails. Restore it from Settings, Data. If you turned automatic backups off
 (`TESTBENCH_AUTO_BACKUP=0`) no backup is taken, and the dialog says so.
 
 ## Backup and restore
@@ -391,7 +393,7 @@ keeps the newest 7, in `data/backups/`. That is the same disk as your data, so i
 disk: for an off-disk copy start it with `TESTBENCH_BACKUP_DIR` pointing at a synced folder (iCloud Drive, Dropbox). `TESTBENCH_BACKUP_KEEP=14`
 keeps more, `TESTBENCH_AUTO_BACKUP=0` turns it off. Restore any of them with "Choose backup .zip" below. The sidebar's "Backed up" counts both.
 
-**Backup & restore** (sidebar, key `8`) downloads one zip with all projects: the database and every uploaded file. Restore it on this or
+**Settings, Data** (sidebar, key `0`) downloads one zip with all projects: the database and every uploaded file. Restore it on this or
 another computer, without restarting. A restore validates the zip first and moves your current data to `data/previous/<time>` instead
 of deleting it. The sidebar footer turns amber when there is no backup from the last 7 days. `data/` is git-ignored, so this is how
 your data is kept safe.
@@ -490,7 +492,7 @@ and is never stored.
 ## Keyboard
 
 `1`–`9` and `0` switch pages, in the order of the sidebar (the number is shown next to each page) · `C` new case/run · `J`/`K` move · `X` select · `R` run selected ·
-`P`/`F`/`B`/`S` pass/fail/block/skip while executing · `⌘V` paste a screenshot.
+`P`/`F`/`B`/`S` pass/fail/block/skip while executing · `⌘V` paste a screenshot. The list is also in Settings, Keyboard shortcuts.
 
 ## License
 
