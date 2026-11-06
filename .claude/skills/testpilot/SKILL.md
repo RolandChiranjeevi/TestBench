@@ -371,31 +371,41 @@ If the package still fails, do not deliver it. Report the errors.
 
 ### 10. Deliver to TestBench
 
-Deliver only a package whose validation result is `pass`, and only through the
-delivery path the project has configured.
+TestBench integration (for `deliver`):
 
-If `deliveryEnabled` is `false`, or no delivery path is configured, leave the
-package in place, say so, and add a TestBench backlog item.
+- Config is read from `config/testbench.json`:
+  baseUrl, projectId, projectKey, tokenEnvVar, deliveryEnabled.
+  The `deliveryPath` field is not used — the endpoint is
+  `{baseUrl}/api/projects/{projectId}/audit-import`.
 
-Create no tickets anywhere else.
+- Auth: TestBench requires a session cookie for write requests.
+  `deliver` logs in via `POST /api/login` with `{"password": ...}`,
+  where the password is read from the environment variable
+  `TESTBENCH_PASSWORD` (defined in `.env`). The response sets the
+  `tb_session` cookie.
 
-Record the delivery attempt in `manifest.delivery`:
+- All POST requests to TestBench must also send the header
+  `X-Testbench: 1`, otherwise the server responds 403.
 
-- `status`: `not_delivered`, `delivered`, `failed` or `not_configured`
-- `delivered_at`
-- `method`
-- `target`
-- `request_reference`
-- `response_reference`
-- `error`
+- A Bearer token (`TESTBENCH_API_TOKEN`, agent token `tbag_...`) is NOT
+  sufficient for audit import — it only works for agent read endpoints
+  (e.g. `GET /api/agent/projects/:id/requirements`) and CI ingest.
 
-Use `null` for unknown optional values. Do not guess.
+- Password and cookie values must never be printed to output, logs,
+  or reports.
 
-Do not mark the audit as delivered unless the configured integration confirms
-acceptance.
+Delivery rules:
 
-Package validation (step 9) and TestBench acceptance are separate facts and are
-recorded separately.
+- Only deliver a package whose `manifest.validation.result` is `pass`.
+- If `deliveryEnabled` is false (or absent), leave the package undelivered
+  and create a TestBench backlog item.
+- Create no tickets anywhere else.
+- `manifest.delivery` fields: status (one of the four allowed values),
+  delivered_at, method, target, request_reference, response_reference,
+  and error.
+- Do not mark the audit as delivered unless the integration confirms
+  acceptance.
+- Package validation and TestBench acceptance are separate facts.
 
 ### 11. Hand over to human review
 
