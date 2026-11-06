@@ -1659,16 +1659,38 @@
     "errors": []
   },
   "delivery": {
-    "status": "not_configured",
-    "delivered_at": null,
-    "method": null,
-    "target": null,
-    "request_reference": null,
-    "response_reference": null,
-    "error": null
+    "status": "delivered",
+    "delivered_at": "2026-11-06T07:53:40Z",
+    "method": "http-post",
+    "target": "http://localhost:4100/api/projects/3/audit-import",
+    "request_reference": "AUD-20261105-01-testbench.zip",
+    "response_reference": "auditId=6",
+    "error": null,
+    "response_summary": {
+      "http_status": 200,
+      "is_new": false,
+      "counts": {
+        "new": 2,
+        "unchanged": 0,
+        "updated": 0,
+        "pending": 0
+      },
+      "manual_tests": {
+        "new": 0,
+        "unchanged": 5,
+        "updated": 0,
+        "pending": 0
+      },
+      "evidence": {
+        "ok": 10,
+        "problems": 0
+      },
+      "unresolved_refs": 0
+    }
   },
   "human_review": {
     "required": true,
     "status": "pending"
-  }
+  },
+  "format": "testbench-audit-package"
 }
