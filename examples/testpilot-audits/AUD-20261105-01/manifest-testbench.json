@@ -1,0 +1,1679 @@
+{
+  "format": "testbench-audit-package",
+  "version": 1,
+  "audit": {
+    "audit_id": "AUD-20261105-01",
+    "contract_version": "1.2",
+    "created_at": "2026-11-05T15:12:16Z",
+    "agent": {
+      "name": "testpilot",
+      "model": "claude-sonnet-5-5"
+    },
+    "target": {
+      "url": "http://localhost:8080",
+      "environment": "local",
+      "build": null
+    },
+    "scope": {
+      "objective": "Check the core flows (add competitor, enter result, standings and ranking, CSV export) of the Decathlon & Heptathlon app against REQ-LOCAL-001 to REQ-LOCAL-007.",
+      "target": {
+        "url": "http://localhost:8080",
+        "environment": "local",
+        "build": null
+      },
+      "included_requirement_ids": [
+        "REQ-LOCAL-001",
+        "REQ-LOCAL-002",
+        "REQ-LOCAL-003",
+        "REQ-LOCAL-004",
+        "REQ-LOCAL-005",
+        "REQ-LOCAL-006",
+        "REQ-LOCAL-007"
+      ],
+      "excluded_requirement_ids": [],
+      "allowed_check_types": [
+        "Functional",
+        "Responsive",
+        "Accessibility",
+        "Validation"
+      ],
+      "viewports": [
+        {
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "width": 768,
+          "height": 1024
+        },
+        {
+          "width": 375,
+          "height": 812
+        }
+      ],
+      "state_changes": {
+        "allowed": true,
+        "allowed_actions": [
+          {
+            "action": "create_competition",
+            "limit": "once per audit",
+            "data": "TP-AUD-20261105-01"
+          },
+          {
+            "action": "add_competitor",
+            "limit": "once per listed name, 9 in total per audit",
+            "data": "TP-Anna, TP-Bo, TP-Cia, TP-Dan, TP-V768, TP-V375, TP-Key, TP-Csv, Comma, TP-Csv \"Quote\""
+          },
+          {
+            "action": "save_result",
+            "limit": "at most 20 per audit, counting attempted saves",
+            "data": "100m 11.00, Long Jump 7.00, one plausible Heptathlon value"
+          },
+          {
+            "action": "export_csv",
+            "limit": "at most 2 per audit (one per tab), only from TP-AUD-20261105-01",
+            "data": null
+          }
+        ],
+        "constraints": "State-changing checks are allowed only in the competition TP-AUD-20261105-01 (and competitions whose name starts with TP-). Limits confirmed by the user as proposed. export_csv approved: at most 2, only from TP-AUD-20261105-01. Attempted invalid saves in TPI-012 count against the save_result limit."
+      },
+      "test_data_constraints": "Local-only, disposable test data. No real personal data. Competition names start with TP-.",
+      "out_of_scope": [
+        "Save state and Load state",
+        "Rename competition and dark mode toggle",
+        "Performance, cross-browser, server-side validation, security testing",
+        "Any write to a competition whose name does not start with TP-, including the default General competition"
+      ],
+      "stop_conditions": [
+        "Stop immediately on an unexpected error, data loss, or any write outside TP-AUD-20261105-01 (user, 2026-11-05T15:15:55Z)",
+        "The selected competition name does not start with TP- before a state-changing action",
+        "Any sign of real or shared data in the app",
+        "A state-changing action that is not listed in allowed_actions or exceeds its limit",
+        "The same blocking problem stops several planned checks",
+        "Not enough evidence to tell a product defect from an environment, selector or test-data fault"
+      ],
+      "confirmed_at": "2026-11-05T15:15:55Z",
+      "confirmed_by": "johan"
+    },
+    "requirements": [
+      {
+        "requirement_id": "REQ-LOCAL-001",
+        "title": "A user can add a participant with a name",
+        "source": "local",
+        "readiness": "ready",
+        "acceptance_criteria": "After adding a participant with a name, that name is shown in the app (competitor selector or standings)."
+      },
+      {
+        "requirement_id": "REQ-LOCAL-002",
+        "title": "A user can register a result per event",
+        "source": "local",
+        "readiness": "ready",
+        "acceptance_criteria": "A result saved for a participant and an event is shown for that participant under that event."
+      },
+      {
+        "requirement_id": "REQ-LOCAL-003",
+        "title": "Points are calculated per the current Decathlon/Heptathlon tables",
+        "source": "local",
+        "readiness": "ready",
+        "acceptance_criteria": "Points per event equal the World Athletics (IAAF) combined-events scoring-table value for that event and result (INT of A*(B-P)^C for track, A*(P-B)^C for field). A deviating value is a finding with the calculation and expected value."
+      },
+      {
+        "requirement_id": "REQ-LOCAL-004",
+        "title": "The table shows total points and placement per event",
+        "source": "local",
+        "readiness": "ready",
+        "acceptance_criteria": "The table shows the rank within each event, and also the total and the total position."
+      },
+      {
+        "requirement_id": "REQ-LOCAL-005",
+        "title": "Ties share a placement",
+        "source": "local",
+        "readiness": "ready",
+        "acceptance_criteria": "Participants with equal totals show the same position. The position that follows a tie is not specified and is not judged."
+      },
+      {
+        "requirement_id": "REQ-LOCAL-006",
+        "title": "Invalid results are rejected with a clear error message",
+        "source": "local",
+        "readiness": "ready",
+        "acceptance_criteria": "Negative, non-numeric, empty and unreasonable values for an event are rejected with a clear error message and the result is not saved."
+      },
+      {
+        "requirement_id": "REQ-LOCAL-007",
+        "title": "Export CSV contains the same data as the table",
+        "source": "local",
+        "readiness": "ready",
+        "acceptance_criteria": "The exported CSV contains every participant, total, position and event value shown in the table. Column order and format are not specified and are not judged."
+      }
+    ],
+    "test_plan_items": [
+      {
+        "test_plan_item_id": "TPI-001",
+        "requirement_id": "REQ-LOCAL-001",
+        "title": "Add one participant with a plain name",
+        "risk": "High",
+        "priority": "High",
+        "type": "Functional",
+        "readiness": "ready"
+      },
+      {
+        "test_plan_item_id": "TPI-002",
+        "requirement_id": "REQ-LOCAL-001",
+        "title": "Add several participants (count 0, 1, many)",
+        "risk": "Medium",
+        "priority": "High",
+        "type": "Functional",
+        "readiness": "ready"
+      },
+      {
+        "test_plan_item_id": "TPI-003",
+        "requirement_id": "REQ-LOCAL-001",
+        "title": "Add a participant with the keyboard only",
+        "risk": "Medium",
+        "priority": "Medium",
+        "type": "Accessibility",
+        "readiness": "ready"
+      },
+      {
+        "test_plan_item_id": "TPI-004",
+        "requirement_id": "REQ-LOCAL-002",
+        "title": "Save a valid time result (100m, Decathlon)",
+        "risk": "High",
+        "priority": "High",
+        "type": "Functional",
+        "readiness": "ready"
+      },
+      {
+        "test_plan_item_id": "TPI-005",
+        "requirement_id": "REQ-LOCAL-002",
+        "title": "Save a valid result in another event type (Long Jump, Decathlon)",
+        "risk": "Medium",
+        "priority": "High",
+        "type": "Functional",
+        "readiness": "ready"
+      },
+      {
+        "test_plan_item_id": "TPI-006",
+        "requirement_id": "REQ-LOCAL-002",
+        "title": "Save a valid result in the Heptathlon discipline",
+        "risk": "Medium",
+        "priority": "Medium",
+        "type": "Functional",
+        "readiness": "ready"
+      },
+      {
+        "test_plan_item_id": "TPI-007",
+        "requirement_id": "REQ-LOCAL-002",
+        "title": "Result entry at 768 and 375 px",
+        "risk": "Medium",
+        "priority": "Medium",
+        "type": "Responsive",
+        "readiness": "ready"
+      },
+      {
+        "test_plan_item_id": "TPI-008",
+        "requirement_id": "REQ-LOCAL-003",
+        "title": "Points calculation per official tables",
+        "risk": "High",
+        "priority": "High",
+        "type": "Functional",
+        "readiness": "ready"
+      },
+      {
+        "test_plan_item_id": "TPI-009",
+        "requirement_id": "REQ-LOCAL-004",
+        "title": "Total and placement per event in the table",
+        "risk": "Medium",
+        "priority": "Medium",
+        "type": "Functional",
+        "readiness": "ready"
+      },
+      {
+        "test_plan_item_id": "TPI-010",
+        "requirement_id": "REQ-LOCAL-005",
+        "title": "Two participants with equal totals share a position",
+        "risk": "High",
+        "priority": "High",
+        "type": "Functional",
+        "readiness": "ready"
+      },
+      {
+        "test_plan_item_id": "TPI-011",
+        "requirement_id": "REQ-LOCAL-005",
+        "title": "A participant with a different total is not given the tied position",
+        "risk": "Medium",
+        "priority": "Medium",
+        "type": "Functional",
+        "readiness": "ready"
+      },
+      {
+        "test_plan_item_id": "TPI-012",
+        "requirement_id": "REQ-LOCAL-006",
+        "title": "Invalid results rejected with a clear message",
+        "risk": "High",
+        "priority": "High",
+        "type": "Validation",
+        "readiness": "ready"
+      },
+      {
+        "test_plan_item_id": "TPI-013",
+        "requirement_id": "REQ-LOCAL-007",
+        "title": "Export CSV from the Decathlon tab matches the table",
+        "risk": "High",
+        "priority": "High",
+        "type": "Functional",
+        "readiness": "ready"
+      },
+      {
+        "test_plan_item_id": "TPI-014",
+        "requirement_id": "REQ-LOCAL-007",
+        "title": "CSV keeps names with comma and quote intact",
+        "risk": "Medium",
+        "priority": "Medium",
+        "type": "Functional",
+        "readiness": "ready"
+      }
+    ],
+    "executions": [
+      {
+        "execution_id": "EX-001",
+        "test_plan_item_id": "TPI-001",
+        "requirement_id": "REQ-LOCAL-001",
+        "status": "pass",
+        "reason": null,
+        "started_at": "2026-11-05T15:16:44Z",
+        "finished_at": "2026-11-05T15:17:22Z",
+        "url": "http://localhost:8080/",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "mode": "mcp-exploration",
+        "evidence_ids": [
+          "EV-001",
+          "EV-002",
+          "EV-003",
+          "EV-004"
+        ],
+        "summary": "Verified: after adding TP-Anna to TP-AUD-20261105-01 the name is shown in the competitor selector and in the standings (counter 1); the console had no errors. Setup action: the competition was created first (ACT-001). Not verified: persistence, blank or special-character names, server-side behaviour."
+      },
+      {
+        "execution_id": "EX-002",
+        "test_plan_item_id": "TPI-002",
+        "requirement_id": "REQ-LOCAL-001",
+        "status": "pass",
+        "reason": null,
+        "started_at": "2026-11-05T15:17:42Z",
+        "finished_at": "2026-11-05T15:18:00Z",
+        "url": "http://localhost:8080/",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "mode": "mcp-exploration",
+        "evidence_ids": [
+          "EV-005",
+          "EV-006"
+        ],
+        "summary": "Verified: TP-Bo and TP-Cia were added; all three names are shown and the competition counter shows 3. Not verified: more than three participants, duplicate names."
+      },
+      {
+        "execution_id": "EX-003",
+        "test_plan_item_id": "TPI-004",
+        "requirement_id": "REQ-LOCAL-002",
+        "status": "pass",
+        "reason": null,
+        "started_at": "2026-11-05T15:18:31Z",
+        "finished_at": "2026-11-05T15:18:37Z",
+        "url": "http://localhost:8080/",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "mode": "mcp-exploration",
+        "evidence_ids": [
+          "EV-007",
+          "EV-008"
+        ],
+        "summary": "Verified: 100m 11.00 s saved for TP-Anna is shown in her 100m cell (11 s, 861); the status line says Saved: 861 pts; the console had no errors. Not verified: the other nine events, overwriting a result."
+      },
+      {
+        "execution_id": "EX-004",
+        "test_plan_item_id": "TPI-005",
+        "requirement_id": "REQ-LOCAL-002",
+        "status": "pass",
+        "reason": null,
+        "started_at": "2026-11-05T15:19:05Z",
+        "finished_at": "2026-11-05T15:19:10Z",
+        "url": "http://localhost:8080/",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "mode": "mcp-exploration",
+        "evidence_ids": [
+          "EV-009",
+          "EV-010"
+        ],
+        "summary": "Verified: Long Jump (unit cm) 700 saved for TP-Bo is shown in his Long Jump cell (700 cm, 814). Test data deviation from the plan: 7.00 m was entered as 700 because the UI unit is cm. Not verified: other field events."
+      },
+      {
+        "execution_id": "EX-005",
+        "test_plan_item_id": "TPI-010",
+        "requirement_id": "REQ-LOCAL-005",
+        "status": "pass",
+        "reason": null,
+        "started_at": "2026-11-05T15:19:32Z",
+        "finished_at": "2026-11-05T15:19:37Z",
+        "url": "http://localhost:8080/",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "mode": "mcp-exploration",
+        "evidence_ids": [
+          "EV-011",
+          "EV-012"
+        ],
+        "summary": "Verified: TP-Anna and TP-Cia both have total 861 and both show position 1. Not verified: ties in other totals, ties at lower positions, how ties are ordered inside the table."
+      },
+      {
+        "execution_id": "EX-006",
+        "test_plan_item_id": "TPI-011",
+        "requirement_id": "REQ-LOCAL-005",
+        "status": "pass",
+        "reason": null,
+        "started_at": "2026-11-05T15:19:37Z",
+        "finished_at": "2026-11-05T15:26:12Z",
+        "url": "http://localhost:8080/",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "mode": "mcp-exploration",
+        "evidence_ids": [
+          "EV-011",
+          "EV-012",
+          "EV-039"
+        ],
+        "summary": "Verified: TP-Bo (total 814 at that time, 1789 later) never shows the tied position; with the tie at 1, TP-Bo shows 3. After later data the table shows 1, 2, 3, then 4 and 4 (TP-V768 and TP-V375 tied) and 6. The position after a tie is therefore counted as in 1, 1, 3 and is recorded, not judged (CG-004)."
+      },
+      {
+        "execution_id": "EX-007",
+        "test_plan_item_id": "TPI-009",
+        "requirement_id": "REQ-LOCAL-004",
+        "status": "fail",
+        "reason": null,
+        "started_at": "2026-11-05T15:20:07Z",
+        "finished_at": "2026-11-05T15:20:15Z",
+        "url": "http://localhost:8080/",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "mode": "mcp-exploration",
+        "evidence_ids": [
+          "EV-013",
+          "EV-014"
+        ],
+        "summary": "Violated criterion: the table shows the rank within each event, plus total and total position. Observed: total (Total) and total position (Pos) are shown, but each event cell shows only the result and the points (TP-Bo 100m: 10.5 s, 975), and no rank within the event appears in the table, in its HTML, on hover, or elsewhere on the page. TP-Bo scored 975 pts in 100m (reference 975, matches). Reproduced: see EX-013. Cause checked: not a selector or timing fault (values read from the DOM and screenshot)."
+      },
+      {
+        "execution_id": "EX-008",
+        "test_plan_item_id": "TPI-008",
+        "requirement_id": "REQ-LOCAL-003",
+        "status": "pass",
+        "reason": null,
+        "started_at": "2026-11-05T15:20:54Z",
+        "finished_at": "2026-11-05T15:21:27Z",
+        "url": "http://localhost:8080/",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "mode": "mcp-exploration",
+        "evidence_ids": [
+          "EV-015",
+          "EV-016",
+          "EV-017",
+          "EV-018"
+        ],
+        "summary": "Verified for five Decathlon results against the World Athletics formula (INT of A*(B-P)^C): 100m 11.00 s = 861, Long Jump 700 cm = 814, 400m 50.00 s = 815, Shot Put 14.00 m = 728, 100m 10.50 s = 975; all equal the expected values. Not verified: the other Decathlon events (110m Hurdles, 1500m, High Jump, Pole Vault, Discus, Javelin) and every Heptathlon event (no Heptathlon competition was permitted by the scope, see EX-017); the reference constants were recalled by the agent and not read from the official document (CG-011)."
+      },
+      {
+        "execution_id": "EX-009",
+        "test_plan_item_id": "TPI-007",
+        "requirement_id": "REQ-LOCAL-002",
+        "status": "pass",
+        "reason": null,
+        "started_at": "2026-11-05T15:21:48Z",
+        "finished_at": "2026-11-05T15:22:11Z",
+        "url": "http://localhost:8080/",
+        "viewport": {
+          "width": 768,
+          "height": 1024
+        },
+        "mode": "mcp-exploration",
+        "evidence_ids": [
+          "EV-019",
+          "EV-020"
+        ],
+        "summary": "Verified at 768 px: TP-V768 was added and a 100m result saved and shown (861); the page has no horizontal scroll (scrollWidth 753); the standings table scrolls inside its own container. Layout observations are heuristic-based and have no design reference."
+      },
+      {
+        "execution_id": "EX-010",
+        "test_plan_item_id": "TPI-007",
+        "requirement_id": "REQ-LOCAL-002",
+        "status": "pass",
+        "reason": null,
+        "started_at": "2026-11-05T15:22:29Z",
+        "finished_at": "2026-11-05T15:23:06Z",
+        "url": "http://localhost:8080/",
+        "viewport": {
+          "width": 375,
+          "height": 812
+        },
+        "mode": "mcp-exploration",
+        "evidence_ids": [
+          "EV-021",
+          "EV-022",
+          "EV-023"
+        ],
+        "summary": "Verified at 375 px: TP-V375 was added and a 100m result saved and shown (861); controls were readable and operable; the standings table scrolls inside its own container. Observation (heuristic-based, no requirement or design reference): the page is 8 px wider than the viewport (scrollWidth 383 against 375) and the element causing it was not identified (CG-014)."
+      },
+      {
+        "execution_id": "EX-011",
+        "test_plan_item_id": "TPI-003",
+        "requirement_id": "REQ-LOCAL-001",
+        "status": "pass",
+        "reason": null,
+        "started_at": "2026-11-05T15:23:59Z",
+        "finished_at": "2026-11-05T15:24:07Z",
+        "url": "http://localhost:8080/",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "mode": "mcp-exploration",
+        "evidence_ids": [
+          "EV-024",
+          "EV-025"
+        ],
+        "summary": "Verified: TP-Key was added with the keyboard only (Tab to Name, typing, Tab to Add competitor, Enter). Focus order from the Rename button was Name then Add competitor; a 2 px outline was present on each focused control; no keyboard trap was seen in that sequence. Setup note: focus was placed on the Rename button by script to start the sequence just before Name. No automated accessibility scan was performed; this does not establish WCAG 2.1 AA conformance."
+      },
+      {
+        "execution_id": "EX-012",
+        "test_plan_item_id": "TPI-012",
+        "requirement_id": "REQ-LOCAL-006",
+        "status": "fail",
+        "reason": null,
+        "started_at": "2026-11-05T15:24:39Z",
+        "finished_at": "2026-11-05T15:25:53Z",
+        "url": "http://localhost:8080/",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "mode": "mcp-exploration",
+        "evidence_ids": [
+          "EV-026",
+          "EV-027",
+          "EV-028",
+          "EV-029",
+          "EV-030",
+          "EV-031",
+          "EV-032",
+          "EV-033",
+          "EV-034",
+          "EV-035",
+          "EV-036",
+          "EV-037",
+          "EV-038"
+        ],
+        "summary": "Violated criterion: negative, non-numeric, empty and unreasonable values are rejected with a clear message and not saved. Observed for 100m: -1 (Result cannot be negative), abc (Enter the result in seconds (163) or as minutes:seconds (2:43)), empty (Result is required) and 0.5 (Faster than the world record for 100m: 9.58 s) were rejected with a visible message and not saved. 99999 (about 27.8 hours) was accepted: no error, Saved: 0 pts, the value is shown as 1666:39 and the server answered 200. Reproduced: see EX-016 and the reload check in EX-013. Not verified: other events, other unreasonable values, client versus server cause for each rejection."
+      },
+      {
+        "execution_id": "EX-013",
+        "test_plan_item_id": "TPI-009",
+        "requirement_id": "REQ-LOCAL-004",
+        "status": "fail",
+        "reason": null,
+        "started_at": "2026-11-05T15:20:14Z",
+        "finished_at": "2026-11-05T15:26:39Z",
+        "url": "http://localhost:8080/",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "mode": "mcp-exploration",
+        "evidence_ids": [
+          "EV-013",
+          "EV-014",
+          "EV-039",
+          "EV-040",
+          "EV-041"
+        ],
+        "summary": "Repeat of EX-007 by another route (page reload, then reading the standings, and the exported CSV). Violated criterion: rank within each event is shown. Observed again: the table cells hold only result and points, and the CSV has result and points columns per event, Total and Position, but no per-event rank. The data is persisted by the server (values unchanged after reload)."
+      },
+      {
+        "execution_id": "EX-014",
+        "test_plan_item_id": "TPI-013",
+        "requirement_id": "REQ-LOCAL-007",
+        "status": "pass",
+        "reason": null,
+        "started_at": "2026-11-05T15:26:25Z",
+        "finished_at": "2026-11-05T15:26:39Z",
+        "url": "http://localhost:8080/",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "mode": "mcp-exploration",
+        "evidence_ids": [
+          "EV-040",
+          "EV-041"
+        ],
+        "summary": "Verified (export 1 of 2): the CSV contains the same seven rows as the table with matching position, name, total, and result and points per event (for example TP-Bo 1, 10.5 / 975, 700 / 814, 1789). Results are shown as entered (TP-Key 99999 against 1666:39 in the table; same data, different format). Not verified: the Heptathlon tab, column order and format (not specified), other browsers. Observations: the Competition column holds the type (Decathlon); event names in the header are inconsistent (100m result, longJump result)."
+      },
+      {
+        "execution_id": "EX-015",
+        "test_plan_item_id": "TPI-014",
+        "requirement_id": "REQ-LOCAL-007",
+        "status": "blocked",
+        "reason": "test-data",
+        "started_at": "2026-11-05T15:27:05Z",
+        "finished_at": "2026-11-05T15:27:14Z",
+        "url": "http://localhost:8080/",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "mode": "mcp-exploration",
+        "evidence_ids": [
+          "EV-042",
+          "EV-043",
+          "EV-044",
+          "EV-045"
+        ],
+        "summary": "The check could not run: the required test data cannot be created. The app rejected TP-Csv, Comma and TP-Csv \"Quote\" with Name must contain valid letters (server answered 400 both times), so no name with a comma or quote exists. Needed to unblock: a participant name that the app accepts and that contains a CSV delimiter or quote, or confirmation that such names are intentionally not allowed. This is not recorded as a product defect: no requirement defines valid names."
+      },
+      {
+        "execution_id": "EX-016",
+        "test_plan_item_id": "TPI-012",
+        "requirement_id": "REQ-LOCAL-006",
+        "status": "fail",
+        "reason": null,
+        "started_at": "2026-11-05T15:28:00Z",
+        "finished_at": "2026-11-05T15:28:09Z",
+        "url": "http://localhost:8080/",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "mode": "mcp-exploration",
+        "evidence_ids": [
+          "EV-046",
+          "EV-047",
+          "EV-048"
+        ],
+        "summary": "Repeat of EX-012 attempt 5 with the same steps. Violated criterion: unreasonable values are rejected and not saved. Observed again: 99999 for 100m was accepted, Saved: 0 pts, cell 1666:39, server answered 200. Reproduced 2 of 2."
+      },
+      {
+        "execution_id": "EX-017",
+        "test_plan_item_id": "TPI-006",
+        "requirement_id": "REQ-LOCAL-002",
+        "status": "blocked",
+        "reason": "test-data",
+        "started_at": "2026-11-05T15:16:44Z",
+        "finished_at": "2026-11-05T15:16:54Z",
+        "url": "http://localhost:8080/",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "mode": "mcp-exploration",
+        "evidence_ids": [
+          "EV-001",
+          "EV-002"
+        ],
+        "summary": "The check could not run: the competition TP-AUD-20261105-01 was created as type Decathlon and its Discipline control is disabled, so no Heptathlon result can be saved in it. A Heptathlon result needs a second competition of type Heptathlon; creating a second competition is not in the confirmed state-change limits (create_competition once per audit). Needed to unblock: user approval to create one Heptathlon competition whose name starts with TP-. The same limit prevented the Heptathlon part of TPI-008. Not recorded as a product defect."
+      }
+    ],
+    "actions": [
+      {
+        "action_id": "ACT-001",
+        "execution_id": "EX-001",
+        "action": "create_competition",
+        "target": "competition TP-AUD-20261105-01 (type Decathlon)",
+        "allowed_by_scope": true,
+        "performed_at": "2026-11-05T15:16:49Z",
+        "evidence_ids": [
+          "EV-001",
+          "EV-002",
+          "EV-003",
+          "EV-004"
+        ]
+      },
+      {
+        "action_id": "ACT-002",
+        "execution_id": "EX-001",
+        "action": "add_competitor",
+        "target": "TP-Anna in TP-AUD-20261105-01",
+        "allowed_by_scope": true,
+        "performed_at": "2026-11-05T15:17:17Z",
+        "evidence_ids": [
+          "EV-001",
+          "EV-002",
+          "EV-003",
+          "EV-004"
+        ]
+      },
+      {
+        "action_id": "ACT-003",
+        "execution_id": "EX-002",
+        "action": "add_competitor",
+        "target": "TP-Bo in TP-AUD-20261105-01",
+        "allowed_by_scope": true,
+        "performed_at": "2026-11-05T15:17:42Z",
+        "evidence_ids": [
+          "EV-005",
+          "EV-006"
+        ]
+      },
+      {
+        "action_id": "ACT-004",
+        "execution_id": "EX-002",
+        "action": "add_competitor",
+        "target": "TP-Cia in TP-AUD-20261105-01",
+        "allowed_by_scope": true,
+        "performed_at": "2026-11-05T15:17:54Z",
+        "evidence_ids": [
+          "EV-005",
+          "EV-006"
+        ]
+      },
+      {
+        "action_id": "ACT-005",
+        "execution_id": "EX-003",
+        "action": "save_result",
+        "target": "TP-Anna, Decathlon 100m, 11.00 s in TP-AUD-20261105-01",
+        "allowed_by_scope": true,
+        "performed_at": "2026-11-05T15:18:31Z",
+        "evidence_ids": [
+          "EV-007",
+          "EV-008"
+        ]
+      },
+      {
+        "action_id": "ACT-006",
+        "execution_id": "EX-004",
+        "action": "save_result",
+        "target": "TP-Bo, Decathlon Long Jump, 700 cm in TP-AUD-20261105-01",
+        "allowed_by_scope": true,
+        "performed_at": "2026-11-05T15:19:05Z",
+        "evidence_ids": [
+          "EV-009",
+          "EV-010"
+        ]
+      },
+      {
+        "action_id": "ACT-007",
+        "execution_id": "EX-005",
+        "action": "save_result",
+        "target": "TP-Cia, Decathlon 100m, 11.00 s in TP-AUD-20261105-01",
+        "allowed_by_scope": true,
+        "performed_at": "2026-11-05T15:19:32Z",
+        "evidence_ids": [
+          "EV-011",
+          "EV-012"
+        ]
+      },
+      {
+        "action_id": "ACT-008",
+        "execution_id": "EX-007",
+        "action": "save_result",
+        "target": "TP-Bo, Decathlon 100m, 10.50 s in TP-AUD-20261105-01",
+        "allowed_by_scope": true,
+        "performed_at": "2026-11-05T15:20:07Z",
+        "evidence_ids": [
+          "EV-013",
+          "EV-014"
+        ]
+      },
+      {
+        "action_id": "ACT-009",
+        "execution_id": "EX-008",
+        "action": "save_result",
+        "target": "TP-Cia, Decathlon 400m, 50.00 s in TP-AUD-20261105-01",
+        "allowed_by_scope": true,
+        "performed_at": "2026-11-05T15:20:54Z",
+        "evidence_ids": [
+          "EV-015",
+          "EV-016",
+          "EV-017",
+          "EV-018"
+        ]
+      },
+      {
+        "action_id": "ACT-010",
+        "execution_id": "EX-008",
+        "action": "save_result",
+        "target": "TP-Anna, Decathlon Shot Put, 14.00 m in TP-AUD-20261105-01",
+        "allowed_by_scope": true,
+        "performed_at": "2026-11-05T15:21:20Z",
+        "evidence_ids": [
+          "EV-015",
+          "EV-016",
+          "EV-017",
+          "EV-018"
+        ]
+      },
+      {
+        "action_id": "ACT-011",
+        "execution_id": "EX-009",
+        "action": "add_competitor",
+        "target": "TP-V768 in TP-AUD-20261105-01 (768 px)",
+        "allowed_by_scope": true,
+        "performed_at": "2026-11-05T15:21:48Z",
+        "evidence_ids": [
+          "EV-019",
+          "EV-020"
+        ]
+      },
+      {
+        "action_id": "ACT-012",
+        "execution_id": "EX-009",
+        "action": "save_result",
+        "target": "TP-V768, Decathlon 100m, 11.00 s (768 px) in TP-AUD-20261105-01",
+        "allowed_by_scope": true,
+        "performed_at": "2026-11-05T15:22:04Z",
+        "evidence_ids": [
+          "EV-019",
+          "EV-020"
+        ]
+      },
+      {
+        "action_id": "ACT-013",
+        "execution_id": "EX-010",
+        "action": "add_competitor",
+        "target": "TP-V375 in TP-AUD-20261105-01 (375 px)",
+        "allowed_by_scope": true,
+        "performed_at": "2026-11-05T15:22:29Z",
+        "evidence_ids": [
+          "EV-021",
+          "EV-022",
+          "EV-023"
+        ]
+      },
+      {
+        "action_id": "ACT-014",
+        "execution_id": "EX-010",
+        "action": "save_result",
+        "target": "TP-V375, Decathlon 100m, 11.00 s (375 px) in TP-AUD-20261105-01",
+        "allowed_by_scope": true,
+        "performed_at": "2026-11-05T15:22:45Z",
+        "evidence_ids": [
+          "EV-021",
+          "EV-022",
+          "EV-023"
+        ]
+      },
+      {
+        "action_id": "ACT-015",
+        "execution_id": "EX-011",
+        "action": "add_competitor",
+        "target": "TP-Key in TP-AUD-20261105-01 (keyboard only)",
+        "allowed_by_scope": true,
+        "performed_at": "2026-11-05T15:23:59Z",
+        "evidence_ids": [
+          "EV-024",
+          "EV-025"
+        ]
+      },
+      {
+        "action_id": "ACT-016",
+        "execution_id": "EX-012",
+        "action": "save_result",
+        "target": "TP-Key, Decathlon 100m, 99999 s (accepted by the app, TPI-012 attempt 5) in TP-AUD-20261105-01",
+        "allowed_by_scope": true,
+        "performed_at": "2026-11-05T15:25:37Z",
+        "evidence_ids": [
+          "EV-026",
+          "EV-027",
+          "EV-028",
+          "EV-029",
+          "EV-030",
+          "EV-031",
+          "EV-032",
+          "EV-033",
+          "EV-034",
+          "EV-035",
+          "EV-036",
+          "EV-037",
+          "EV-038"
+        ]
+      },
+      {
+        "action_id": "ACT-017",
+        "execution_id": "EX-014",
+        "action": "export_csv",
+        "target": "TP-AUD-20261105-01, Decathlon table (export 1 of 2)",
+        "allowed_by_scope": true,
+        "performed_at": "2026-11-05T15:26:26Z",
+        "evidence_ids": [
+          "EV-040",
+          "EV-041"
+        ]
+      },
+      {
+        "action_id": "ACT-018",
+        "execution_id": "EX-016",
+        "action": "save_result",
+        "target": "TP-Key, Decathlon 100m, 99999 s (repeat, TPI-012) in TP-AUD-20261105-01",
+        "allowed_by_scope": true,
+        "performed_at": "2026-11-05T15:28:00Z",
+        "evidence_ids": [
+          "EV-046",
+          "EV-047",
+          "EV-048"
+        ]
+      }
+    ],
+    "evidence": [
+      {
+        "evidence_id": "EV-001",
+        "type": "screenshot",
+        "source": "playwright-mcp",
+        "location": "evidence/setup-new-competition-dialog-2026-11-05.png",
+        "related": [
+          "EX-001",
+          "EX-017"
+        ],
+        "captured_at": "2026-11-05T15:16:44Z",
+        "description": "New competition dialog with the name TP-AUD-20261105-01 entered and the Type choice Decathlon / Heptathlon.",
+        "redacted": false,
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      },
+      {
+        "evidence_id": "EV-002",
+        "type": "dom-excerpt",
+        "source": "playwright-mcp",
+        "location": "evidence/setup-competition-created-dom-2026-11-05.yml",
+        "related": [
+          "EX-001",
+          "EX-017"
+        ],
+        "captured_at": "2026-11-05T15:16:54Z",
+        "description": "Accessibility tree after the competition was created: type Decathlon, the Discipline control is disabled.",
+        "redacted": false
+      },
+      {
+        "evidence_id": "EV-003",
+        "type": "dom-excerpt",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-001-add-anna-dom-2026-11-05.yml",
+        "related": [
+          "EX-001"
+        ],
+        "captured_at": "2026-11-05T15:17:22Z",
+        "description": "Accessibility tree after adding TP-Anna: name shown in the competitor selector and standings, counter 1.",
+        "redacted": false
+      },
+      {
+        "evidence_id": "EV-004",
+        "type": "screenshot",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-001-add-anna-screenshot-2026-11-05.png",
+        "related": [
+          "EX-001"
+        ],
+        "captured_at": "2026-11-05T15:17:22Z",
+        "description": "Page after adding TP-Anna.",
+        "redacted": false,
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      },
+      {
+        "evidence_id": "EV-005",
+        "type": "dom-excerpt",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-002-add-bo-cia-dom-2026-11-05.yml",
+        "related": [
+          "EX-002"
+        ],
+        "captured_at": "2026-11-05T15:18:00Z",
+        "description": "Accessibility tree after adding TP-Bo and TP-Cia: three names, counter 3.",
+        "redacted": false
+      },
+      {
+        "evidence_id": "EV-006",
+        "type": "screenshot",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-002-add-bo-cia-screenshot-2026-11-05.png",
+        "related": [
+          "EX-002"
+        ],
+        "captured_at": "2026-11-05T15:18:00Z",
+        "description": "Page after adding TP-Bo and TP-Cia.",
+        "redacted": false,
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      },
+      {
+        "evidence_id": "EV-007",
+        "type": "dom-excerpt",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-004-save-anna-100m-dom-2026-11-05.yml",
+        "related": [
+          "EX-003"
+        ],
+        "captured_at": "2026-11-05T15:18:37Z",
+        "description": "Accessibility tree after saving 100m 11.00 for TP-Anna: cell 11 s 861, status Saved: 861 pts.",
+        "redacted": false
+      },
+      {
+        "evidence_id": "EV-008",
+        "type": "screenshot",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-004-save-anna-100m-screenshot-2026-11-05.png",
+        "related": [
+          "EX-003"
+        ],
+        "captured_at": "2026-11-05T15:18:37Z",
+        "description": "Page after saving 100m 11.00 for TP-Anna.",
+        "redacted": false,
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      },
+      {
+        "evidence_id": "EV-009",
+        "type": "dom-excerpt",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-005-save-bo-longjump-dom-2026-11-05.yml",
+        "related": [
+          "EX-004"
+        ],
+        "captured_at": "2026-11-05T15:19:10Z",
+        "description": "Accessibility tree after saving Long Jump 700 cm for TP-Bo: cell 700 cm 814, status Saved: 814 pts.",
+        "redacted": false
+      },
+      {
+        "evidence_id": "EV-010",
+        "type": "screenshot",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-005-save-bo-longjump-screenshot-2026-11-05.png",
+        "related": [
+          "EX-004"
+        ],
+        "captured_at": "2026-11-05T15:19:10Z",
+        "description": "Page after saving Long Jump 700 cm for TP-Bo.",
+        "redacted": false,
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      },
+      {
+        "evidence_id": "EV-011",
+        "type": "dom-excerpt",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-010-save-cia-100m-tie-dom-2026-11-05.yml",
+        "related": [
+          "EX-005",
+          "EX-006"
+        ],
+        "captured_at": "2026-11-05T15:19:37Z",
+        "description": "Accessibility tree after saving 100m 11.00 for TP-Cia: TP-Anna and TP-Cia both total 861 and position 1, TP-Bo position 3.",
+        "redacted": false
+      },
+      {
+        "evidence_id": "EV-012",
+        "type": "screenshot",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-010-save-cia-100m-tie-screenshot-2026-11-05.png",
+        "related": [
+          "EX-005",
+          "EX-006"
+        ],
+        "captured_at": "2026-11-05T15:19:37Z",
+        "description": "Standings with the tie between TP-Anna and TP-Cia.",
+        "redacted": false,
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      },
+      {
+        "evidence_id": "EV-013",
+        "type": "dom-excerpt",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-009-standings-table-html-after-bo-100m-2026-11-05.html",
+        "related": [
+          "EX-007",
+          "EX-013",
+          "BP-001"
+        ],
+        "captured_at": "2026-11-05T15:20:14Z",
+        "description": "Table HTML after saving 100m 10.50 for TP-Bo: event cells hold only points and a data-raw value, no rank within the event.",
+        "redacted": false
+      },
+      {
+        "evidence_id": "EV-014",
+        "type": "screenshot",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-009-standings-after-bo-100m-screenshot-2026-11-05.png",
+        "related": [
+          "EX-007",
+          "EX-013",
+          "BP-001"
+        ],
+        "captured_at": "2026-11-05T15:20:15Z",
+        "description": "Standings table: each event cell shows the result and points (TP-Bo 10.5 s 975), no per-event rank.",
+        "redacted": false,
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      },
+      {
+        "evidence_id": "EV-015",
+        "type": "test-output",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-008-cia-400m-result-2026-11-05.json",
+        "related": [
+          "EX-008"
+        ],
+        "captured_at": "2026-11-05T15:21:00Z",
+        "description": "Read-out after saving 400m 50.00 for TP-Cia: Saved: 815 pts, total 1676.",
+        "redacted": false
+      },
+      {
+        "evidence_id": "EV-016",
+        "type": "screenshot",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-008-cia-400m-screenshot-2026-11-05.png",
+        "related": [
+          "EX-008"
+        ],
+        "captured_at": "2026-11-05T15:21:01Z",
+        "description": "Page after saving 400m 50.00 for TP-Cia.",
+        "redacted": false,
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      },
+      {
+        "evidence_id": "EV-017",
+        "type": "test-output",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-008-standings-values-after-shotput-2026-11-05.json",
+        "related": [
+          "EX-008"
+        ],
+        "captured_at": "2026-11-05T15:21:26Z",
+        "description": "Read-out of all standings rows and event cells after saving Shot Put 14.00 for TP-Anna (728 pts).",
+        "redacted": false
+      },
+      {
+        "evidence_id": "EV-018",
+        "type": "screenshot",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-008-anna-shotput-screenshot-2026-11-05.png",
+        "related": [
+          "EX-008"
+        ],
+        "captured_at": "2026-11-05T15:21:27Z",
+        "description": "Page after saving Shot Put 14.00 for TP-Anna.",
+        "redacted": false,
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      },
+      {
+        "evidence_id": "EV-019",
+        "type": "test-output",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-007-768-layout-and-result-2026-11-05.json",
+        "related": [
+          "EX-009"
+        ],
+        "captured_at": "2026-11-05T15:22:10Z",
+        "description": "At 768 px: saved result 861, no page-level horizontal scroll (scrollWidth 753), table scrolls inside its container.",
+        "redacted": false,
+        "viewport": {
+          "width": 768,
+          "height": 1024
+        }
+      },
+      {
+        "evidence_id": "EV-020",
+        "type": "screenshot",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-007-768-fullpage-screenshot-2026-11-05.png",
+        "related": [
+          "EX-009"
+        ],
+        "captured_at": "2026-11-05T15:22:11Z",
+        "description": "Full-page screenshot at 768 px after saving the TP-V768 result.",
+        "redacted": false,
+        "viewport": {
+          "width": 768,
+          "height": 1024
+        }
+      },
+      {
+        "evidence_id": "EV-021",
+        "type": "test-output",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-007-375-layout-and-result-2026-11-05.json",
+        "related": [
+          "EX-010"
+        ],
+        "captured_at": "2026-11-05T15:22:52Z",
+        "description": "At 375 px: saved result 861, document scrollWidth 383 against 375, table scrolls inside its container.",
+        "redacted": false,
+        "viewport": {
+          "width": 375,
+          "height": 812
+        }
+      },
+      {
+        "evidence_id": "EV-022",
+        "type": "screenshot",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-007-375-fullpage-screenshot-2026-11-05.png",
+        "related": [
+          "EX-010"
+        ],
+        "captured_at": "2026-11-05T15:22:53Z",
+        "description": "Full-page screenshot at 375 px after saving the TP-V375 result.",
+        "redacted": false,
+        "viewport": {
+          "width": 375,
+          "height": 812
+        }
+      },
+      {
+        "evidence_id": "EV-023",
+        "type": "test-output",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-007-375-overflow-elements-2026-11-05.json",
+        "related": [
+          "EX-010"
+        ],
+        "captured_at": "2026-11-05T15:23:06Z",
+        "description": "Elements outside the table whose right edge exceeds the viewport at 375 px: empty list, source of the 8 px overflow not identified.",
+        "redacted": false,
+        "viewport": {
+          "width": 375,
+          "height": 812
+        }
+      },
+      {
+        "evidence_id": "EV-024",
+        "type": "test-output",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-003-keyboard-add-key-focus-and-names-2026-11-05.json",
+        "related": [
+          "EX-011"
+        ],
+        "captured_at": "2026-11-05T15:24:06Z",
+        "description": "Focus order, 2 px outline and control names while adding TP-Key with the keyboard; TP-Key listed, counter 6.",
+        "redacted": false,
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      },
+      {
+        "evidence_id": "EV-025",
+        "type": "dom-excerpt",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-003-keyboard-add-key-dom-2026-11-05.yml",
+        "related": [
+          "EX-011"
+        ],
+        "captured_at": "2026-11-05T15:24:07Z",
+        "description": "Accessibility tree after adding TP-Key with the keyboard only.",
+        "redacted": false
+      },
+      {
+        "evidence_id": "EV-026",
+        "type": "test-output",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-012-attempt-1-negative-result-2026-11-05.json",
+        "related": [
+          "EX-012"
+        ],
+        "captured_at": "2026-11-05T15:24:39Z",
+        "description": "Attempt -1 for 100m: message Result cannot be negative, aria-invalid true, nothing saved.",
+        "redacted": false
+      },
+      {
+        "evidence_id": "EV-027",
+        "type": "screenshot",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-012-attempt-1-negative-screenshot-2026-11-05.png",
+        "related": [
+          "EX-012"
+        ],
+        "captured_at": "2026-11-05T15:24:40Z",
+        "description": "Page after attempt -1.",
+        "redacted": false,
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      },
+      {
+        "evidence_id": "EV-028",
+        "type": "test-output",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-012-attempt-2-nonnumeric-result-2026-11-05.json",
+        "related": [
+          "EX-012"
+        ],
+        "captured_at": "2026-11-05T15:24:57Z",
+        "description": "Attempt abc for 100m: message Enter the result in seconds (163) or as minutes:seconds (2:43), nothing saved.",
+        "redacted": false
+      },
+      {
+        "evidence_id": "EV-029",
+        "type": "screenshot",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-012-attempt-2-nonnumeric-screenshot-2026-11-05.png",
+        "related": [
+          "EX-012"
+        ],
+        "captured_at": "2026-11-05T15:24:58Z",
+        "description": "Page after attempt abc: red message and marked field.",
+        "redacted": false,
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      },
+      {
+        "evidence_id": "EV-030",
+        "type": "test-output",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-012-attempt-3-empty-result-2026-11-05.json",
+        "related": [
+          "EX-012"
+        ],
+        "captured_at": "2026-11-05T15:25:07Z",
+        "description": "Attempt with an empty value: message Result is required, nothing saved.",
+        "redacted": false
+      },
+      {
+        "evidence_id": "EV-031",
+        "type": "screenshot",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-012-attempt-3-empty-screenshot-2026-11-05.png",
+        "related": [
+          "EX-012"
+        ],
+        "captured_at": "2026-11-05T15:25:08Z",
+        "description": "Page after the empty attempt.",
+        "redacted": false,
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      },
+      {
+        "evidence_id": "EV-032",
+        "type": "test-output",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-012-attempt-4-unreasonable-low-100m-result-2026-11-05.json",
+        "related": [
+          "EX-012"
+        ],
+        "captured_at": "2026-11-05T15:25:28Z",
+        "description": "Attempt 0.5 for 100m: message Faster than the world record for 100m: 9.58 s, nothing saved.",
+        "redacted": false
+      },
+      {
+        "evidence_id": "EV-033",
+        "type": "screenshot",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-012-attempt-4-unreasonable-low-100m-screenshot-2026-11-05.png",
+        "related": [
+          "EX-012"
+        ],
+        "captured_at": "2026-11-05T15:25:29Z",
+        "description": "Page after attempt 0.5.",
+        "redacted": false,
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      },
+      {
+        "evidence_id": "EV-034",
+        "type": "test-output",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-012-attempt-5-unreasonable-high-100m-result-2026-11-05.json",
+        "related": [
+          "EX-012",
+          "BP-002"
+        ],
+        "captured_at": "2026-11-05T15:25:38Z",
+        "description": "Attempt 99999 for 100m: no error, Saved: 0 pts, TP-Key cell holds the value.",
+        "redacted": false
+      },
+      {
+        "evidence_id": "EV-035",
+        "type": "screenshot",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-012-attempt-5-unreasonable-high-100m-screenshot-2026-11-05.png",
+        "related": [
+          "EX-012",
+          "BP-002"
+        ],
+        "captured_at": "2026-11-05T15:25:38Z",
+        "description": "Page after attempt 99999: Saved: 0 pts and TP-Key shows 1666:39 in the 100m column.",
+        "redacted": false,
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      },
+      {
+        "evidence_id": "EV-036",
+        "type": "network-trace",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-012-score-requests-after-invalid-attempts-2026-11-05.txt",
+        "related": [
+          "EX-012",
+          "BP-002"
+        ],
+        "captured_at": "2026-11-05T15:25:45Z",
+        "description": "POST /api/competitions/c1/score requests with status codes: 200 for saves, 400 for three rejected attempts, 200 for 99999.",
+        "redacted": false
+      },
+      {
+        "evidence_id": "EV-037",
+        "type": "console-log",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-012-console-errors-after-invalid-attempts-2026-11-05.txt",
+        "related": [
+          "EX-012"
+        ],
+        "captured_at": "2026-11-05T15:25:45Z",
+        "description": "Console errors after the invalid attempts: browser logs of the 400 responses.",
+        "redacted": false
+      },
+      {
+        "evidence_id": "EV-038",
+        "type": "test-output",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-012-attempt-5-key-row-after-99999-2026-11-05.json",
+        "related": [
+          "EX-012",
+          "BP-002"
+        ],
+        "captured_at": "2026-11-05T15:25:53Z",
+        "description": "TP-Key row HTML after attempt 99999 and the status text.",
+        "redacted": false
+      },
+      {
+        "evidence_id": "EV-039",
+        "type": "test-output",
+        "source": "playwright-mcp",
+        "location": "evidence/recheck-after-reload-standings-2026-11-05.json",
+        "related": [
+          "EX-006",
+          "EX-013",
+          "BP-001",
+          "BP-002"
+        ],
+        "captured_at": "2026-11-05T15:26:12Z",
+        "description": "Standings read after a page reload: all values persisted, TP-Key still holds 1666:39 (99999 s), no per-event rank element.",
+        "redacted": false,
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      },
+      {
+        "evidence_id": "EV-040",
+        "type": "test-output",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-013-export-1-decathlon-results-2026-11-05.csv",
+        "related": [
+          "EX-013",
+          "EX-014",
+          "BP-001"
+        ],
+        "captured_at": "2026-11-05T15:26:25Z",
+        "description": "CSV from Export CSV (export 1 of 2): seven rows, per-event result and points columns, Total, no per-event rank column.",
+        "redacted": false
+      },
+      {
+        "evidence_id": "EV-041",
+        "type": "screenshot",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-013-table-at-export-1-screenshot-2026-11-05.png",
+        "related": [
+          "EX-013",
+          "EX-014"
+        ],
+        "captured_at": "2026-11-05T15:26:39Z",
+        "description": "Standings table at the time of export 1, for comparison with the CSV.",
+        "redacted": false,
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      },
+      {
+        "evidence_id": "EV-042",
+        "type": "screenshot",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-014-name-with-comma-rejected-screenshot-2026-11-05.png",
+        "related": [
+          "EX-015"
+        ],
+        "captured_at": "2026-11-05T15:27:05Z",
+        "description": "Page after trying to add TP-Csv, Comma: message Name must contain valid letters.",
+        "redacted": false,
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      },
+      {
+        "evidence_id": "EV-043",
+        "type": "test-output",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-014-name-with-quote-result-2026-11-05.json",
+        "related": [
+          "EX-015"
+        ],
+        "captured_at": "2026-11-05T15:27:13Z",
+        "description": "After trying to add TP-Csv \"Quote\": same message, no new row, six names listed.",
+        "redacted": false
+      },
+      {
+        "evidence_id": "EV-044",
+        "type": "network-trace",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-014-add-competitor-requests-2026-11-05.txt",
+        "related": [
+          "EX-015"
+        ],
+        "captured_at": "2026-11-05T15:27:14Z",
+        "description": "Both POST /api/competitions/c1/competitors requests returned 400.",
+        "redacted": false
+      },
+      {
+        "evidence_id": "EV-045",
+        "type": "console-log",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-014-console-errors-2026-11-05.txt",
+        "related": [
+          "EX-015"
+        ],
+        "captured_at": "2026-11-05T15:27:14Z",
+        "description": "Console errors for the two rejected add-competitor requests (400).",
+        "redacted": false
+      },
+      {
+        "evidence_id": "EV-046",
+        "type": "test-output",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-012-repeat-99999-result-2026-11-05.json",
+        "related": [
+          "EX-016",
+          "BP-002"
+        ],
+        "captured_at": "2026-11-05T15:28:08Z",
+        "description": "Repeat of 99999 for TP-Key 100m: Saved: 0 pts, cell 1666:39.",
+        "redacted": false
+      },
+      {
+        "evidence_id": "EV-047",
+        "type": "network-trace",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-012-repeat-score-requests-2026-11-05.txt",
+        "related": [
+          "EX-016",
+          "BP-002"
+        ],
+        "captured_at": "2026-11-05T15:28:09Z",
+        "description": "Repeat score request: POST /api/competitions/c1/score returned 200.",
+        "redacted": false
+      },
+      {
+        "evidence_id": "EV-048",
+        "type": "screenshot",
+        "source": "playwright-mcp",
+        "location": "evidence/tpi-012-repeat-99999-screenshot-2026-11-05.png",
+        "related": [
+          "EX-016",
+          "BP-002"
+        ],
+        "captured_at": "2026-11-05T15:28:09Z",
+        "description": "Page after the repeated 99999 save.",
+        "redacted": false,
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      }
+    ],
+    "coverage_gaps": [
+      {
+        "coverage_gap_id": "CG-004",
+        "requirement_id": "REQ-LOCAL-005",
+        "description": "Which position follows a tie is not judged. The requirement does not specify it. The app counts positions as 1, 1, 3 and 4, 4, 6 (EX-006)."
+      },
+      {
+        "coverage_gap_id": "CG-005",
+        "requirement_id": "REQ-LOCAL-001",
+        "description": "Blank, duplicate, very long and special-character names, and which characters are valid are not verified. No criterion exists. Observation: names with a comma or quote were rejected with Name must contain valid letters (EX-015)."
+      },
+      {
+        "coverage_gap_id": "CG-006",
+        "requirement_id": "REQ-LOCAL-002",
+        "description": "Results in the other events (7 Decathlon events not run), changing or overwriting an existing result, and persistence of each saved value are not verified. Only 100m, Long Jump, 400m and Shot Put were saved."
+      },
+      {
+        "coverage_gap_id": "CG-007",
+        "requirement_id": "REQ-LOCAL-007",
+        "description": "CSV from a Heptathlon competition, the CSV column order and format, a second export, and Save state / Load state are not verified. The format is not specified, and Save and Load are out of scope."
+      },
+      {
+        "coverage_gap_id": "CG-008",
+        "requirement_id": "REQ-LOCAL-002",
+        "description": "Rename competition, the dark mode toggle and the Actions column (edit) are not verified. No requirement covers them. Create competition was used only as setup."
+      },
+      {
+        "coverage_gap_id": "CG-009",
+        "requirement_id": "REQ-LOCAL-001",
+        "description": "Server-side validation is only observed through response codes (400 for rejected scores and names, 200 for accepted ones). Injection protection and server-side behaviour in general are not verified."
+      },
+      {
+        "coverage_gap_id": "CG-010",
+        "requirement_id": "REQ-LOCAL-002",
+        "description": "Saving a Heptathlon result (TPI-006) was not verified. The competition is of type Decathlon and its Discipline control is disabled; a second competition of type Heptathlon was not permitted by the scope (EX-017)."
+      },
+      {
+        "coverage_gap_id": "CG-011",
+        "requirement_id": "REQ-LOCAL-003",
+        "description": "Points were compared only for 100m, Long Jump, 400m and Shot Put in Decathlon. 110m Hurdles, 1500m, High Jump, Pole Vault, Discus, Javelin and all Heptathlon events are not verified. Reference constants were recalled by the agent and not read from the official World Athletics document."
+      },
+      {
+        "coverage_gap_id": "CG-012",
+        "requirement_id": "REQ-LOCAL-007",
+        "description": "CSV handling of names with a comma or quote is not verified (TPI-014 blocked): the app does not accept such names (EX-015)."
+      },
+      {
+        "coverage_gap_id": "CG-013",
+        "requirement_id": "REQ-LOCAL-006",
+        "description": "Invalid results were tried only for the 100m event and only with -1, abc, empty, 0.5 and 99999. Other events, other unreasonable values, boundary values and the exact limits are not verified."
+      },
+      {
+        "coverage_gap_id": "CG-014",
+        "requirement_id": "REQ-LOCAL-002",
+        "description": "The 8 px page-level horizontal overflow at 375 px (EX-010) is only observed. The overflowing element was not identified, and there is no design reference to judge it against."
+      }
+    ],
+    "testbench_backlog": [
+      {
+        "testbench_backlog_id": "TBB-001",
+        "kind": "other",
+        "title": "TestBench configuration lacks requirementsSource and deliveryPath",
+        "rationale": "config/testbench.json has no requirementsSource or deliveryPath, and deliveryEnabled is false. Requirements were supplied locally and the package cannot be delivered. Needed: a configured requirements source and an audit-package delivery path.",
+        "status": "proposed"
+      }
+    ],
+    "limitations": [
+      "2026-11-05T15:15:55Z: Scope confirmed by the user. The state-change limits and the export_csv approval (max 2, only from TP-AUD-20261105-01) were confirmed as proposed.",
+      "2026-11-05T15:15:55Z: Scope change confirmed by the user: REQ-LOCAL-003, 004 and 006 now have user-supplied clarifications and are ready. The Validation check type was added to allowed_check_types for TPI-012. REQ-LOCAL-003 uses the World Athletics scoring tables; reference values are computed with the published formula constants as recalled by the agent and were not read from the official document in this audit.",
+      "2026-11-05T15:15:55Z: Execution scope confirmed by the user: TPI-001 to TPI-014 (TPI-008, TPI-009 and TPI-012 included).",
+      "Execution start and finish times are derived from recorded action timestamps and evidence file capture times; they are not measured to the second. Evidence captured_at is the file modification time (the CSV copy keeps the download time).",
+      "TPI-006 and TPI-014 are blocked (test-data) and TPI-008 covers only Decathlon results; see EX-017, EX-015 and CG-010, CG-011, CG-012. A second competition of type Heptathlon needs a scope change that the user has not confirmed.",
+      "Only 2 export_csv actions were allowed; 1 was used. Created data remains in TP-AUD-20261105-01 (participants TP-Anna, TP-Bo, TP-Cia, TP-V768, TP-V375, TP-Key, including a stored 99999 s result for TP-Key); no delete action was in scope and no action touched other competitions.",
+      "Console errors seen during the audit are the browser logs of server 400 responses to rejected inputs (invalid scores and names); no uncaught script errors were seen.",
+      "Heights of the viewports (900, 1024, 812) were chosen by the agent.",
+      "No automated accessibility scan was performed in this audit. Accessibility signals were assessed through Playwright MCP exploration, keyboard interaction and DOM/accessibility-tree inspection. This does not establish WCAG 2.1 AA conformance.",
+      "Visual design review (step 4) was not run as a separate check: no requirement concerns visual presentation and no design reference exists. Responsive layout was observed in TPI-007 only.",
+      "Duplicate check not available: no bug data from a configured TestBench integration.",
+      "2026-11-05T19:48:10Z: Reviewer notes recorded in report.md as stated by the user. No proposal status, execution status or delivery status was changed by the agent."
+    ],
+    "external_actions": [],
+    "validation": {
+      "validated_at": "2026-11-05T19:49:40Z",
+      "contract_version": "1.2",
+      "result": "pass",
+      "errors": []
+    },
+    "delivery": {
+      "status": "not_configured",
+      "delivered_at": null,
+      "method": null,
+      "target": null,
+      "request_reference": null,
+      "response_reference": null,
+      "error": null
+    },
+    "human_review": {
+      "required": true,
+      "status": "pending"
+    },
+    "format": "testbench-audit-package"
+  }
+}

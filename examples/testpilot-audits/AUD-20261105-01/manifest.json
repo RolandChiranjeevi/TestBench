@@ -1649,7 +1649,8 @@
     "No automated accessibility scan was performed in this audit. Accessibility signals were assessed through Playwright MCP exploration, keyboard interaction and DOM/accessibility-tree inspection. This does not establish WCAG 2.1 AA conformance.",
     "Visual design review (step 4) was not run as a separate check: no requirement concerns visual presentation and no design reference exists. Responsive layout was observed in TPI-007 only.",
     "Duplicate check not available: no bug data from a configured TestBench integration.",
-    "2026-11-05T19:48:10Z: Reviewer notes recorded in report.md as stated by the user. No proposal status, execution status or delivery status was changed by the agent."
+    "2026-11-05T19:48:10Z: Reviewer notes recorded in report.md as stated by the user. No proposal status, execution status or delivery status was changed by the agent.",
+    "2026-11-06T08:01:43Z: Open item, to be investigated later: BP-001 lists 4 evidence IDs (EV-013, EV-014, EV-039, EV-040), but the TestBench package attaches only 3 files for it. Which one is missing and why has not been determined. bugs.json and the evidence files are unchanged."
   ],
   "external_actions": [],
   "validation": {
@@ -1659,16 +1660,38 @@
     "errors": []
   },
   "delivery": {
-    "status": "not_configured",
-    "delivered_at": null,
-    "method": null,
-    "target": null,
-    "request_reference": null,
-    "response_reference": null,
-    "error": null
+    "status": "delivered",
+    "delivered_at": "2026-11-06T07:53:40Z",
+    "method": "http-post",
+    "target": "http://localhost:4100/api/projects/3/audit-import",
+    "request_reference": "AUD-20261105-01-testbench.zip",
+    "response_reference": "auditId=6",
+    "error": null,
+    "response_summary": {
+      "http_status": 200,
+      "is_new": false,
+      "counts": {
+        "new": 2,
+        "unchanged": 0,
+        "updated": 0,
+        "pending": 0
+      },
+      "manual_tests": {
+        "new": 0,
+        "unchanged": 5,
+        "updated": 0,
+        "pending": 0
+      },
+      "evidence": {
+        "ok": 10,
+        "problems": 0
+      },
+      "unresolved_refs": 0
+    }
   },
   "human_review": {
     "required": true,
     "status": "pending"
-  }
+  },
+  "format": "testbench-audit-package"
 }
