@@ -135,7 +135,9 @@ Every plan item has a `requirement_id` and a `test_plan_item_id`.
 
 State which heuristics informed the plan. Heuristics are not requirements.
 
-Output: a test plan in the template and coverage gaps.
+Output: a test plan in the template, the same plan as `manifest.test_plan_items[]` with the fields of contract
+section 5.9 (`preconditions`, `test_data`, `steps`, `acceptance_criteria`, `automation`), and the coverage gaps as
+`manifest.coverage_gaps[]`. `../../test-planning/SKILL.md` says how each field is written.
 
 ### Test design references
 
@@ -148,7 +150,7 @@ Do not treat heuristics as product requirements.
 State which heuristics informed the test plan.
 
 **Stop: test plan approval.** The test plan decides what is actually run. Show the
-test plan and the coverage gaps and wait for the user's explicit approval in a
+test plan, with its steps, preconditions, test data, acceptance criteria and automation, and the coverage gaps, and wait for the user's explicit approval in a
 new message. If the user asks for changes, update the plan and show it again. If
 the plan needs a requirement outside the approved scope, go back to step 3.
 
@@ -158,7 +160,9 @@ Do not begin browser execution until the confirmed scope, requirement list, test
 plan and coverage gaps have been created and recorded in the audit workspace or
 package draft.
 
-Create the package folder and begin `manifest.json` before the first execution.
+Create the package folder and begin `manifest.json` before the first execution. The manifest already has
+`test_plan_items[]` with the structured fields of contract section 5.9, and `coverage_gaps[]`, and the folder has
+`test-plan.md`.
 
 The package is completed and validated after execution, but its core records
 MUST exist before execution begins.
