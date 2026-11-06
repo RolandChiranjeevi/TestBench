@@ -11,12 +11,14 @@ discover → plan → run → report → validate → transform → deliver
 | Stage | Where it lives | What it does |
 |---|---|---|
 | discover | `commands/discover.md` | Inspect a target and propose a scope. Stops for approval. |
-| plan, run, report, validate | audit flow, steps 1–9 in `SKILL.md` | Requirements, test plan, Playwright checks, bug and manual-test proposals, package, contract validation. |
+| plan | `commands/plan.md` | Inputs, requirements, scope, test plan and coverage gaps. Two approvals: scope first, then the test plan. |
+| run, report, validate | audit flow, steps 3–9 in `SKILL.md` | Playwright checks, bug and manual-test proposals, package, contract validation. |
 | transform | `tools/build_testbench_package.py` | Turns the audit package into a TestBench import zip. |
 | deliver | `commands/deliver.md` | Builds the zip, dry-run, asks you, then imports. |
 
-Only `discover` and `deliver` are separate command files today. The rest run as steps
-of the audit flow in `.claude/skills/testpilot/SKILL.md`. The audit contract is
+`discover`, `plan` and `deliver` are separate command files today. The rest (run,
+report, validate) run as steps of the audit flow in
+`.claude/skills/testpilot/SKILL.md`. The audit contract is
 `.claude/skills/references/audit-contract.md`.
 
 Everything TestPilot sends is `proposed`. Humans review in TestBench.
