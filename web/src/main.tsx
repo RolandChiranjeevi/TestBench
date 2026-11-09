@@ -14,6 +14,7 @@ import { ImportPage } from "./pages/Import";
 import { DashboardPage } from "./pages/Dashboard";
 import { ReportsPage } from "./pages/Reports";
 import { SettingsPage } from "./pages/Settings";
+import { NAV_SHORTCUTS, navShortcut } from "./shortcuts";
 import { BugReportsPage } from "./pages/BugReports";
 import { ManualTestsPage } from "./pages/ManualTests";
 import "./styles.css";
@@ -168,23 +169,12 @@ function ProjectLayout() {
   // Browser tab title: "Test cases · Demo Shop · Testbench", so tabs, history and screen readers say where you are.
   const section = loc.pathname.split("/")[3] ?? "";
   useEffect(() => {
-    const label = ({ dashboard: "Dashboard", requirements: "Requirements", cases: "Test cases", runs: "Runs", automated: "Automated tests", import: "Import results", bugs: "Bug reports", "manual-tests": "Agent proposals", reports: "Sprint reports", settings: "Settings" } as Record<string, string>)[section];
+    const label = NAV_SHORTCUTS.find((s) => s.to === section)?.label;
     document.title = [label, project?.name, "Testbench"].filter(Boolean).join(" · ");
     return () => { document.title = "Testbench"; };
   }, [section, project?.name]);
 
-  useHotkeys({
-    "1": () => navigate(`/p/${pid}/dashboard`),
-    "2": () => navigate(`/p/${pid}/requirements`),
-    "3": () => navigate(`/p/${pid}/cases`),
-    "4": () => navigate(`/p/${pid}/runs`),
-    "5": () => navigate(`/p/${pid}/bugs`),
-    "6": () => navigate(`/p/${pid}/manual-tests`),
-    "7": () => navigate(`/p/${pid}/automated`),
-    "8": () => navigate(`/p/${pid}/import`),
-    "9": () => navigate(`/p/${pid}/reports`),
-    "0": () => navigate(`/p/${pid}/settings`),
-  });
+  useHotkeys(Object.fromEntries(NAV_SHORTCUTS.map((s) => [s.key, () => navigate(`/p/${pid}/${s.to}`)])));
   // How many reports from test agents wait for a decision (the same query the Bug reports page uses for its default tab).
   const { data: proposedBugs } = useQuery({ queryKey: ["bug-reports", pid, "proposed"], queryFn: () => api.get<{ counts: Record<string, number> }>(`/api/projects/${pid}/bug-reports?status=proposed`), staleTime: 30_000, enabled: !!pid });
 
@@ -194,14 +184,17 @@ function ProjectLayout() {
   if (isLoading) return null;
   if (!project) return <Navigate to="/" replace />;
 
-  const link = (to: string, icon: ReactNode, label: string, shortcut: string, badge = 0) => (
+  const link = (to: (typeof NAV_SHORTCUTS)[number]["to"], icon: ReactNode, badge = 0) => {
+    const { label, key: shortcut } = navShortcut(to);
+    return (
     <NavLink to={`/p/${project.id}/${to}`} className={({ isActive }) => `nav-item${isActive ? " active" : ""}`} title={label}>
       {icon}
       <span className="nav-label">{label}</span>
       {badge > 0 && <span className="chip accent" aria-label={`${badge} waiting for review`}>{badge}</span>}
       <span className="count"><kbd className="kbd">{shortcut}</kbd></span>
     </NavLink>
-  );
+    );
+  };
 
   return (
     <div className="app">
@@ -240,18 +233,18 @@ function ProjectLayout() {
         </div>
 
         <div className="sidebar-section">Workspace</div>
-        {link("dashboard", <LayoutDashboard size={15} />, "Dashboard", "1")}
-        {link("requirements", <BookOpenCheck size={15} />, "Requirements", "2")}
-        {link("cases", <ListChecks size={15} />, "Test cases", "3")}
-        {link("runs", <Play size={15} />, "Runs", "4")}
-        {link("bugs", <Bug size={15} />, "Bug reports", "5", proposedBugs?.counts.proposed ?? 0)}
-        {link("manual-tests", <ClipboardCheck size={15} />, "Agent proposals", "6", proposedManual?.counts.proposed ?? 0)}
-        {link("automated", <Bot size={15} />, "Automated tests", "7")}
-        {link("import", <Download size={15} />, "Import results", "8")}
+        {link("dashboard", <LayoutDashboard size={15} />)}
+        {link("requirements", <BookOpenCheck size={15} />)}
+        {link("cases", <ListChecks size={15} />)}
+        {link("runs", <Play size={15} />)}
+        {link("bugs", <Bug size={15} />, proposedBugs?.counts.proposed ?? 0)}
+        {link("manual-tests", <ClipboardCheck size={15} />, proposedManual?.counts.proposed ?? 0)}
+        {link("automated", <Bot size={15} />)}
+        {link("import", <Download size={15} />)}
         <div className="sidebar-section">Reporting</div>
-        {link("reports", <FileBarChart size={15} />, "Sprint reports", "9")}
+        {link("reports", <FileBarChart size={15} />)}
         <div className="sidebar-section">Manage</div>
-        {link("settings", <Settings size={15} />, "Settings", "0")}
+        {link("settings", <Settings size={15} />)}
 
         <div className="sidebar-footer">
           {/* Nudge when there is no recent backup: the data lives only on this computer. */}

@@ -118,7 +118,7 @@ It returns the **active** requirements of the token's project, five fields each,
 - `401` for a missing, malformed, unknown or revoked token (and for a CI token), `403` for a valid agent token of another project, `429` after repeated wrong tokens (a limiter of its
   own). The token opens this one route and nothing else: no other route, no write, no other project. Every other route keeps asking for the login.
 
-**Making and revoking tokens** (signed in; no screen for it yet, so with `curl`):
+**Making and revoking tokens:** in the app, **Settings, Agent access** (sidebar, key `0`) lists, makes and revokes them; a new token is shown once, with a Copy button. The same with `curl` (signed in):
 
 ```bash
 # 1. sign in (the cookie file holds the session; X-Testbench is required for every change)
