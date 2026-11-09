@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, Download, History, Loader2, RotateCcw, ShieldAlert } from "lucide-react";
 import { api, timeAgo, type BackupInfo, type RestoreSummary } from "../api";
-import { useToast } from "../components/ui";
+import { useConfirm, useToast } from "../components/ui";
 
 const formatBytes = (n: number) => (n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${(n / 1024).toFixed(0)} KB` : n < 1024 ** 3 ? `${(n / 1024 ** 2).toFixed(1)} MB` : `${(n / 1024 ** 3).toFixed(2)} GB`);
 
@@ -22,6 +22,7 @@ function Shell({ embedded, children }: { embedded: boolean; children: ReactNode 
 
 /** `embedded`: shown inside Settings, which has the page title and the scrolling area. */
 export function BackupPage({ embedded = false }: { embedded?: boolean }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const toast = useToast();
@@ -31,11 +32,20 @@ export function BackupPage({ embedded = false }: { embedded?: boolean }) {
   const { data: info } = useQuery({ queryKey: ["backup-info"], queryFn: () => api.get<BackupInfo>("/api/backup/info") });
 
   const restore = async (file: File) => {
-    const ok = confirm(
-      `Replace ALL current data with "${file.name}"?\n\nEvery project, case, run and uploaded file is swapped for what's in the backup. ` +
-        `Your current data is not deleted: it is moved to the data/previous folder so you can get it back.`,
-    );
-    if (!ok) return;
+    const ok = await confirm({
+      title: `Replace ALL current data with "${file.name}"?`,
+      body: (
+        <p style={{ margin: 0 }}>
+          Every project, case, run and uploaded file is swapped for what is in the backup. Your current data is not deleted: it is moved to the <code className="inline">data/previous</code> folder so you can get it back.
+        </p>
+      ),
+      confirmLabel: "Replace all data",
+      requireText: "RESTORE",
+    });
+    if (!ok) {
+      if (input.current) input.current.value = ""; // so that choosing the same file again asks again
+      return;
+    }
     setRestoring(true);
     try {
       const fd = new FormData();

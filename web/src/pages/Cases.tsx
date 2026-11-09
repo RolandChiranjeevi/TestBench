@@ -3,7 +3,7 @@ import { useLocation, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, BookOpenCheck, Bot, ClipboardList, Copy, Folder, FolderOpen, Inbox, Lightbulb, ListChecks, MoreHorizontal, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
 import { api, orderSuites, parseDate, type BackupInfo, type CaseDetail, type CaseSummary, type Project, type RequirementDetail, type Suite } from "../api";
-import { ConfirmModal, Empty, Kbd, Modal, PriorityIcon, StatusIcon, rowActivation, useHotkeys, useToast, ListSkeleton } from "../components/ui";
+import { ConfirmModal, Empty, Kbd, Modal, PriorityIcon, StatusIcon, rowActivation, useConfirm, useHotkeys, useToast, ListSkeleton } from "../components/ui";
 import { caseCounts, filterCases, openedFromProposal, type CaseTab } from "../caseFilter";
 import { CaseEditor } from "./CaseEditor";
 import { NewRunModal } from "./Runs";
@@ -23,6 +23,7 @@ function createdText(createdAt: string | undefined): string {
 }
 
 export function CasesPage() {
+  const confirm = useConfirm();
   const { pid } = useParams();
   const projectId = Number(pid);
   const qc = useQueryClient();
@@ -220,7 +221,7 @@ export function CasesPage() {
             onSelect={(id) => setParam("suite", String(id))}
             onAdd={(parentId) => setSuiteModal({ parentId })}
             onEdit={(suite) => setSuiteModal({ suite })}
-            onDelete={(s) => confirm(`Delete suite "${s.name}" and its sub-suites? Cases are kept and moved to "No suite".`) && deleteSuite.mutate(s.id)}
+            onDelete={async (s) => (await confirm({ title: `Delete suite "${s.name}"?`, body: <p style={{ margin: 0 }}>Its sub-suites go too. Cases are kept and moved to “No suite”.</p>, confirmLabel: "Delete suite" })) && deleteSuite.mutate(s.id)}
             dragId={dragId}
             setDragId={setDragId}
             drop={drop}

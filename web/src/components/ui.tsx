@@ -269,6 +269,31 @@ export function rowActivation(onActivate: () => void, selected = false) {
   };
 }
 
+interface ConfirmOptions { title: ReactNode; body?: ReactNode; confirmLabel?: string; requireText?: string }
+const ConfirmCtx = createContext<(o: ConfirmOptions) => Promise<boolean>>(() => Promise.resolve(false));
+
+/**
+ * `const confirm = useConfirm(); if (!(await confirm({ title, body, confirmLabel }))) return;` asks in the same dialog as every other delete, instead of the
+ * browser's own box. `requireText` makes the person type a word first, for what cannot be undone. Cancel, Escape and the backdrop answer false.
+ */
+export const useConfirm = () => useContext(ConfirmCtx);
+
+export function ConfirmProvider({ children }: { children: ReactNode }) {
+  const [req, setReq] = useState<(ConfirmOptions & { resolve: (ok: boolean) => void }) | null>(null);
+  const ask = useCallback((o: ConfirmOptions) => new Promise<boolean>((resolve) => setReq((prev) => { prev?.resolve(false); return { ...o, resolve }; })), []);
+  const answer = (ok: boolean) => { req?.resolve(ok); setReq(null); };
+  return (
+    <ConfirmCtx.Provider value={ask}>
+      {children}
+      {req && (
+        <ConfirmModal title={req.title} confirmLabel={req.confirmLabel} requireText={req.requireText} onConfirm={() => answer(true)} onClose={() => answer(false)}>
+          {req.body}
+        </ConfirmModal>
+      )}
+    </ConfirmCtx.Provider>
+  );
+}
+
 /** Placeholder rows shown while a list loads, instead of an empty page. */
 export function ListSkeleton({ rows = 6 }: { rows?: number }) {
   return (

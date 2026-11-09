@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Download, FileUp, FolderOpen, GitBranch, Loader2, Paperclip, Plus, RefreshCw, Trash2, Upload, XCircle } from "lucide-react";
 import { api, formatDateTime, timeAgo, type CheckResult, type GithubSource, type ImportResult, type Milestone, type Project, type WorkflowRun } from "../api";
-import { Github, Modal, useToast } from "../components/ui";
+import { Github, Modal, useConfirm, useToast } from "../components/ui";
 
 export function ImportPage() {
   return (
@@ -188,6 +188,7 @@ function UploadCard() {
 }
 
 function GithubCard() {
+  const confirm = useConfirm();
   const { pid } = useParams();
   const qc = useQueryClient();
   const toast = useToast();
@@ -238,7 +239,7 @@ function GithubCard() {
                 {current.artifact_pattern ? <>Artifacts matching <code className="inline">{current.artifact_pattern}</code></> : "All artifacts"} are scanned for .xml and .json reports.
               </span>
               <span className="spacer" />
-              <button className="btn ghost sm danger" onClick={() => confirm(`Disconnect ${current.owner}/${current.repo}? Imported runs are kept.`) && remove.mutate(current.id)}>
+              <button className="btn ghost sm danger" onClick={async () => (await confirm({ title: `Disconnect ${current.owner}/${current.repo}?`, body: <p style={{ margin: 0 }}>Imported runs are kept.</p>, confirmLabel: "Disconnect" })) && remove.mutate(current.id)}>
                 <Trash2 size={12} /> Disconnect
               </button>
             </div>

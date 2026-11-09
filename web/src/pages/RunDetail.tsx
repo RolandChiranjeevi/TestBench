@@ -10,7 +10,7 @@ import {
   type Attachment, type ResultDetail, type RunDetail, type RunResult, type Status,
 } from "../api";
 import { Bug, Pencil } from "lucide-react";
-import { Empty, FrameworkBadge, Github, Kbd, PriorityIcon, ProgressBar, StatusIcon, STATUS_LABEL, rowActivation, useHotkeys, useToast, ListSkeleton } from "../components/ui";
+import { Empty, FrameworkBadge, Github, Kbd, PriorityIcon, ProgressBar, StatusIcon, STATUS_LABEL, rowActivation, useConfirm, useHotkeys, useToast, ListSkeleton } from "../components/ui";
 import { AutomatedDetail } from "./AutomatedDetail";
 import { NewRunModal } from "./Runs";
 import { BugReportModal, jiraLabel, jiraUrl } from "./BugReport";
@@ -76,6 +76,7 @@ function RunTitle({ run }: { run: RunDetail }) {
 }
 
 function RunHeader({ run, children }: { run: RunDetail; children?: ReactNode }) {
+  const confirm = useConfirm();
   const { pid } = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -86,7 +87,7 @@ function RunHeader({ run, children }: { run: RunDetail; children?: ReactNode }) 
   const unlinked = failing.filter((r) => r.case_id == null).length;
   const rerunOf = (run.meta as { rerunOf?: { id: number; title: string } }).rerunOf;
   const remove = async () => {
-    if (!confirm(`Delete run "${run.title}" and all its results?`)) return;
+    if (!(await confirm({ title: `Delete run "${run.title}"?`, body: <p style={{ margin: 0 }}>The run and all its results are deleted.</p>, confirmLabel: "Delete run" }))) return;
     await api.del(`/api/runs/${run.id}`);
     qc.invalidateQueries({ queryKey: ["runs", pid] });
     qc.invalidateQueries({ queryKey: ["projects"] });

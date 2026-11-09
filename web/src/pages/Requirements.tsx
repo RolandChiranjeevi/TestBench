@@ -3,7 +3,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Archive, ArchiveRestore, BookOpenCheck, Bug, Check, ClipboardCheck, Download, ExternalLink, FileText, History, ImagePlus, Link2, Loader2, Paperclip, Play, Plus, Search, Trash2, Upload, X } from "lucide-react";
 import { api, formatViewport, KIND_LABEL, parseViewports, timeAgo, type CoverageState, type Priority, type Project, type Requirement, type RequirementKind, type RequirementAttachment, type RequirementDetail, type RequirementRevision, type RequirementStatus } from "../api";
-import { Empty, Kbd, Modal, PriorityIcon, PRIORITY_LABEL, StatusIcon, rowActivation, useHotkeys, useToast, ListSkeleton } from "../components/ui";
+import { Empty, Kbd, Modal, PriorityIcon, PRIORITY_LABEL, StatusIcon, rowActivation, useConfirm, useHotkeys, useToast, ListSkeleton } from "../components/ui";
 import { CasePicker } from "../components/CasePicker";
 import { jiraLabel, jiraUrl } from "./BugReport";
 import { NewRunModal } from "./Runs";
@@ -224,6 +224,7 @@ function NewRequirementModal({ projectId, onClose, onCreated }: { projectId: num
 }
 
 function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: string; onClose: () => void }) {
+  const confirm = useConfirm();
   const { pid } = useParams();
   const toast = useToast();
   const invalidate = useInvalidate();
@@ -285,7 +286,7 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
         <button className="btn ghost sm" title={archived ? "Make it active again" : "Retire it: it stays, but is no longer an active requirement"} onClick={() => save.mutate({ status: archived ? "approved" : "deprecated" })}>
           {archived ? <><ArchiveRestore size={13} /> Restore</> : <><Archive size={13} /> Archive</>}
         </button>
-        <button className="btn ghost icon sm danger" title="Delete requirement" aria-label="Delete requirement" onClick={() => confirm(`Delete REQ-${data.number}? The test cases stay, only the links are removed.`) && remove.mutate()}><Trash2 size={14} /></button>
+        <button className="btn ghost icon sm danger" title="Delete requirement" aria-label="Delete requirement" onClick={async () => (await confirm({ title: `Delete REQ-${data.number}?`, body: <p style={{ margin: 0 }}>The test cases stay, only the links are removed.</p>, confirmLabel: "Delete requirement" })) && remove.mutate()}><Trash2 size={14} /></button>
         <button className="btn ghost icon sm" onClick={onClose} title="Close" aria-label="Close"><X size={14} /></button>
       </div>
       <div style={{ padding: "20px 28px 40px", display: "flex", flexDirection: "column", gap: 18 }}>
@@ -610,6 +611,7 @@ const fmtSize = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.
 
 /** Files that belong to a requirement: specs, mockups, mails. Drop, browse or paste (screenshots) to add. */
 function AttachmentsSection({ requirementId, attachments }: { requirementId: number; attachments: RequirementAttachment[] }) {
+  const confirm = useConfirm();
   const invalidate = useInvalidate();
   const toast = useToast();
   const [over, setOver] = useState(false);
@@ -662,7 +664,7 @@ function AttachmentsSection({ requirementId, attachments }: { requirementId: num
                   className="btn ghost icon sm danger"
                   aria-label={`Remove ${a.filename}`}
                   onClick={async () => {
-                    if (!confirm(`Remove ${a.filename}?`)) return;
+                    if (!(await confirm({ title: `Remove ${a.filename}?`, confirmLabel: "Remove" }))) return;
                     try { await api.del(`/api/requirement-attachments/${a.id}`); invalidate(); } catch (e) { toast("error", (e as Error).message); }
                   }}
                 ><Trash2 size={12} /></button>
