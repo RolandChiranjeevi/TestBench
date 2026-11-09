@@ -7,6 +7,7 @@ import { ConfirmModal, Empty, Kbd, useToast } from "../components/ui";
 import { DeleteProjectModal, RenameProjectModal } from "../components/ProjectModals";
 import { BackupPage } from "./Backup";
 import { NAV_SHORTCUTS, PAGE_SHORTCUTS } from "../shortcuts";
+import { getTheme, setTheme, type Theme } from "../theme";
 
 interface AgentToken { id: number; name: string; prefix: string; createdAt: string; lastUsedAt: string | null; revokedAt: string | null }
 /** The answer to creating a token. `token` is in it this once and is never stored by the server (only its hash) or by this page. */
@@ -44,7 +45,7 @@ export function SettingsPage() {
             {id === "agent" && <AgentAccess pid={Number(pid)} />}
             {id === "project" && <ProjectSection pid={Number(pid)} />}
             {id === "shortcuts" && <Shortcuts />}
-            {id === "account" && <Account />}
+            {id === "account" && <><Appearance /><Account /></>}
           </div>
         )}
       </div>
@@ -244,6 +245,22 @@ function Shortcuts() {
 }
 
 // ---------- Account ----------
+
+const THEMES: [Theme, string][] = [["system", "System"], ["light", "Light"], ["dark", "Dark"]];
+
+function Appearance() {
+  const [theme, setChoice] = useState<Theme>(getTheme());
+  return (
+    <Card title="Appearance">
+      <div className="muted">System follows your operating system. The choice is kept in this browser only.</div>
+      <div className="tabs" role="radiogroup" aria-label="Colour theme">
+        {THEMES.map(([value, label]) => (
+          <button key={value} type="button" role="radio" aria-checked={theme === value} className={`tab${theme === value ? " active" : ""}`} onClick={() => { setTheme(value); setChoice(value); }}>{label}</button>
+        ))}
+      </div>
+    </Card>
+  );
+}
 
 function Account() {
   const { data: auth } = useQuery({ queryKey: ["auth"], queryFn: () => api.get<{ enabled: boolean; authenticated: boolean }>("/api/auth/status"), staleTime: 60_000 });

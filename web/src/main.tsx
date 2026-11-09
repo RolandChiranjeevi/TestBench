@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, BookOpenCheck, Bot, Bug, ChevronDown, ClipboardCheck, Download, FileBarChart, FlaskConical, LayoutDashboard, ListChecks, Menu, Play, Plus, Settings, Sparkles } from "lucide-react";
-import { api, timeAgo, type BackupInfo, type Project } from "./api";
+import { api, parseDate, timeAgo, type BackupInfo, type Project } from "./api";
 import { ConfirmProvider, Empty, Modal, ToastProvider, useHotkeys, useToast } from "./components/ui";
 import { CasesPage } from "./pages/Cases";
 import { RequirementsPage } from "./pages/Requirements";
@@ -14,6 +14,7 @@ import { ImportPage } from "./pages/Import";
 import { DashboardPage } from "./pages/Dashboard";
 import { ReportsPage } from "./pages/Reports";
 import { SettingsPage } from "./pages/Settings";
+import { applyTheme } from "./theme";
 import { NAV_SHORTCUTS, navShortcut } from "./shortcuts";
 import { BugReportsPage } from "./pages/BugReports";
 import { ManualTestsPage } from "./pages/ManualTests";
@@ -249,16 +250,16 @@ function ProjectLayout() {
 
         <div className="sidebar-footer">
           {/* Nudge when there is no recent backup: the data lives only on this computer. */}
-          {backup && (
-            <NavLink
-              to={`/p/${project.id}/settings/data`}
-              className="row"
-              title={backup.lastBackupAt ? `Backed up ${timeAgo(backup.lastBackupAt)}` : "Not backed up yet"}
-              style={{ gap: 6, marginBottom: 4, color: !backup.lastBackupAt || Date.now() - new Date(backup.lastBackupAt).getTime() > 7 * 864e5 ? "var(--blocked-fg)" : undefined }}
-            >
-              <Archive size={12} /> <span className="nav-label">{backup.lastBackupAt ? `Backed up ${timeAgo(backup.lastBackupAt)}` : "Not backed up yet"}</span>
-            </NavLink>
-          )}
+          {backup && (() => {
+            const last = parseDate(backup.lastBackupAt);
+            const stale = !last || Date.now() - last.getTime() > 7 * 864e5;
+            const text = last ? `Backed up ${timeAgo(backup.lastBackupAt)}` : "Not backed up yet";
+            return (
+              <NavLink to={`/p/${project.id}/settings/data`} className={`backup-nudge${stale ? " stale" : ""}`} title={`${text}. Open Settings, Data`} aria-label={`${text}. Open Settings, Data`}>
+                <Archive size={14} /> <span className="nav-label">{text}</span>
+              </NavLink>
+            );
+          })()}
           <span className="footer-text">{project.case_count} cases · {project.run_count} runs</span>
         </div>
       </aside>
@@ -269,6 +270,8 @@ function ProjectLayout() {
     </div>
   );
 }
+
+applyTheme();
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: true, staleTime: 5_000, retry: 1 } } });
 
