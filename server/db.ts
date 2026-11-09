@@ -189,6 +189,73 @@ export function setSetting(key: string, value: string) {
   db.prepare("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(key, value);
 }
 
+/** The observation tables, rebuilt first when they come from before archived and converted existed. Safe to run on every start. */
+export function migrateObservations(d: Database.Database) {
+  // Observations: results of load tests and security reviews that are not bugs (measurements, risks, findings for a human to review). They have their
+  // own status model and are never bug reports; a person can turn one into a bug later (converted_bug_id), nothing does it automatically.
+  // The agent's id is kept as source_id (unique per project); Testbench numbers them OBS-n per project. Like a bug, an observation outlives its audit.
+  // Statuses: observed | needs_review | confirmed are open; resolved and archived close it (a person's decision); converted means it is tracked as a bug
+  // (set by "Convert to bug" only).
+  const observationsTable = (name: string) => `
+CREATE TABLE ${name} (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  number INTEGER NOT NULL,
+  source_id TEXT NOT NULL,
+  audit_id INTEGER REFERENCES audits(id) ON DELETE SET NULL,
+  origin_audit_id TEXT NOT NULL,             -- the agent's audit id, kept when the audit row is deleted
+  kind TEXT NOT NULL CHECK (kind IN ('load_test', 'security_review')),
+  title TEXT NOT NULL,
+  severity TEXT NOT NULL CHECK (severity IN ('info', 'low', 'medium', 'high', 'critical')),
+  status TEXT NOT NULL DEFAULT 'observed' CHECK (status IN ('observed', 'needs_review', 'confirmed', 'resolved', 'archived', 'converted')),
+  status_set_by TEXT NOT NULL DEFAULT 'agent' CHECK (status_set_by IN ('agent', 'human')),   -- a human's status is never overwritten by a re-import
+  status_changed_at TEXT,                            -- when a person last set the status
+  changed_since_review INTEGER NOT NULL DEFAULT 0,   -- 1 = the agent sent new content after a human had set the status
+  metric TEXT, value REAL, threshold REAL,           -- load_test only
+  evidence TEXT NOT NULL DEFAULT '',
+  recommendation TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL DEFAULT '',
+  content_hash TEXT NOT NULL,
+  converted_bug_id INTEGER REFERENCES bug_reports(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (project_id, source_id),
+  UNIQUE (project_id, number)
+)`;
+  // A table made before archived and converted existed has a CHECK that refuses them, and SQLite cannot change a CHECK: rebuild it, keeping every row
+  // and its id (observation_evidence points at it). An observation that was already turned into a bug becomes "converted".
+  const obsDdl = (d.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'observations'").get() as { sql: string } | undefined)?.sql;
+  if (obsDdl && !obsDdl.includes("'archived'")) {
+    d.pragma("foreign_keys = OFF");
+    d.transaction(() => {
+      d.exec(observationsTable("observations_new"));
+      d.exec(`INSERT INTO observations_new (id, project_id, number, source_id, audit_id, origin_audit_id, kind, title, severity, status, status_set_by, status_changed_at,
+          changed_since_review, metric, value, threshold, evidence, recommendation, source, content_hash, converted_bug_id, created_at, updated_at)
+        SELECT id, project_id, number, source_id, audit_id, origin_audit_id, kind, title, severity,
+          CASE WHEN converted_bug_id IS NOT NULL THEN 'converted' ELSE status END,
+          CASE WHEN converted_bug_id IS NOT NULL THEN 'human' ELSE status_set_by END,
+          CASE WHEN converted_bug_id IS NOT NULL THEN updated_at END,
+          changed_since_review, metric, value, threshold, evidence, recommendation, source, content_hash, converted_bug_id, created_at, updated_at FROM observations`);
+      d.exec("DROP TABLE observations; ALTER TABLE observations_new RENAME TO observations;");
+    })();
+    d.pragma("foreign_keys = ON");
+  }
+  d.exec(`${observationsTable("IF NOT EXISTS observations")};
+CREATE INDEX IF NOT EXISTS observations_project ON observations(project_id, kind, severity, status);
+CREATE INDEX IF NOT EXISTS observations_audit ON observations(audit_id);
+-- Evidence an observation points to: a file of the audit, by path and sha256 (the same evidence the bug reports of the audit carry).
+CREATE TABLE IF NOT EXISTS observation_evidence (
+  id INTEGER PRIMARY KEY,
+  observation_id INTEGER NOT NULL REFERENCES observations(id) ON DELETE CASCADE,
+  ref TEXT NOT NULL,                         -- as the agent wrote it (an EV-... label or a path)
+  path TEXT NOT NULL, sha256 TEXT,
+  attachment_id INTEGER REFERENCES bug_attachments(id) ON DELETE SET NULL,
+  state TEXT NOT NULL,                       -- ok | problem | unresolved
+  reason TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS observation_evidence_obs ON observation_evidence(observation_id);`);
+}
+
 /** Creates missing tables and columns, and fills in data for features added later. Safe to run on every start. */
 export function migrate(d: Database.Database) {
   const hasColumn = (table: string, col: string) =>
@@ -724,47 +791,7 @@ CREATE TABLE IF NOT EXISTS bug_events (
 );
 CREATE INDEX IF NOT EXISTS bug_events_bug ON bug_events(bug_report_id);`);
 
-  // Observations: results of load tests and security reviews that are not bugs (measurements, risks, findings for a human to review). They have their
-  // own status model and are never bug reports; a person can turn one into a bug later (converted_bug_id), nothing does it automatically.
-  // The agent's id is kept as source_id (unique per project); Testbench numbers them OBS-n per project. Like a bug, an observation outlives its audit.
-  d.exec(`
-CREATE TABLE IF NOT EXISTS observations (
-  id INTEGER PRIMARY KEY,
-  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  number INTEGER NOT NULL,
-  source_id TEXT NOT NULL,
-  audit_id INTEGER REFERENCES audits(id) ON DELETE SET NULL,
-  origin_audit_id TEXT NOT NULL,             -- the agent's audit id, kept when the audit row is deleted
-  kind TEXT NOT NULL CHECK (kind IN ('load_test', 'security_review')),
-  title TEXT NOT NULL,
-  severity TEXT NOT NULL CHECK (severity IN ('info', 'low', 'medium', 'high', 'critical')),
-  status TEXT NOT NULL DEFAULT 'observed' CHECK (status IN ('observed', 'needs_review', 'confirmed', 'resolved')),
-  status_set_by TEXT NOT NULL DEFAULT 'agent' CHECK (status_set_by IN ('agent', 'human')),   -- a human's status is never overwritten by a re-import
-  changed_since_review INTEGER NOT NULL DEFAULT 0,   -- 1 = the agent sent new content after a human had set the status
-  metric TEXT, value REAL, threshold REAL,           -- load_test only
-  evidence TEXT NOT NULL DEFAULT '',
-  recommendation TEXT NOT NULL DEFAULT '',
-  source TEXT NOT NULL DEFAULT '',
-  content_hash TEXT NOT NULL,
-  converted_bug_id INTEGER REFERENCES bug_reports(id) ON DELETE SET NULL,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE (project_id, source_id),
-  UNIQUE (project_id, number)
-);
-CREATE INDEX IF NOT EXISTS observations_project ON observations(project_id, kind, severity, status);
-CREATE INDEX IF NOT EXISTS observations_audit ON observations(audit_id);
--- Evidence an observation points to: a file of the audit, by path and sha256 (the same evidence the bug reports of the audit carry).
-CREATE TABLE IF NOT EXISTS observation_evidence (
-  id INTEGER PRIMARY KEY,
-  observation_id INTEGER NOT NULL REFERENCES observations(id) ON DELETE CASCADE,
-  ref TEXT NOT NULL,                         -- as the agent wrote it (an EV-... label or a path)
-  path TEXT NOT NULL, sha256 TEXT,
-  attachment_id INTEGER REFERENCES bug_attachments(id) ON DELETE SET NULL,
-  state TEXT NOT NULL,                       -- ok | problem | unresolved
-  reason TEXT NOT NULL DEFAULT ''
-);
-CREATE INDEX IF NOT EXISTS observation_evidence_obs ON observation_evidence(observation_id);`);
+  migrateObservations(d);
 
   // Make sure every sprint named on a run has a sprint record.
   const named = d.prepare("SELECT DISTINCT project_id, milestone FROM runs WHERE milestone != ''").all() as { project_id: number; milestone: string }[];

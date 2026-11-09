@@ -41,7 +41,7 @@ import { importRequirements, RequirementImportError } from "./reqimport.ts";
 import { requirementCoverage } from "./reqlinks.ts";
 import { normViewports, normWcag, viewportSchema, wcagCriterion, type Viewport } from "./shapes.ts";
 import { LIMITS as AUDIT_LIMITS, PackageError } from "./importers/auditpackage.ts";
-import { convertToBug, getObservation, importObservations, listObservations, ObservationError, setObservationStatus } from "./observations.ts";
+import { archiveObservation, convertToBug, getObservation, importObservations, listObservations, ObservationError, reopenObservation, resolveObservation, setObservationStatus } from "./observations.ts";
 import { listCases } from "./newcases.ts";
 import { LOGGER_OPTIONS } from "./logging.ts";
 import { authenticateAgentToken, createAgentToken, listAgentTokens, revokeAgentToken } from "./agenttokens.ts";
@@ -947,6 +947,11 @@ app.get("/api/projects/:id/observations", (req) => {
 app.get("/api/observations/:id", (req) => must(getObservation(idParam(req)), "Observation"));
 
 app.patch("/api/observations/:id", (req) => observed(() => setObservationStatus(idParam(req), (req.body as { status?: unknown } | null)?.status)));
+
+// Closing and reopening are separate actions. A converted observation (tracked as a bug report) cannot be archived or resolved: 409.
+app.post("/api/observations/:id/archive", (req) => observed(() => archiveObservation(idParam(req))));
+app.post("/api/observations/:id/resolve", (req) => observed(() => resolveObservation(idParam(req))));
+app.post("/api/observations/:id/reopen", (req) => observed(() => reopenObservation(idParam(req))));
 
 app.post("/api/observations/:id/convert-to-bug", (req) => observed(() => convertToBug(idParam(req))));
 
