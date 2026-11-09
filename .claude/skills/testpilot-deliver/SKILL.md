@@ -1,3 +1,8 @@
+---
+name: testpilot-deliver
+description: Transform a validated TestPilot audit package and import it into TestBench after explicit user confirmation. Use when the user invokes /testpilot-deliver or asks to deliver an audit package.
+---
+
 # TestPilot: deliver
 
 Transform a validated audit package and import it into TestBench, after explicit
@@ -6,7 +11,18 @@ user confirmation. Dry-run first, then the real import.
 Input:
 - audit ID (required), for example `AUD-20261105-01`
 
-Rules that apply to every step:
+Paths in this file are relative to this file. The contract is
+`../../references/audit-contract.md`.
+
+Before starting, read:
+- `../testpilot/SKILL.md`
+- `../../references/audit-contract.md`
+
+Apply the shared boundaries, secret-handling rules and stop conditions.
+Execute only this delivery workflow. Do not start the full audit.
+
+## Rules that apply to every step
+
 - Never print, log, echo or store the password or the session cookie. Do not use
   `set -x`, `curl -v` or `--trace`. Do not put the password on a command line.
 - Never write the password or cookie into `manifest.json`, the report, evidence
@@ -36,10 +52,29 @@ requirements), so this command logs in with the password instead.
 
 ### 1. Read the configuration
 
-Read `config/testbench.json`:
+Read:
 
-- `baseUrl`, `projectId`, `projectKey`: required
-- `deliveryEnabled`: must be `true`, otherwise stop and say delivery is disabled
+1. `config/testbench.json`
+2. The project profile referenced by `activeProject`
+
+Use from the global configuration:
+
+- `baseUrl`
+
+Use from the project profile:
+
+- `projectId`
+- `projectKey`
+- `tokenEnvVar`
+- `deliveryEnabled`
+
+Rules:
+
+- Do not read project-specific values from the global configuration.
+- Do not store token values, passwords, cookies or target URLs in configuration.
+- If the active profile is missing, invalid or unreadable, pause and ask the user.
+- `deliveryEnabled` in the project profile is authoritative.
+- If `deliveryEnabled` is false, stop and say delivery is disabled.
 - `deliveryPath` is ignored on purpose. The endpoint is built as
   `{baseUrl}/api/projects/{projectId}/audit-import`.
 - `tokenEnvVar` is not used by this command.
@@ -85,17 +120,18 @@ set -uo pipefail; umask 077
 AUD="<audit-id>"
 eval "$(python3 -I - <<'PY'
 import json, shlex
-c = json.load(open('config/testbench.json'))
-# passwordEnvVar is optional; the default is hardcoded because the config has no such field today.
-for k, v in (('BASE', c['baseUrl'].rstrip('/')), ('PID', str(c['projectId'])),
-             ('PWVAR', c.get('passwordEnvVar', 'TESTBENCH_PASSWORD'))):
+g = json.load(open('config/testbench.json'))
+p = json.load(open(f"config/projects/{g['activeProject']}.json"))
+for k, v in (('BASE', g['baseUrl'].rstrip('/')), ('PID', str(p['projectId'])),
+             ('PWVAR', p.get('passwordEnvVar', 'TESTBENCH_PASSWORD'))):
     print(f"{k}={shlex.quote(v)}")
 PY
 )"
-case "$BASE" in http://localhost*|http://127.0.0.1*|http://\[::1\]*|https://*) ;;
+case "$BASE" in http://localhost*|http://127.0.0.1*|http://\[::1\]*|[https://*](https://*)) ;;
   *) echo "Refusing plain http to a non-local host"; exit 1;; esac
 [ -f "${AUD}-testbench.zip" ] || { echo "zip missing"; exit 1; }
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
+
 
 # Builds the login JSON. Never prints it.
 BODY_PY='
@@ -106,7 +142,7 @@ if not pw and os.path.isfile(".env"):
         line = line.rstrip("\n")
         if line.startswith(name + "="):
             pw = line[len(name) + 1:]
-            if len(pw) >= 2 and pw[0] == pw[-1] and pw[0] in "\"\x27": pw = pw[1:-1]
+            if len(pw) >= 2 and pw == pw[-1] and pw in "\"\x27": pw = pw[1:-1]
 if not pw: sys.stderr.write("password variable not set\n"); sys.exit(2)
 print(json.dumps({"password": pw}))
 '
@@ -120,6 +156,7 @@ if [ "$LOGIN" != "200" ]; then
   exit 1
 fi
 
+
 # Dry-run upload. The multipart field name is ignored by the server;
 # the file name must end in .zip.
 DRY=$(curl -sS -o "$WORK/dry.json" -w '%{http_code}' -b "$WORK/jar" -H 'X-Testbench: 1' \
@@ -128,8 +165,8 @@ DRY=$(curl -sS -o "$WORK/dry.json" -w '%{http_code}' -b "$WORK/jar" -H 'X-Testbe
 echo "dry-run HTTP $DRY"
 python3 -I - "$WORK/dry.json" "$DRY" <<'PY'
 import json, sys
-r = json.load(open(sys.argv[1]))
-if sys.argv[2] != "200":
+r = json.load(open(sys.argv))[1]
+if sys.argv != "200":[2]
     print("ERROR:", r.get("error", r)); sys.exit(1)
 a = r["audit"]; mt = r["manualTests"]
 print(f"audit: {a['agentAuditId']} | isNew={a['isNew']} | auditId={r['auditId']} | dryRun={r['dryRun']}")
@@ -154,12 +191,15 @@ Meaning of the login code:
 - 429: too many wrong passwords. Stop and show the wait time. Do not retry.
 - 403: missing `X-Testbench` header or forbidden host. Stop and show the error.
 
+
 If the dry-run HTTP code is not 200, show the `error` field of the response
 (HTTP 400 includes a reason, for example "not a readable zip file") and stop.
+
 
 ### 5. Show the dry-run result
 
 Print only these fields of the response (never the cookie):
+
 
 - `audit.agentAuditId`, `audit.title`, `audit.isNew`, `auditId`
 - bugs: `counts.new`, `counts.unchanged`, `counts.updated`, `counts.pending`
@@ -170,25 +210,31 @@ Print only these fields of the response (never the cookie):
 - `items[]`: `sourceId`, `action`, `severity`, `unresolvedRefs`,
   `evidenceProblems`
 
+
 Errors that cancel delivery: any non-200 response, or `evidence.problems > 0`.
 Show them and stop. Do not run the real import.
 
+
 Unresolved references and warnings do not cancel delivery by themselves, but
 state them clearly in the confirmation question.
+
 
 ### 6. Stop and ask for confirmation
 
 Summarise the target (`{baseUrl}`, project `{projectId}`), the audit ID and the
 dry-run counts. Ask the user for explicit confirmation to run the real import.
 
+
 Do not continue until the user answers yes in a new message. Anything else,
 including silence, means no. If the answer is no, record nothing in
 `manifest.delivery` and stop.
+
 
 ### 7. Real import
 
 Repeat the setup and login from step 4 in a new Bash call, then upload without
 `dryRun`:
+
 
 ```bash
 curl -sS -o "$WORK/import.json" -w 'import HTTP %{http_code}\n' \
@@ -197,15 +243,19 @@ curl -sS -o "$WORK/import.json" -w 'import HTTP %{http_code}\n' \
   "$BASE/api/projects/$PID/audit-import"
 ```
 
+
 A 200 response with `dryRun: false` and a numeric `auditId` is the confirmation
 of acceptance. Any other result is a failed delivery.
+
 
 ### 8. Record the result in `manifest.delivery`
 
 Edit only the `delivery` object of `<audit-id>/manifest.json`. Keep all other
 content. Keep the contract fields (section 5.7) and add `response_summary`.
 
+
 On success:
+
 
 ```json
 {
@@ -227,12 +277,15 @@ On success:
 }
 ```
 
+
 Use the real values from the response. On failure use `status: "failed"`,
 `delivered_at: null`, a short `error` (HTTP status and the server's `error`
 text) and `response_summary: null`.
 
+
 `response_summary` holds counts only. Never put the password, cookie, response
 headers or the raw response in the manifest.
+
 
 ### 9. Report
 

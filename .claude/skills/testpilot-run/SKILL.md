@@ -1,3 +1,8 @@
+---
+name: testpilot-run
+description: Execute an approved TestPilot audit plan with Playwright, collect evidence and record results. Use when the user invokes /testpilot-run or asks to run a TestPilot audit.
+---
+
 # TestPilot: run
 
 Execute the approved test plan: functional Playwright checks, visual design review
@@ -11,6 +16,75 @@ Input:
 Paths in this file are relative to this file. The contract is
 `../../references/audit-contract.md`.
 
+Before starting, read:
+- `../testpilot/SKILL.md`
+- `../../references/audit-contract.md`
+
+Apply the shared boundaries, secret-handling rules and stop conditions.
+Execute only this run workflow. Do not start the full audit.
+
+## Responsibilities
+
+This workflow:
+- Executes the approved test plan
+- Runs functional Playwright checks
+- Runs visual design review when needed
+- Collects evidence
+- Records results
+
+It does not:
+- Create a TestBench project
+- Select a target URL or environment
+- Create a test plan
+- Analyse results
+- Create bugs or manual tests
+- Deliver an audit package
+
+## 1. Read the TestBench context
+
+Read:
+
+1. `config/testbench.json`
+2. The project profile referenced by `activeProject`
+
+Use from the global configuration:
+
+- `baseUrl`
+
+Use from the project profile:
+
+- `projectId`
+- `projectKey`
+- `name`
+- `requirementsSource`
+- `requirementsPath`
+- `tokenEnvVar`
+
+Rules:
+
+- Do not read project-specific values from the global configuration.
+- Do not store token values, passwords, cookies or target URLs in configuration.
+- If the active profile is missing, invalid or unreadable, pause and ask the user.
+
+## 2. Read the discovery context
+
+Read the discovery context produced by `/testpilot-discover`.
+
+It must contain:
+- target URL
+- environment
+- confirmed scope
+- allowed check types
+- viewports
+- state-changing action limits
+
+If the discovery context is missing or invalid, pause and ask the user to run
+`/testpilot-discover` first.
+
+Do not invent a target URL or environment.
+
+## 3. Before the first check
+
 Before the first check:
 
 - `<audit-id>/manifest.json` must hold the approved `scope`, and the approved test
@@ -23,10 +97,10 @@ Flow:
 1. Run functional Playwright checks.
 2. Run visual design review when needed.
 
-The rules for both are in steps 3 to 5 below: Browser execution, Evidence storage
+The rules for both are in steps 4 to 6 below: Browser execution, Evidence storage
 and Result accuracy.
 
-## 1. Run functional Playwright checks
+## 4. Run functional Playwright checks
 
 Follow `../../functional-test-runner/SKILL.md`.
 
@@ -39,7 +113,7 @@ Link the action to the relevant `execution_id` and evidence IDs.
 
 Output: one execution per run with `execution_id`, status and `evidence_id`s.
 
-## 2. Run visual design review when needed
+## 5. Run visual design review when needed
 
 Follow `../../visual-design-review/SKILL.md` when a requirement concerns layout,
 responsive behaviour, design or accessibility, or when the user asks for it.
@@ -53,9 +127,9 @@ When it is not relevant, record the visual review as an execution with status
 `skipped` and reason `not-applicable` (contract section 2.3), with a short
 rationale.
 
-Output: executions and findings in the same format as step 1.
+Output: executions and findings in the same format as step 4.
 
-## 3. Browser execution
+## 6. Browser execution
 
 Use the available Playwright MCP browser tools for all browser actions.
 
@@ -76,7 +150,7 @@ Record which one was used.
 
 MCP exploration is not a saved automated test.
 
-## 4. Evidence storage
+## 7. Evidence storage
 
 All exported files, downloads, screenshots, console logs, network captures and
 other evidence artifacts must be stored under:
@@ -97,7 +171,7 @@ Rules:
 - Do not rename, overwrite or replace an evidence file after it has been
   registered in `manifest.json`.
 
-## 5. Result accuracy
+## 8. Result accuracy
 
 For each execution, report:
 

@@ -7,23 +7,36 @@ description: TestPilot QA audit agent. Discovers a target, proposes a scope, run
 
 `testpilot` runs the whole audit and delegates work to the other skills. It does not
 define identifiers, statuses, evidence types, package files or validation rules.
-Those are in `../references/audit-contract.md` and apply as written there.
+Those are in `../../references/audit-contract.md` and apply as written there.
 
 Paths in this file are relative to this `SKILL.md`.
 
 ## Commands
 
-- `discover`: inspect a target and propose a test scope. See `commands/discover.md`.
+- `init`: select or create a TestBench project and establish the requirements
+  source. See `../testpilot-init/SKILL.md`.
+  Target URL and environment belong to discover, not init.
+- `discover`: inspect a target and propose a test scope. See
+  `../testpilot-discover/SKILL.md`.
 - `plan`: collect inputs and requirements, agree on a scope and build the test
   plan; stops for scope approval and for test plan approval. See
-  `commands/plan.md`.
+  `../testpilot-plan/SKILL.md`.
 - `run`: execute the approved test plan with Playwright, review visual design
-  when needed and collect evidence. See `commands/run.md`.
+  when needed and collect evidence. See `../testpilot-run/SKILL.md`.
 - `report`: analyse the results, create bug and manual-test proposals and build
-  the audit package. See `commands/report.md`.
+  the audit package. See `../testpilot-report/SKILL.md`.
 - `deliver`: transform a validated audit package and import it to TestBench
   after user confirmation (dry-run first, then real import). See
-  `commands/deliver.md`.
+  `../testpilot-deliver/SKILL.md`.
+
+## Command order
+
+```text
+init → discover → plan → run → report → deliver
+```
+
+`init` is optional when the user already has a configured TestBench project.
+`discover` is required before planning or running an audit.
 
 ## Boundaries
 
@@ -46,35 +59,69 @@ Needs for new TestBench fields or endpoints are recorded as separate
 `TestBench backlog` items (contract, section 8). Do not work around them or
 invent an interface.
 
-Ask for confirmation before posting anything externally. Delivering a validated
-package to TestBench in step 10 is the only permitted external delivery path;
-follow the delivery policy configured for the project.
+Ask for confirmation before posting anything externally.
+
+Permitted external write paths are:
+
+- `/testpilot-init`: create a confirmed TestBench project and save local
+  project configuration
+- `/testpilot-deliver`: deliver a validated audit package to TestBench
+
+Follow the delivery policy configured for the project.
 
 ## TestBench context
 
-Before fetching requirements or delivering an audit package, read the project's
-TestBench configuration.
+Before fetching requirements or delivering an audit package, read:
 
-The configuration MUST provide:
+1. `config/testbench.json`
+2. The project profile referenced by `activeProject`
+
+The global configuration must provide:
 
 - `baseUrl`
+- `activeProject`
+
+The project profile must provide:
+
 - `projectId`
+- `projectKey`
+- `name`
 - `requirementsSource`
+- `requirementsPath`
 - `tokenEnvVar`
 - `deliveryEnabled`
 
-Example:
+Example global configuration:
 
 ```json
 {
   "baseUrl": "http://localhost:4100",
-  "projectId": "3",
-  "requirementsSource": "testbench",
-  "requirementsPath": "/api/agent/projects/3/requirements",
-  "tokenEnvVar": "TESTBENCH_API_TOKEN",
+  "activeProject": "ts"
+}
+```
+
+Example project profile:
+
+```json
+{
+  "projectId": "5",
+  "projectKey": "TS",
+  "name": "Testpilot",
+  "requirementsSource": "black_box",
+  "requirementsPath": "/api/agent/projects/5/requirements",
+  "tokenEnvVar": "TESTBENCH_API_TOKEN_TS",
   "deliveryEnabled": false
 }
 ```
+
+Rules:
+
+- Resolve the active project from `activeProject`.
+- Read project-specific values only from the matching profile.
+- Do not duplicate project-specific fields in the global configuration.
+- Do not store token values, passwords, cookies or target URLs in configuration.
+- Treat `deliveryEnabled` in the project profile as authoritative.
+- If the active profile is missing, invalid or unreadable, pause and ask the user.
 
 `tokenEnvVar` MUST contain only the name of the environment variable that holds
 the TestBench token. It MUST NOT contain the token value.
@@ -88,7 +135,7 @@ If no TestBench project is configured, use user-supplied requirements with
 ## Plan phase
 
 Requirements, inputs, audit scope, the test plan and the execution-order
-prerequisites are defined in `commands/plan.md`. The plan phase ends only after
+prerequisites are defined in `../testpilot-plan/SKILL.md`. The plan phase ends only after
 the user has approved both the scope and the test plan. Do not begin browser
 execution before that.
 
@@ -125,41 +172,57 @@ problems as product defects.
 
 ## Audit flow
 
+### 0. Initialize the project
+
+See `../testpilot-init/SKILL.md`.
+
+Run this step when no valid TestBench project context exists, or when the user
+explicitly asks to initialize a new audit.
+
+This step establishes:
+
+- the TestBench project
+- the project ID and project key
+- the requirements source
+- the local TestPilot project profile
+
+This step does **not** select the target URL or environment.
+
 ### 1. Fetch active requirements
 
-See `commands/plan.md`, step 2.
+See `../testpilot-plan/SKILL.md`, step 2.
 
 ### 2. Create the test plan
 
-See `commands/plan.md`, step 4.
+See `../testpilot-plan/SKILL.md`, step 4.
 
 ### 3. Run functional Playwright checks
 
-See `commands/run.md`, step 1.
+See `../testpilot-run/SKILL.md`, step 1.
 
 ### 4. Run visual design review when needed
 
-See `commands/run.md`, step 2.
+See `../testpilot-run/SKILL.md`, step 2.
 
 ### 5. Analyse the results
 
-See `commands/report.md`, step 1.
+See `../testpilot-report/SKILL.md`, step 1.
 
 ### 6. Create bug proposals
 
-See `commands/report.md`, step 2.
+See `../testpilot-report/SKILL.md`, step 2.
 
 ### 7. Propose manual test cases
 
-See `commands/report.md`, step 3.
+See `../testpilot-report/SKILL.md`, step 3.
 
 ### 8. Build the audit package
 
-See `commands/report.md`, step 4.
+See `../testpilot-report/SKILL.md`, step 4.
 
 ### 9. Validate against the contract
 
-Run every rule in `../references/audit-contract.md` section 6 and the final
+Run every rule in `../../references/audit-contract.md` section 6 and the final
 quality checklist below, including V-33 to V-35 for the test plan.
 
 Fix errors and validate again.
@@ -170,12 +233,20 @@ If the package still fails, do not deliver it. Report the errors.
 
 ### 10. Deliver to TestBench
 
+See `../testpilot-deliver/SKILL.md`.
+
 TestBench integration (for `deliver`):
 
-- Config is read from `config/testbench.json`:
-  baseUrl, projectId, projectKey, tokenEnvVar, deliveryEnabled.
-  The `deliveryPath` field is not used — the endpoint is
-  `{baseUrl}/api/projects/{projectId}/audit-import`.
+- Config is read from:
+  - `config/testbench.json` for `baseUrl`
+  - the active project profile for `projectId`, `projectKey`, `tokenEnvVar`
+    and `deliveryEnabled`
+
+- The delivery endpoint is:
+
+  ```text
+  {baseUrl}/api/projects/{projectId}/audit-import
+  ```
 
 - Auth: TestBench requires a session cookie for write requests.
   `deliver` logs in via `POST /api/login` with `{"password": ...}`,
@@ -225,19 +296,19 @@ Do nothing further on the proposals.
 
 ## Evidence storage
 
-See `commands/run.md`, step 4.
+See `../testpilot-run/SKILL.md`, step 4.
 
 ## Browser execution
 
-See `commands/run.md`, step 3.
+See `../testpilot-run/SKILL.md`, step 3.
 
 ## Test design references
 
-See `commands/plan.md`, step 4 (Test design references).
+See `../testpilot-plan/SKILL.md`, step 4 (Test design references).
 
 ## Result accuracy
 
-See `commands/run.md`, step 5.
+See `../testpilot-run/SKILL.md`, step 5.
 
 ## Final quality checklist
 
@@ -249,7 +320,7 @@ partial pass.
 - [ ] All bug proposals follow `../bug-reporting/templates/bug-report.md`
 - [ ] No `blocked` result is reported as `fail`
 - [ ] All proposals have status `proposed`
-- [ ] The audit package validates against `../references/audit-contract.md`
+- [ ] The audit package validates against `../../references/audit-contract.md`
 - [ ] No autonomous closings, approvals or external tickets have been created
 - [ ] The confirmed audit scope lists included and excluded requirements
 - [ ] Every state-changing action is recorded in `manifest.actions[]` and

@@ -1,8 +1,4 @@
 {
   "baseUrl": "http://localhost:4100",
-  "projectId": "3",
-  "projectKey": "RS",
-  "requirementsPath": "/api/agent/projects/3/requirements",
-  "tokenEnvVar": "TESTBENCH_API_TOKEN",
-  "deliveryEnabled": true
+  "activeProject": "ts"
 }
