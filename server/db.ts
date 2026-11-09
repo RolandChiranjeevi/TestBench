@@ -724,6 +724,48 @@ CREATE TABLE IF NOT EXISTS bug_events (
 );
 CREATE INDEX IF NOT EXISTS bug_events_bug ON bug_events(bug_report_id);`);
 
+  // Observations: results of load tests and security reviews that are not bugs (measurements, risks, findings for a human to review). They have their
+  // own status model and are never bug reports; a person can turn one into a bug later (converted_bug_id), nothing does it automatically.
+  // The agent's id is kept as source_id (unique per project); Testbench numbers them OBS-n per project. Like a bug, an observation outlives its audit.
+  d.exec(`
+CREATE TABLE IF NOT EXISTS observations (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  number INTEGER NOT NULL,
+  source_id TEXT NOT NULL,
+  audit_id INTEGER REFERENCES audits(id) ON DELETE SET NULL,
+  origin_audit_id TEXT NOT NULL,             -- the agent's audit id, kept when the audit row is deleted
+  kind TEXT NOT NULL CHECK (kind IN ('load_test', 'security_review')),
+  title TEXT NOT NULL,
+  severity TEXT NOT NULL CHECK (severity IN ('info', 'low', 'medium', 'high', 'critical')),
+  status TEXT NOT NULL DEFAULT 'observed' CHECK (status IN ('observed', 'needs_review', 'confirmed', 'resolved')),
+  status_set_by TEXT NOT NULL DEFAULT 'agent' CHECK (status_set_by IN ('agent', 'human')),   -- a human's status is never overwritten by a re-import
+  changed_since_review INTEGER NOT NULL DEFAULT 0,   -- 1 = the agent sent new content after a human had set the status
+  metric TEXT, value REAL, threshold REAL,           -- load_test only
+  evidence TEXT NOT NULL DEFAULT '',
+  recommendation TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL DEFAULT '',
+  content_hash TEXT NOT NULL,
+  converted_bug_id INTEGER REFERENCES bug_reports(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (project_id, source_id),
+  UNIQUE (project_id, number)
+);
+CREATE INDEX IF NOT EXISTS observations_project ON observations(project_id, kind, severity, status);
+CREATE INDEX IF NOT EXISTS observations_audit ON observations(audit_id);
+-- Evidence an observation points to: a file of the audit, by path and sha256 (the same evidence the bug reports of the audit carry).
+CREATE TABLE IF NOT EXISTS observation_evidence (
+  id INTEGER PRIMARY KEY,
+  observation_id INTEGER NOT NULL REFERENCES observations(id) ON DELETE CASCADE,
+  ref TEXT NOT NULL,                         -- as the agent wrote it (an EV-... label or a path)
+  path TEXT NOT NULL, sha256 TEXT,
+  attachment_id INTEGER REFERENCES bug_attachments(id) ON DELETE SET NULL,
+  state TEXT NOT NULL,                       -- ok | problem | unresolved
+  reason TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS observation_evidence_obs ON observation_evidence(observation_id);`);
+
   // Make sure every sprint named on a run has a sprint record.
   const named = d.prepare("SELECT DISTINCT project_id, milestone FROM runs WHERE milestone != ''").all() as { project_id: number; milestone: string }[];
   for (const r of named) ensureMilestone(r.project_id, r.milestone, d);

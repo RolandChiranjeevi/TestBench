@@ -2,7 +2,7 @@ import { StrictMode, useEffect, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, BookOpenCheck, Bot, Bug, ChevronDown, ClipboardCheck, ClipboardList, Download, FileBarChart, FlaskConical, LayoutDashboard, ListChecks, Menu, Play, Plus, Settings, Sparkles } from "lucide-react";
+import { Archive, BookOpenCheck, Bot, Bug, ChevronDown, ClipboardCheck, ClipboardList, Download, FileBarChart, FlaskConical, Gauge, LayoutDashboard, ListChecks, Menu, Play, Plus, Settings, Sparkles } from "lucide-react";
 import { api, parseDate, timeAgo, type BackupInfo, type Project } from "./api";
 import { ConfirmProvider, Empty, Modal, ToastProvider, useHotkeys, useToast } from "./components/ui";
 import { CasesPage } from "./pages/Cases";
@@ -19,6 +19,7 @@ import { NAV_SHORTCUTS, navShortcut } from "./shortcuts";
 import { BugReportsPage } from "./pages/BugReports";
 import { ManualTestsPage } from "./pages/ManualTests";
 import { TestPlanPage } from "./pages/TestPlan";
+import { ObservationsPage } from "./pages/Observations";
 import "./styles.css";
 
 const LAST_PROJECT = "testbench:lastProject";
@@ -183,6 +184,9 @@ function ProjectLayout() {
   // Proposals (manual test cases) from the agent that wait for a decision.
   const { data: proposedManual } = useQuery({ queryKey: ["manual-tests", pid, "proposed"], queryFn: () => api.get<{ counts: Record<string, number> }>(`/api/projects/${pid}/manual-tests?status=proposed`), staleTime: 30_000, enabled: !!pid });
 
+  // Observations (load tests, security reviews) that wait for a person to look at them. Keyed under ["observations", pid], so the page refreshes it.
+  const { data: toReview } = useQuery({ queryKey: ["observations", pid, "badge"], queryFn: () => api.get<{ counts: { status: Record<string, number> } }>(`/api/projects/${pid}/observations?status=needs_review`), staleTime: 30_000, enabled: !!pid });
+
   if (isLoading) return null;
   if (!project) return <Navigate to="/" replace />;
 
@@ -241,6 +245,7 @@ function ProjectLayout() {
         {link("cases", <ListChecks size={15} />)}
         {link("runs", <Play size={15} />)}
         {link("bugs", <Bug size={15} />, proposedBugs?.counts.proposed ?? 0)}
+        {link("observations", <Gauge size={15} />, toReview?.counts.status.needs_review ?? 0)}
         {link("test-plan", <ClipboardList size={15} />)}
         {link("manual-tests", <ClipboardCheck size={15} />, proposedManual?.counts.proposed ?? 0)}
         {link("automated", <Bot size={15} />)}
@@ -302,6 +307,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="bugs" element={<BugReportsPage />} />
               <Route path="manual-tests" element={<ManualTestsPage />} />
               <Route path="test-plan" element={<TestPlanPage />} />
+              <Route path="observations" element={<ObservationsPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
