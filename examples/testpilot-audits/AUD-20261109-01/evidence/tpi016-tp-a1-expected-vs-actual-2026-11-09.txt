@@ -1,0 +1,14 @@
+TPI-016 TP-A1 decathlon - expected (World Athletics formula, floor) vs app, 2026-11-09, TP-Auditors
+event         typed   expected  app "Saved:" msg  table cell
+100m          10.80   906       906 (12:43:15Z)   906
+longJump      720     862       862 (12:43:22Z)   862
+shotPut       14.50   759       759 (12:43:23Z)   759
+highJump      200     803       803 (12:43:23Z)   803
+400m          48.50   885       885 (12:43:24Z)   885
+110mHurdles   14.30   936       936 (12:43:24Z)   936
+discusThrow   44.00   746       746 (12:43:25Z)   746
+poleVault     480     849       849 (12:43:25Z)   849
+javelinThrow  60.00   738       738 (12:43:26Z)   738
+1500m         4:30    745       745 (12:43:26Z)   745
+TOTAL                 8229      table Total 8229, Pos 1
+Result: 10/10 events and total match.

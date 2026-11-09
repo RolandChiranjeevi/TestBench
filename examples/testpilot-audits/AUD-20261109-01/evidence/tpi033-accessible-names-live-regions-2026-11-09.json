@@ -1,0 +1,11 @@
+{"captured": "2026-11-09T12:57:09Z", "competition": "TP-Auditors · Decathlon (7)", "method": "aria-label / aria-labelledby / <label> / caption / text, visible elements not aria-hidden",
+ "controls": [["BUTTON#themeToggle","Switch to dark mode"],["BUTTON[combobox] competition","Competition"],["BUTTON#newCompetitionBtn","New competition"],["BUTTON#renameCompetitionBtn","Rename"],
+   ["INPUT#name","Name"],["BUTTON#add","Add competitor"],["INPUT#name2[combobox]","Competitor"],["BUTTON#comboToggle","Show all competitors"],["BUTTON[combobox] discipline","Discipline"],
+   ["BUTTON[combobox] event","Event"],["INPUT#raw","Result"],["BUTTON#save","Save score"],["BUTTON#export","Export CSV"],["BUTTON#saveState","Save state"],["BUTTON#loadStateBtn","Load state…"],
+   ["BUTTON (row) x7","Edit <competitor name>"],["tabs (General view, TPI-032)","Decathlon <n> / Heptathlon <n>"]],
+ "controls_without_name": [],
+ "non_control_without_name": {"element": "TABLE#standingsTableEl", "aria_snapshot": "- table: (no name)", "inside": "SECTION aria-label=\"Standings\""},
+ "live_regions": {"#msg": {"role": "status"}, "#error": {"aria-live": "polite"}},
+ "error_association": {"#raw aria-describedby": null, "#raw aria-errormessage": null, "#raw aria-invalid on error": "true"},
+ "messages": {"12:57:09Z TP-Key 100m 11.40 (overwrite dialog: 'TP-Key already has a result for 100m (s): 11.5 (753 pts). Replace it with 11.4?' -> Yes)": "#msg 'Saved: 774 pts'",
+              "12:57:10Z TP-Key 100m empty": "#error 'Result is required' (server 400)"}}

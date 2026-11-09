@@ -1,0 +1,13 @@
+TPI-035..037 layout measurements, TP-Auditors (7-8 competitors incl. the 200-character name), 2026-11-09
+viewport   theme  clientWidth  doc scrollWidth  page h-scroll  table wrap (client/scroll, overflow-x)  overlaps*  clipped  controls outside
+1280x800   light  1265         1265             no             1181/1181 auto                          1*         none     none
+1280x800   dark   1265         1265             no             1181/1181 auto                          1*         none     none
+768x1024   light  753          753              no             669/1168 auto (table scrolls inside)    1*         none     none
+768x1024   dark   753          753              no             669/1168 auto                           1*         none     none
+375x812    light  360          383              YES (23 px)    276/1168 auto                           1*         none     none
+375x812    dark   360          383              YES (23 px)    276/1168 auto                           1*         none     none
+* the only overlap is the 'Show all competitors' arrow button drawn inside the Competitor field (32x32) - intended design, not a defect.
+375 px cause: the only element beyond the 360 px client width is <span class="sr-only">Actions</span> in the 4th header cell of the standings table:
+  position:absolute; left:382px; width:1px; clip:rect(0,0,0,0); its <th> and the table wrapper #tablePanel are position:static,
+  so the span is positioned outside the table's scroll container and widens the document. window.scrollTo(1000,0) -> scrollX = 23 (12:59:17Z).
+Data: TPI-036 TP-Key 100m 11.80 (overwrite 11.4 -> 11.8) 'Saved: 691 pts' at 768 px; TPI-037 TP-V375 added and 100m 11.90 'Saved: 671 pts' at 375 px.

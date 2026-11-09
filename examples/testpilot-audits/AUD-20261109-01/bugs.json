@@ -1,0 +1,421 @@
+[
+  {
+    "bug_proposal_id": "BP-001",
+    "title": "Competitors: a second competitor with the same name is silently not created when the name already exists",
+    "finding_category": "functional",
+    "classification": {
+      "bug_proposal_id": "BP-001",
+      "finding_category": "functional"
+    },
+    "duplicate_check": "no_match",
+    "possible_duplicate_of": null,
+    "duplicate_check_notes": "Compared with the bug reports of TestBench project TS (id 5), read through the session login on 2026-11-09: the project has 0 bug reports, so there is no plausible match. Bugs in other TestBench projects (e.g. TPT1106, which holds an earlier audit of this app) were not compared because they are outside the configured project.",
+    "requirement_link": {
+      "requirement_id": "REQ-LOCAL-002",
+      "acceptance_criterion": "Duplicate names are allowed: each duplicate is its own row, can be selected on its own in 'Enter result', and a result, edit or removal affects only the chosen one.",
+      "test_plan_item_id": "TPI-008",
+      "execution_ids": [
+        "EX-023",
+        "EX-024"
+      ]
+    },
+    "execution_ids": [
+      "EX-023",
+      "EX-024"
+    ],
+    "environment": {
+      "url": "http://localhost:8080",
+      "browser": "Chromium (Playwright MCP, Chrome 156 user agent)",
+      "viewport": "1280x800",
+      "build": "unknown (app.js?v=13)",
+      "test_environment": "local"
+    },
+    "preconditions": [
+      "The app is reachable at http://localhost:8080.",
+      "A test competition (for example TP-Auditors, Decathlon) is selected and has no competitor named TP-Dup."
+    ],
+    "steps_to_reproduce": [
+      "In 'Add competitor', type TP-Dup in Name and click 'Add competitor'.",
+      "Type TP-Dup again and click 'Add competitor'.",
+      "Look at the standings table and open 'Show all competitors' in 'Enter result'.",
+      "Reload the page and look at the competitor count in the Competition selector."
+    ],
+    "expected_result": "Two separate TP-Dup rows and two selectable TP-Dup entries (REQ-LOCAL-002; the user decided that duplicate names are allowed).",
+    "actual_result": "Both adds show the message 'Added' and both requests (POST /api/competitions/c1/competitors {\"name\":\"TP-Dup\"}) return 201, but only one TP-Dup row and one picker option exist; after a reload the competition count rose by one only (5 -> 6). The API identifies competitors by name in the score, rename and remove requests, so two competitors with the same name cannot be told apart. The user is told the second add succeeded although nothing was created.",
+    "reproduction_rate": {
+      "rate": "Always",
+      "attempts": "2 of 2: UI right after the two adds (EX-023) and server state after a reload (EX-024). No third live attempt: the add limit of the scope was used up."
+    },
+    "evidence_ids": [
+      "EV-050",
+      "EV-051",
+      "EV-052"
+    ],
+    "evidence": [
+      {
+        "evidence_id": "EV-050",
+        "type": "screenshot",
+        "description": "After two adds: one TP-Dup row and one TP-Dup picker option"
+      },
+      {
+        "evidence_id": "EV-051",
+        "type": "network-trace",
+        "description": "Two POST competitors {\"name\":\"TP-Dup\"} both 201, one competitor resulting"
+      },
+      {
+        "evidence_id": "EV-052",
+        "type": "screenshot",
+        "description": "After reload: one TP-Dup, competition count 6"
+      }
+    ],
+    "severity": {
+      "level": "High",
+      "rationale": "A second athlete with a common name is silently dropped while the app confirms 'Added', so results can be entered for the wrong person or be missing without anyone noticing; it contradicts the decision that duplicate names are allowed. A workaround exists (make names unique), but nothing tells the user to use it."
+    },
+    "agent_confidence": {
+      "level": "High",
+      "basis": "Two 201 responses with identical bodies, one resulting competitor in the UI and after reload, and the name-keyed request format all point the same way."
+    },
+    "proposed_manual_test": {
+      "manual_test_proposal_id": "MTP-001",
+      "objective": "Check, after a fix for BP-001, that two competitors with the same name can be added, told apart and edited separately.",
+      "steps": [
+        "In a test competition, add two competitors with the same name.",
+        "Check both appear as separate rows and as separate entries in 'Enter result'.",
+        "Save a result for one of them, rename the other, then remove one.",
+        "Reload and check that each action affected only the chosen competitor."
+      ],
+      "expected_result": "Two separate competitors exist; results, renames and removals affect only the chosen one, also after a reload."
+    },
+    "status": "proposed"
+  },
+  {
+    "bug_proposal_id": "BP-002",
+    "title": "Competitors: names with an apostrophe or ampersand are rejected with 'Name must contain valid letters'",
+    "finding_category": "functional",
+    "classification": {
+      "bug_proposal_id": "BP-002",
+      "finding_category": "functional"
+    },
+    "duplicate_check": "no_match",
+    "possible_duplicate_of": null,
+    "duplicate_check_notes": "Compared with the bug reports of TestBench project TS (id 5), read through the session login on 2026-11-09: the project has 0 bug reports, so there is no plausible match. Bugs in other TestBench projects (e.g. TPT1106, which holds an earlier audit of this app) were not compared because they are outside the configured project.",
+    "requirement_link": {
+      "requirement_id": "REQ-LOCAL-002",
+      "acceptance_criterion": "Special characters (<b>, &, quotes, å/ä/ö) are shown literally, not interpreted as HTML.",
+      "test_plan_item_id": "TPI-006",
+      "execution_ids": [
+        "EX-021",
+        "EX-046"
+      ]
+    },
+    "execution_ids": [
+      "EX-021",
+      "EX-046"
+    ],
+    "environment": {
+      "url": "http://localhost:8080",
+      "browser": "Chromium (Playwright MCP, Chrome 156 user agent)",
+      "viewport": "1280x800",
+      "build": "unknown (app.js?v=13)",
+      "test_environment": "local"
+    },
+    "preconditions": [
+      "The app is reachable at http://localhost:8080.",
+      "A test competition (for example TP-Auditors) is selected."
+    ],
+    "steps_to_reproduce": [
+      "In 'Add competitor', type TP-O'Neil & Co and click 'Add competitor'.",
+      "Read the message under the form and look at the standings.",
+      "For comparison, add TP-Åsa Öberg."
+    ],
+    "expected_result": "A name with an apostrophe or an ampersand is added and shown exactly as typed, like the name with å/ö (REQ-LOCAL-002).",
+    "actual_result": "'TP-O'Neil & Co' is rejected with 'Name must contain valid letters' (server 400) and not added, although it contains letters; 'TP-Åsa Öberg' is accepted and shown literally. The combined name TP-<b>X</b> & \"Ö\" 'å' and TP-<b>X</b> are rejected the same way. Not isolated: whether the apostrophe, the ampersand or both trigger the rejection. Because < and > are rejected, no HTML from names reaches the page; whether rejecting < and > is acceptable is a review decision.",
+    "reproduction_rate": {
+      "rate": "Always",
+      "attempts": "2 of 2: combined special-character name (EX-021) and the single-category follow-up names (EX-046)."
+    },
+    "evidence_ids": [
+      "EV-042",
+      "EV-043",
+      "EV-044",
+      "EV-098",
+      "EV-099",
+      "EV-100",
+      "EV-101",
+      "EV-102"
+    ],
+    "evidence": [
+      {
+        "evidence_id": "EV-042",
+        "type": "screenshot",
+        "description": "Rejection message and picker list without the special-character name"
+      },
+      {
+        "evidence_id": "EV-043",
+        "type": "screenshot",
+        "description": "After reload: no special-character row"
+      },
+      {
+        "evidence_id": "EV-044",
+        "type": "network-trace",
+        "description": "Request body and 400 response for the special-character name"
+      },
+      {
+        "evidence_id": "EV-098",
+        "type": "screenshot",
+        "description": "TP-Åsa Öberg added and shown literally"
+      },
+      {
+        "evidence_id": "EV-099",
+        "type": "screenshot",
+        "description": "TP-O'Neil & Co rejected: 'Name must contain valid letters'"
+      },
+      {
+        "evidence_id": "EV-100",
+        "type": "screenshot",
+        "description": "TP-<b>X</b> rejected with the same message"
+      },
+      {
+        "evidence_id": "EV-101",
+        "type": "screenshot",
+        "description": "After reload: TP-Åsa Öberg listed, no other new names"
+      },
+      {
+        "evidence_id": "EV-102",
+        "type": "test-output",
+        "description": "Result of each single-category name and the conclusion"
+      }
+    ],
+    "severity": {
+      "level": "Medium",
+      "rationale": "Real names such as O'Neil or D'Angelo and club names with '&' cannot be entered and the message is misleading; a workaround exists (leave out the character), and data is never stored wrongly."
+    },
+    "agent_confidence": {
+      "level": "High",
+      "basis": "Rejection seen for both names with the characters, with a server 400 each time, while accented letters are accepted; only the exact character responsible is open."
+    },
+    "proposed_manual_test": {
+      "manual_test_proposal_id": "MTP-002",
+      "objective": "Agree which characters names may contain and check that real names with them can be entered and are shown as typed.",
+      "steps": [
+        "Agree with the product owner which characters are allowed (apostrophe, ampersand, hyphen, accents, < and >).",
+        "Add names such as O'Neil, D'Angelo, Smith & Co, Åsa Öberg and Jean-Luc.",
+        "Check the message for each and how the name appears in the table, the picker, the CSV export and after a reload."
+      ],
+      "expected_result": "Allowed names are added and shown exactly as typed everywhere; rejected names get a message that names the reason."
+    },
+    "status": "proposed"
+  },
+  {
+    "bug_proposal_id": "BP-003",
+    "title": "Forms: text field borders have 1.38:1 (light) and 1.35:1 (dark) contrast, below 3:1, when the field is not focused or in error",
+    "finding_category": "accessibility",
+    "classification": {
+      "bug_proposal_id": "BP-003",
+      "finding_category": "accessibility"
+    },
+    "duplicate_check": "no_match",
+    "possible_duplicate_of": null,
+    "duplicate_check_notes": "Compared with the bug reports of TestBench project TS (id 5), read through the session login on 2026-11-09: the project has 0 bug reports, so there is no plausible match. Bugs in other TestBench projects (e.g. TPT1106, which holds an earlier audit of this app) were not compared because they are outside the configured project.",
+    "requirement_link": {
+      "requirement_id": "REQ-LOCAL-010",
+      "acceptance_criterion": "Text contrast meets WCAG 2.2 AA (4.5:1 normal text, 3:1 large text and UI components).",
+      "test_plan_item_id": "TPI-034",
+      "execution_ids": [
+        "EX-038",
+        "EX-039",
+        "EX-049"
+      ]
+    },
+    "execution_ids": [
+      "EX-038",
+      "EX-039",
+      "EX-049"
+    ],
+    "environment": {
+      "url": "http://localhost:8080",
+      "browser": "Chromium (Playwright MCP, Chrome 156 user agent)",
+      "viewport": "1280x800",
+      "build": "unknown (app.js?v=13)",
+      "test_environment": "local"
+    },
+    "preconditions": [
+      "The app is reachable at http://localhost:8080 at 1280x800.",
+      "Light mode (default), no field in error state."
+    ],
+    "steps_to_reproduce": [
+      "Look at the Name field under 'Add competitor' and the Competitor field under 'Enter result'.",
+      "Read the computed border colour and the field and card background colours (browser developer tools).",
+      "Compute the contrast ratio between border and background.",
+      "Switch to dark mode with the moon button and repeat."
+    ],
+    "expected_result": "The visual boundary of a text field has at least 3:1 contrast against the adjacent colour (REQ-LOCAL-010; WCAG 2.2 SC 1.4.11 Non-text Contrast).",
+    "actual_result": "Light: 1px rgb(213,220,232) border on a white field inside a white card = 1.38:1. Dark: 1px rgb(38,50,72) on rgb(17,26,46) = 1.35:1. The field background equals the card background and there is no shadow, so the border is the only boundary. Affects Name, Competitor and Competition name. All measured text passes (lowest 5.02:1) and the focus outline is 8.72:1.",
+    "reproduction_rate": {
+      "rate": "Always",
+      "attempts": "3 of 3: measured in both themes (EX-038), recomputed independently with field/card backgrounds (EX-039), re-checked in the report phase (EX-049)."
+    },
+    "evidence_ids": [
+      "EV-084",
+      "EV-085",
+      "EV-086",
+      "EV-107"
+    ],
+    "evidence": [
+      {
+        "evidence_id": "EV-084",
+        "type": "screenshot",
+        "description": "Page in light mode used for the measurements"
+      },
+      {
+        "evidence_id": "EV-085",
+        "type": "screenshot",
+        "description": "Page in dark mode used for the measurements"
+      },
+      {
+        "evidence_id": "EV-086",
+        "type": "test-output",
+        "description": "Contrast ratios for text and UI components in both themes"
+      },
+      {
+        "evidence_id": "EV-107",
+        "type": "test-output",
+        "description": "Report-phase re-check measurements for TPI-034 and TPI-037"
+      }
+    ],
+    "severity": {
+      "level": "Medium",
+      "rationale": "Users with low vision may not see where the input fields are; the visible labels above the fields and the strong focus outline reduce the impact."
+    },
+    "agent_confidence": {
+      "level": "High",
+      "basis": "Values come from computed styles and were recomputed outside the browser with the same result."
+    },
+    "proposed_manual_test": {
+      "manual_test_proposal_id": "MTP-003",
+      "objective": "Check after a fix for BP-003 that every text field's edge is clearly visible in light and dark mode.",
+      "steps": [
+        "Open the app in light mode and look at the Name, Competitor, Result and Competition name fields without focusing them.",
+        "Measure the border (or background) contrast against the card.",
+        "Repeat in dark mode and with the operating system's increased-contrast setting."
+      ],
+      "expected_result": "Each field's boundary has at least 3:1 contrast and is easy to see in both themes."
+    },
+    "status": "proposed"
+  },
+  {
+    "bug_proposal_id": "BP-004",
+    "title": "Layout: the page scrolls sideways by 23 px at 375 px width because the hidden 'Actions' table header label is outside the table's scroll area",
+    "finding_category": "visual",
+    "classification": {
+      "bug_proposal_id": "BP-004",
+      "finding_category": "visual"
+    },
+    "duplicate_check": "no_match",
+    "possible_duplicate_of": null,
+    "duplicate_check_notes": "Compared with the bug reports of TestBench project TS (id 5), read through the session login on 2026-11-09: the project has 0 bug reports, so there is no plausible match. Bugs in other TestBench projects (e.g. TPT1106, which holds an earlier audit of this app) were not compared because they are outside the configured project.",
+    "requirement_link": {
+      "requirement_id": "REQ-LOCAL-011",
+      "acceptance_criterion": "At 1280, 768 and 375 px, in light and dark mode, the page does not scroll horizontally except inside the standings table, and no controls overlap or are cut off.",
+      "test_plan_item_id": "TPI-037",
+      "execution_ids": [
+        "EX-042",
+        "EX-043",
+        "EX-048"
+      ]
+    },
+    "execution_ids": [
+      "EX-042",
+      "EX-043",
+      "EX-048"
+    ],
+    "environment": {
+      "url": "http://localhost:8080",
+      "browser": "Chromium (Playwright MCP, Chrome 156 user agent)",
+      "viewport": "375x812",
+      "build": "unknown (app.js?v=13)",
+      "test_environment": "local"
+    },
+    "preconditions": [
+      "The app is reachable at http://localhost:8080.",
+      "Viewport 375x812 (phone width). Any competition, with or without competitors."
+    ],
+    "steps_to_reproduce": [
+      "Open the app at 375x812.",
+      "Swipe or scroll the whole page sideways.",
+      "Inspect the 4th header cell of the standings table ('Actions', screen-reader only)."
+    ],
+    "expected_result": "Only the standings table scrolls sideways; the page itself stays within the 375 px width (REQ-LOCAL-011).",
+    "actual_result": "The document is 383 px wide in a 360 px client width and the whole page scrolls sideways by 23 px, showing an empty strip on the right, in light and dark mode. The only element beyond the viewport is <span class=\"sr-only\">Actions</span> (position:absolute; left:382px); its th and the table wrapper #tablePanel are position:static, so the span is placed outside the table's scroll container. It happens with an empty table as well. At 768 and 1280 px there is no overflow.",
+    "reproduction_rate": {
+      "rate": "Always",
+      "attempts": "3 of 3: measured (EX-042), page scrolled sideways (EX-043), re-checked with an empty competition (EX-048); first seen in TPI-007 (EV-049)."
+    },
+    "evidence_ids": [
+      "EV-092",
+      "EV-093",
+      "EV-089",
+      "EV-094",
+      "EV-049",
+      "EV-106",
+      "EV-107"
+    ],
+    "evidence": [
+      {
+        "evidence_id": "EV-092",
+        "type": "screenshot",
+        "description": "Full page at 375 px, light: 383 px wide with an empty strip on the right"
+      },
+      {
+        "evidence_id": "EV-093",
+        "type": "screenshot",
+        "description": "Full page at 375 px, dark: same 383 px width"
+      },
+      {
+        "evidence_id": "EV-089",
+        "type": "test-output",
+        "description": "Layout measurements at 1280, 768 and 375 px in both themes"
+      },
+      {
+        "evidence_id": "EV-094",
+        "type": "screenshot",
+        "description": "Viewport at 375 px after scrolling the page sideways by 23 px"
+      },
+      {
+        "evidence_id": "EV-049",
+        "type": "test-output",
+        "description": "Measured widths at 1280 and 375 px and the element causing the 375 px overflow"
+      },
+      {
+        "evidence_id": "EV-106",
+        "type": "screenshot",
+        "description": "375 px with an empty competition: page still 383 px wide"
+      },
+      {
+        "evidence_id": "EV-107",
+        "type": "test-output",
+        "description": "Report-phase re-check measurements for TPI-034 and TPI-037"
+      }
+    ],
+    "severity": {
+      "level": "Low",
+      "rationale": "No content is hidden and every control works, but on phones the whole page shifts sideways, which looks broken and makes scrolling fiddly."
+    },
+    "agent_confidence": {
+      "level": "High",
+      "basis": "Same overflow in both themes and in three checks, with the responsible element and its styles identified."
+    },
+    "proposed_manual_test": {
+      "manual_test_proposal_id": "MTP-004",
+      "objective": "Check on real phones that the page does not move sideways and only the standings table scrolls horizontally.",
+      "steps": [
+        "On a phone 320-414 px wide (iOS Safari and Android Chrome), open the app.",
+        "Swipe the page sideways outside the table.",
+        "Swipe inside the standings table."
+      ],
+      "expected_result": "The page itself does not move sideways; only the table scrolls inside its box."
+    },
+    "status": "proposed"
+  }
+]

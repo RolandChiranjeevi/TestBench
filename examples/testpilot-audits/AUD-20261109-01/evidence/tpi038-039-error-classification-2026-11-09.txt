@@ -1,0 +1,19 @@
+TPI-038 / TPI-039 classification of every console error and every 4xx/5xx response during the run (12:39Z-12:59Z), 2026-11-09
+Totals: 266 non-static requests listed; 13 responses 4xx (all 400); 0 responses 5xx; 13 console errors, all "Failed to load resource: ... status of 400" (one per 400); no JavaScript exceptions or other console errors/warnings.
+#    request                                  cause (plan item)                          UI message shown                                                   class
+20   POST c1/competitors 400                  empty name (TPI-003)                       Name must contain valid letters                                    expected rejection
+22   POST c1/competitors 400                  3 spaces (TPI-003)                         Name must contain valid letters                                    expected rejection
+122  POST c1/score 400                        empty result (TPI-009)                     Result is required                                                 expected rejection
+125  POST c1/score 400                        100m -5 (TPI-010)                          Result cannot be negative                                          expected rejection
+128  POST c1/score 400                        shot put -1 (TPI-010)                      Result cannot be negative                                          expected rejection
+131  POST c1/score 400                        100m 9.57 (TPI-011)                        Faster than the world record for 100m: 9.58 s                      expected rejection
+137  POST c1/score 400                        long jump 896 (TPI-012)                    Beyond the world record for Long Jump: 895 cm                     expected rejection
+143  POST c1/score 400                        high jump 246 (TPI-012)                    Beyond the world record for High Jump: 245 cm                     expected rejection
+168  POST c1/competitors 400                  special-character name (TPI-006)           Name must contain valid letters                                    rejection; whether it is expected is open (TPI-006 inconclusive)
+224  POST c1/state 400                        truncated state file (TPI-030)             Invalid saved state: the file is not a valid save                  expected rejection
+233  POST c1/state 400                        edited state file (TPI-031)                Invalid saved state: Result cannot be negative                     expected rejection
+245  POST c1/score 400                        empty result sent by the test-script slip (TPI-032 attempt 1)  Result is required                  expected rejection
+257  POST c1/score 400                        empty result (TPI-033)                     Result is required                                                 expected rejection
+Rejected in the browser without a request (message shown, no console error): 'xyz' (TPI-015), 'abc' (TPI-009), '4:75' and '4:' (TPI-014).
+Not a rejection: the second 'TP-Dup' add (#181) returned 201 and 'Added' but created nothing (TPI-008 fail) - no error was shown.
+Unexpected 4xx/5xx in normal flows: none.

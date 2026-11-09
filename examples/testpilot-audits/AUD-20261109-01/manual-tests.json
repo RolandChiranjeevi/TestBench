@@ -1,0 +1,241 @@
+[
+  {
+    "manual_test_proposal_id": "MTP-001",
+    "title": "Competitors with the same name",
+    "requirement_id": "REQ-LOCAL-002",
+    "objective": "Check, after a fix for BP-001, that two competitors with the same name can be added, told apart and edited separately.",
+    "steps": [
+      "In a test competition, add two competitors with the same name.",
+      "Check both appear as separate rows and as separate entries in 'Enter result'.",
+      "Save a result for one of them, rename the other, then remove one.",
+      "Reload and check that each action affected only the chosen competitor."
+    ],
+    "expected_result": "Two separate competitors exist; results, renames and removals affect only the chosen one, also after a reload.",
+    "origin": {
+      "type": "bug_proposal",
+      "id": "BP-001"
+    },
+    "reason_manual": "The fix needs a person to judge how duplicates should be told apart in the UI (for example a number or birth year).",
+    "evidence_ids": [
+      "EV-050",
+      "EV-051",
+      "EV-052"
+    ],
+    "status": "proposed"
+  },
+  {
+    "manual_test_proposal_id": "MTP-002",
+    "title": "Names with apostrophes, ampersands and accents",
+    "requirement_id": "REQ-LOCAL-002",
+    "objective": "Agree which characters names may contain and check that real names with them can be entered and are shown as typed.",
+    "steps": [
+      "Agree with the product owner which characters are allowed (apostrophe, ampersand, hyphen, accents, < and >).",
+      "Add names such as O'Neil, D'Angelo, Smith & Co, Åsa Öberg and Jean-Luc.",
+      "Check the message for each and how the name appears in the table, the picker, the CSV export and after a reload."
+    ],
+    "expected_result": "Allowed names are added and shown exactly as typed everywhere; rejected names get a message that names the reason.",
+    "origin": {
+      "type": "bug_proposal",
+      "id": "BP-002"
+    },
+    "reason_manual": "Which characters are acceptable is a product decision that a person has to make first.",
+    "evidence_ids": [
+      "EV-042",
+      "EV-043",
+      "EV-044",
+      "EV-098",
+      "EV-099",
+      "EV-100",
+      "EV-101",
+      "EV-102"
+    ],
+    "status": "proposed"
+  },
+  {
+    "manual_test_proposal_id": "MTP-003",
+    "title": "Visibility of text fields for low-vision users",
+    "requirement_id": "REQ-LOCAL-010",
+    "objective": "Check after a fix for BP-003 that every text field's edge is clearly visible in light and dark mode.",
+    "steps": [
+      "Open the app in light mode and look at the Name, Competitor, Result and Competition name fields without focusing them.",
+      "Measure the border (or background) contrast against the card.",
+      "Repeat in dark mode and with the operating system's increased-contrast setting."
+    ],
+    "expected_result": "Each field's boundary has at least 3:1 contrast and is easy to see in both themes.",
+    "origin": {
+      "type": "bug_proposal",
+      "id": "BP-003"
+    },
+    "reason_manual": "Judging how easy the fields are to see needs a person; the ratio alone does not show that.",
+    "evidence_ids": [
+      "EV-084",
+      "EV-085",
+      "EV-086",
+      "EV-107"
+    ],
+    "status": "proposed"
+  },
+  {
+    "manual_test_proposal_id": "MTP-004",
+    "title": "No sideways page scroll on phones",
+    "requirement_id": "REQ-LOCAL-011",
+    "objective": "Check on real phones that the page does not move sideways and only the standings table scrolls horizontally.",
+    "steps": [
+      "On a phone 320-414 px wide (iOS Safari and Android Chrome), open the app.",
+      "Swipe the page sideways outside the table.",
+      "Swipe inside the standings table."
+    ],
+    "expected_result": "The page itself does not move sideways; only the table scrolls inside its box.",
+    "origin": {
+      "type": "bug_proposal",
+      "id": "BP-004"
+    },
+    "reason_manual": "Touch behaviour and real mobile browsers were not part of this audit (Chromium only).",
+    "evidence_ids": [
+      "EV-092",
+      "EV-093",
+      "EV-089",
+      "EV-094",
+      "EV-049",
+      "EV-106",
+      "EV-107"
+    ],
+    "status": "proposed"
+  },
+  {
+    "manual_test_proposal_id": "MTP-005",
+    "title": "Screen reader pass of the main flows",
+    "requirement_id": "REQ-LOCAL-010",
+    "objective": "Check what a screen reader user hears when adding a competitor, entering a result and reading the standings.",
+    "steps": [
+      "With VoiceOver (macOS/iOS) or NVDA (Windows), add a competitor and listen to the confirmation.",
+      "Choose a competitor and an event with the comboboxes and save a result; then trigger an error.",
+      "Move through the standings table and the Edit buttons."
+    ],
+    "expected_result": "Every control is announced with its name and role, success and error messages are announced, and the table is understandable (headers and positions read out).",
+    "origin": {
+      "type": "coverage_gap",
+      "id": "CG-002"
+    },
+    "reason_manual": "Needs assistive technology and a person listening; it cannot be judged from the DOM alone.",
+    "evidence_ids": [],
+    "status": "proposed"
+  },
+  {
+    "manual_test_proposal_id": "MTP-006",
+    "title": "A list holding both disciplines",
+    "requirement_id": "REQ-LOCAL-005",
+    "objective": "Check standings, tabs and tab counts when one list holds both decathletes and heptathletes.",
+    "steps": [
+      "In an environment where it is allowed to change General (or another list that holds both disciplines), add two decathletes and two heptathletes with results.",
+      "Switch between the Decathlon and Heptathlon tabs.",
+      "Compare each tab's count and order with its rows."
+    ],
+    "expected_result": "Each tab shows only its own discipline, sorted by total, and the counts match the rows.",
+    "origin": {
+      "type": "coverage_gap",
+      "id": "CG-003"
+    },
+    "reason_manual": "Named competitions hold one discipline; only General holds both, and changing General was out of scope.",
+    "evidence_ids": [],
+    "status": "proposed"
+  },
+  {
+    "manual_test_proposal_id": "MTP-007",
+    "title": "Scoring across the points tables",
+    "requirement_id": "REQ-LOCAL-004",
+    "objective": "Check more values per event against the official World Athletics tables than the audit's sample.",
+    "steps": [
+      "For each event, pick a low, a typical and a near-record value.",
+      "Look up the official points for each.",
+      "Enter them for a test competitor and compare the points and the total."
+    ],
+    "expected_result": "Every value scores the official points (rounded down) and the total is their sum.",
+    "origin": {
+      "type": "coverage_gap",
+      "id": "CG-005"
+    },
+    "reason_manual": "Comparing with the published tables is a desk check by a person who knows the scoring rules.",
+    "evidence_ids": [],
+    "status": "proposed"
+  },
+  {
+    "manual_test_proposal_id": "MTP-008",
+    "title": "Behaviour when the server is unavailable",
+    "requirement_id": "REQ-LOCAL-012",
+    "objective": "Check what the user sees when the server stops responding during normal use.",
+    "steps": [
+      "In a local environment, open the app and then stop the server.",
+      "Try to add a competitor, save a result and switch competition.",
+      "Start the server again and reload."
+    ],
+    "expected_result": "Each failed action shows a clear message, nothing is shown as saved that was not saved, and the app works again after the server is back.",
+    "origin": {
+      "type": "coverage_gap",
+      "id": "CG-006"
+    },
+    "reason_manual": "Stopping the server is outside what the audit was allowed to do.",
+    "evidence_ids": [],
+    "status": "proposed"
+  },
+  {
+    "manual_test_proposal_id": "MTP-009",
+    "title": "Design review against the intended design",
+    "requirement_id": "REQ-LOCAL-011",
+    "objective": "Have a designer compare the pages at 375, 768 and 1280 px in both themes with the intended design.",
+    "steps": [
+      "Open the screenshots in the evidence folder (tpi035-037) or the live app.",
+      "Compare spacing, typography, colours and alignment with the design."
+    ],
+    "expected_result": "The pages match the design, or the differences are listed.",
+    "origin": {
+      "type": "coverage_gap",
+      "id": "CG-007"
+    },
+    "reason_manual": "There is no design reference; only a designer can judge the result.",
+    "evidence_ids": [],
+    "status": "proposed"
+  },
+  {
+    "manual_test_proposal_id": "MTP-010",
+    "title": "Main flows in other browsers",
+    "requirement_id": "REQ-LOCAL-012",
+    "objective": "Run a short smoke test of the main flows in Firefox and Safari.",
+    "steps": [
+      "In Firefox and Safari, add a competitor, enter a result with a decimal comma and a m:ss time, and check the standings.",
+      "Export CSV and save state."
+    ],
+    "expected_result": "The flows behave as in Chromium, with no console errors.",
+    "origin": {
+      "type": "coverage_gap",
+      "id": "CG-008"
+    },
+    "reason_manual": "Only Chromium was in scope.",
+    "evidence_ids": [],
+    "status": "proposed"
+  },
+  {
+    "manual_test_proposal_id": "MTP-011",
+    "title": "Confirmation before Load state replaces data",
+    "requirement_id": "REQ-LOCAL-009",
+    "objective": "Decide whether loading a saved file should ask before it replaces a competition's data, and check the chosen behaviour.",
+    "steps": [
+      "Agree with the product owner whether Load state must ask for confirmation.",
+      "In a test competition with data, choose 'Load state…' and a saved file.",
+      "Check whether the app asks first and that cancelling keeps the data."
+    ],
+    "expected_result": "The app behaves as agreed; if a confirmation is required, cancelling leaves the data unchanged.",
+    "origin": {
+      "type": "execution",
+      "id": "EX-032"
+    },
+    "reason_manual": "Whether a confirmation is required is a product decision; in the audit the file replaced the data at once (EX-032).",
+    "evidence_ids": [
+      "EV-067",
+      "EV-068",
+      "EV-069",
+      "EV-066"
+    ],
+    "status": "proposed"
+  }
+]
