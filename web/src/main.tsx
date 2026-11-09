@@ -4,7 +4,7 @@ import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useLocation, u
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, BookOpenCheck, Bot, Bug, ChevronDown, ClipboardCheck, Download, FileBarChart, FlaskConical, LayoutDashboard, ListChecks, Menu, Play, Plus, Settings, Sparkles } from "lucide-react";
 import { api, parseDate, timeAgo, type BackupInfo, type Project } from "./api";
-import { Empty, Modal, ToastProvider, useHotkeys, useToast } from "./components/ui";
+import { ConfirmProvider, Empty, Modal, ToastProvider, useHotkeys, useToast } from "./components/ui";
 import { CasesPage } from "./pages/Cases";
 import { RequirementsPage } from "./pages/Requirements";
 import { RunsPage } from "./pages/Runs";
@@ -199,6 +199,7 @@ function ProjectLayout() {
 
   return (
     <div className="app">
+      <a className="skip-link" href="#main" onClick={(e) => { e.preventDefault(); document.getElementById("main")?.focus(); }}>Skip to content</a>
       <header className="mobile-bar">
         <button className="btn ghost icon" aria-label="Open navigation menu" aria-expanded={navOpen} onClick={() => setNavOpen(true)}>
           <Menu size={18} />
@@ -262,7 +263,7 @@ function ProjectLayout() {
           <span className="footer-text">{project.case_count} cases · {project.run_count} runs</span>
         </div>
       </aside>
-      <main className="main">
+      <main className="main" id="main" tabIndex={-1}>
         <Outlet />
       </main>
       {creating && <NewProjectModal onClose={() => setCreating(false)} />}
@@ -278,6 +279,7 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
+        <ConfirmProvider>
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Home />} />
@@ -301,6 +303,7 @@ createRoot(document.getElementById("root")!).render(
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
+        </ConfirmProvider>
       </ToastProvider>
     </QueryClientProvider>
   </StrictMode>,

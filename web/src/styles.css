@@ -148,6 +148,10 @@ a { color: inherit; text-decoration: none; }
 .backup-nudge.stale { color: var(--blocked-fg); }
 
 .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; }
+.main:focus { outline: none; }
+/* Lets a keyboard user jump past the sidebar: hidden until it has the focus. */
+.skip-link { position: absolute; left: 8px; top: -48px; z-index: 100; padding: 8px 14px; border-radius: var(--radius); background: var(--bg-elev); color: var(--text); border: 1px solid var(--border-strong); box-shadow: var(--shadow); font-weight: 500; }
+.skip-link:focus { top: 8px; }
 .topbar {
   height: 46px; flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 0 16px 0 20px;
   border-bottom: 1px solid var(--border);
@@ -213,6 +217,7 @@ a { color: inherit; text-decoration: none; }
 
 /* Borderless "Linear" inputs used in the editor */
 .bare { background: none; border: 0; outline: none; width: 100%; padding: 0; resize: none; }
+input.bare { min-height: 24px; }
 .bare::placeholder { color: var(--text-4); }
 /* In a dialog the title is the main thing to fill in, so it needs to look like a field and not like a heading. */
 .modal .title-input { border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 8px 12px; background: var(--bg-input); font-size: 16px; transition: border-color 120ms, box-shadow 120ms; }
@@ -225,11 +230,12 @@ a { color: inherit; text-decoration: none; }
   border: 1px solid var(--border-strong); background: var(--bg-elev); color: var(--text-2); font-size: var(--fs-md); cursor: pointer; position: relative;
 }
 .pill:hover { background: var(--bg-hover); color: var(--text); }
-.pill select { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.pill select { position: absolute; inset: -1px; opacity: 0; cursor: pointer; } /* covers the border too, so the target is the pill's full height */
 .chip {
   display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border-radius: 999px;
   border: 1px solid var(--border-strong); color: var(--text-2); font-size: var(--fs-sm); white-space: nowrap; background: var(--bg);
 }
+button.chip { min-height: 24px; }
 .chip.status { min-width: 128px; height: 22px; font-size: var(--fs-sm); font-weight: 500; }
 .chip.status .dot { width: 8px; height: 8px; }
 .chip .dot { width: 6px; height: 6px; border-radius: 50%; }
