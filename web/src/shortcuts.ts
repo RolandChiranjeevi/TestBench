@@ -9,6 +9,7 @@ export const NAV_SHORTCUTS = [
   { key: "4", to: "runs", label: "Runs" },
   { key: "5", to: "bugs", label: "Bug reports" },
   { key: "6", to: "manual-tests", label: "Agent proposals" },
+  { key: "t", to: "test-plan", label: "Test plan" },
   { key: "7", to: "automated", label: "Automated tests" },
   { key: "8", to: "import", label: "Import results" },
   { key: "9", to: "reports", label: "Sprint reports" },

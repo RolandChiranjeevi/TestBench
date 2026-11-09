@@ -2,7 +2,7 @@ import { StrictMode, useEffect, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, BookOpenCheck, Bot, Bug, ChevronDown, ClipboardCheck, Download, FileBarChart, FlaskConical, LayoutDashboard, ListChecks, Menu, Play, Plus, Settings, Sparkles } from "lucide-react";
+import { Archive, BookOpenCheck, Bot, Bug, ChevronDown, ClipboardCheck, ClipboardList, Download, FileBarChart, FlaskConical, LayoutDashboard, ListChecks, Menu, Play, Plus, Settings, Sparkles } from "lucide-react";
 import { api, parseDate, timeAgo, type BackupInfo, type Project } from "./api";
 import { ConfirmProvider, Empty, Modal, ToastProvider, useHotkeys, useToast } from "./components/ui";
 import { CasesPage } from "./pages/Cases";
@@ -18,6 +18,7 @@ import { applyTheme } from "./theme";
 import { NAV_SHORTCUTS, navShortcut } from "./shortcuts";
 import { BugReportsPage } from "./pages/BugReports";
 import { ManualTestsPage } from "./pages/ManualTests";
+import { TestPlanPage } from "./pages/TestPlan";
 import "./styles.css";
 
 const LAST_PROJECT = "testbench:lastProject";
@@ -240,6 +241,7 @@ function ProjectLayout() {
         {link("cases", <ListChecks size={15} />)}
         {link("runs", <Play size={15} />)}
         {link("bugs", <Bug size={15} />, proposedBugs?.counts.proposed ?? 0)}
+        {link("test-plan", <ClipboardList size={15} />)}
         {link("manual-tests", <ClipboardCheck size={15} />, proposedManual?.counts.proposed ?? 0)}
         {link("automated", <Bot size={15} />)}
         {link("import", <Download size={15} />)}
@@ -299,6 +301,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="import" element={<ImportPage />} />
               <Route path="bugs" element={<BugReportsPage />} />
               <Route path="manual-tests" element={<ManualTestsPage />} />
+              <Route path="test-plan" element={<TestPlanPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
