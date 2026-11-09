@@ -6,9 +6,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import Database from "better-sqlite3";
-import { db } from "../server/db.ts";
+import { db, migrateObservations } from "../server/db.ts";
 import { makeProject } from "./helpers.ts";
-import { convertToBug, getObservation, importObservations, listObservations, ObservationError, setObservationStatus } from "../server/observations.ts";
+import { archiveObservation, convertToBug, getObservation, importObservations, listObservations, ObservationError, reopenObservation, resolveObservation, setObservationStatus } from "../server/observations.ts";
 
 // Observations: load-test and security-review results that are not bugs. Everything here runs against a throwaway data folder (see env.ts).
 
@@ -197,8 +197,8 @@ describe("sending an observation again", () => {
     // the same content again is unchanged and keeps the mark; a person setting the status clears it
     assert.equal(importObservations(p.id, [load({ value: 990, recommendation: "Add a cache", status: "observed" })]).counts.unchanged, 1);
     assert.equal(getObservation(id)!.changedSinceReview, true);
-    setObservationStatus(id, "resolved");
-    assert.deepEqual([getObservation(id)!.status, getObservation(id)!.changedSinceReview], ["resolved", false]);
+    setObservationStatus(id, "needs_review");
+    assert.deepEqual([getObservation(id)!.status, getObservation(id)!.changedSinceReview], ["needs_review", false]);
   });
 
   it("a status is set through setObservationStatus, and only to an allowed one", () => {
@@ -206,7 +206,8 @@ describe("sending an observation again", () => {
     importObservations(p.id, [sec()]);
     const id = listObservations(p.id).items[0].id;
     assert.throws(() => setObservationStatus(id, "fixed"), /status must be one of/);
-    assert.throws(() => setObservationStatus(999999, "resolved"), /not found/);
+    assert.throws(() => setObservationStatus(id, "archived"), /status must be one of: observed, needs_review, confirmed/);
+    assert.throws(() => setObservationStatus(999999, "confirmed"), /not found/);
     assert.equal(setObservationStatus(id, "needs_review").status, "needs_review");
   });
 });
@@ -240,7 +241,7 @@ describe("turning an observation into a bug", () => {
     assert.equal(count("SELECT COUNT(*) AS n FROM bug_reports"), before);
   });
 
-  it("makes one proposed bug report when a person asks, remembers it, and leaves the observation and its status alone", () => {
+  it("makes one proposed bug report when a person asks, remembers it, and leaves the observation (now converted) and the bug model alone", () => {
     const p = proj(); const a = audit(p);
     evidence(p, a, "a1", "evidence/k6.json");
     importObservations(p.id, [load({ evidenceIds: ["evidence/k6.json"] })]);
@@ -255,7 +256,7 @@ describe("turning an observation into a bug", () => {
     assert.match(bug.description, /evidence\/k6\.json/);
     assert.equal(count("SELECT COUNT(*) AS n FROM bug_revisions WHERE bug_report_id = ?", bugId), 1);
     const after = getObservation(o.id)!;
-    assert.deepEqual([after.convertedBugId, after.status, after.statusSetBy], [bugId, "observed", "agent"]);
+    assert.deepEqual([after.convertedBugId, after.status, after.statusSetBy], [bugId, "converted", "human"]);
     assert.throws(() => convertToBug(o.id), /already been turned into a bug/);
     assert.equal(count("SELECT COUNT(*) AS n FROM bug_reports WHERE project_id = ?", p.id), bugsBefore + 1);
   });
@@ -286,6 +287,133 @@ describe("an observation outlives its audit and goes with its project", () => {
     importObservations(p.id, [load()]);
     db.prepare("DELETE FROM projects WHERE id = ?").run(p.id);
     assert.equal(count("SELECT COUNT(*) AS n FROM observations WHERE project_id = ?", p.id), 0);
+  });
+});
+
+describe("life cycle: close without a bug, reopen, converted stays tracked", () => {
+  const one = (over: Record<string, unknown> = {}) => {
+    const p = proj(); audit(p);
+    importObservations(p.id, [load(over)]);
+    return { p, id: listObservations(p.id, { status: "all" }).items[0].id };
+  };
+  const conflict = (fn: () => unknown, re: RegExp) => assert.throws(fn, (e: unknown) => e instanceof ObservationError && e.status === 409 && re.test(e.message));
+
+  it("archive and resolve close an open observation as a person's decision, and archive leaves the working list", () => {
+    for (const from of ["observed", "needs_review", "confirmed"] as const) {
+      const { p, id } = one({ status: from });
+      const a = archiveObservation(id);
+      assert.deepEqual([a.status, a.statusSetBy, a.statusChangedAt !== null], ["archived", "human", true]);
+      assert.equal(listObservations(p.id).items.length, 0);
+      assert.deepEqual(listObservations(p.id, { status: "archived" }).items.map((o) => o.id), [id]);
+    }
+    const { id } = one();
+    assert.equal(resolveObservation(id).status, "resolved");
+  });
+
+  it("reopen goes back to needs_review from archived or resolved, and nothing else can be reopened", () => {
+    const { p, id } = one();
+    archiveObservation(id);
+    assert.equal(reopenObservation(id).status, "needs_review");
+    assert.deepEqual(listObservations(p.id).items.map((o) => o.id), [id]);
+    resolveObservation(id);
+    assert.equal(reopenObservation(id).status, "needs_review");
+    conflict(() => reopenObservation(id), /not closed/);
+    assert.throws(() => reopenObservation(999999), (e: unknown) => e instanceof ObservationError && e.status === 404);
+  });
+
+  it("a closed observation cannot be closed again or given an open status without reopening it", () => {
+    const { id } = one();
+    archiveObservation(id);
+    conflict(() => archiveObservation(id), /already archived/);
+    conflict(() => resolveObservation(id), /Reopen it first/);
+    conflict(() => setObservationStatus(id, "confirmed"), /Reopen it first/);
+    reopenObservation(id);
+    resolveObservation(id);
+    conflict(() => resolveObservation(id), /already resolved/);
+    conflict(() => archiveObservation(id), /Reopen it first/);
+  });
+
+  it("a converted observation cannot be archived, resolved, reopened or given a status: it is tracked as a bug", () => {
+    const { p, id } = one();
+    const { bugId } = convertToBug(id);
+    assert.equal(getObservation(id)!.status, "converted");
+    conflict(() => archiveObservation(id), /already tracked as a bug report, so it cannot be archived/);
+    conflict(() => resolveObservation(id), /cannot be marked as resolved/);
+    conflict(() => reopenObservation(id), /tracked as a bug report/);
+    conflict(() => setObservationStatus(id, "confirmed"), /tracked as a bug report/);
+    assert.equal(getObservation(id)!.status, "converted");
+    assert.deepEqual(listObservations(p.id, { status: "converted" }).items.map((o) => o.convertedBugId), [bugId]);
+  });
+
+  it("an observation can be converted from any state, and one whose bug report is gone can be reopened", () => {
+    const { p, id } = one();
+    archiveObservation(id);
+    const { bugId } = convertToBug(id);
+    assert.equal(getObservation(id)!.status, "converted");
+    db.prepare("DELETE FROM bug_reports WHERE id = ?").run(bugId);
+    const orphan = getObservation(id)!;
+    assert.deepEqual([orphan.status, orphan.convertedBugId], ["converted", null]);
+    assert.equal(reopenObservation(id).status, "needs_review");
+    assert.equal(listObservations(p.id).items.length, 1);
+  });
+
+  it("the list shows the open statuses by default, all of them with status=all, and any with a comma list; the chips always count every status", () => {
+    const p = proj(); audit(p);
+    importObservations(p.id, ["A", "B", "C", "D", "E"].map((x) => load({ id: `L-${x}`, status: x === "A" ? "needs_review" : "observed" })));
+    const by = (src: string) => listObservations(p.id, { status: "all" }).items.find((o) => o.sourceId === src)!.id;
+    archiveObservation(by("L-B")); resolveObservation(by("L-C")); convertToBug(by("L-D"));
+    const ids = (status?: string) => listObservations(p.id, { status }).items.map((o) => o.sourceId).sort();
+    assert.deepEqual(ids(), ["L-A", "L-E"]);
+    assert.deepEqual(ids("all"), ["L-A", "L-B", "L-C", "L-D", "L-E"]);
+    assert.deepEqual(ids("archived,resolved"), ["L-B", "L-C"]);
+    assert.deepEqual(ids("converted"), ["L-D"]);
+    assert.deepEqual(listObservations(p.id).counts.status, { observed: 1, needs_review: 1, confirmed: 0, resolved: 1, archived: 1, converted: 1 });
+    assert.throws(() => listObservations(p.id, { status: "archived,done" }), /Unknown status "done"/);
+  });
+
+  it("a re-import keeps archived and converted, updates the agent's fields and shows the change as pending; reopening clears the mark", () => {
+    const { p, id } = one();
+    archiveObservation(id);
+    const r = importObservations(p.id, [load({ value: 999, status: "observed" })]);
+    assert.deepEqual(r.counts, { new: 0, unchanged: 0, updated: 0, pending: 1 });
+    const o = getObservation(id)!;
+    assert.deepEqual([o.status, o.value, o.changedSinceReview], ["archived", 999, true]);
+    assert.equal(reopenObservation(id).changedSinceReview, false);
+    convertToBug(id);
+    assert.equal(importObservations(p.id, [load({ value: 1000, status: "observed" })]).counts.pending, 1);
+    assert.equal(getObservation(id)!.status, "converted");
+  });
+
+  it("an agent may send resolved but not archived or converted; those are decisions made in Testbench", () => {
+    const p = proj(); audit(p);
+    assert.equal(importObservations(p.id, [load({ status: "resolved" })]).counts.new, 1);
+    for (const status of ["archived", "converted"]) {
+      assert.throws(() => importObservations(p.id, [load({ id: `X-${status}`, status })]), (e: unknown) => e instanceof ObservationError && e.status === 400 && /status/.test(e.problems.join()));
+    }
+    assert.equal(listObservations(p.id, { status: "all" }).items.length, 1);
+  });
+
+  it("a database made before archived and converted existed is rebuilt: rows and their evidence are kept, and an observation with a bug becomes converted", () => {
+    const side = new Database(":memory:");
+    side.pragma("foreign_keys = ON");
+    side.exec(`CREATE TABLE projects (id INTEGER PRIMARY KEY); CREATE TABLE audits (id INTEGER PRIMARY KEY); CREATE TABLE bug_reports (id INTEGER PRIMARY KEY); CREATE TABLE bug_attachments (id INTEGER PRIMARY KEY);
+      CREATE TABLE observations (id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE, number INTEGER NOT NULL, source_id TEXT NOT NULL,
+        audit_id INTEGER REFERENCES audits(id) ON DELETE SET NULL, origin_audit_id TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, severity TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'observed' CHECK (status IN ('observed', 'needs_review', 'confirmed', 'resolved')), status_set_by TEXT NOT NULL DEFAULT 'agent',
+        changed_since_review INTEGER NOT NULL DEFAULT 0, metric TEXT, value REAL, threshold REAL, evidence TEXT NOT NULL DEFAULT '', recommendation TEXT NOT NULL DEFAULT '',
+        source TEXT NOT NULL DEFAULT '', content_hash TEXT NOT NULL, converted_bug_id INTEGER REFERENCES bug_reports(id) ON DELETE SET NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (project_id, source_id), UNIQUE (project_id, number));
+      CREATE TABLE observation_evidence (id INTEGER PRIMARY KEY, observation_id INTEGER NOT NULL REFERENCES observations(id) ON DELETE CASCADE, ref TEXT NOT NULL, path TEXT NOT NULL, sha256 TEXT,
+        attachment_id INTEGER, state TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '');
+      INSERT INTO projects VALUES (1); INSERT INTO bug_reports VALUES (7);
+      INSERT INTO observations (id, project_id, number, source_id, origin_audit_id, kind, title, severity, status, content_hash, converted_bug_id) VALUES
+        (1, 1, 1, 'A', 'a1', 'load_test', 'one', 'high', 'confirmed', 'h', NULL), (2, 1, 2, 'B', 'a1', 'load_test', 'two', 'low', 'observed', 'h', 7);
+      INSERT INTO observation_evidence (observation_id, ref, path, state) VALUES (1, 'e', 'e.json', 'ok');`);
+    migrateObservations(side);
+    assert.deepEqual(side.prepare("SELECT id, status, status_set_by AS by FROM observations ORDER BY id").all(), [{ id: 1, status: "confirmed", by: "agent" }, { id: 2, status: "converted", by: "human" }]);
+    assert.equal((side.prepare("SELECT COUNT(*) AS n FROM observation_evidence").get() as { n: number }).n, 1);
+    side.prepare("UPDATE observations SET status = 'archived' WHERE id = 1").run(); // the new CHECK accepts it
+    side.close();
   });
 });
 
@@ -346,6 +474,23 @@ describe("the observation routes", () => {
     assert.equal(conv.status, 200, output);
     assert.equal((await call(`/api/observations/${list.items[0].id}/convert-to-bug`, "POST", {})).status, 409);
     assert.equal((await call(`/api/projects/${projectId}/observations?kind=pentest`, "GET")).status, 400);
+  });
+
+  it("archives, resolves and reopens through the routes, and a converted observation answers 409 to all three", async () => {
+    // OBS-1 was converted by the test above; OBS-2 is still open.
+    const all = (await (await call(`/api/projects/${projectId}/observations?status=all`, "GET")).json()) as { items: { id: number; label: string; status: string }[] };
+    const converted = all.items.find((o) => o.label === "OBS-1")!;
+    const open = all.items.find((o) => o.label === "OBS-2")!;
+    assert.equal(converted.status, "converted");
+    for (const action of ["archive", "resolve", "reopen"]) assert.equal((await call(`/api/observations/${converted.id}/${action}`, "POST", {})).status, 409, action);
+    const act = async (action: string) => call(`/api/observations/${open.id}/${action}`, "POST", {});
+    assert.equal(((await (await act("archive")).json()) as { status: string }).status, "archived");
+    assert.equal((await act("archive")).status, 409);
+    const active = (await (await call(`/api/projects/${projectId}/observations`, "GET")).json()) as { items: unknown[] };
+    assert.equal(active.items.length, 0);
+    assert.equal(((await (await act("reopen")).json()) as { status: string }).status, "needs_review");
+    assert.equal(((await (await act("resolve")).json()) as { status: string }).status, "resolved");
+    assert.equal((await call(`/api/observations/${open.id}/archive`, "POST", undefined, {})).status, 403); // no X-Testbench header
   });
 
   it("answers 400 with the list of problems for a bad request, and 403 without the X-Testbench header", async () => {

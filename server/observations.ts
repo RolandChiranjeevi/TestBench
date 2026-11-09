@@ -10,11 +10,17 @@ import { hashOf } from "./auditcommon.ts";
  *  - Evidence is a file of the audit, identified by path (+ sha256), the same evidence the bug reports of the audit carry. The agent may name it with a
  *    label such as EV-1; an `evidence` list next to the observations says which file a label means.
  *  - A status that a person has set is never overwritten by a later import. The agent's other fields are updated, and the change is shown as `pending`.
+ *  - Life cycle: observed, needs_review and confirmed are open. A person closes an observation as resolved or archived (not a bug, nothing to follow up) and can
+ *    reopen it. converted means it is tracked as a bug; it is set by `convertToBug` only and such an observation cannot be closed here.
  */
 
 export const KINDS = ["load_test", "security_review"] as const;
 export const SEVERITIES = ["info", "low", "medium", "high", "critical"] as const;
-export const STATUSES = ["observed", "needs_review", "confirmed", "resolved"] as const;
+export const STATUSES = ["observed", "needs_review", "confirmed", "resolved", "archived", "converted"] as const;
+/** What a person can set by hand without closing it. */
+export const OPEN_STATUSES = ["observed", "needs_review", "confirmed"] as const;
+/** What an agent may send. archived and converted are decisions made in Testbench. */
+export const AGENT_STATUSES = ["observed", "needs_review", "confirmed", "resolved"] as const;
 export type Kind = (typeof KINDS)[number];
 export type Severity = (typeof SEVERITIES)[number];
 export type Status = (typeof STATUSES)[number];
@@ -34,7 +40,7 @@ const ItemSchema = z.object({
   kind: z.enum(KINDS),
   title: z.string().trim().min(1).max(LIMITS.title),
   severity: z.enum(SEVERITIES),
-  status: z.enum(STATUSES).default("observed"),
+  status: z.enum(AGENT_STATUSES, { error: "must be observed, needs_review, confirmed or resolved (archived and converted are set by a person in Testbench)" }).default("observed"),
   metric: z.string().trim().min(1).max(LIMITS.short).nullish(),
   value: finite.nullish(),
   threshold: finite.nullish(),
@@ -215,7 +221,7 @@ export function importObservations(projectId: number, body: unknown, opts: { dry
 
 export interface ObservationView {
   id: number; number: number; label: string; sourceId: string; auditId: number | null; agentAuditId: string; auditTitle: string;
-  kind: Kind; title: string; severity: Severity; status: Status; statusSetBy: "agent" | "human"; changedSinceReview: boolean;
+  kind: Kind; title: string; severity: Severity; status: Status; statusSetBy: "agent" | "human"; statusChangedAt: string | null; changedSinceReview: boolean;
   metric: string | null; value: number | null; threshold: number | null; evidence: string; recommendation: string; source: string;
   evidenceFiles: { ref: string; path: string; sha256: string | null; state: string; reason: string }[];
   convertedBugId: number | null; createdAt: string; updatedAt: string;
@@ -229,7 +235,7 @@ function views(rows: Record<string, any>[]): ObservationView[] {
     .all(...rows.map((r) => r.id)) as { observation_id: number; ref: string; path: string; sha256: string | null; state: string; reason: string }[];
   return rows.map((r) => ({
     id: r.id, number: r.number, label: `OBS-${r.number}`, sourceId: r.source_id, auditId: r.audit_id, agentAuditId: r.origin_audit_id, auditTitle: r.audit_title ?? "",
-    kind: r.kind, title: r.title, severity: r.severity, status: r.status, statusSetBy: r.status_set_by, changedSinceReview: !!r.changed_since_review,
+    kind: r.kind, title: r.title, severity: r.severity, status: r.status, statusSetBy: r.status_set_by, statusChangedAt: r.status_changed_at, changedSinceReview: !!r.changed_since_review,
     metric: r.metric, value: r.value, threshold: r.threshold, evidence: r.evidence, recommendation: r.recommendation, source: r.source,
     evidenceFiles: ev.filter((e) => e.observation_id === r.id).map(({ ref, path, sha256, state, reason }) => ({ ref, path, sha256, state, reason })),
     convertedBugId: r.converted_bug_id, createdAt: r.created_at, updatedAt: r.updated_at,
@@ -245,10 +251,14 @@ export function listObservations(projectId: number, f: ObservationFilter = {}) {
   };
   check("kind", f.kind, KINDS);
   check("severity", f.severity, SEVERITIES);
-  check("status", f.status, STATUSES);
+  // No status means the open ones (observed, needs_review, confirmed): archived, resolved and converted leave the working list. "all" shows everything, and
+  // a comma list such as "archived,resolved" shows those.
+  const statuses = !f.status ? [...OPEN_STATUSES] : f.status === "all" ? [] : f.status.split(",").map((x) => x.trim()).filter(Boolean);
+  for (const st of statuses) check("status", st, STATUSES);
   const where = ["o.project_id = ?"];
   const args: (string | number)[] = [projectId];
-  for (const [col, v] of [["kind", f.kind], ["severity", f.severity], ["status", f.status]] as const) if (v) { where.push(`o.${col} = ?`); args.push(v); }
+  for (const [col, v] of [["kind", f.kind], ["severity", f.severity]] as const) if (v) { where.push(`o.${col} = ?`); args.push(v); }
+  if (statuses.length) { where.push(`o.status IN (${statuses.map(() => "?").join(",")})`); args.push(...statuses); }
   if (f.audit) { where.push("o.audit_id = ?"); args.push(f.audit); }
   if (f.q?.trim()) { where.push("(o.title LIKE ? ESCAPE '\\' OR o.source_id LIKE ? ESCAPE '\\' OR o.recommendation LIKE ? ESCAPE '\\')"); const like = `%${f.q.trim().replace(/[\\%_]/g, "\\$&")}%`; args.push(like, like, like); }
   const rank = `CASE o.severity WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END`;
@@ -266,12 +276,60 @@ export function getObservation(id: number): ObservationView | undefined {
   return views(db.prepare(`${SELECT} WHERE o.id = ?`).all(id) as Record<string, any>[])[0];
 }
 
-/** A person's decision. It is kept when the agent sends the observation again, and it clears the "changed since review" mark. */
-export function setObservationStatus(id: number, status: unknown): ObservationView {
-  if (typeof status !== "string" || !(STATUSES as readonly string[]).includes(status)) throw new ObservationError(400, `status must be one of: ${STATUSES.join(", ")}`);
-  const r = db.prepare("UPDATE observations SET status = ?, status_set_by = 'human', changed_since_review = 0, updated_at = datetime('now') WHERE id = ?").run(status, id);
-  if (!r.changes) throw new ObservationError(404, "Observation not found");
+const isOpen = (st: string) => (OPEN_STATUSES as readonly string[]).includes(st);
+
+function current(id: number) {
+  const o = db.prepare("SELECT id, number, status, converted_bug_id FROM observations WHERE id = ?").get(id) as { id: number; number: number; status: Status; converted_bug_id: number | null } | undefined;
+  if (!o) throw new ObservationError(404, "Observation not found");
+  return { id: o.id, label: `OBS-${o.number}`, status: o.status, bugId: o.converted_bug_id };
+}
+
+/** Records a person's decision. It is kept when the agent sends the observation again, and it clears the "changed since review" mark. */
+function decide(id: number, status: Status): ObservationView {
+  db.prepare("UPDATE observations SET status = ?, status_set_by = 'human', status_changed_at = datetime('now'), changed_since_review = 0, updated_at = datetime('now') WHERE id = ?").run(status, id);
   return getObservation(id)!;
+}
+
+/** Why an observation in this status cannot be closed. */
+function cannotClose(o: ReturnType<typeof current>, to: "archived" | "resolved"): string {
+  const verb = to === "archived" ? "archived" : "marked as resolved";
+  if (o.status === "converted") return `${o.label} is already tracked as a bug report, so it cannot be ${verb}.`;
+  if (o.status === to) return `${o.label} is already ${to}.`;
+  return `${o.label} is ${o.status}. Reopen it first.`;
+}
+
+/** Sets one of the open statuses by hand (observed, needs_review, confirmed). Closing and reopening have their own actions. */
+export function setObservationStatus(id: number, status: unknown): ObservationView {
+  if (typeof status !== "string" || !(OPEN_STATUSES as readonly string[]).includes(status)) {
+    throw new ObservationError(400, `status must be one of: ${OPEN_STATUSES.join(", ")}. Use archive, resolve or reopen to close or reopen an observation.`);
+  }
+  const o = current(id);
+  if (!isOpen(o.status)) throw new ObservationError(409, `${o.label} is ${o.status}. ${o.status === "converted" ? "It is tracked as a bug report." : "Reopen it first."}`);
+  return decide(id, status as Status);
+}
+
+/** Archive: not a bug and nothing to follow up (a false positive, something that is only information, a duplicate). Only an open observation. */
+export function archiveObservation(id: number): ObservationView {
+  const o = current(id);
+  if (!isOpen(o.status)) throw new ObservationError(409, cannotClose(o, "archived"));
+  return decide(id, "archived");
+}
+
+/** Mark as resolved: fixed, or no longer relevant. Only an open observation. */
+export function resolveObservation(id: number): ObservationView {
+  const o = current(id);
+  if (!isOpen(o.status)) throw new ObservationError(409, cannotClose(o, "resolved"));
+  return decide(id, "resolved");
+}
+
+/** Back to needs_review, from archived or resolved. A converted one stays with its bug report, unless that report has been deleted. */
+export function reopenObservation(id: number): ObservationView {
+  const o = current(id);
+  const orphaned = o.status === "converted" && o.bugId == null;
+  if (o.status !== "archived" && o.status !== "resolved" && !orphaned) {
+    throw new ObservationError(409, o.status === "converted" ? `${o.label} is tracked as a bug report, so it cannot be reopened here.` : `${o.label} is ${o.status}, not closed.`);
+  }
+  return decide(id, "needs_review");
 }
 
 // ---------- Observation to bug ----------
@@ -280,7 +338,7 @@ const BUG_SEVERITY: Record<Severity, "low" | "medium" | "high" | "critical" | nu
 
 /**
  * A manual action. Makes a bug report (proposed, like every report until a person decides) from the observation and remembers which one. The observation stays,
- * with its own status. The evidence files are named in the report, not copied.
+ * with the status "converted". The evidence files are named in the report, not copied.
  */
 export function convertToBug(id: number): { bugId: number } {
   const o = getObservation(id);
@@ -302,7 +360,7 @@ export function convertToBug(id: number): { bugId: number } {
         VALUES (?, ?, ?, ?, ?, ?, ?, '[]', ?, 'manual') RETURNING id`)
       .get(projectId, o.auditId, o.agentAuditId, JSON.stringify({ observation: o.label, sourceId: o.sourceId }), o.label, payload.title, payload.description, payload.agentSeverity) as { id: number }).id;
     db.prepare("INSERT INTO bug_revisions (bug_report_id, rev, payload, content_hash) VALUES (?, 1, ?, ?)").run(bugId, JSON.stringify(payload), hashOf(payload));
-    db.prepare("UPDATE observations SET converted_bug_id = ?, updated_at = datetime('now') WHERE id = ?").run(bugId, id);
+    db.prepare("UPDATE observations SET converted_bug_id = ?, status = 'converted', status_set_by = 'human', status_changed_at = datetime('now'), changed_since_review = 0, updated_at = datetime('now') WHERE id = ?").run(bugId, id);
     return { bugId };
   })();
 }

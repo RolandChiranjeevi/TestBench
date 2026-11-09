@@ -3,15 +3,15 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ChevronDown, ChevronRight, Gauge } from "lucide-react";
 import { api } from "../api";
-import { Empty, ListSkeleton, Modal, useToast } from "../components/ui";
+import { Empty, ListSkeleton, Modal, useConfirm, useToast } from "../components/ui";
 
 type Kind = "load_test" | "security_review";
 type Severity = "info" | "low" | "medium" | "high" | "critical";
-type Status = "observed" | "needs_review" | "confirmed" | "resolved";
+type Status = "observed" | "needs_review" | "confirmed" | "resolved" | "archived" | "converted";
 interface EvidenceFile { ref: string; path: string; sha256: string | null; state: "ok" | "problem" | "unresolved"; reason: string }
 interface Observation {
   id: number; label: string; sourceId: string; auditId: number | null; agentAuditId: string; auditTitle: string;
-  kind: Kind; title: string; severity: Severity; status: Status; statusSetBy: "agent" | "human"; changedSinceReview: boolean;
+  kind: Kind; title: string; severity: Severity; status: Status; statusSetBy: "agent" | "human"; statusChangedAt: string | null; changedSinceReview: boolean;
   metric: string | null; value: number | null; threshold: number | null; evidence: string; recommendation: string; source: string;
   evidenceFiles: EvidenceFile[]; convertedBugId: number | null; createdAt: string; updatedAt: string;
 }
@@ -20,7 +20,11 @@ interface Listing { counts: Counts; items: Observation[] }
 
 const KINDS: [Kind, string][] = [["load_test", "Load test"], ["security_review", "Security review"]];
 const SEVERITIES: [Severity, string][] = [["critical", "Critical"], ["high", "High"], ["medium", "Medium"], ["low", "Low"], ["info", "Info"]];
-const STATUSES: [Status, string][] = [["observed", "Observed"], ["needs_review", "Needs review"], ["confirmed", "Confirmed"], ["resolved", "Resolved"]];
+const STATUSES: [Status, string][] = [["observed", "Observed"], ["needs_review", "Needs review"], ["confirmed", "Confirmed"], ["resolved", "Resolved"], ["archived", "Archived"], ["converted", "Converted"]];
+/** The statuses of an observation that is still being looked at. A person can set these by hand; the others close it or mean it is tracked as a bug. */
+const OPEN: Status[] = ["observed", "needs_review", "confirmed"];
+const isOpenStatus = (s: Status) => OPEN.includes(s);
+type Closing = "archive" | "resolve" | "reopen";
 const nameOf = (list: [string, string][], v: string) => list.find(([k]) => k === v)?.[1] ?? v;
 const tone = (s: Severity) => (s === "critical" || s === "high" ? "hi" : s === "medium" ? "mid" : "lo");
 const anchor = (label: string) => `obs-${label}`;
@@ -43,6 +47,29 @@ function FilterGroup({ label, options, counts, value, onChange }: { label: strin
 }
 
 /**
+ * The status chips. "Active" (no `status` in the address) is the working list: observed, needs review and confirmed. Archived, resolved and converted
+ * leave it, and each has a chip of its own while there are any. "All" shows everything.
+ */
+function StatusFilter({ counts, value, onChange }: { counts: Record<Status, number>; value: string; onChange: (v: string) => void }) {
+  const active = OPEN.reduce((n, k) => n + counts[k], 0);
+  const options: [string, string, number | null][] = [
+    ["", "Active", active],
+    ...STATUSES.filter(([k]) => counts[k] > 0 || k === value).map(([k, name]) => [k, name, counts[k]] as [string, string, number]),
+    ["all", "All", null],
+  ];
+  return (
+    <div className="obs-filter" role="group" aria-label="Status">
+      <span className="faint">Status</span>
+      {options.map(([k, name, n]) => (
+        <button key={k || "active"} className={`chip${value === k ? " on" : ""}`} aria-pressed={value === k} onClick={() => onChange(k)}>
+          {name}{n !== null ? <span className="faint"> {n}</span> : null}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
  * Results of load tests and security reviews that are not bugs: measurements, risks and findings that a person looks at. They have their own status
  * and are listed apart from the bug reports. Turning one into a bug is a decision made here, never automatic.
  */
@@ -56,6 +83,7 @@ export function ObservationsPage() {
   const status = sp.get("status") ?? "";
   const [open, setOpen] = useState<Set<number>>(new Set());
   const [converting, setConverting] = useState<Observation | null>(null);
+  const confirm = useConfirm();
   const setFilter = (key: string, v: string) => setSp((p) => { const n = new URLSearchParams(p); if (v) n.set(key, v); else n.delete(key); return n; }, { replace: true });
 
   const query = new URLSearchParams();
@@ -76,6 +104,23 @@ export function ObservationsPage() {
   }, [data]);
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["observations", pid] });
+  const closing = useMutation({
+    mutationFn: (v: { o: Observation; action: Closing }) => api.post<Observation>(`/api/observations/${v.o.id}/${v.action}`),
+    onSuccess: async (_r, v) => {
+      await refresh();
+      toast("success", v.action === "archive" ? `${v.o.label} archived. It is under the Archived filter.` : v.action === "resolve" ? `${v.o.label} marked as resolved. It is under the Resolved filter.` : `${v.o.label} reopened as needs review.`);
+    },
+    onError: (e: Error) => toast("error", e.message),
+  });
+  /** Closing and reopening ask first: the observation leaves the working list (or comes back to it). */
+  const close = async (o: Observation, action: Closing) => {
+    const text = {
+      archive: { title: `Archive ${o.label}?`, label: "Archive", body: "It leaves the active list. Use this when it is not a bug and there is nothing to follow up: a false positive, something that is only information, a duplicate. You can reopen it from the Archived filter." },
+      resolve: { title: `Mark ${o.label} as resolved?`, label: "Mark as resolved", body: "It has been fixed or is no longer relevant. It leaves the active list, and you can reopen it from the Resolved filter." },
+      reopen: { title: `Reopen ${o.label}?`, label: "Reopen", body: `It goes back to needs review and into the active list.` },
+    }[action];
+    if (await confirm({ title: text.title, body: <p style={{ margin: 0 }}>{text.body}</p>, confirmLabel: text.label })) closing.mutate({ o, action });
+  };
   const setStatus = useMutation({
     mutationFn: (v: { id: number; status: Status }) => api.patch<Observation>(`/api/observations/${v.id}`, { status: v.status }),
     onSuccess: refresh,
@@ -118,7 +163,7 @@ export function ObservationsPage() {
           <div className="obs-filters">
             <FilterGroup label="Kind" options={KINDS} counts={data.counts.kind} value={kind} onChange={(v) => setFilter("kind", v)} />
             <FilterGroup label="Severity" options={SEVERITIES} counts={data.counts.severity} value={severity} onChange={(v) => setFilter("severity", v)} />
-            <FilterGroup label="Status" options={STATUSES} counts={data.counts.status} value={status} onChange={(v) => setFilter("status", v)} />
+            <StatusFilter counts={data.counts.status} value={status} onChange={(v) => setFilter("status", v)} />
           </div>
           <div className="plan-table" role="list">
             <div className="plan-row obs-row plan-head" aria-hidden="true"><span /><span>ID</span><span>Observation</span><span className="c-type">Kind</span><span>Severity</span><span className="c-auto">Status</span></div>
@@ -132,7 +177,7 @@ export function ObservationsPage() {
                     <span className="plan-title">
                       {o.title}
                       {o.changedSinceReview && <span className="plan-unclear"> · changed since you reviewed it</span>}
-                      {o.convertedBugId && <span className="muted"> · bug report made</span>}
+                      {o.status === "converted" && <span className="muted"> · tracked as a bug report</span>}
                     </span>
                     <span className="muted c-type">{nameOf(KINDS, o.kind)}</span>
                     <span><span className={`plan-pri ${tone(o.severity)}`}>{nameOf(SEVERITIES, o.severity)}</span></span>
@@ -164,14 +209,31 @@ export function ObservationsPage() {
                       )}
                       {o.recommendation && <><h4>Recommendation</h4><p>{o.recommendation}</p></>}
                       <h4>Review</h4>
-                      {o.changedSinceReview && <p className="obs-bad">The agent sent new content after you set the status. Set the status again to mark it as reviewed.</p>}
+                      {o.changedSinceReview && <p className="obs-bad">The agent sent new content after you set the status.{isOpenStatus(o.status) ? " Set the status again to mark it as reviewed." : o.status === "converted" ? "" : " Reopen it to look at it again."}</p>}
                       <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                        <label className="faint" htmlFor={`st-${o.id}`}>Status</label>
-                        <select id={`st-${o.id}`} className="select" style={{ width: "auto" }} value={o.status} disabled={setStatus.isPending} onChange={(e) => setStatus.mutate({ id: o.id, status: e.target.value as Status })}>
-                          {STATUSES.map(([k, name]) => <option key={k} value={k}>{name}</option>)}
-                        </select>
-                        <span className="faint">{o.statusSetBy === "human" ? "set by a person" : "set by the agent"}</span>
+                        {isOpenStatus(o.status) ? (
+                          <>
+                            <label className="faint" htmlFor={`st-${o.id}`}>Status</label>
+                            <select id={`st-${o.id}`} className="select" style={{ width: "auto" }} value={o.status} disabled={setStatus.isPending} onChange={(e) => setStatus.mutate({ id: o.id, status: e.target.value as Status })}>
+                              {STATUSES.filter(([k]) => isOpenStatus(k)).map(([k, name]) => <option key={k} value={k}>{name}</option>)}
+                            </select>
+                            <span className="faint">{o.statusSetBy === "human" ? "set by a person" : "set by the agent"}</span>
+                          </>
+                        ) : o.status === "converted" ? (
+                          <span className="muted">{o.convertedBugId ? "Tracked as a bug report, so it cannot be archived or resolved here." : "Its bug report no longer exists."}</span>
+                        ) : (
+                          <span className="muted">{nameOf(STATUSES, o.status)}{o.statusChangedAt ? ` · ${o.statusChangedAt.slice(0, 10)}` : ""}{o.statusSetBy === "agent" ? " · set by the agent" : ""}</span>
+                        )}
                         <span className="spacer" />
+                        {isOpenStatus(o.status) && (
+                          <>
+                            <button className="btn sm" disabled={closing.isPending} onClick={() => close(o, "archive")}>Archive</button>
+                            <button className="btn sm" disabled={closing.isPending} onClick={() => close(o, "resolve")}>Mark as resolved</button>
+                          </>
+                        )}
+                        {(o.status === "archived" || o.status === "resolved" || (o.status === "converted" && !o.convertedBugId)) && (
+                          <button className="btn sm" disabled={closing.isPending} onClick={() => close(o, "reopen")}>Reopen</button>
+                        )}
                         {o.convertedBugId
                           ? <Link className="btn sm" to={`/p/${pid}/bugs?bug=${o.convertedBugId}`}>Open the bug report</Link>
                           : <button className="btn sm" onClick={() => setConverting(o)}>Convert to bug</button>}
@@ -181,9 +243,15 @@ export function ObservationsPage() {
                 </div>
               );
             })}
-            {items.length === 0 && <p className="faint" style={{ padding: 12, margin: 0 }}>No observation matches these filters.</p>}
+            {items.length === 0 && (
+              <p className="faint" style={{ padding: 12, margin: 0 }}>
+                {status === "" && !kind && !severity
+                  ? "Nothing is open. Archived, resolved and converted observations are under their own status filters."
+                  : "No observation matches these filters."}
+              </p>
+            )}
           </div>
-          <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>Showing {items.length} of {data.counts.total} observations. Click a row to open it.</div>
+          <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>Showing {items.length} of {data.counts.total} observations{status === "" ? " (open ones)" : ""}. Click a row to open it.</div>
         </div>
       </div>
       {converting && (
@@ -200,7 +268,7 @@ export function ObservationsPage() {
         >
           <div className="col" style={{ gap: 10 }}>
             <p style={{ margin: 0 }}>A bug report called "{converting.title}" is made from this observation. It starts as proposed under Bug reports, like any report from an agent, until you accept or reject it.</p>
-            <p className="muted" style={{ margin: 0 }}>The observation stays here with its own status. This can only be done once for each observation.</p>
+            <p className="muted" style={{ margin: 0 }}>The observation stays here with the status Converted, and can no longer be archived or resolved. This can only be done once for each observation.</p>
           </div>
         </Modal>
       )}
