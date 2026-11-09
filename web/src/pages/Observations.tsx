@@ -136,7 +136,8 @@ export function ObservationsPage() {
     onError: (e: Error) => toast("error", e.message),
   });
 
-  const head = <div className="topbar"><h1>Observations</h1></div>;
+  // The number beside the title is what the list shows now, after the status, kind and severity filters.
+  const head = <div className="topbar"><h1>Observations</h1>{data && <span className="chip" aria-label={`${items.length} shown`}>{items.length}</span>}</div>;
   if (isLoading) return <>{head}<div className="content"><ListSkeleton rows={4} /></div></>;
   if (isError || !data) return <>{head}<div className="content"><Empty icon={<AlertTriangle size={22} />} title="Could not load the observations">{(error as Error | null)?.message}</Empty></div></>;
   if (data.counts.total === 0) {
@@ -251,7 +252,7 @@ export function ObservationsPage() {
               </p>
             )}
           </div>
-          <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>Showing {items.length} of {data.counts.total} observations{status === "" ? " (open ones)" : ""}. Click a row to open it.</div>
+          <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>Showing {items.length} of {data.counts.total} in this project. Click a row to open it.</div>
         </div>
       </div>
       {converting && (
