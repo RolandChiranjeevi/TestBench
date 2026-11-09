@@ -430,7 +430,7 @@ function LinkRequirementsModal({ caseId, projectId, current, onClose }: { caseId
             <label key={r.id} className="list-row" style={{ height: 32, padding: "0 12px" }}>
               <input type="checkbox" className="checkbox" checked={selected.has(r.id)} onChange={() => toggle(r.id)} />
               <PriorityIcon priority={r.priority} />
-              <span className="mono muted" style={{ width: 62 }}>REQ-{r.number}</span>
+              <span className="mono muted key-col">REQ-{r.number}</span>
               <span className="title">{r.title}</span>
             </label>
           ))}

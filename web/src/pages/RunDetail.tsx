@@ -266,7 +266,7 @@ function ManualRun({ run }: { run: RunDetail }) {
               {g.items.map((r) => (
                 <div key={r.id} className={`list-row${r.id === selectedId ? " selected focused" : ""}`} style={{ padding: "0 16px" }} {...rowActivation(() => select(r.id), r.id === selectedId)}>
                   <StatusIcon status={r.status} />
-                  <span className="mono muted" style={{ width: 58, flexShrink: 0 }}>{run.project_key}-{r.case_number ?? "?"}</span>
+                  <span className="mono muted key-col">{run.project_key}-{r.case_number ?? "?"}</span>
                   <span className="title">{r.case_title ?? "Deleted case"}</span>
                   {r.jira_key && <span className="chip" title={`Linked Jira issue ${jiraLabel(r.jira_key)}`}><Bug size={10} /> {jiraLabel(r.jira_key)}</span>}
                 </div>

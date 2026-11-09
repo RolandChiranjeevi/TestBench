@@ -257,7 +257,9 @@ button.list-row { width: 100%; border: 0; border-bottom: 1px solid var(--border)
 button.list-row:hover { background: var(--bg-hover); }
 .list-row.selected { background: var(--bg-active); }
 .list-row.focused::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--accent); }
-.list-row .id { color: var(--text-3); width: 62px; flex-shrink: 0; }
+/* Case and requirement keys (SHOP-12, TPT1106-1) never wrap. 62px keeps the titles of short keys in line; a longer key makes its column wider instead of breaking in two. */
+.list-row .id, .key-col { min-width: 62px; flex-shrink: 0; white-space: nowrap; }
+.list-row .id { color: var(--text-3); }
 .list-row .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
 .list-row .meta { display: flex; align-items: center; gap: 6px; flex-shrink: 0; color: var(--text-3); font-size: var(--fs-sm); }
 
