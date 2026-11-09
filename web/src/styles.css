@@ -1,39 +1,39 @@
 :root {
   color-scheme: dark;
-  /* Dark green-gray surfaces with emerald as the accent (see mockup/DESIGN.md). */
-  --bg: #0b1110;
-  --bg-sidebar: #080d0c;
-  --bg-panel: #111a18;
-  --bg-elev: #172320;
-  --bg-hover: #1d2c28;
-  --bg-active: #22352f;
-  --bg-input: #0e1614;
-  --border: #243430;
-  --border-strong: #35504a;
-  --text: #e8f2ee;
-  --text-2: #b4c6bf;
-  --text-3: #9db2aa;
-  --text-4: #8aa097; /* the faintest text that still reads: 4.5:1 on every surface. Not for text: --untested, --border */
-  --accent: #10b981;
-  --accent-hover: #34d399;
-  --accent-soft: rgba(16, 185, 129, 0.16);
-  --accent-solid: #10b981;       /* a fill with --on-accent text on it (7.5:1); --accent stays for rings and icons */
-  --accent-solid-hover: #34d399;
-  --accent-text: #6ee7b7;        /* accent-coloured text: links, chips */
-  --on-accent: #04130e;          /* text on --accent-solid */
-  --on-status: #04130e;          /* text on a status fill (passed, failed, blocked, skipped), the same in both themes */
+  /* The logo's colours: navy surfaces, its orange as the accent, cream in the light theme. Green is only "passed". */
+  --bg: #0b121a;
+  --bg-sidebar: #080e15;
+  --bg-panel: #111b26;
+  --bg-elev: #172432;
+  --bg-hover: #1d2d3e;
+  --bg-active: #243a50;
+  --bg-input: #0e1620;
+  --border: #25374a;
+  --border-strong: #36506b;
+  --text: #eaf0f5;
+  --text-2: #b5c3d0;
+  --text-3: #9aaaba;
+  --text-4: #96a7b7; /* the faintest text that still reads: 4.5:1 on every surface. Not for text: --untested, --border */
+  --accent: #e78548;             /* the logo's orange */
+  --accent-hover: #f09a66;
+  --accent-soft: rgba(231, 133, 72, 0.16);
+  --accent-solid: #e78548;       /* a fill with --on-accent text on it (7.0:1); --accent stays for rings and icons */
+  --accent-solid-hover: #f09a66;
+  --accent-text: #f4a672;        /* accent-coloured text: links, chips */
+  --on-accent: #0b121a;          /* text on --accent-solid */
+  --on-status: #0b121a;          /* text on a status fill (passed, failed, blocked, skipped), the same in both themes */
   --danger-solid: #c23b3b;       /* fill behind white text on a destructive confirm button */
   --danger-solid-hover: #a93232;
   --passed: #34d399;
   --failed: #eb5757;
-  --blocked: #fbbf24;
-  --skipped: #8a9d95;
-  --untested: #5f726b;
+  --blocked: #f2c94c;
+  --skipped: #8a9bad;
+  --untested: #5f7080;
   --flaky: #d9a33f;
   /* Status colours as text. The plain ones above are for dots, icons and bars. */
   --passed-fg: #34d399;
-  --failed-fg: #f87171;
-  --blocked-fg: #fbbf24;
+  --failed-fg: #fb8383;
+  --blocked-fg: #f2c94c;
   --flaky-fg: #d9a33f;
   --critical: #eb5757;
   --shadow: 0 8px 30px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--border-strong);
@@ -53,46 +53,46 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     color-scheme: light;
-    --bg: #ffffff;
-    --bg-sidebar: #f3f8f6;
-    --bg-panel: #f8fbf9;
+    --bg: #faf9f5;
+    --bg-sidebar: #f1f0ea;         /* the logo's cream */
+    --bg-panel: #f6f5f0;
     --bg-elev: #ffffff;
-    --bg-hover: #edf4f1;
-    --bg-active: #e2ece8;
+    --bg-hover: #e8e7e0;
+    --bg-active: #deddd5;
     --bg-input: #ffffff;
-    --border: #dfe8e4;
-    --border-strong: #cfdbd6;
-    --text: #14201c;
-    --text-2: #34463f;
-    --text-3: #4d6159;
-    --text-4: #566a62;
-    --accent: #059669;
-    --accent-hover: #047857;
-    --accent-soft: rgba(5, 150, 105, 0.1);
-    --accent-solid: #047857;       /* white text on it: 5.5:1 */
-    --accent-solid-hover: #065f46;
-    --accent-text: #065f46;
+    --border: #dddbd2;
+    --border-strong: #c9c7bc;
+    --text: #14202c;
+    --text-2: #2f4152;
+    --text-3: #485b6d;
+    --text-4: #4a5d72;
+    --accent: #b04a14;
+    --accent-hover: #9a4310;
+    --accent-soft: rgba(176, 74, 20, 0.1);
+    --accent-solid: #b04a14;       /* white text on it: 5.5:1 */
+    --accent-solid-hover: #9a4310;
+    --accent-text: #8c3d0e;
     --on-accent: #ffffff;
     --danger-solid: #c23b3b;
     --danger-solid-hover: #a93232;
-    --passed-fg: #047857;
-    --failed-fg: #a23c3c;
-    --blocked-fg: #8a5a00;
+    --passed-fg: #05694c;
+    --failed-fg: #b42323;
+    --blocked-fg: #7a4f00;
     --flaky-fg: #7c5d24;
-    --skipped: #93a59e;
-    --untested: #b8c6c0;
-    --shadow: 0 8px 30px rgba(20, 30, 25, 0.12), 0 0 0 1px var(--border-strong);
+    --skipped: #a0acb8;
+    --untested: #bcc5ce;
+    --shadow: 0 8px 30px rgba(20, 32, 44, 0.12), 0 0 0 1px var(--border-strong);
   }
 }
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #ffffff; --bg-sidebar: #f3f8f6; --bg-panel: #f8fbf9; --bg-elev: #ffffff; --bg-hover: #edf4f1; --bg-active: #e2ece8;
-  --bg-input: #ffffff; --border: #dfe8e4; --border-strong: #cfdbd6; --text: #14201c; --text-2: #34463f; --text-3: #4d6159;
-  --text-4: #566a62; --accent: #059669; --accent-hover: #047857; --accent-soft: rgba(5, 150, 105, 0.1); --skipped: #93a59e;
-  --accent-solid: #047857; --accent-solid-hover: #065f46; --accent-text: #065f46; --on-accent: #ffffff;
+  --bg: #faf9f5; --bg-sidebar: #f1f0ea; --bg-panel: #f6f5f0; --bg-elev: #ffffff; --bg-hover: #e8e7e0; --bg-active: #deddd5;
+  --bg-input: #ffffff; --border: #dddbd2; --border-strong: #c9c7bc; --text: #14202c; --text-2: #2f4152; --text-3: #485b6d;
+  --text-4: #4a5d72; --accent: #b04a14; --accent-hover: #9a4310; --accent-soft: rgba(176, 74, 20, 0.1); --skipped: #a0acb8;
+  --accent-solid: #b04a14; --accent-solid-hover: #9a4310; --accent-text: #8c3d0e; --on-accent: #ffffff;
   --danger-solid: #c23b3b; --danger-solid-hover: #a93232;
-  --passed-fg: #047857; --failed-fg: #a23c3c; --blocked-fg: #8a5a00; --flaky-fg: #7c5d24;
-  --untested: #b8c6c0; --shadow: 0 8px 30px rgba(20, 30, 25, 0.12), 0 0 0 1px var(--border-strong);
+  --passed-fg: #05694c; --failed-fg: #b42323; --blocked-fg: #7a4f00; --flaky-fg: #7c5d24;
+  --untested: #bcc5ce; --shadow: 0 8px 30px rgba(20, 32, 44, 0.12), 0 0 0 1px var(--border-strong);
 }
 
 * { box-sizing: border-box; }
@@ -145,6 +145,10 @@ a { color: inherit; text-decoration: none; }
   width: 20px; height: 20px; border-radius: var(--radius); display: grid; place-items: center; flex-shrink: 0;
   background: var(--accent-solid); color: var(--on-accent); font-size: var(--fs-sm); font-weight: 700;
 }
+/* The Testbench logo at the top of the sidebar. The image is cream on purpose: it stays as drawn in both themes. */
+.brand { display: flex; align-items: center; gap: 8px; padding: 4px 8px 10px; }
+.brand img { width: 28px; height: 28px; border-radius: 7px; flex-shrink: 0; }
+.brand-name { font-size: var(--fs-lg); font-weight: 600; letter-spacing: -0.01em; }
 .sidebar-footer { margin-top: auto; padding: 8px; color: var(--text-4); font-size: var(--fs-sm); }
 /* The backup reminder is a link to Settings, Data. At least 28px high, and it stays a full-size target when the sidebar is collapsed to icons. */
 .backup-nudge { display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 6px; margin-bottom: 4px; border-radius: var(--radius); color: var(--text-3); }
@@ -446,7 +450,9 @@ table.table { width: 100%; border-collapse: collapse; }
   .sidebar .nav-label, .sidebar .nav-item .count, .project-switch .truncate, .project-switch > svg, .sidebar .footer-text { display: none; }
   .sidebar > .sidebar-section { height: 1px; width: 28px; padding: 0; margin: 8px 0; background: var(--border); font-size: 0; }
   .sidebar > .nav-item { width: 40px; height: 34px; padding: 0; justify-content: center; }
-  .sidebar > div:first-child { width: 100%; display: flex; justify-content: center; }
+  .sidebar > .brand, .sidebar > .project-wrap { width: 100%; display: flex; justify-content: center; }
+  .brand { padding: 4px 0 8px; }
+  .brand-name { display: none; }
   .project-switch { width: 40px; padding: 0; justify-content: center; }
   .sidebar-footer { padding: 8px 0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
   .backup-nudge { width: 40px; justify-content: center; padding: 0; margin-bottom: 0; }

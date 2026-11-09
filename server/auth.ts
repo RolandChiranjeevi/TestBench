@@ -104,8 +104,8 @@ const LOGIN_PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign in · Testbench</title>
 <style>
-  :root { color-scheme: dark light; --bg:#0b1110; --card:#111a18; --text:#e8f2ee; --muted:#9db2aa; --border:#243430; --accent:#10b981; --on-accent:#04130e; --err:#f87171; }
-  @media (prefers-color-scheme: light) { :root { --bg:#f3f8f6; --card:#fff; --text:#14201c; --muted:#4d6159; --border:#dfe8e4; --accent:#047857; --on-accent:#fff; --err:#b42323; } }
+  :root { color-scheme: dark light; --bg:#0b121a; --card:#111b26; --text:#eaf0f5; --muted:#9aaaba; --border:#25374a; --accent:#e78548; --on-accent:#0b121a; --err:#fb8383; }
+  @media (prefers-color-scheme: light) { :root { --bg:#f1f0ea; --card:#fff; --text:#14202c; --muted:#485b6d; --border:#dddbd2; --accent:#b04a14; --on-accent:#fff; --err:#b42323; } }
   * { box-sizing: border-box; }
   body { margin:0; min-height:100vh; display:grid; place-items:center; background:var(--bg); color:var(--text); font:14px/1.45 -apple-system, "Helvetica Neue", Arial, sans-serif; }
   form { width:min(340px, calc(100vw - 32px)); background:var(--card); border:1px solid var(--border); border-radius:10px; padding:24px; }
