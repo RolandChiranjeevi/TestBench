@@ -1,0 +1,6 @@
+TPI-032 attempt 1 (keyboard only), TP-Auditors, 2026-11-09
+12:54:50Z focus reached #name by 5 x Tab; typed TP-Key; Enter in the Name field -> "Added" (#242 POST c1/competitors 201). Keyboard add works.
+Script misstep: after typing TP-Key in Competitor, ArrowDown + Enter picked an option and the app moved focus forward on its own;
+the script's next Tab landed on "Save score" (expected: Event). Its Enter then sent #245 POST c1/score {"name":"TP-Key","event":"100m","raw":null} -> 400 "Result is required" (nothing stored).
+Later keys: '11.50' typed while focus was on 'Export CSV' (no effect); Enter on 'Save state' -> GET c1/state 200 and a download (read-only, not used as evidence).
+No data changed except the intended TP-Key add. One save attempt counted (rejected).

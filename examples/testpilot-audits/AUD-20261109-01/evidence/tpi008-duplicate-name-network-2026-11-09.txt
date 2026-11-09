@@ -1,0 +1,9 @@
+TPI-008 duplicate competitor names in TP-Auditors, 2026-11-09
+Selector before: "TP-Auditors · Decathlon (5)" (TP-A1, TP-Bnd, TP-A2, TP-A3, TP-LLL...200)
+12:50:51.966Z add "TP-Dup" -> UI "Added"   #179 POST /api/competitions/c1/competitors {"name":"TP-Dup"} -> 201, content-length 0
+12:50:52.609Z add "TP-Dup" -> UI "Added"   #181 POST /api/competitions/c1/competitors {"name":"TP-Dup"} -> 201, content-length 0
+Standings right after: one TP-Dup row only (rows: TP-A1, TP-Bnd, TP-A2, TP-A3, TP-LLL..., TP-Dup); TP-Dup rows carry only data-name="TP-Dup".
+Picker ('Show all competitors'): one option TP-Dup (data-name TP-Dup).
+12:51:20Z after page reload: selector "TP-Auditors · Decathlon (6)", one TP-Dup row.
+Expected (REQ-LOCAL-002, user decision): duplicates allowed, each its own row and selectable on its own.
+Actual: the second add is answered 201 and "Added" but no second competitor exists. The API identifies competitors by name in score, rename and remove requests ({"name": ...}), so two competitors with the same name cannot be told apart.

@@ -1,0 +1,15 @@
+TPI-017/018 heptathlon scoring in TP-Auditors-H - expected (World Athletics formula, floor) vs app, 2026-11-09
+TP-A4      typed   expected  app msg (time)        table
+100mH      13.50   1050      1050 (12:43:51Z)      1050
+highJump   180     978       978 (12:43:51Z)       978
+shotPut    14.00   794       794 (12:43:52Z)       794
+200m       24.00   981       981 (12:43:52Z)       981
+longJump   630     943       943 (12:43:53Z)       943
+javelin    45.00   763       763 (12:43:53Z)       763
+800m       2:12    936       936 (12:43:54Z)       936
+TOTAL              6445      Total 6445, Pos 1
+TP-A5
+200m       24,50   933       933 (12:44:25Z)       933   (decimal comma accepted)
+800m       135.5   886       886 (12:44:26Z)       886   (seconds form for a minute event)
+TOTAL              1819      Total 1819, Pos 2
+Discipline select is fixed to Heptathlon (disabled) in this competition; event list has the 7 heptathlon events.

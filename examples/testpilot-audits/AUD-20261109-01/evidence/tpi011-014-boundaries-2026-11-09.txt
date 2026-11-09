@@ -1,0 +1,16 @@
+TPI-011..014 TP-Bnd in TP-Auditors, 2026-11-09 (overwrite answer 'no' was never needed: no dialog appeared)
+time       event     typed  UI result                                                          points check (formula, floor)
+12:47:48Z  100m      9.57   err 'Faster than the world record for 100m: 9.58 s'               -
+12:47:49Z  100m      9.58   'Saved: 1202 pts'                                                  1202 ok
+12:47:50Z  longJump  896    err 'Beyond the world record for Long Jump: 895 cm'               -
+12:47:50Z  longJump  895    'Saved: 1312 pts'                                                  1312 ok
+12:47:51Z  highJump  246    err 'Beyond the world record for High Jump: 245 cm'               -
+12:47:51Z  highJump  245    'Saved: 1244 pts'                                                  1244 ok
+12:47:52Z  shotPut   10,5   'Saved: 516 pts'                                                   516 ok (10.5 m)
+12:47:52Z  1500m     270    'Saved: 745 pts'                                                   745 ok (= 4:30)
+12:47:53Z  1500m     4:75   err 'Enter the result in seconds (163) or as minutes:seconds (2:43).'  -
+12:47:53Z  1500m     4:     err 'Enter the result in seconds (163) or as minutes:seconds (2:43).'  -
+Stored values read from the Edit dialog (opened and cancelled, no change): 100m 9.58 | 1500m 4:30 | Long Jump 895 | High Jump 245 | Shot Put 10.5
+Row after 100m 9.58: '4 | TP-Bnd | 1202' below '2 TP-A2 2251' and '2 TP-A3 2251' -> position 3 skipped after the tie.
+Final TP-Bnd total 5019 (= 1202+1312+1244+516+745).
+Console: 3 new 'Failed to load resource: 400' errors (the three world-record rejections reached the server); 4:75 and 4: produced no console error (rejected in the browser).

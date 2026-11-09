@@ -1,0 +1,14 @@
+TPI-029..031 Load state, always with "TP-Auditors · Decathlon (6)" selected (checked before each load), 2026-11-09
+TPI-029
+ 12:53:44Z TP-A2 100m 11.00: overwrite dialog "TP-A2 already has a result for 100m (s): 11.2 (817 pts). Replace it with 11?" -> Yes -> "Saved: 861 pts"; row 3|TP-A2|2295
+ 12:53:45Z Load state with tpi028-save-state-tp-auditors-2026-11-09.json -> "State loaded"; no confirmation dialog before replacing data
+ After: 1 TP-A1 8229 | 2 TP-Bnd 5019 | 3 TP-A2 2251 (100m 817) | 3 TP-A3 2251 | – TP-LLL... 0 | – TP-Dup 0  = identical to the saved state
+TPI-030
+ 12:53:57Z Load state with tpi030-load-state-truncated-input-2026-11-09.json (first 653 of 1307 bytes, invalid JSON)
+ -> #error "Invalid saved state: the file is not a valid save"; rows unchanged; unchanged after reload
+TPI-031
+ 12:53:58Z Load state with tpi031-load-state-edited-input-2026-11-09.json (TP-A1 100m = -5, extra "fooEvent": 1)
+ -> #error "Invalid saved state: Result cannot be negative"; rows unchanged (TP-A1 still 906 / 8229); unchanged after reload
+ Note: the message names the negative value; whether the unknown event alone would be rejected was not tested separately.
+Console: 2 new error entries during the rejected loads (see console log evidence in TPI-038).
+Load state attempts used: 3 of 3.

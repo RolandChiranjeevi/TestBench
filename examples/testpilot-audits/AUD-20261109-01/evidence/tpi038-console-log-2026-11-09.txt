@@ -1,0 +1,13 @@
+[ 6257566ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ http://localhost:8080/api/competitions/c1/competitors:0
+[ 6258376ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ http://localhost:8080/api/competitions/c1/competitors:0
+[ 6522015ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ http://localhost:8080/api/competitions/c1/score:0
+[ 6523090ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ http://localhost:8080/api/competitions/c1/score:0
+[ 6523623ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ http://localhost:8080/api/competitions/c1/score:0
+[ 6572936ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ http://localhost:8080/api/competitions/c1/score:0
+[ 6573860ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ http://localhost:8080/api/competitions/c1/score:0
+[ 6574901ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ http://localhost:8080/api/competitions/c1/score:0
+[ 6660348ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ http://localhost:8080/api/competitions/c1/competitors:0
+[ 6940941ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ http://localhost:8080/api/competitions/c1/state:0
+[ 6942783ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ http://localhost:8080/api/competitions/c1/state:0
+[ 6996209ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ http://localhost:8080/api/competitions/c1/score:0
+[ 7134631ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ http://localhost:8080/api/competitions/c1/score:0
