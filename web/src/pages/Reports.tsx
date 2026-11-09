@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, Calendar, Check, ExternalLink, FileDown, FileJson, FileSpreadsheet, FileText, Loader2, Plus, Rocket, Trash2, Zap } from "lucide-react";
 import { api, type ChecklistItem, type Milestone } from "../api";
-import { Empty, Modal, useToast, ListSkeleton } from "../components/ui";
+import { Empty, Modal, useConfirm, useToast, ListSkeleton } from "../components/ui";
 
 type MilestoneEdit = Partial<{ name: string; kind: string; startDate: string | null; endDate: string | null }>;
 
@@ -13,6 +13,7 @@ const fmtRange = (m: Milestone) => {
 };
 
 export function ReportsPage() {
+  const confirm = useConfirm();
   const { pid, mid } = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -121,7 +122,7 @@ export function ReportsPage() {
             </Empty>
           ) : current ? (
             <>
-              <MilestoneBar key={current.id} m={current} onChange={(b) => update.mutate(b)} onDelete={() => confirm(`Delete "${current.name}"? It has no runs.`) && remove.mutate()} />
+              <MilestoneBar key={current.id} m={current} onChange={(b) => update.mutate(b)} onDelete={async () => (await confirm({ title: `Delete "${current.name}"?`, body: <p style={{ margin: 0 }}>It has no runs.</p>, confirmLabel: "Delete" })) && remove.mutate()} />
               <ChecklistPanel key={`cl-${current.id}`} milestone={current} others={milestones.filter((m) => m.id !== current.id)} onChanged={() => setNonce((n) => n + 1)} />
               <div style={{ flex: 1, minHeight: 0, padding: 16, display: "flex", justifyContent: "center" }}>
                 {current.run_count === 0 ? (
