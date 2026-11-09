@@ -104,8 +104,8 @@ const LOGIN_PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign in · Testbench</title>
 <style>
-  :root { color-scheme: dark light; --bg:#0f1011; --card:#17181a; --text:#e6e6e6; --muted:#8a8f98; --border:#2a2c30; --accent:#5a66d8; --err:#ef6b6b; }
-  @media (prefers-color-scheme: light) { :root { --bg:#f7f7f8; --card:#fff; --text:#1d2027; --muted:#6b707a; --border:#dfe2e7; --accent:#5b5fe0; --err:#d23b3b; } }
+  :root { color-scheme: dark light; --bg:#0b1110; --card:#111a18; --text:#e8f2ee; --muted:#9db2aa; --border:#243430; --accent:#10b981; --on-accent:#04130e; --err:#f87171; }
+  @media (prefers-color-scheme: light) { :root { --bg:#f3f8f6; --card:#fff; --text:#14201c; --muted:#4d6159; --border:#dfe8e4; --accent:#047857; --on-accent:#fff; --err:#b42323; } }
   * { box-sizing: border-box; }
   body { margin:0; min-height:100vh; display:grid; place-items:center; background:var(--bg); color:var(--text); font:14px/1.45 -apple-system, "Helvetica Neue", Arial, sans-serif; }
   form { width:min(340px, calc(100vw - 32px)); background:var(--card); border:1px solid var(--border); border-radius:10px; padding:24px; }
@@ -114,7 +114,7 @@ const LOGIN_PAGE = `<!doctype html>
   label { display:block; margin-bottom:6px; font-weight:500; }
   input { width:100%; height:36px; padding:0 10px; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--text); font:inherit; }
   input:focus { outline:2px solid var(--accent); outline-offset:-1px; }
-  button { margin-top:14px; width:100%; height:36px; border:0; border-radius:6px; background:var(--accent); color:#fff; font:inherit; font-weight:600; cursor:pointer; }
+  button { margin-top:14px; width:100%; height:36px; border:0; border-radius:6px; background:var(--accent); color:var(--on-accent); font:inherit; font-weight:600; cursor:pointer; }
   button:disabled { opacity:.6; cursor:default; }
   #err { min-height:20px; margin-top:10px; color:var(--err); font-size:13px; }
 </style></head>
