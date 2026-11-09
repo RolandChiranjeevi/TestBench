@@ -127,7 +127,7 @@ for k, v in (('BASE', g['baseUrl'].rstrip('/')), ('PID', str(p['projectId'])),
     print(f"{k}={shlex.quote(v)}")
 PY
 )"
-case "$BASE" in http://localhost*|http://127.0.0.1*|http://\[::1\]*|[https://*](https://*)) ;;
+case "$BASE" in http://localhost*|http://127.0.0.1*|http://\[::1\]*|https://*) ;;
   *) echo "Refusing plain http to a non-local host"; exit 1;; esac
 [ -f "${AUD}-testbench.zip" ] || { echo "zip missing"; exit 1; }
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
@@ -142,7 +142,7 @@ if not pw and os.path.isfile(".env"):
         line = line.rstrip("\n")
         if line.startswith(name + "="):
             pw = line[len(name) + 1:]
-            if len(pw) >= 2 and pw == pw[-1] and pw in "\"\x27": pw = pw[1:-1]
+            if len(pw) >= 2 and pw[0] == pw[-1] and pw[0] in "\"\x27": pw = pw[1:-1]
 if not pw: sys.stderr.write("password variable not set\n"); sys.exit(2)
 print(json.dumps({"password": pw}))
 '
@@ -165,8 +165,8 @@ DRY=$(curl -sS -o "$WORK/dry.json" -w '%{http_code}' -b "$WORK/jar" -H 'X-Testbe
 echo "dry-run HTTP $DRY"
 python3 -I - "$WORK/dry.json" "$DRY" <<'PY'
 import json, sys
-r = json.load(open(sys.argv))[1]
-if sys.argv != "200":[2]
+r = json.load(open(sys.argv[1]))
+if sys.argv[2] != "200":
     print("ERROR:", r.get("error", r)); sys.exit(1)
 a = r["audit"]; mt = r["manualTests"]
 print(f"audit: {a['agentAuditId']} | isNew={a['isNew']} | auditId={r['auditId']} | dryRun={r['dryRun']}")
