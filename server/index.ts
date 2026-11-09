@@ -41,6 +41,7 @@ import { importRequirements, RequirementImportError } from "./reqimport.ts";
 import { requirementCoverage } from "./reqlinks.ts";
 import { normViewports, normWcag, viewportSchema, wcagCriterion, type Viewport } from "./shapes.ts";
 import { LIMITS as AUDIT_LIMITS, PackageError } from "./importers/auditpackage.ts";
+import { convertToBug, getObservation, importObservations, listObservations, ObservationError, setObservationStatus } from "./observations.ts";
 import { listCases } from "./newcases.ts";
 import { LOGGER_OPTIONS } from "./logging.ts";
 import { authenticateAgentToken, createAgentToken, listAgentTokens, revokeAgentToken } from "./agenttokens.ts";
@@ -923,6 +924,31 @@ app.post("/api/projects/:id/audit-import", async (req) => {
   if (!zip && !loose.size) throw new HttpError(400, "Choose a zip file or a folder with the audit package");
   return audited(() => importAuditPackage(zip ?? bagFromFiles(loose), { projectId, source: "upload" }, { dryRun }));
 });
+
+// ---- Observations: results of load tests and security reviews that are not bugs. Their own list and status model; turning one into a bug is a manual action. ----
+const asObservationHttp = (e: unknown) => (e instanceof ObservationError ? new HttpError(e.status, e.message, e.problems) : e);
+function observed<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (e) {
+    throw asObservationHttp(e);
+  }
+}
+
+// A JSON array of observations (or { observations, evidence } to translate EV-... labels). ?dryRun=1 only reports what would happen.
+app.post("/api/projects/:id/observations", { bodyLimit: 6 * 1024 * 1024 }, (req) =>
+  observed(() => importObservations(idParam(req), req.body, { dryRun: (req.query as { dryRun?: string }).dryRun === "1" })));
+
+app.get("/api/projects/:id/observations", (req) => {
+  const q = req.query as Record<string, string | undefined>;
+  return observed(() => listObservations(idParam(req), { kind: q.kind || undefined, severity: q.severity || undefined, status: q.status || undefined, audit: Number(q.audit) || undefined, q: q.q }));
+});
+
+app.get("/api/observations/:id", (req) => must(getObservation(idParam(req)), "Observation"));
+
+app.patch("/api/observations/:id", (req) => observed(() => setObservationStatus(idParam(req), (req.body as { status?: unknown } | null)?.status)));
+
+app.post("/api/observations/:id/convert-to-bug", (req) => observed(() => convertToBug(idParam(req))));
 
 app.get("/api/projects/:id/bug-reports", (req) => {
   const q = req.query as Record<string, string | undefined>;
