@@ -10,7 +10,7 @@ import {
   type Attachment, type ResultDetail, type RunDetail, type RunResult, type Status,
 } from "../api";
 import { Bug, Pencil } from "lucide-react";
-import { Empty, FrameworkBadge, Github, Kbd, PriorityIcon, ProgressBar, StatusIcon, STATUS_LABEL, useHotkeys, useToast, ListSkeleton } from "../components/ui";
+import { Empty, FrameworkBadge, Github, Kbd, PriorityIcon, ProgressBar, StatusIcon, STATUS_LABEL, rowActivation, useHotkeys, useToast, ListSkeleton } from "../components/ui";
 import { AutomatedDetail } from "./AutomatedDetail";
 import { NewRunModal } from "./Runs";
 import { BugReportModal, jiraLabel, jiraUrl } from "./BugReport";
@@ -263,7 +263,7 @@ function ManualRun({ run }: { run: RunDetail }) {
             <div key={gi}>
               <div className="group-header" style={{ padding: "0 16px" }}>{g.name}<span className="count">{g.items.length}</span></div>
               {g.items.map((r) => (
-                <div key={r.id} className={`list-row${r.id === selectedId ? " selected focused" : ""}`} style={{ padding: "0 16px" }} onClick={() => select(r.id)}>
+                <div key={r.id} className={`list-row${r.id === selectedId ? " selected focused" : ""}`} style={{ padding: "0 16px" }} {...rowActivation(() => select(r.id), r.id === selectedId)}>
                   <StatusIcon status={r.status} />
                   <span className="mono muted" style={{ width: 58, flexShrink: 0 }}>{run.project_key}-{r.case_number ?? "?"}</span>
                   <span className="title">{r.case_title ?? "Deleted case"}</span>
@@ -628,7 +628,7 @@ function AutomatedRun({ run }: { run: RunDetail }) {
                 const isOpen = open.has(r.id);
                 return (
                   <div key={r.id}>
-                    <div className="list-row" onClick={() => expandable && toggle(r.id)} style={{ cursor: expandable ? "pointer" : "default" }}>
+                    <div className="list-row" {...(expandable ? { ...rowActivation(() => toggle(r.id)), "aria-expanded": isOpen } : {})} style={{ cursor: expandable ? "pointer" : "default" }}>
                       <span style={{ width: 12, display: "grid", color: "var(--text-4)" }}>
                         {expandable && (isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />)}
                       </span>

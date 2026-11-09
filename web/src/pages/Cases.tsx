@@ -3,7 +3,7 @@ import { useLocation, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, BookOpenCheck, Bot, ClipboardList, Copy, Folder, FolderOpen, Inbox, Lightbulb, ListChecks, MoreHorizontal, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
 import { api, orderSuites, parseDate, type BackupInfo, type CaseDetail, type CaseSummary, type Project, type RequirementDetail, type Suite } from "../api";
-import { ConfirmModal, Empty, Kbd, Modal, PriorityIcon, StatusIcon, useHotkeys, useToast, ListSkeleton } from "../components/ui";
+import { ConfirmModal, Empty, Kbd, Modal, PriorityIcon, StatusIcon, rowActivation, useHotkeys, useToast, ListSkeleton } from "../components/ui";
 import { caseCounts, filterCases, openedFromProposal, type CaseTab } from "../caseFilter";
 import { CaseEditor } from "./CaseEditor";
 import { NewRunModal } from "./Runs";
@@ -394,7 +394,8 @@ export function CasesPage() {
                         setCaseDrag(ids);
                       }}
                       onDragEnd={() => { setCaseDrag(null); setDrop(null); }}
-                      onClick={() => { setFocus(idx); select(c.id); }}
+                      {...rowActivation(() => { setFocus(idx); select(c.id); }, selectedId === c.id)}
+                      onFocus={(e) => { if (e.target === e.currentTarget) setFocus(idx); }}
                     >
                       <input
                         type="checkbox"

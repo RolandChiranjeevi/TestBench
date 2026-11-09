@@ -3,7 +3,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Archive, ArchiveRestore, BookOpenCheck, Bug, Check, ClipboardCheck, Download, ExternalLink, FileText, History, ImagePlus, Link2, Loader2, Paperclip, Play, Plus, Search, Trash2, Upload, X } from "lucide-react";
 import { api, formatViewport, KIND_LABEL, parseViewports, timeAgo, type CoverageState, type Priority, type Project, type Requirement, type RequirementKind, type RequirementAttachment, type RequirementDetail, type RequirementRevision, type RequirementStatus } from "../api";
-import { Empty, Kbd, Modal, PriorityIcon, PRIORITY_LABEL, StatusIcon, useHotkeys, useToast, ListSkeleton } from "../components/ui";
+import { Empty, Kbd, Modal, PriorityIcon, PRIORITY_LABEL, StatusIcon, rowActivation, useHotkeys, useToast, ListSkeleton } from "../components/ui";
 import { CasePicker } from "../components/CasePicker";
 import { jiraLabel, jiraUrl } from "./BugReport";
 import { NewRunModal } from "./Runs";
@@ -148,7 +148,7 @@ export function RequirementsPage() {
             )
           ) : (
             visible.map((r) => (
-              <div key={r.id} className={`list-row${selectedId === r.id ? " selected" : ""}`} onClick={() => select(r.id)}>
+              <div key={r.id} className={`list-row${selectedId === r.id ? " selected" : ""}`} {...rowActivation(() => select(r.id), selectedId === r.id)}>
                 <PriorityIcon priority={r.priority} />
                 <span className="id mono" style={{ width: 62 }}>REQ-{r.number}</span>
                 <span className="title" style={r.status === "deprecated" ? { textDecoration: "line-through", color: "var(--text-3)" } : undefined}>{r.title}</span>

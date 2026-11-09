@@ -198,6 +198,7 @@ function ProjectLayout() {
 
   return (
     <div className="app">
+      <a className="skip-link" href="#main" onClick={(e) => { e.preventDefault(); document.getElementById("main")?.focus(); }}>Skip to content</a>
       <header className="mobile-bar">
         <button className="btn ghost icon" aria-label="Open navigation menu" aria-expanded={navOpen} onClick={() => setNavOpen(true)}>
           <Menu size={18} />
@@ -261,7 +262,7 @@ function ProjectLayout() {
           <span className="footer-text">{project.case_count} cases · {project.run_count} runs</span>
         </div>
       </aside>
-      <main className="main">
+      <main className="main" id="main" tabIndex={-1}>
         <Outlet />
       </main>
       {creating && <NewProjectModal onClose={() => setCreating(false)} />}
