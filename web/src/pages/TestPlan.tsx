@@ -1,7 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ClipboardList, Copy, Download } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronRight, ClipboardList, Copy, Download } from "lucide-react";
 import { api } from "../api";
 import { Empty, ListSkeleton, useToast } from "../components/ui";
 
@@ -18,14 +18,6 @@ interface PlanView {
 interface AuditRow { id: number; agentAuditId: string; title: string; planItems: number; coverageGaps: number }
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
-const countBy = (items: PlanItem[], pick: (x: PlanItem) => string) => {
-  const m = new Map<string, number>();
-  for (const x of items) {
-    const k = pick(x) || "unspecified";
-    m.set(k, (m.get(k) ?? 0) + 1);
-  }
-  return [...m.entries()].map(([k, n]) => `${n} ${k}`).join(", ");
-};
 const refName = (r: PlanLink) => (r.requirementId ? r.label : r.raw);
 const anchor = (id: string) => `plan-${id.replace(/[^A-Za-z0-9_-]/g, "-")}`;
 
@@ -54,20 +46,37 @@ export function planToMarkdown(d: PlanView): string {
   return L.join("\n").replace(/\n+$/, "\n");
 }
 
-/** The test plan of an audit as a document: headings, lists and numbered steps, the way TestPilot wrote it. A read-only mirror; the latest import of the audit replaces it. */
+const tone = (priority: string) => /^(p0|p1|critical|high)$/i.test(priority) ? "hi" : /^(p2|medium)$/i.test(priority) ? "mid" : "lo";
+const byPriority = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true });
+const isAutomated = (x: PlanItem) => /^yes/i.test(x.automation);
+
+/** The test plan of an audit as a table you can scan: a summary, what was not verified, filters, and one row per plan item that opens to its steps. A read-only mirror; the latest import of the audit replaces it. */
 export function TestPlanPage() {
   const { pid = "" } = useParams();
   const [sp, setSp] = useSearchParams();
   const toast = useToast();
+  const [priority, setPriority] = useState("");
+  const [type, setType] = useState("");
+  const [unclear, setUnclear] = useState(false);
+  const [open, setOpen] = useState<Set<string>>(new Set());
   const { data: audits, isLoading } = useQuery({ queryKey: ["audits", pid], queryFn: () => api.get<AuditRow[]>(`/api/projects/${pid}/audits`) });
   const withPlan = (audits ?? []).filter((a) => a.planItems + a.coverageGaps > 0);
   const wanted = Number(sp.get("audit"));
   const audit = withPlan.find((a) => a.id === wanted) ?? withPlan[0];
   const { data, isLoading: planLoading } = useQuery({ queryKey: ["audit-plan", audit?.id], enabled: !!audit, queryFn: () => api.get<PlanView>(`/api/audits/${audit!.id}/plan`) });
 
-  // A link such as #plan-TPI-004 scrolls to its item once the plan has loaded.
+  const items = data?.planItems ?? [];
+  const priorities = useMemo(() => [...new Set(items.map((x) => x.priority).filter(Boolean))].sort(byPriority), [items]);
+  const types = useMemo(() => [...new Set(items.map((x) => x.type).filter(Boolean))].sort(), [items]);
+  const shown = items.filter((x) => (!priority || x.priority === priority) && (!type || x.type === type) && (!unclear || x.readiness === "needs-clarification"));
+  const toggle = (id: string) => setOpen((o) => { const n = new Set(o); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+
+  // A link such as #plan-TPI-004 opens that item and scrolls to it once the plan has loaded.
   useEffect(() => {
-    if (data && location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView({ block: "start" });
+    if (!data || !location.hash) return;
+    const hit = data.planItems.find((x) => anchor(x.sourceId) === location.hash.slice(1));
+    if (hit) setOpen((o) => new Set(o).add(hit.sourceId));
+    setTimeout(() => document.getElementById(location.hash.slice(1))?.scrollIntoView({ block: "center" }), 0);
   }, [data]);
 
   const reqs = (links: PlanLink[]) => links.map((r) => r.requirementId
@@ -97,6 +106,14 @@ export function TestPlanPage() {
     );
   }
 
+  const top = priorities[0];
+  const stats: [number, string][] = [
+    [items.length, "plan items"],
+    ...(top ? [[items.filter((x) => x.priority === top).length, `${top}, highest priority`] as [number, string]] : []),
+    [items.filter((x) => x.readiness === "needs-clarification").length, "need clarification"],
+    [data?.coverageGaps.length ?? 0, "coverage gaps"],
+  ];
+
   return (
     <>
       <div className="topbar">
@@ -111,54 +128,77 @@ export function TestPlanPage() {
         <button className="btn sm" onClick={download} disabled={!data}><Download size={13} /> Download .md</button>
       </div>
       <div className="content">
-      {planLoading || !data ? <ListSkeleton rows={4} /> : (
-        <div className="plan-layout">
-          <article className="doc" aria-label={`Test plan of ${data.audit.title || data.audit.agentAuditId}`}>
-            <h2 className="doc-title">{data.audit.title || data.audit.agentAuditId}</h2>
-            <p className="doc-lede">
-              {plural(data.planItems.length, "plan item")}{data.planItems.length > 0 && ` (${countBy(data.planItems, (x) => x.type)})`}, {plural(data.coverageGaps.length, "coverage gap")}.
-              A plan says what the audit planned to check and what it did not verify. It is not a test run, and it does not make a requirement covered.
-            </p>
-            <h2 id="plan-items">Plan items</h2>
-            {data.planItems.length === 0 && <p className="faint">No plan items.</p>}
-            {data.planItems.map((x) => (
-              <section key={x.sourceId} id={anchor(x.sourceId)} className="doc-item">
-                <h3><span className="mono muted">{x.sourceId}</span> {x.title}</h3>
-                <div className="doc-meta">
-                  {x.type && <span className="chip">{x.type}</span>}
-                  {x.priority && <span className="chip">priority {x.priority}</span>}
-                  {x.risk && <span className="chip">risk {x.risk}</span>}
-                  {x.readiness && <span className="chip">{x.readiness}</span>}
-                  {x.result && <span className="chip">{x.result}</span>}
-                  {reqs(x.requirements)}
-                </div>
-                {text("Preconditions", x.preconditions)}
-                {text("Test data", x.testData)}
-                {x.steps.length > 0 && <><h4>Steps</h4><ol>{x.steps.map((s, i) => <li key={i}>{s}</li>)}</ol></>}
-                {text("Acceptance criteria", x.acceptanceCriteria)}
-                {text("Automation", x.automation)}
-              </section>
-            ))}
-            <h2 id="plan-gaps">Coverage gaps</h2>
-            {data.coverageGaps.length === 0 && <p className="faint">No coverage gaps.</p>}
+        {planLoading || !data ? <ListSkeleton rows={4} /> : (
+          <div className="plan-page">
+            <div className="faint" style={{ fontSize: "var(--fs-md)" }}>
+              {data.audit.title || data.audit.agentAuditId}. A plan says what the audit planned to check and what it did not verify. It is not a test run, and it does not make a requirement covered.
+            </div>
+            <div className="plan-stats">
+              {stats.map(([n, label]) => <div key={label}><b>{n}</b><span>{label}</span></div>)}
+            </div>
             {data.coverageGaps.length > 0 && (
-              <ul>
-                {data.coverageGaps.map((g) => (
-                  <li key={g.sourceId} id={anchor(g.sourceId)}>
-                    <strong className="mono">{g.sourceId}</strong> {g.description} {reqs(g.requirements)}
-                  </li>
-                ))}
-              </ul>
+              <div className="plan-gaps" role="region" aria-label="Not verified">
+                <div className="row" style={{ gap: 6 }}><AlertTriangle size={14} /><strong>Not verified</strong><span className="faint">{data.coverageGaps.length}</span></div>
+                <ul>
+                  {data.coverageGaps.map((g) => (
+                    <li key={g.sourceId}><span className="mono">{g.sourceId}</span> {g.description} <span className="plan-refs">{reqs(g.requirements)}</span></li>
+                  ))}
+                </ul>
+              </div>
             )}
-          </article>
-          <nav className="plan-toc" aria-label="On this page">
-            <div className="section-label">On this page</div>
-            <a href="#plan-items">Plan items</a>
-            {data.planItems.map((x) => <a key={x.sourceId} className="sub" href={`#${anchor(x.sourceId)}`} title={x.title}><span className="mono">{x.sourceId}</span> {x.title}</a>)}
-            <a href="#plan-gaps">Coverage gaps</a>
-          </nav>
-        </div>
-      )}
+            {items.length > 0 && (
+              <div className="plan-filters" role="group" aria-label="Filter plan items">
+                {priorities.length > 1 && <>
+                  <span className="faint">Priority</span>
+                  {["", ...priorities].map((v) => <button key={v || "all"} className={`chip${priority === v ? " on" : ""}`} aria-pressed={priority === v} onClick={() => setPriority(v)}>{v || "All"}</button>)}
+                </>}
+                {types.length > 1 && <>
+                  <span className="faint" style={{ marginLeft: 8 }}>Type</span>
+                  {["", ...types].map((v) => <button key={v || "all"} className={`chip${type === v ? " on" : ""}`} aria-pressed={type === v} onClick={() => setType(v)}>{v || "All"}</button>)}
+                </>}
+                <button className={`chip${unclear ? " on" : ""}`} style={{ marginLeft: 8 }} aria-pressed={unclear} onClick={() => setUnclear(!unclear)}>Needs clarification</button>
+                <span className="spacer" />
+                <button className="btn ghost sm" onClick={() => setOpen(open.size ? new Set() : new Set(shown.map((x) => x.sourceId)))}>{open.size ? "Collapse all" : "Expand all"}</button>
+              </div>
+            )}
+            {items.length === 0 ? <p className="faint">No plan items.</p> : (
+              <div className="plan-table" role="list">
+                <div className="plan-row plan-head" aria-hidden="true"><span /><span>ID</span><span>Plan item</span><span className="c-type">Type</span><span>Priority</span><span className="c-auto">Automation</span></div>
+                {shown.map((x) => {
+                  const isOpen = open.has(x.sourceId);
+                  return (
+                    <div key={x.sourceId} id={anchor(x.sourceId)} role="listitem" className="plan-entry">
+                      <button className="plan-row" aria-expanded={isOpen} aria-controls={`${anchor(x.sourceId)}-detail`} onClick={() => toggle(x.sourceId)}>
+                        <span aria-hidden="true">{isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
+                        <span className="mono muted key-col">{x.sourceId}</span>
+                        <span className="plan-title">{x.title}{x.readiness === "needs-clarification" && <span className="plan-unclear"> · needs clarification</span>}</span>
+                        <span className="muted c-type">{x.type}</span>
+                        <span>{x.priority && <span className={`plan-pri ${tone(x.priority)}`}>{x.priority}</span>}</span>
+                        <span className="c-auto">{isAutomated(x) ? <span className="plan-auto"><Check size={12} /> Scripted</span> : <span className="muted">{x.automation ? "Manual" : ""}</span>}</span>
+                      </button>
+                      {isOpen && (
+                        <div className="plan-detail" id={`${anchor(x.sourceId)}-detail`}>
+                          <div className="plan-refs">
+                            {x.risk && <span className="chip">risk {x.risk}</span>}
+                            {x.result && <span className="chip">{x.result}</span>}
+                            {reqs(x.requirements)}
+                          </div>
+                          {text("Preconditions", x.preconditions)}
+                          {text("Test data", x.testData)}
+                          {x.steps.length > 0 && <><h4>Steps</h4><ol>{x.steps.map((st, i) => <li key={i}>{st}</li>)}</ol></>}
+                          {text("Acceptance criteria", x.acceptanceCriteria)}
+                          {text("Automation", x.automation)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {shown.length === 0 && <p className="faint" style={{ padding: 12, margin: 0 }}>No plan item matches these filters.</p>}
+              </div>
+            )}
+            <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>Showing {shown.length} of {items.length} plan items. Click a row to open it.</div>
+          </div>
+        )}
       </div>
     </>
   );
