@@ -6,7 +6,7 @@ interface Point { id: number; label: string; date: string; rate: number | null; 
 /** Pass rate per run as a line chart. Hover or focus a point for details; click opens the run. */
 export function TrendChart({ points, onOpen }: { points: Point[]; onOpen?: (id: number) => void }) {
   const [hover, setHover] = useState<number | null>(null);
-  const W = 640, H = 200, L = 34, R = 12, T = 24, B = 22;
+  const W = 640, H = 200, L = 34, R = 26, T = 24, B = 22;
   const usable = points.filter((p) => p.rate != null);
   if (usable.length < 1) return <div className="muted" style={{ padding: 24 }}>No executed runs yet.</div>;
 
@@ -33,7 +33,7 @@ export function TrendChart({ points, onOpen }: { points: Point[]; onOpen?: (id: 
         {ticks.map((v, i) => (
           <g key={v}>
             <line x1={L} x2={W - R} y1={y(v)} y2={y(v)} stroke="var(--border)" strokeDasharray={i === 1 ? "3 4" : undefined} />
-            <text x={L - 8} y={y(v) + 4} textAnchor="end" fontSize="10.5" fill="var(--text-4)">{v}%</text>
+            <text x={L - 8} y={y(v) + 4} textAnchor="end" fontSize="12" fill="var(--text-4)">{v}%</text>
           </g>
         ))}
         {area && <path d={area} fill="url(#trend-fill)" />}
@@ -47,7 +47,7 @@ export function TrendChart({ points, onOpen }: { points: Point[]; onOpen?: (id: 
               />
               {/* The value, so the line can be read without hovering (a long series would be crowded: then only the tooltip). */}
               {points.length <= 12 && (
-                <text x={x(i)} y={y(p.rate) - 9} textAnchor="middle" fontSize="10.5" fill="var(--text-3)">{p.rate}%</text>
+                <text x={x(i)} y={y(p.rate) - 9} textAnchor="middle" fontSize="12" fill="var(--text-3)">{p.rate}%</text>
               )}
               {/* Larger invisible hit target */}
               <circle
@@ -96,7 +96,7 @@ export function DurationChart({ bars, onOpen }: { bars: DurationBar[]; onOpen?: 
         {[0, 0.5, 1].map((f) => (
           <g key={f}>
             <line x1={L} x2={W - R} y1={y(max * f)} y2={y(max * f)} stroke="var(--border)" strokeDasharray={f === 0.5 ? "3 4" : undefined} />
-            <text x={L - 8} y={y(max * f) + 4} textAnchor="end" fontSize="10.5" fill="var(--text-4)">{fmt(max * f)}</text>
+            <text x={L - 8} y={y(max * f) + 4} textAnchor="end" fontSize="12" fill="var(--text-4)">{fmt(max * f)}</text>
           </g>
         ))}
         {bars.map((b, i) => {
