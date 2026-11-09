@@ -59,7 +59,7 @@ export function CasePicker({ selected, onChange, maxHeight = 300 }: { selected: 
                 <label key={c.id} className="list-row" style={{ height: 32, padding: "0 12px" }}>
                   <input type="checkbox" className="checkbox" checked={selected.has(c.id)} onChange={() => setMany([c.id], !selected.has(c.id))} />
                   <PriorityIcon priority={c.priority} />
-                  <span className="mono muted" style={{ width: 62 }}>{key}-{c.number}</span>
+                  <span className="mono muted key-col">{key}-{c.number}</span>
                   <span className="title">{c.title}</span>
                   {c.automated_count > 0 && <Bot size={12} className="faint" />}
                 </label>

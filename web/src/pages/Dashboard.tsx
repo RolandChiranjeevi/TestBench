@@ -169,7 +169,7 @@ export function DashboardPage() {
                     <Link key={c.id} to={`/p/${pid}/cases?case=${c.id}`} className="row" style={{ padding: "0 16px", height: 38, borderBottom: "1px solid var(--border)" }}>
                       <StatusIcon status={c.status} />
                       <PriorityIcon priority={c.priority} />
-                      <span className="mono muted" style={{ width: 62 }}>{key}-{c.number}</span>
+                      <span className="mono muted key-col">{key}-{c.number}</span>
                       <span className="truncate grow">{c.title}</span>
                       <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>{timeAgo(c.executed_at)}</span>
                     </Link>
@@ -197,7 +197,7 @@ export function DashboardPage() {
                 d.candidates.map((c) => (
                   <Link key={c.id} to={`/p/${pid}/cases?case=${c.id}`} className="row" style={{ padding: "0 16px", height: 38, borderBottom: "1px solid var(--border)" }}>
                     <PriorityIcon priority={c.priority} />
-                    <span className="mono muted" style={{ width: 62 }}>{key}-{c.number}</span>
+                    <span className="mono muted key-col">{key}-{c.number}</span>
                     <span className="truncate grow">{c.title}</span>
                     <span className="faint truncate" style={{ fontSize: "var(--fs-sm)", maxWidth: 220 }}>{c.reasons.join(" · ")}</span>
                   </Link>

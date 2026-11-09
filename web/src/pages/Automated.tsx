@@ -231,7 +231,7 @@ function SuggestionsPanel() {
           <div className="faint truncate mono" style={{ fontSize: "var(--fs-sm)" }}>{s.file}</div>
           {s.candidates.map((c) => (
             <div key={c.caseId} className="row" style={{ marginTop: 4 }}>
-              <span className="mono muted" style={{ width: 62 }}>{key}-{c.number}</span>
+              <span className="mono muted key-col">{key}-{c.number}</span>
               <span className="truncate grow">{c.title}</span>
               <span className="chip" title="Probability that the test checks this case">{Math.round(c.probability * 100)}%</span>
               <button className="btn sm primary" onClick={() => accept.mutate({ testId: s.testId, caseId: c.caseId })} disabled={accept.isPending}>Link</button>

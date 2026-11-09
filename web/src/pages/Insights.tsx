@@ -138,7 +138,7 @@ export function InsightsPage() {
                 d.candidates.map((c) => (
                   <Link key={c.id} to={`/p/${pid}/cases?case=${c.id}`} className="list-row" style={{ height: 44 }}>
                     <PriorityIcon priority={c.priority} />
-                    <span className="mono muted" style={{ width: 62 }}>{key}-{c.number}</span>
+                    <span className="mono muted key-col">{key}-{c.number}</span>
                     <span className="title">{c.title}</span>
                     <span className="meta">
                       {c.reasons.map((r) => <span key={r} className="chip">{r}</span>)}

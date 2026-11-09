@@ -150,7 +150,7 @@ export function RequirementsPage() {
             visible.map((r) => (
               <div key={r.id} className={`list-row${selectedId === r.id ? " selected" : ""}`} {...rowActivation(() => select(r.id), selectedId === r.id)}>
                 <PriorityIcon priority={r.priority} />
-                <span className="id mono" style={{ width: 62 }}>REQ-{r.number}</span>
+                <span className="id mono">REQ-{r.number}</span>
                 <span className="title" style={r.status === "deprecated" ? { textDecoration: "line-through", color: "var(--text-3)" } : undefined}>{r.title}</span>
                 <span className="meta">
                   {!compact && r.source && <span className="faint mono" style={{ fontSize: "var(--fs-sm)" }}>{jiraLabel(r.source)}</span>}
@@ -419,7 +419,7 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
               {data.cases.map((c) => (
                 <Link key={c.id} to={`/p/${pid}/cases?case=${c.id}`} className="row" style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)", color: "inherit", textDecoration: c.status === "deprecated" ? "line-through" : undefined }}>
                   <StatusIcon status={c.last_status} />
-                  <span className="mono muted" style={{ width: 62 }}>{caseKey}-{c.number}</span>
+                  <span className="mono muted key-col">{caseKey}-{c.number}</span>
                   <span className="truncate grow">{c.title}</span>
                   {c.status === "deprecated" && <span className="chip">Deprecated</span>}
                   {c.review_needed && (
@@ -529,7 +529,7 @@ export function LinkToRequirementModal({ caseIds, onClose, onDone }: { caseIds: 
             <label key={r.id} className="list-row" style={{ height: 32, padding: "0 12px" }}>
               <input type="radio" name="req" checked={picked === r.id} onChange={() => setPicked(r.id)} />
               <PriorityIcon priority={r.priority} />
-              <span className="mono muted" style={{ width: 62 }}>REQ-{r.number}</span>
+              <span className="mono muted key-col">REQ-{r.number}</span>
               <span className="title">{r.title}</span>
             </label>
           ))}
