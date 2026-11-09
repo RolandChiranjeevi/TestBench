@@ -4,7 +4,7 @@ import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useLocation, u
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, BookOpenCheck, Bot, Bug, ChevronDown, ClipboardCheck, Download, FileBarChart, FlaskConical, LayoutDashboard, ListChecks, Menu, Play, Plus, Settings, Sparkles } from "lucide-react";
 import { api, timeAgo, type BackupInfo, type Project } from "./api";
-import { Empty, Modal, ToastProvider, useHotkeys, useToast } from "./components/ui";
+import { ConfirmProvider, Empty, Modal, ToastProvider, useHotkeys, useToast } from "./components/ui";
 import { CasesPage } from "./pages/Cases";
 import { RequirementsPage } from "./pages/Requirements";
 import { RunsPage } from "./pages/Runs";
@@ -275,6 +275,7 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
+        <ConfirmProvider>
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Home />} />
@@ -298,6 +299,7 @@ createRoot(document.getElementById("root")!).render(
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
+        </ConfirmProvider>
       </ToastProvider>
     </QueryClientProvider>
   </StrictMode>,
