@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { createPortal } from "react-dom";
 import { AlertCircle, CheckCircle2, X } from "lucide-react";
 import type { Counts, Priority, Status } from "../api";
+import { claimKeys, isClaimed } from "../hotkeys";
 
 // ---------- Status icon (Linear-style circles) ----------
 
@@ -162,14 +163,22 @@ const isTyping = (e: KeyboardEvent) => {
   return !!el && (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName));
 };
 
-/** Single-key shortcuts that are ignored while typing in a field, with modifier keys held, or while a modal is open. */
-export function useHotkeys(map: Record<string, (e: KeyboardEvent) => void>, enabled = true) {
+/**
+ * Single-key shortcuts that are ignored while typing in a field, with modifier keys held, or while a modal is open.
+ * A page's own shortcuts take their keys while the page is shown. The shortcuts of the layout (`yieldToPages`) give way to a key that a page has taken,
+ * so `s` is "Skipped" on a run and "Settings" everywhere else.
+ */
+export function useHotkeys(map: Record<string, (e: KeyboardEvent) => void>, enabled = true, opts: { yieldToPages?: boolean } = {}) {
   const ref = useRef(map);
   ref.current = map;
+  const keys = Object.keys(map).join("\n");
+  const yieldToPages = !!opts.yieldToPages;
   useEffect(() => {
     if (!enabled) return;
+    const release = yieldToPages ? () => {} : claimKeys(keys ? keys.split("\n") : []);
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey || isTyping(e) || document.querySelector(".overlay")) return;
+      if (yieldToPages && isClaimed(e.key)) return;
       const fn = ref.current[e.key];
       if (fn) {
         e.preventDefault();
@@ -177,8 +186,11 @@ export function useHotkeys(map: Record<string, (e: KeyboardEvent) => void>, enab
       }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [enabled]);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      release();
+    };
+  }, [enabled, keys, yieldToPages]);
 }
 
 /** Calls `fn` with the latest value once it has stopped changing for `ms`; flushes on unmount. */

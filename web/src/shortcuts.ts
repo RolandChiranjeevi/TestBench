@@ -3,18 +3,20 @@
  * browser tab title and the list in Settings, so they cannot drift apart. `to` is the path under /p/:pid/.
  */
 export const NAV_SHORTCUTS = [
-  { key: "1", to: "dashboard", label: "Dashboard" },
+  // The digits follow the sidebar from the top: 0 to 8 under Workspace, 9 under Reporting. The sidebar in main.tsx lists the pages in this order
+  // (test/shortcuts.test.ts checks it), so keep the two in step.
+  { key: "0", to: "dashboard", label: "Dashboard" },
+  { key: "1", to: "test-plan", label: "Test plan" },
   { key: "2", to: "requirements", label: "Requirements" },
-  { key: "3", to: "cases", label: "Test cases" },
-  { key: "4", to: "runs", label: "Runs" },
-  { key: "5", to: "bugs", label: "Bug reports" },
-  { key: "6", to: "manual-tests", label: "Agent proposals" },
-  { key: "7", to: "automated", label: "Automated tests" },
-  { key: "8", to: "observations", label: "Observations" },
+  { key: "3", to: "manual-tests", label: "Agent proposals" },
+  { key: "4", to: "cases", label: "Test cases" },
+  { key: "5", to: "automated", label: "Automated tests" },
+  { key: "6", to: "observations", label: "Observations" },
+  { key: "7", to: "bugs", label: "Bug reports" },
+  { key: "8", to: "runs", label: "Runs" },
   { key: "9", to: "reports", label: "Sprint reports" },
-  { key: "0", to: "settings", label: "Settings" },
-  // Letters for the pages that did not get a digit. A letter must not be one that a page uses itself (c j k o x r p f b s), because both listeners would fire.
-  { key: "t", to: "test-plan", label: "Test plan" },
+  // Under Manage, with letters. A page that uses the same letter itself wins (`s` is "Skipped" on a run), see hotkeys.ts.
+  { key: "s", to: "settings", label: "Settings" },
   { key: "i", to: "import", label: "Import results" },
 ] as const;
 
