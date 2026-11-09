@@ -5,6 +5,7 @@ import { Bot, Download, FlaskConical, Play, Sparkles } from "lucide-react";
 import { api, formatDuration, passRate, timeAgo, type Dashboard, type TestStat } from "../api";
 import { Empty, FrameworkBadge, PriorityIcon, ProgressBar, StatusIcon, ListSkeleton } from "../components/ui";
 import { CoverageBar, TrendChart } from "../components/charts";
+import { useObservationSummary } from "../observations";
 
 function Delta({ cur, prev }: { cur: number | null; prev: number | null }) {
   if (cur == null || prev == null) return null;
@@ -66,6 +67,7 @@ export function DashboardPage() {
   const { pid } = useParams();
   const navigate = useNavigate();
   const { data: d, isLoading } = useQuery({ queryKey: ["dashboard", pid], queryFn: () => api.get<Dashboard>(`/api/projects/${pid}/dashboard`) });
+  const { data: obs } = useObservationSummary(pid); // the same figure as the badge in the sidebar
 
   if (isLoading || !d) return <div className="content"><ListSkeleton rows={8} /></div>;
   const s = d.summary;
@@ -106,6 +108,14 @@ export function DashboardPage() {
                       {d.requirements.failing ? <span style={{ color: "var(--failed-fg)" }}>, {d.requirements.failing} failing</span> : ""}
                     </>
                   }
+                />
+              )}
+              {obs && obs.total > 0 && (
+                <Stat
+                  label="Observations"
+                  value={obs.active}
+                  to={`/p/${pid}/observations`}
+                  sub={obs.needsReview ? `${obs.needsReview} need review` : obs.active ? "None need review" : `${obs.total} closed`}
                 />
               )}
               <Stat label="Failing cases" value={s.failingCases} color={s.failingCases ? "var(--failed-fg)" : undefined} sub="Latest result failed or blocked" to={`/p/${pid}/cases?filter=failing`} />
