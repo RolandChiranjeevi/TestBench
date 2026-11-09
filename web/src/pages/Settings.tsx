@@ -229,7 +229,7 @@ const SHORTCUTS: [string, [string, string][]][] = [
 function Shortcuts() {
   return (
     <Card title="Keyboard shortcuts">
-      <div className="muted">Single keys. They are ignored while you type in a field, with Ctrl, Cmd or Alt held, or while a dialog is open.</div>
+      <div className="muted">Single keys. They are ignored while you type in a field, with Ctrl, Cmd or Alt held, or while a dialog is open. When a page uses the same key itself (S marks a result as skipped on a run), the page wins.</div>
       {SHORTCUTS.map(([group, rows]) => (
         <div key={group}>
           <div style={{ fontWeight: 500, marginBottom: 4 }}>{group}</div>

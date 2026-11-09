@@ -177,7 +177,7 @@ function ProjectLayout() {
     return () => { document.title = "Testbench"; };
   }, [section, project?.name]);
 
-  useHotkeys(Object.fromEntries(NAV_SHORTCUTS.map((s) => [s.key, () => navigate(`/p/${pid}/${s.to}`)])));
+  useHotkeys(Object.fromEntries(NAV_SHORTCUTS.map((s) => [s.key, () => navigate(`/p/${pid}/${s.to}`)])), true, { yieldToPages: true });
   // How many reports from test agents wait for a decision (the same query the Bug reports page uses for its default tab).
   const { data: proposedBugs } = useQuery({ queryKey: ["bug-reports", pid, "proposed"], queryFn: () => api.get<{ counts: Record<string, number> }>(`/api/projects/${pid}/bug-reports?status=proposed`), staleTime: 30_000, enabled: !!pid });
 
@@ -241,19 +241,19 @@ function ProjectLayout() {
 
         <div className="sidebar-section">Workspace</div>
         {link("dashboard", <LayoutDashboard size={15} />)}
-        {link("requirements", <BookOpenCheck size={15} />)}
-        {link("cases", <ListChecks size={15} />)}
-        {link("runs", <Play size={15} />)}
-        {link("bugs", <Bug size={15} />, proposedBugs?.counts.proposed ?? 0)}
-        {link("observations", <Gauge size={15} />, toReview?.counts.status.needs_review ?? 0)}
         {link("test-plan", <ClipboardList size={15} />)}
+        {link("requirements", <BookOpenCheck size={15} />)}
         {link("manual-tests", <ClipboardCheck size={15} />, proposedManual?.counts.proposed ?? 0)}
+        {link("cases", <ListChecks size={15} />)}
         {link("automated", <Bot size={15} />)}
-        {link("import", <Download size={15} />)}
+        {link("observations", <Gauge size={15} />, toReview?.counts.status.needs_review ?? 0)}
+        {link("bugs", <Bug size={15} />, proposedBugs?.counts.proposed ?? 0)}
+        {link("runs", <Play size={15} />)}
         <div className="sidebar-section">Reporting</div>
         {link("reports", <FileBarChart size={15} />)}
         <div className="sidebar-section">Manage</div>
         {link("settings", <Settings size={15} />)}
+        {link("import", <Download size={15} />)}
 
         <div className="sidebar-footer">
           {/* Nudge when there is no recent backup: the data lives only on this computer. */}
