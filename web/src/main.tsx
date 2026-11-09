@@ -214,7 +214,11 @@ function ProjectLayout() {
       </header>
       {navOpen && <div className="nav-backdrop" onClick={() => setNavOpen(false)} />}
       <aside className={`sidebar${navOpen ? " open" : ""}`}>
-        <div style={{ position: "relative" }}>
+        <div className="brand">
+          <img src="/apple-touch-icon.png" alt="" width={28} height={28} />
+          <span className="brand-name">Testbench</span>
+        </div>
+        <div className="project-wrap" style={{ position: "relative" }}>
           <button className="project-switch" onClick={() => setMenu((m) => !m)} aria-expanded={menu}>
             <span className="project-badge">{project.key.slice(0, 2)}</span>
             <span className="truncate">{project.name}</span>
