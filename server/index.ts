@@ -41,7 +41,7 @@ import { importRequirements, RequirementImportError } from "./reqimport.ts";
 import { requirementCoverage } from "./reqlinks.ts";
 import { normViewports, normWcag, viewportSchema, wcagCriterion, type Viewport } from "./shapes.ts";
 import { LIMITS as AUDIT_LIMITS, PackageError } from "./importers/auditpackage.ts";
-import { archiveObservation, convertToBug, getObservation, importObservations, listObservations, ObservationError, reopenObservation, resolveObservation, setObservationStatus } from "./observations.ts";
+import { archiveObservation, convertToBug, getObservation, importObservations, listObservations, ObservationError, observationSummary, reopenObservation, resolveObservation, setObservationStatus } from "./observations.ts";
 import { listCases } from "./newcases.ts";
 import { LOGGER_OPTIONS } from "./logging.ts";
 import { authenticateAgentToken, createAgentToken, listAgentTokens, revokeAgentToken } from "./agenttokens.ts";
@@ -943,6 +943,9 @@ app.get("/api/projects/:id/observations", (req) => {
   const q = req.query as Record<string, string | undefined>;
   return observed(() => listObservations(idParam(req), { kind: q.kind || undefined, severity: q.severity || undefined, status: q.status || undefined, audit: Number(q.audit) || undefined, q: q.q }));
 });
+
+// The figures for the counters: how many are active (observed, needs_review, confirmed) and how many of them need a review.
+app.get("/api/projects/:id/observations/summary", (req) => observed(() => observationSummary(idParam(req))));
 
 app.get("/api/observations/:id", (req) => must(getObservation(idParam(req)), "Observation"));
 

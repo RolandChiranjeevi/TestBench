@@ -263,13 +263,26 @@ export function listObservations(projectId: number, f: ObservationFilter = {}) {
   if (f.q?.trim()) { where.push("(o.title LIKE ? ESCAPE '\\' OR o.source_id LIKE ? ESCAPE '\\' OR o.recommendation LIKE ? ESCAPE '\\')"); const like = `%${f.q.trim().replace(/[\\%_]/g, "\\$&")}%`; args.push(like, like, like); }
   const rank = `CASE o.severity WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END`;
   const rows = db.prepare(`${SELECT} WHERE ${where.join(" AND ")} ORDER BY ${rank} DESC, o.number DESC`).all(...args) as Record<string, any>[];
-  // The chips show the whole project, so the numbers do not change while you filter.
-  const group = (col: string, keys: readonly string[]) => {
-    const got = new Map((db.prepare(`SELECT ${col} AS k, COUNT(*) AS n FROM observations WHERE project_id = ? GROUP BY ${col}`).all(projectId) as { k: string; n: number }[]).map((r) => [r.k, r.n]));
+  // The status chips count the whole project. The kind and severity chips count inside the chosen status (Active, Archived, ...), so the number on a chip is the
+  // number of rows you get by clicking it; they do not move when you pick a kind or a severity, so the chips stay where they are while you filter.
+  const group = (col: string, keys: readonly string[], inScope: boolean) => {
+    const scope = inScope && statuses.length ? ` AND status IN (${statuses.map(() => "?").join(",")})` : "";
+    const got = new Map((db.prepare(`SELECT ${col} AS k, COUNT(*) AS n FROM observations WHERE project_id = ?${scope} GROUP BY ${col}`).all(projectId, ...(inScope && statuses.length ? statuses : [])) as { k: string; n: number }[]).map((r) => [r.k, r.n]));
     return Object.fromEntries(keys.map((k) => [k, got.get(k) ?? 0]));
   };
   const total = (db.prepare("SELECT COUNT(*) AS n FROM observations WHERE project_id = ?").get(projectId) as { n: number }).n;
-  return { counts: { total, kind: group("kind", KINDS), severity: group("severity", SEVERITIES), status: group("status", STATUSES) }, items: views(rows) };
+  return { counts: { total, kind: group("kind", KINDS, true), severity: group("severity", SEVERITIES, true), status: group("status", STATUSES, false) }, items: views(rows) };
+}
+
+/**
+ * The figures behind the counters (sidebar, dashboard): how many observations are active, i.e. still being looked at (observed, needs_review, confirmed), and
+ * how many of those need a review. Archived, resolved and converted ones do not count. One cheap query, and the one place that decides what "active" means.
+ */
+export function observationSummary(projectId: number) {
+  if (!db.prepare("SELECT 1 FROM projects WHERE id = ?").get(projectId)) throw new ObservationError(404, "Project not found");
+  const got = new Map((db.prepare("SELECT status AS k, COUNT(*) AS n FROM observations WHERE project_id = ? GROUP BY status").all(projectId) as { k: string; n: number }[]).map((r) => [r.k, r.n]));
+  const status = Object.fromEntries(STATUSES.map((k) => [k, got.get(k) ?? 0])) as Record<Status, number>;
+  return { active: OPEN_STATUSES.reduce((n, k) => n + status[k], 0), needsReview: status.needs_review, total: Object.values(status).reduce((a, b) => a + b, 0), status };
 }
 
 export function getObservation(id: number): ObservationView | undefined {

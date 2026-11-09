@@ -8,7 +8,7 @@ import { after, before, describe, it } from "node:test";
 import Database from "better-sqlite3";
 import { db, migrateObservations } from "../server/db.ts";
 import { makeProject } from "./helpers.ts";
-import { archiveObservation, convertToBug, getObservation, importObservations, listObservations, ObservationError, reopenObservation, resolveObservation, setObservationStatus } from "../server/observations.ts";
+import { archiveObservation, convertToBug, getObservation, importObservations, listObservations, ObservationError, observationSummary, reopenObservation, resolveObservation, setObservationStatus } from "../server/observations.ts";
 
 // Observations: load-test and security-review results that are not bugs. Everything here runs against a throwaway data folder (see env.ts).
 
@@ -414,6 +414,65 @@ describe("life cycle: close without a bug, reopen, converted stays tracked", () 
     assert.equal((side.prepare("SELECT COUNT(*) AS n FROM observation_evidence").get() as { n: number }).n, 1);
     side.prepare("UPDATE observations SET status = 'archived' WHERE id = 1").run(); // the new CHECK accepts it
     side.close();
+  });
+});
+
+describe("the counters", () => {
+  const seed = () => {
+    const p = proj(); audit(p);
+    importObservations(p.id, [
+      load({ id: "L-1", status: "observed" }), load({ id: "L-2", status: "needs_review", severity: "low" }), sec({ id: "S-1", status: "confirmed", severity: "critical" }),
+      sec({ id: "S-2", severity: "info" }), load({ id: "L-3" }), sec({ id: "S-3", severity: "low" }),
+    ]);
+    const id = (src: string) => listObservations(p.id, { status: "all" }).items.find((o) => o.sourceId === src)!.id;
+    return { p, id };
+  };
+
+  it("the summary counts the active ones (observed, needs_review, confirmed) and how many need a review; closed ones do not count", () => {
+    const { p, id } = seed();
+    assert.deepEqual(observationSummary(p.id), { active: 6, needsReview: 1, total: 6, status: { observed: 4, needs_review: 1, confirmed: 1, resolved: 0, archived: 0, converted: 0 } });
+    archiveObservation(id("S-2")); resolveObservation(id("L-3")); convertToBug(id("S-3"));
+    const s = observationSummary(p.id);
+    assert.deepEqual([s.active, s.needsReview, s.total], [3, 1, 6]);
+    assert.deepEqual(s.status, { observed: 1, needs_review: 1, confirmed: 1, resolved: 1, archived: 1, converted: 1 });
+  });
+
+  it("every action that changes the status changes the counter: archive, resolve, reopen and convert", () => {
+    const { p, id } = seed();
+    const active = () => observationSummary(p.id).active;
+    archiveObservation(id("L-1")); assert.equal(active(), 5);
+    resolveObservation(id("L-2")); assert.equal(active(), 4);
+    reopenObservation(id("L-1")); assert.equal(active(), 5);   // reopened as needs_review
+    assert.equal(observationSummary(p.id).needsReview, 1);
+    convertToBug(id("S-1")); assert.equal(active(), 4);
+    setObservationStatus(id("L-3"), "needs_review"); assert.equal(observationSummary(p.id).needsReview, 2);
+    assert.equal(active(), 4);
+  });
+
+  it("a project without observations has all zeros, and an unknown project is a 404", () => {
+    const p = proj();
+    assert.deepEqual([observationSummary(p.id).active, observationSummary(p.id).total], [0, 0]);
+    assert.throws(() => observationSummary(999999), (e: unknown) => e instanceof ObservationError && e.status === 404);
+  });
+
+  it("the kind and severity chips count inside the chosen status, so a chip shows what clicking it gives; the status chips count the whole project", () => {
+    const { p, id } = seed();
+    archiveObservation(id("S-2")); resolveObservation(id("L-3"));
+    const active = listObservations(p.id).counts;               // no status: Active
+    assert.deepEqual(active.kind, { load_test: 2, security_review: 2 });
+    assert.equal(active.severity.info, 0);                       // S-2 is archived
+    assert.equal(active.total, 6);
+    assert.equal(active.status.archived, 1);
+    const archived = listObservations(p.id, { status: "archived" }).counts;
+    assert.deepEqual(archived.kind, { load_test: 0, security_review: 1 });
+    assert.equal(archived.severity.info, 1);
+    const all = listObservations(p.id, { status: "all" }).counts;
+    assert.deepEqual(all.kind, { load_test: 3, security_review: 3 });
+    // picking a kind does not move the other chips, and the rows match the chip you clicked
+    const picked = listObservations(p.id, { kind: "load_test" });
+    assert.deepEqual(picked.counts.kind, active.kind);
+    assert.equal(picked.items.length, active.kind.load_test);
+    for (const sev of ["critical", "high", "low"] as const) assert.equal(listObservations(p.id, { severity: sev }).items.length, active.severity[sev]);
   });
 });
 

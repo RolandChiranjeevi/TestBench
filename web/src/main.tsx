@@ -20,6 +20,7 @@ import { BugReportsPage } from "./pages/BugReports";
 import { ManualTestsPage } from "./pages/ManualTests";
 import { TestPlanPage } from "./pages/TestPlan";
 import { ObservationsPage } from "./pages/Observations";
+import { useObservationSummary } from "./observations";
 import "./styles.css";
 
 const LAST_PROJECT = "testbench:lastProject";
@@ -184,19 +185,19 @@ function ProjectLayout() {
   // Proposals (manual test cases) from the agent that wait for a decision.
   const { data: proposedManual } = useQuery({ queryKey: ["manual-tests", pid, "proposed"], queryFn: () => api.get<{ counts: Record<string, number> }>(`/api/projects/${pid}/manual-tests?status=proposed`), staleTime: 30_000, enabled: !!pid });
 
-  // Observations (load tests, security reviews) that wait for a person to look at them. Keyed under ["observations", pid], so the page refreshes it.
-  const { data: toReview } = useQuery({ queryKey: ["observations", pid, "badge"], queryFn: () => api.get<{ counts: { status: Record<string, number> } }>(`/api/projects/${pid}/observations?status=needs_review`), staleTime: 30_000, enabled: !!pid });
+  // Active observations (load tests, security reviews that are still being looked at: observed, needs review, confirmed). Archived, resolved and converted are not counted.
+  const { data: obsSummary } = useObservationSummary(pid);
 
   if (isLoading) return null;
   if (!project) return <Navigate to="/" replace />;
 
-  const link = (to: (typeof NAV_SHORTCUTS)[number]["to"], icon: ReactNode, badge = 0) => {
+  const link = (to: (typeof NAV_SHORTCUTS)[number]["to"], icon: ReactNode, badge = 0, badgeMeaning = "waiting for review") => {
     const { label, key: shortcut } = navShortcut(to);
     return (
     <NavLink to={`/p/${project.id}/${to}`} className={({ isActive }) => `nav-item${isActive ? " active" : ""}`} title={label}>
       {icon}
       <span className="nav-label">{label}</span>
-      {badge > 0 && <span className="chip accent" aria-label={`${badge} waiting for review`}>{badge}</span>}
+      {badge > 0 && <span className="chip accent" aria-label={`${badge} ${badgeMeaning}`}>{badge}</span>}
       <span className="count"><kbd className="kbd">{shortcut}</kbd></span>
     </NavLink>
     );
@@ -246,7 +247,7 @@ function ProjectLayout() {
         {link("manual-tests", <ClipboardCheck size={15} />, proposedManual?.counts.proposed ?? 0)}
         {link("cases", <ListChecks size={15} />)}
         {link("automated", <Bot size={15} />)}
-        {link("observations", <Gauge size={15} />, toReview?.counts.status.needs_review ?? 0)}
+        {link("observations", <Gauge size={15} />, obsSummary?.active ?? 0, "active")}
         {link("bugs", <Bug size={15} />, proposedBugs?.counts.proposed ?? 0)}
         {link("runs", <Play size={15} />)}
         <div className="sidebar-section">Reporting</div>
