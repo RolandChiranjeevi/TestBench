@@ -1,3 +1,8 @@
+---
+name: testpilot-report
+description: Analyse TestPilot audit results, create bug and manual-test proposals and build an audit package. Use when the user invokes /testpilot-report or asks to report a TestPilot audit.
+---
+
 # TestPilot: report
 
 Turn the results of a run into findings and a package: analyse the executions,
@@ -10,6 +15,57 @@ Input:
 
 Paths in this file are relative to this file. The contract is
 `../../references/audit-contract.md`.
+
+Before starting, read:
+- `../testpilot/SKILL.md`
+- `../../references/audit-contract.md`
+
+Apply the shared boundaries, secret-handling rules and stop conditions.
+Execute only this reporting workflow. Do not start the full audit.
+
+## Responsibilities
+
+This workflow:
+- Analyses audit results
+- Creates bug proposals
+- Proposes manual test cases
+- Builds the audit package
+
+It does not:
+- Create a TestBench project
+- Select a target URL or environment
+- Create a test plan
+- Execute tests
+- Deliver an audit package
+- Close or change existing bugs
+
+## 1. Read the TestBench context
+
+Read:
+
+1. `config/testbench.json`
+2. The project profile referenced by `activeProject`
+
+Use from the global configuration:
+
+- `baseUrl`
+
+Use from the project profile:
+
+- `projectId`
+- `projectKey`
+- `name`
+- `requirementsSource`
+- `requirementsPath`
+- `tokenEnvVar`
+
+Rules:
+
+- Do not read project-specific values from the global configuration.
+- Do not store token values, passwords, cookies or target URLs in configuration.
+- If the active profile is missing, invalid or unreadable, pause and ask the user.
+
+## 2. Before the first step
 
 Before the first step:
 
@@ -24,7 +80,7 @@ Flow:
 3. Propose manual test cases.
 4. Build the audit package.
 
-## 1. Analyse the results
+## 3. Analyse the results
 
 Check that every status follows the contract (section 2).
 
@@ -58,7 +114,7 @@ Perform the duplicate check for every proposed bug:
 Never close, merge, reject or change an existing bug, and never set the status
 `duplicate`.
 
-## 2. Create bug proposals
+## 4. Create bug proposals
 
 Follow `../../bug-reporting/SKILL.md` for each `fail` that has evidence against its
 requirement, and for each visual or accessibility finding that has evidence.
@@ -67,7 +123,7 @@ Use `../../bug-reporting/templates/bug-report.md` for all of them.
 
 Status is `proposed`.
 
-## 3. Propose manual test cases
+## 5. Propose manual test cases
 
 Create a `manual_test_proposal_id` for checks that are `manual-only`, for
 coverage gaps and for follow-up around each bug.
@@ -90,7 +146,7 @@ Each manual test proposal MUST have an `origin` object:
 `id` MUST be the matching `execution_id`, `bug_proposal_id` or
 `coverage_gap_id`.
 
-## 4. Build the audit package
+## 6. Build the audit package
 
 Complete the package folder `<audit_id>/` created before execution.
 

@@ -1,3 +1,8 @@
+---
+name: testpilot-plan
+description: Collect inputs, fetch requirements, agree on an audit scope and build a TestPilot test plan. Use when the user invokes /testpilot-plan or asks to plan a TestPilot audit.
+---
+
 # TestPilot: plan
 
 Collect inputs, fetch requirements, agree on a scope and build the test plan. The
@@ -12,6 +17,13 @@ Input:
 
 Paths in this file are relative to this file. The contract is
 `../../references/audit-contract.md`.
+
+Before starting, read:
+- `../testpilot/SKILL.md`
+- `../../references/audit-contract.md`
+
+Apply the shared boundaries, secret-handling rules and stop conditions.
+Execute only this planning workflow. Do not start the full audit.
 
 Flow, with two stops:
 
@@ -40,8 +52,7 @@ If something is missing, ask. Do not guess.
 
 ## 2. Fetch active requirements
 
-Read the active requirements from TestBench through the integration the project
-has configured.
+Read the active requirements according to the project profile.
 
 If TestBench is configured, use the requirements-fetch rules below.
 
@@ -54,6 +65,65 @@ If a requirement has no measurable acceptance criteria, mark it
 `needs-clarification`. Do not invent criteria.
 
 Output: requirement list with `requirement_id` and readiness.
+
+### Read the TestBench configuration
+
+Read:
+
+1. `config/testbench.json`
+2. The project profile referenced by `activeProject`
+
+Use from the global configuration:
+
+- `baseUrl`
+
+Use from the project profile:
+
+- `projectId`
+- `requirementsSource`
+- `requirementsPath`
+- `tokenEnvVar`
+
+Rules:
+
+- Do not read project-specific values from the global configuration.
+- Do not store token values, passwords, cookies or target URLs in configuration.
+- If the active profile is missing, invalid or unreadable, pause and ask the user.
+
+### Requirements source behaviour
+
+| `requirementsSource` | Behaviour |
+|---|---|
+| `testbench` | Fetch active requirements from TestBench |
+| `black_box` | Do not fetch requirements; use black-box context |
+| `pending` | Ask the user to provide requirements or explicitly choose black-box planning |
+| `import_pending` | Explain that requirements must be imported before requirement-based planning |
+
+If `requirementsSource` is `black_box`, skip TestBench requirement fetching.
+
+If `requirementsSource` is `pending`, ask:
+
+```text
+Requirements are pending for this project.
+
+Would you like to:
+1. Provide requirements now
+2. Use black-box planning
+3. Cancel
+```
+
+If `requirementsSource` is `import_pending`, say:
+
+```text
+Requirements must be imported into TestBench before requirement-based planning.
+
+You can:
+1. Import requirements now
+2. Use black-box planning
+3. Cancel
+```
+
+Do not invent requirements or acceptance criteria.
 
 ### Fetching TestBench requirements
 

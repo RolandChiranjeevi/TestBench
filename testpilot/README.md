@@ -5,51 +5,106 @@ How a TestPilot audit reaches TestBench, and what to know before you run it.
 ## 1. Overview
 
 ```text
-discover → plan → run → report → validate → transform → deliver
+init → discover → plan → run → report → validate → transform → deliver
 ```
 
 | Stage | Where it lives | What it does |
 |---|---|---|
-| discover | `commands/discover.md` | Inspect a target and propose a scope. Stops for approval. |
-| plan | `commands/plan.md` | Inputs, requirements, scope, test plan and coverage gaps. Two approvals: scope first, then the test plan. |
-| run | `commands/run.md` | Playwright checks, visual design review and evidence. Needs the approved scope and test plan first. |
-| report | `commands/report.md` | Analysis, bug and manual-test proposals, and the audit package. Needs a finished run first. |
-| validate | audit flow, step 9 in `SKILL.md` | Contract validation. `deliver` needs `validation.result == "pass"`. |
+| init | `.claude/skills/testpilot-init/SKILL.md` | Select or create a TestBench project, determine requirements source, save project profile. Stops for confirmation. |
+| discover | `.claude/skills/testpilot-discover/SKILL.md` | Select or create a target environment, inspect a target and propose a scope. Stops for approval. |
+| plan | `.claude/skills/testpilot-plan/SKILL.md` | Inputs, requirements, scope, test plan and coverage gaps. Two approvals: scope first, then the test plan. |
+| run | `.claude/skills/testpilot-run/SKILL.md` | Playwright checks, visual design review and evidence. Needs the approved scope and test plan first. |
+| report | `.claude/skills/testpilot-report/SKILL.md` | Analysis, bug and manual-test proposals, and the audit package. Needs a finished run first. |
+| validate | audit flow, step 9 in `testpilot/SKILL.md` | Contract validation. `deliver` needs `validation.result == "pass"`. |
 | transform | `tools/build_testbench_package.py` | Turns the audit package into a TestBench import zip. |
-| deliver | `commands/deliver.md` | Builds the zip, dry-run, asks you, then imports. |
+| deliver | `.claude/skills/testpilot-deliver/SKILL.md` | Builds the zip, dry-run, asks you, then imports. |
 
-`discover`, `plan`, `run`, `report` and `deliver` are separate command files today.
+`init`, `discover`, `plan`, `run`, `report` and `deliver` are separate skills.
 The rest (validate) runs as a step of the audit flow in
 `.claude/skills/testpilot/SKILL.md`. The audit contract is
-`.claude/skills/references/audit-contract.md`.
+`.claude/references/audit-contract.md`.
 
 Everything TestPilot sends is `proposed`. Humans review in TestBench.
 
-## 2. Prerequisites
+## 2. Configuration layout
+
+TestPilot supports multiple TestBench projects.
+
+### Global configuration
 
 `config/testbench.json`:
+
+```json
+{
+  "baseUrl": "http://localhost:4100",
+  "activeProject": "ts"
+}
+```
 
 | Field | Use |
 |---|---|
 | `baseUrl` | TestBench address, for example `http://localhost:4100` |
+| `activeProject` | Lowercase project key of the active project, for example `ts` |
+
+### Project profiles
+
+`config/projects/<lowercase_project_key>.json`
+
+Example for project key `TS`:
+
+`config/projects/ts.json`
+
+```json
+{
+  "projectId": "5",
+  "projectKey": "TS",
+  "name": "Testpilot",
+  "requirementsSource": "black_box",
+  "requirementsPath": "/api/agent/projects/5/requirements",
+  "tokenEnvVar": "TESTBENCH_API_TOKEN_TS",
+  "deliveryEnabled": false
+}
+```
+
+| Field | Use |
+|---|---|
 | `projectId` | Numeric project ID, used in the URL |
-| `projectKey` | Passed to the transform, for example `RS` |
+| `projectKey` | Project key, for example `TS` |
+| `name` | Human-readable project name |
+| `requirementsSource` | One of `testbench`, `black_box`, `pending`, `import_pending` |
+| `requirementsPath` | API path for requirements, built from project ID |
 | `tokenEnvVar` | Name of the env variable with the agent token (reading requirements only) |
-| `deliveryEnabled` | Must be `true`, otherwise `deliver` stops |
+| `deliveryEnabled` | Must be `true` for `deliver` to run |
+
+Rules:
+
+- `activeProject` in the global config must match an existing profile file.
+- Project-specific fields live only in the profile, not in the global config.
+- `deliveryEnabled` in the profile is authoritative.
+- Do not store token values, passwords, cookies or target URLs in configuration.
+
+## 3. Environment variables
 
 `.env` (never committed):
 
 ```text
 TESTBENCH_PASSWORD=<TestBench login password>     # required for deliver
-TESTBENCH_API_TOKEN=<agent token, tbag_...>       # optional, agent reads only
+TESTBENCH_API_TOKEN_RS=<agent token for RS>       # optional, agent reads only
+TESTBENCH_API_TOKEN_TS=<agent token for TS>       # optional, agent reads only
+TESTBENCH_API_TOKEN_SHOP=<agent token for SHOP>   # optional, agent reads only
 ```
 
-`.gitignore` covers `.env`, `*-testbench.zip`, `__pycache__/` and `.DS_Store`.
+Rules:
+
+- One token per project, named after the project key.
+- The token value is never stored in configuration files.
+- `tokenEnvVar` in the profile points to the variable name.
+- `.gitignore` covers `.env`, `*-testbench.zip`, `__pycache__/` and `.DS_Store`.
 
 `deliver` never `source`s `.env`. A password with characters such as `&` would be
 parsed by the shell. Python reads the raw line instead.
 
-## 3. Auth model
+## 4. Auth model
 
 This is what blocked the first delivery attempt.
 
@@ -65,14 +120,14 @@ This is what blocked the first delivery attempt.
 The endpoint is `POST {baseUrl}/api/projects/{projectId}/audit-import`. Add
 `?dryRun=1` for a dry-run.
 
-## 4. Evidence
+## 5. Evidence
 
 - TestBench stores evidence that a **bug** links to. In the first import, 40 files
   were in the zip but the server counted 10 as evidence, matching the bugs' links.
 - Other evidence files in the manifest are not stored. That is by design, not an error.
 - The server reports `evidence.ok` and `evidence.problems`. `problems > 0` cancels `deliver`.
 
-## 5. Dedup rule
+## 6. Dedup rule
 
 - `sourceId` is the bug's own ID (`BP-nnn`), never the requirement ID.
 - Two bugs must not share a `sourceId`. TestBench rejects the whole package with
@@ -81,7 +136,7 @@ The endpoint is `POST {baseUrl}/api/projects/{projectId}/audit-import`. Add
 - Changing a `sourceId` creates a new bug. The old one stays in TestBench.
   Clean up by hand.
 
-## 6. Idempotency and safety
+## 7. Idempotency and safety
 
 - Importing the same file again creates no new bugs or tests. The import is still
   recorded as an event in TestBench.
@@ -93,33 +148,46 @@ The endpoint is `POST {baseUrl}/api/projects/{projectId}/audit-import`. Add
 - Never commit without your confirmation.
 - `manifest.delivery` stores counts only, not the raw response.
 
-## 7. Quick start
+## 8. Quick start
 
 ```text
-/testpilot discover <target-url>
-/testpilot deliver <audit-id>
+/testpilot-init
+/testpilot-discover <target-url>
+/testpilot-plan
+/testpilot-run
+/testpilot-report
+/testpilot-deliver <audit-id>
 ```
+
+`init`:
+
+1. Read `config/testbench.json`.
+2. List or create a TestBench project.
+3. Determine requirements source.
+4. Confirm before creating anything.
+5. Save project profile and update `activeProject`.
 
 `deliver <audit-id>`:
 
-1. Read `config/testbench.json`. Stop if `deliveryEnabled` is not `true`.
-2. Check `<audit-id>/manifest.json`. Stop unless `validation.result` is `pass`.
-3. Build the zip: `python3 tools/build_testbench_package.py <audit-id> <projectKey>`.
+1. Read `config/testbench.json` and the active project profile.
+2. Stop if `deliveryEnabled` is not `true` in the profile.
+3. Check `<audit-id>/manifest.json`. Stop unless `validation.result` is `pass`.
+4. Build the zip: `python3 tools/build_testbench_package.py <audit-id> <projectKey>`.
    Output: `<audit-id>-testbench.zip`.
-4. Log in, upload with `?dryRun=1`.
-5. Show counts (new/unchanged/updated/pending), evidence ok/problems, unresolved
+5. Log in, upload with `?dryRun=1`.
+6. Show counts (new/unchanged/updated/pending), evidence ok/problems, unresolved
    references, warnings, and each item. Stop on any HTTP error or `evidence.problems > 0`.
-6. Ask you for confirmation. Nothing is imported before you say yes.
-7. Upload for real, then write `manifest.delivery`
+7. Ask you for confirmation. Nothing is imported before you say yes.
+8. Upload for real, then write `manifest.delivery`
    (`status`, `delivered_at`, `method`, `target`, `request_reference`,
    `response_reference`, `error`, `response_summary`).
-8. Report the result and the TestBench `auditId`.
+9. Report the result and the TestBench `auditId`.
 
 Fields mapped by the transform for each bug: `bug_proposal_id` → `sourceId`,
 `severity.level` → `agentSeverity` (lower case), `steps_to_reproduce` → `steps`,
 `expected_result` → `expected`, `actual_result` → `actual`. `confidence` is not sent.
 
-## 8. Known limitations and TODO
+## 9. Known limitations and TODO
 
 - **BP-001 evidence:** it lists 4 evidence IDs (EV-013, EV-014, EV-039, EV-040) but
   3 files are attached. Which one is missing is not determined. It is recorded in
@@ -131,8 +199,10 @@ Fields mapped by the transform for each bug: `bug_proposal_id` → `sourceId`,
 - **Password login must be enabled** in TestBench. When TestBench has no
   `TESTBENCH_PASSWORD`, the login route is not registered (from the server code), and
   `deliver` would fail at login. That case is not handled.
-- `passwordEnvVar` in the config is optional and read by `deliver`. The default is
-  `TESTBENCH_PASSWORD` and the config has no such field today.
+- `passwordEnvVar` in the profile is optional and read by `deliver`. The default is
+  `TESTBENCH_PASSWORD` and the profile has no such field today.
 - The transform stages files in a fixed `/tmp/tb-package` and overwrites it each run.
 - The TestBench version must have the `audit-import` route. It was checked against
   the TestBench Docker image running on `localhost:4100`.
+- **Project profiles are not yet implemented in code.** Only the skills describe
+  them. `init` must verify support before writing profiles.
