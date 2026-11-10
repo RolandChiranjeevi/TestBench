@@ -1,14 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, it } from "node:test";
-import { NAV_SHORTCUTS, PAGE_SHORTCUTS } from "../web/src/shortcuts.ts";
+import { NAV_GROUPS, NAV_SHORTCUTS, PAGE_SHORTCUTS } from "../web/src/shortcuts.ts";
 import { claimKeys, isClaimed } from "../web/src/hotkeys.ts";
 
-// The keys that switch pages (one list, shortcuts.ts), the order of the sidebar (main.tsx) and the keys that pages use themselves (hotkeys.ts).
-
-const MAIN = readFileSync(join(import.meta.dirname, "..", "web", "src", "main.tsx"), "utf8");
-const sidebar = MAIN.slice(MAIN.indexOf('<div className="sidebar-section">Workspace</div>'), MAIN.indexOf('<div className="sidebar-footer">'));
+// The keys that switch pages and the sections of the sidebar (one list, shortcuts.ts; SidebarNav is built from it, see sidebar.test.ts) and the keys that pages use themselves (hotkeys.ts).
 
 describe("the shortcuts that switch pages", () => {
   it("each key and each page appears once", () => {
@@ -23,12 +18,15 @@ describe("the shortcuts that switch pages", () => {
     assert.deepEqual(NAV_SHORTCUTS.slice(10).map((s) => [s.key, s.to]), [["s", "settings"], ["i", "import"]]);
   });
 
-  it("the sidebar lists the pages in the same order, with the digits 0 to 8 under Workspace, 9 under Reporting and the letters under Manage", () => {
-    const order = [...sidebar.matchAll(/\{link\("([a-z-]+)"/g)].map((m) => m[1]);
-    assert.deepEqual(order, NAV_SHORTCUTS.map((s) => s.to));
-    const at = (s: string) => sidebar.indexOf(s);
-    assert.ok(at('link("runs"') < at(">Reporting<") && at(">Reporting<") < at('link("reports"'));
-    assert.ok(at('link("reports"') < at(">Manage<") && at(">Manage<") < at('link("settings"') && at('link("settings"') < at('link("import"'));
+  it("the pages sit in the sections in the order of the sidebar: the digits 0 to 8 under Workspace, 9 under Reporting and the letters under Manage", () => {
+    assert.deepEqual(NAV_GROUPS.map((g) => g.id), ["workspace", "reporting", "manage"]);
+    // each section is one unbroken run of pages, in the order of the sections
+    const runs = NAV_SHORTCUTS.map((s) => s.group as string).filter((g, i, all) => i === 0 || all[i - 1] !== g);
+    assert.deepEqual(runs, NAV_GROUPS.map((g) => g.id));
+    const keysOf = (group: string) => NAV_SHORTCUTS.filter((s) => s.group === group).map((s) => s.key as string);
+    assert.deepEqual(keysOf("workspace"), ["0", "1", "2", "3", "4", "5", "6", "7", "8"]);
+    assert.deepEqual(keysOf("reporting"), ["9"]);
+    assert.deepEqual(keysOf("manage"), ["s", "i"]);
   });
 
   it("a key that a page also uses is a decision, not an accident: only s (Skipped on a run, Settings elsewhere) is shared", () => {

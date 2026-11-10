@@ -1,8 +1,8 @@
-import { StrictMode, useEffect, useState, type ReactNode } from "react";
+import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, BookOpenCheck, Bot, Bug, ChevronDown, ClipboardCheck, ClipboardList, Download, FileBarChart, FlaskConical, Gauge, LayoutDashboard, ListChecks, Menu, Play, Plus, Settings, Sparkles } from "lucide-react";
+import { Archive, ChevronDown, FlaskConical, Menu, Plus, Sparkles } from "lucide-react";
 import { api, parseDate, timeAgo, type BackupInfo, type Project } from "./api";
 import { ConfirmProvider, Empty, Modal, ToastProvider, useHotkeys, useToast } from "./components/ui";
 import { CasesPage } from "./pages/Cases";
@@ -15,7 +15,8 @@ import { DashboardPage } from "./pages/Dashboard";
 import { ReportsPage } from "./pages/Reports";
 import { SettingsPage } from "./pages/Settings";
 import { applyTheme } from "./theme";
-import { NAV_SHORTCUTS, navShortcut } from "./shortcuts";
+import { NAV_SHORTCUTS } from "./shortcuts";
+import { SidebarNav } from "./components/SidebarNav";
 import { BugReportsPage } from "./pages/BugReports";
 import { ManualTestsPage } from "./pages/ManualTests";
 import { TestPlanPage } from "./pages/TestPlan";
@@ -191,16 +192,11 @@ function ProjectLayout() {
   if (isLoading) return null;
   if (!project) return <Navigate to="/" replace />;
 
-  const link = (to: (typeof NAV_SHORTCUTS)[number]["to"], icon: ReactNode, badge = 0, badgeMeaning = "waiting for review") => {
-    const { label, key: shortcut } = navShortcut(to);
-    return (
-    <NavLink to={`/p/${project.id}/${to}`} className={({ isActive }) => `nav-item${isActive ? " active" : ""}`} title={label}>
-      {icon}
-      <span className="nav-label">{label}</span>
-      {badge > 0 && <span className="chip accent" aria-label={`${badge} ${badgeMeaning}`}>{badge}</span>}
-      <span className="count"><kbd className="kbd">{shortcut}</kbd></span>
-    </NavLink>
-    );
+  // The numbers beside some pages: what waits for a decision, and what is still active.
+  const navCounts = {
+    "manual-tests": { n: proposedManual?.counts.proposed ?? 0, meaning: "waiting for review" },
+    observations: { n: obsSummary?.active ?? 0, meaning: "active" },
+    bugs: { n: proposedBugs?.counts.proposed ?? 0, meaning: "waiting for review" },
   };
 
   return (
@@ -244,21 +240,7 @@ function ProjectLayout() {
           )}
         </div>
 
-        <div className="sidebar-section">Workspace</div>
-        {link("dashboard", <LayoutDashboard size={15} />)}
-        {link("test-plan", <ClipboardList size={15} />)}
-        {link("requirements", <BookOpenCheck size={15} />)}
-        {link("manual-tests", <ClipboardCheck size={15} />, proposedManual?.counts.proposed ?? 0)}
-        {link("cases", <ListChecks size={15} />)}
-        {link("automated", <Bot size={15} />)}
-        {link("observations", <Gauge size={15} />, obsSummary?.active ?? 0, "active")}
-        {link("bugs", <Bug size={15} />, proposedBugs?.counts.proposed ?? 0)}
-        {link("runs", <Play size={15} />)}
-        <div className="sidebar-section">Reporting</div>
-        {link("reports", <FileBarChart size={15} />)}
-        <div className="sidebar-section">Manage</div>
-        {link("settings", <Settings size={15} />)}
-        {link("import", <Download size={15} />)}
+        <SidebarNav pid={project.id} counts={navCounts} />
 
         <div className="sidebar-footer">
           {/* Nudge when there is no recent backup: the data lives only on this computer. */}
