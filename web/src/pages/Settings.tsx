@@ -8,6 +8,7 @@ import { DeleteProjectModal, RenameProjectModal } from "../components/ProjectMod
 import { BackupPage } from "./Backup";
 import { NAV_SHORTCUTS, PAGE_SHORTCUTS } from "../shortcuts";
 import { getTheme, setTheme, type Theme } from "../theme";
+import { Button } from "../components/Button";
 
 interface AgentToken { id: number; name: string; prefix: string; createdAt: string; lastUsedAt: string | null; revokedAt: string | null }
 /** The answer to creating a token. `token` is in it this once and is never stored by the server (only its hash) or by this page. */
@@ -113,7 +114,7 @@ function AgentAccess({ pid }: { pid: number }) {
         </div>
         <form className="row" style={{ gap: 8, flexWrap: "wrap" }} onSubmit={(e) => { e.preventDefault(); submit(); }}>
           <input id="token-name" aria-label="Token name" className="input" style={{ flex: "1 1 220px", maxWidth: 320 }} value={name} maxLength={200} onChange={(e) => setName(e.target.value)} placeholder="Name, for example qa-agent" />
-          <button className="btn primary" type="submit" disabled={!name.trim() || create.isPending}><KeyRound size={14} /> Create token</button>
+          <Button variant="primary" type="submit" disabled={!name.trim() || create.isPending}><KeyRound size={14} /> Create token</Button>
         </form>
 
         {fresh && (
@@ -126,8 +127,8 @@ function AgentAccess({ pid }: { pid: number }) {
             </div>
             <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
               <code className="inline mono" style={{ wordBreak: "break-all", userSelect: "all" }}>{fresh.token}</code>
-              <button className="btn sm" onClick={copy}>{copied ? <Check size={13} /> : <Copy size={13} />} {copied ? "Copied" : "Copy"}</button>
-              <button className="btn sm ghost" onClick={() => setFresh(null)}>I have saved it</button>
+              <Button size="sm" onClick={copy}>{copied ? <Check size={13} /> : <Copy size={13} />} {copied ? "Copied" : "Copy"}</Button>
+              <Button variant="ghost" size="sm" onClick={() => setFresh(null)}>I have saved it</Button>
             </div>
           </div>
         )}
@@ -151,7 +152,7 @@ function AgentAccess({ pid }: { pid: number }) {
                     <td>{t.lastUsedAt ? timeAgo(t.lastUsedAt) : "never"}</td>
                     <td>{t.revokedAt ? `Revoked ${timeAgo(t.revokedAt)}` : "Active"}</td>
                     <td style={{ textAlign: "right" }}>
-                      {!t.revokedAt && <button className="btn sm" aria-label={`Revoke ${t.name}`} onClick={() => setRevoking(t)}><Trash2 size={13} /> Revoke</button>}
+                      {!t.revokedAt && <Button size="sm" aria-label={`Revoke ${t.name}`} onClick={() => setRevoking(t)}><Trash2 size={13} /> Revoke</Button>}
                     </td>
                   </tr>
                 ))}
@@ -207,11 +208,11 @@ function ProjectSection({ pid }: { pid: number }) {
           The id is what an agent's configuration calls <code className="inline">projectId</code>, and what the API addresses contain (<code className="inline">/api/projects/{project.id}/…</code>).
           The key is what case IDs use. The id never changes, even when the project is renamed.
         </div>
-        <div className="row"><button className="btn" onClick={() => setRenaming(true)}><Pencil size={14} /> Rename</button></div>
+        <div className="row"><Button onClick={() => setRenaming(true)}><Pencil size={14} /> Rename</Button></div>
       </Card>
       <Card title="Delete this project">
         <div className="muted">Permanently deletes the project and everything in it. You are asked to type the key first, and a backup is saved before when automatic backups are on.</div>
-        <div className="row"><button className="btn" style={{ color: "var(--failed-fg)" }} onClick={() => setDeleting(true)}><Trash2 size={14} /> Delete this project…</button></div>
+        <div className="row"><Button style={{ color: "var(--failed-fg)" }} onClick={() => setDeleting(true)}><Trash2 size={14} /> Delete this project…</Button></div>
       </Card>
       {renaming && <RenameProjectModal project={project} onClose={() => setRenaming(false)} />}
       {deleting && <DeleteProjectModal project={project} onClose={() => setDeleting(false)} />}
@@ -270,7 +271,7 @@ function Account() {
         <>
           <div className="muted">This Testbench is protected with a password, and you are signed in.</div>
           <div className="row">
-            <button className="btn" onClick={async () => { await api.post("/api/logout"); window.location.href = "/login"; }}><LogOut size={14} /> Sign out</button>
+            <Button onClick={async () => { await api.post("/api/logout"); window.location.href = "/login"; }}><LogOut size={14} /> Sign out</Button>
           </div>
         </>
       ) : (
