@@ -5,6 +5,8 @@ import { Bot, Download, GitBranch, Hand, Play, Plus } from "lucide-react";
 import { api, formatDuration, passRate, timeAgo, type Milestone, type RunSummary, type RunTemplate } from "../api";
 import { CasePicker, useRunnableCases } from "../components/CasePicker";
 import { Empty, FrameworkBadge, Github, Kbd, Modal, ProgressBar, useHotkeys, useToast, ListSkeleton } from "../components/ui";
+import { Badge, CiStatusBadge } from "../components/Badge";
+import { Button } from "../components/Button";
 import { TemplateModal, TemplatesPanel, useTemplates } from "./Templates";
 
 type Kind = "all" | "manual" | "automated" | "templates";
@@ -29,12 +31,12 @@ export function RunsPage() {
       <div className="topbar">
         <h1>Runs</h1>
         <span className="spacer" />
-        <button className="btn" onClick={() => navigate(`/p/${pid}/import`)}>
+        <Button onClick={() => navigate(`/p/${pid}/import`)}>
           <Download size={14} /> Import results
-        </button>
-        <button className="btn primary" onClick={() => setCreating(true)}>
+        </Button>
+        <Button variant="primary" onClick={() => setCreating(true)}>
           <Plus size={14} /> New manual run <Kbd>C</Kbd>
-        </button>
+        </Button>
       </div>
       <div className="toolbar">
         <div className="tabs" role="tablist">
@@ -46,7 +48,7 @@ export function RunsPage() {
         </div>
         <span className="spacer" />
         {kind === "templates" && templates.length > 0 && (
-          <button className="btn sm" onClick={() => setEditing("new")}><Plus size={13} /> New template</button>
+          <Button size="sm" onClick={() => setEditing("new")}><Plus size={13} /> New template</Button>
         )}
       </div>
       <div className="content">
@@ -58,8 +60,8 @@ export function RunsPage() {
             title="No runs yet"
             action={
               <div className="row">
-                <button className="btn primary" onClick={() => setCreating(true)}><Plus size={14} /> New manual run</button>
-                <button className="btn" onClick={() => navigate(`/p/${pid}/import`)}><Download size={14} /> Import results</button>
+                <Button variant="primary" onClick={() => setCreating(true)}><Plus size={14} /> New manual run</Button>
+                <Button onClick={() => navigate(`/p/${pid}/import`)}><Download size={14} /> Import results</Button>
               </div>
             }
           >
@@ -88,8 +90,8 @@ function RunRow({ run }: { run: RunSummary }) {
       <div className="grow" style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         <div className="row" style={{ gap: 8 }}>
           <span className="truncate" style={{ fontWeight: 500 }}>{run.title}</span>
-          {run.kind === "manual" && run.status === "in_progress" && <span className="chip accent">In progress</span>}
-          {run.flaky > 0 && <span className="chip" style={{ color: "var(--flaky-fg)" }}>{run.flaky} flaky</span>}
+          {run.kind === "manual" && run.status === "in_progress" && <Badge tone="accent" icon="eye">In progress</Badge>}
+          {run.flaky > 0 && <CiStatusBadge value="flaky" label={`${run.flaky} flaky`} />}
         </div>
         <div className="row faint" style={{ gap: 8, fontSize: "var(--fs-sm)" }}>
           <span>{timeAgo(run.started_at)}</span>
@@ -196,14 +198,13 @@ export function NewRunModal({ initialCaseIds = [], initialTitle, template, rerun
       footer={
         <>
           <span className="muted" style={{ marginRight: "auto" }}>{caseIds.length} of {runnable.length} cases</span>
-          <button className="btn ghost" onClick={onClose}>Cancel</button>
-          <button
-            className="btn primary"
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="primary"
             disabled={!caseIds.length || !title.trim() || (saveAs && !saveName.trim()) || create.isPending}
             onClick={() => create.mutate()}
           >
             <Play size={13} /> Start run
-          </button>
+          </Button>
         </>
       }
     >
