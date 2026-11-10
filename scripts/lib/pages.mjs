@@ -2,6 +2,15 @@
 import { chromium } from "playwright-core";
 
 const HDR = { "X-Testbench": "1", "Content-Type": "application/json" };
+/** For an instance with accounts: CHECK_COOKIE="tb_sid=<value>" makes the checks open the pages as that signed-in person. */
+const COOKIE = process.env.CHECK_COOKIE ?? "";
+const withCookie = (init = {}) => (COOKIE ? { ...init, headers: { ...(init.headers ?? {}), Cookie: COOKIE } } : init);
+
+/** Signs a browser context in as the person in CHECK_COOKIE, if there is one. */
+export async function withSession(ctx, base) {
+  const m = /^([^=]+)=(.+)$/.exec(COOKIE);
+  if (m) await ctx.addCookies([{ name: m[1], value: m[2], url: base }]);
+}
 
 /** The address of the instance to check. Required on purpose: point these checks at a throwaway instance, never at your own data. */
 export function baseUrlFromArgs(script) {
@@ -22,7 +31,7 @@ export async function discoverPages(base) {
   if (only.length) return only.map((p) => [p, p]);
 
   const api = async (path, init) => {
-    const res = await fetch(base + path, init);
+    const res = await fetch(base + path, withCookie(init));
     if (!res.ok) throw new Error(`${path} -> ${res.status}`);
     return res.json();
   };
@@ -68,6 +77,7 @@ export async function discoverPages(base) {
     ["Manual tests", `/p/${pid}/manual-tests`],
     ["Sprint reports", `/p/${pid}/reports${milestones[0] ? `/${milestones[0].id}` : ""}`],
     ["Settings", `/p/${pid}/settings`],
+    ["Settings, members", `/p/${pid}/settings/members`],
     ["Settings, your name", `/p/${pid}/settings/account`],
     ["Backup & restore", `/p/${pid}/backup`],
   ];

@@ -14,6 +14,7 @@
     "test": "tsx --test test/*.test.ts",
     "check:contrast": "node scripts/check-contrast.mjs",
     "check:layout": "node scripts/check-layout.mjs",
+    "check:roles": "node scripts/check-roles-ui.mjs",
     "accounts": "tsx scripts/accounts.ts",
     "audit:package": "tsx scripts/audit-package.ts",
     "audit:export:testbench": "tsx scripts/audit-export-testbench.ts"

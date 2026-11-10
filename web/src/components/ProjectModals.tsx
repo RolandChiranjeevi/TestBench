@@ -23,7 +23,7 @@ export function RenameProjectModal({ project, onClose }: { project: Project; onC
       title="Rename project"
       onClose={onClose}
       width={440}
-      footer={<Button variant="primary" disabled={!valid || save.isPending} onClick={() => save.mutate()}>Save</Button>}
+      footer={<Button needs="admin" variant="primary" disabled={!valid || save.isPending} onClick={() => save.mutate()}>Save</Button>}
     >
       <form className="col" style={{ gap: 12 }} onSubmit={(e) => { e.preventDefault(); if (valid) save.mutate(); }}>
         <div className="field">

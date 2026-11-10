@@ -6,10 +6,12 @@ import { api, formatDuration, timeAgo, type AutomatedTest, type CaseSummary, typ
 import { Empty, FrameworkBadge, StatusIcon, useToast, ListSkeleton } from "../components/ui";
 import { InsightsPage, ViewTabs } from "./Insights";
 import { Button } from "../components/Button";
+import { useCan } from "../components/Access";
 
 type Filter = "all" | "unlinked" | "failing" | "flaky";
 
 export function AutomatedPage() {
+  const canEdit = useCan("tester");
   const { pid } = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -70,7 +72,7 @@ export function AutomatedPage() {
           <input className="input" placeholder="Search tests" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search tests" />
         </div>
         {tests?.some((t) => !t.case_id) && (
-          <Button onClick={() => relink.mutate()} disabled={relink.isPending} title={`Link tests whose name contains a case ID like ${key}-12`}>
+          <Button needs="tester" onClick={() => relink.mutate()} disabled={relink.isPending} title={`Link tests whose name contains a case ID like ${key}-12`}>
             <Link2 size={14} /> Re-link by name
           </Button>
         )}
@@ -146,6 +148,7 @@ export function AutomatedPage() {
                         <span className="truncate" style={{ color: t.case_id ? "var(--text-2)" : "var(--text-4)" }}>{t.case_id ? t.case_title : "Link to case…"}</span>
                         <select
                           value={t.case_id ?? ""}
+                          disabled={!canEdit}
                           onChange={(e) => link.mutate({ id: t.id, caseId: e.target.value ? Number(e.target.value) : null })}
                           aria-label={`Linked case for ${t.title}`}
                         >
@@ -217,7 +220,7 @@ function SuggestionsPanel() {
           Judged by TypeSafe from the test and case text. Titles and steps are sent to their API. Review each one.
         </span>
         <span className="spacer" />
-        <Button size="sm" onClick={() => check.mutate(!unjudged)} disabled={check.isPending}>
+        <Button needs="tester" size="sm" onClick={() => check.mutate(!unjudged)} disabled={check.isPending}>
           {check.isPending ? "Checking…" : unjudged ? `Check ${Math.min(unjudged, 20)} of ${unjudged} unlinked tests` : "Check again"}
         </Button>
       </div>
@@ -235,8 +238,8 @@ function SuggestionsPanel() {
               <span className="mono muted key-col">{key}-{c.number}</span>
               <span className="truncate grow">{c.title}</span>
               <span className="chip" title="Probability that the test checks this case">{Math.round(c.probability * 100)}%</span>
-              <Button variant="primary" size="sm" onClick={() => accept.mutate({ testId: s.testId, caseId: c.caseId })} disabled={accept.isPending}>Link</Button>
-              <Button variant="ghost" size="sm" onClick={() => dismiss.mutate({ testId: s.testId, caseId: c.caseId })}>Dismiss</Button>
+              <Button needs="tester" variant="primary" size="sm" onClick={() => accept.mutate({ testId: s.testId, caseId: c.caseId })} disabled={accept.isPending}>Link</Button>
+              <Button needs="tester" variant="ghost" size="sm" onClick={() => dismiss.mutate({ testId: s.testId, caseId: c.caseId })}>Dismiss</Button>
             </div>
           ))}
         </div>

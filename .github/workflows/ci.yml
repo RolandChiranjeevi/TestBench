@@ -74,6 +74,16 @@ jobs:
           cat "$RUNNER_TEMP/server2.log"; exit 1
       - name: Check the sign-in page
         run: CONTRAST_ONLY=/login npm run check:contrast -- http://127.0.0.1:4101
+      # Roles: a third, empty instance gets accounts and people with each role, and the screens are checked as each of them (labels, buttons that are off, settings tabs, the
+      # members page), then contrast and layout as a viewer and as an admin. The checks above run on an instance without accounts, so they never see any of this.
+      - name: Start a third instance for accounts and roles
+        run: |
+          NODE_ENV=production TESTBENCH_DATA="$RUNNER_TEMP/data3" TESTBENCH_AUTO_BACKUP=0 TESTBENCH_PORT=4102 \
+            nohup npx tsx server/index.ts > "$RUNNER_TEMP/server3.log" 2>&1 &
+          for _ in $(seq 1 30); do curl -fsS http://127.0.0.1:4102/api/auth/status >/dev/null && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/server3.log"; exit 1
+      - name: Check the screens of roles
+        run: npm run check:roles -- http://127.0.0.1:4102
 
   docker:
     name: Docker image (linux/amd64)

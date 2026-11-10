@@ -1,7 +1,8 @@
 export type Status = "untested" | "passed" | "failed" | "blocked" | "skipped";
 export type Priority = "low" | "medium" | "high" | "critical";
 
-export interface Project { id: number; name: string; key: string; case_count: number; run_count: number }
+/** `role` is the person's role in the project (the owner is an admin everywhere); the server sends it with the list. */
+export interface Project { id: number; name: string; key: string; case_count: number; run_count: number; role?: "admin" | "tester" | "viewer" }
 export interface Suite { id: number; project_id: number; parent_id: number | null; name: string; description: string; position: number; case_count: number }
 /** Suites in the order the tree shows them: each suite followed by its children, siblings by position. */
 export function orderSuites<T extends { id: number; parent_id: number | null }>(suites: T[]): T[] {
@@ -179,7 +180,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
   // Signed out (or the session expired) on an instance with a password: go to the login page.
   if (res.status === 401 && !url.startsWith("/api/login")) window.location.href = "/login";
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(data.error ?? `${res.status} ${res.statusText}`), { problems: Array.isArray(data.problems) ? (data.problems as string[]) : [] });
+  if (!res.ok) throw Object.assign(new Error(data.error ?? `${res.status} ${res.statusText}`), { status: res.status, problems: Array.isArray(data.problems) ? (data.problems as string[]) : [] });
   return data as T;
 }
 

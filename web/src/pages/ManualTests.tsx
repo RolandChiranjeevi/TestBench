@@ -8,6 +8,7 @@ import { proposalCaseLink } from "../caseFilter";
 import { ImportModal, Severity, StatusChip, useRefresh, whenShort } from "./BugReports";
 import { Button, buttonClass } from "../components/Button";
 import { Badge } from "../components/Badge";
+import { useCan } from "../components/Access";
 
 type Status = "proposed" | "accepted" | "rejected";
 type Presence = "present" | "missing" | "no_later_run";
@@ -65,7 +66,7 @@ export function ManualTestsPage() {
       <div className="topbar">
         <h1>Agent proposals</h1>
         <span className="spacer" />
-        <Button variant="primary" onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</Button>
+        <Button needs="tester" variant="primary" onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</Button>
       </div>
       {latest && (
         <section aria-label="Latest audit" className="row" style={{ flexShrink: 0, gap: 8, flexWrap: "wrap", minHeight: 24, padding: "6px 16px 6px 20px", borderBottom: "1px solid var(--border)", fontSize: "var(--fs-md)" }}>
@@ -123,7 +124,7 @@ export function ManualTestsPage() {
           <ListSkeleton />
         ) : !data?.items.length ? (
           <Empty icon={<ClipboardCheck size={20} />} title={filtered ? "No proposals match these filters" : tab === "proposed" ? "Nothing waiting for review" : "No proposals here"}
-            action={<Button onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</Button>}>
+            action={<Button needs="tester" onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</Button>}>
             An audit package can carry a manual-tests.json: checks an automatic run cannot decide, such as reading order with a screen reader.
           </Empty>
         ) : (
@@ -180,6 +181,7 @@ function Standing({ r }: { r: Detail["latestRun"] }) {
 }
 
 function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: () => void }) {
+  const canEdit = useCan("tester");
   const toast = useToast();
   const refresh = useRefresh(pid);
   const { data: t } = useQuery({ queryKey: ["manual-test", id], queryFn: () => api.get<Detail>(`/api/manual-tests/${id}`) });
@@ -208,7 +210,7 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
       title={<span className="row" style={{ gap: 8 }}><span className="mono faint">{t.sourceId}</span><StatusChip status={t.status} /></span>}
       onClose={onClose}
       width={820}
-      footer={<><Button variant="ghost" style={DANGER} onClick={() => setDeleting(true)}><Trash2 size={13} /> Delete</Button><span className="spacer" /><Button onClick={onClose}>Close</Button></>}
+      footer={<><Button needs="tester" variant="ghost" style={DANGER} onClick={() => setDeleting(true)}><Trash2 size={13} /> Delete</Button><span className="spacer" /><Button onClick={onClose}>Close</Button></>}
     >
       <div className="col" style={{ gap: 14 }}>
         {t.testCase ? (
@@ -227,7 +229,7 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
             <span style={{ fontSize: "var(--fs-md)" }} className="grow">
               {t.status === "proposed" ? "Proposed by a test agent. Review it first; a person has to run it." : t.status === "accepted" ? "Accepted. Create a test case from it to run it in Runs and have it count as coverage. Testbench does not run it or decide its result." : "Rejected. It is kept for reference and is not used."}
             </span>
-            {t.status === "accepted" && <Button variant="primary" size="sm" onClick={() => run(() => api.post(`/api/manual-tests/${id}/create-case`), "Test case created. Run it in Runs.")}><ClipboardCheck size={13} /> Create test case</Button>}
+            {t.status === "accepted" && <Button needs="tester" variant="primary" size="sm" onClick={() => run(() => api.post(`/api/manual-tests/${id}/create-case`), "Test case created. Run it in Runs.")}><ClipboardCheck size={13} /> Create test case</Button>}
           </div>
         )}
 
@@ -236,8 +238,8 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
             <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
               <strong>The agent sent a newer version (revision {t.pendingUpdate.rev})</strong>
               <span className="spacer" />
-              <Button size="sm" onClick={() => post("ignore-update", undefined, "Kept your version")}>Keep mine</Button>
-              <Button variant="primary" size="sm" onClick={() => post("apply-update", undefined, "Applied the agent's version")}>Use the agent's version</Button>
+              <Button needs="tester" size="sm" onClick={() => post("ignore-update", undefined, "Kept your version")}>Keep mine</Button>
+              <Button needs="tester" variant="primary" size="sm" onClick={() => post("apply-update", undefined, "Applied the agent's version")}>Use the agent's version</Button>
             </div>
             <div className="faint" style={{ fontSize: "var(--fs-sm)", margin: "6px 0" }}>Your edits, your review and your own priority are not changed until you choose. Applying replaces the text below with the agent's.</div>
             {t.pendingUpdate.changes.map((c) => (
@@ -251,9 +253,9 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
         )}
 
         <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-          {t.status !== "accepted" && <Button variant="primary" onClick={() => post("review", { status: "accepted", note: note || undefined }, "Accepted. Nothing was run.")}><Check size={14} /> Accept</Button>}
-          {t.status !== "rejected" && <Button onClick={() => post("review", { status: "rejected", note: note || undefined }, "Rejected")}>Reject</Button>}
-          {t.status !== "proposed" && <Button variant="ghost" onClick={() => post("review", { status: "proposed" }, "Back to proposed")}>Reopen</Button>}
+          {t.status !== "accepted" && <Button needs="tester" variant="primary" onClick={() => post("review", { status: "accepted", note: note || undefined }, "Accepted. Nothing was run.")}><Check size={14} /> Accept</Button>}
+          {t.status !== "rejected" && <Button needs="tester" onClick={() => post("review", { status: "rejected", note: note || undefined }, "Rejected")}>Reject</Button>}
+          {t.status !== "proposed" && <Button needs="tester" variant="ghost" onClick={() => post("review", { status: "proposed" }, "Back to proposed")}>Reopen</Button>}
           <input className="input grow" aria-label="Review note" placeholder="Note about your decision (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
         </div>
         {t.reviewNote && <div className="faint">Note: {t.reviewNote}{t.reviewedAt ? ` · ${timeAgo(t.reviewedAt)}` : ""}</div>}
@@ -264,7 +266,7 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
           <div><div className="section-label">Agent's priority</div><Severity value={t.priority.agent} /></div>
           <div>
             <label className="section-label" htmlFor="human-prio">Your priority</label>
-            <select id="human-prio" className="select" disabled={!!t.testCase} value={t.priority.human ?? ""} onChange={(e) => run(() => api.patch(`/api/manual-tests/${id}`, { humanPriority: e.target.value || null }))}>
+            <select id="human-prio" className="select" disabled={!!t.testCase || !canEdit} value={t.priority.human ?? ""} onChange={(e) => run(() => api.patch(`/api/manual-tests/${id}`, { humanPriority: e.target.value || null }))}>
               <option value="">Not set (use the agent's)</option>
               {(["low", "medium", "high", "critical"] as const).map((s) => <option key={s} value={s}>{PRIORITY_LABEL[s]}</option>)}
             </select>
@@ -279,11 +281,11 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
             <textarea className="textarea" aria-label="Preconditions" rows={2} value={draft.preconditions} onChange={(e) => setDraft({ ...draft, preconditions: e.target.value })} placeholder="Preconditions" />
             <textarea className="textarea" aria-label="Steps, one per line" rows={5} value={draft.steps} onChange={(e) => setDraft({ ...draft, steps: e.target.value })} placeholder="Steps, one per line" />
             <textarea className="textarea" aria-label="Expected result" rows={3} value={draft.expected} onChange={(e) => setDraft({ ...draft, expected: e.target.value })} placeholder="Expected result" />
-            <div className="row"><Button variant="primary" disabled={!draft.title.trim() || !draft.expected.trim() || !draft.steps.trim()} onClick={save}>Save</Button><Button variant="ghost" onClick={() => setEditing(false)}>Cancel</Button></div>
+            <div className="row"><Button needs="tester" variant="primary" disabled={!draft.title.trim() || !draft.expected.trim() || !draft.steps.trim()} onClick={save}>Save</Button><Button variant="ghost" onClick={() => setEditing(false)}>Cancel</Button></div>
           </div>
         ) : (
           <div className="col" style={{ gap: 10 }}>
-            <div className="row"><h2 style={{ margin: 0, fontSize: "var(--fs-lg)", overflowWrap: "anywhere" }}>{t.title}</h2><span className="spacer" />{!t.testCase && <Button size="sm" onClick={startEdit}><Pencil size={12} /> Edit</Button>}</div>
+            <div className="row"><h2 style={{ margin: 0, fontSize: "var(--fs-lg)", overflowWrap: "anywhere" }}>{t.title}</h2><span className="spacer" />{!t.testCase && <Button needs="tester" size="sm" onClick={startEdit}><Pencil size={12} /> Edit</Button>}</div>
             {edited && <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>You edited this {timeAgo(t.editedAt!)}. A later import will not overwrite it without asking.</div>}
             <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
               <span className="chip">{CATEGORY_LABEL[t.category]}</span>
@@ -309,7 +311,7 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
         )}
 
         <div className="field">
-          <div className="section-label">Linked to {unresolved.length > 0 && <Button variant="ghost" size="sm" onClick={() => post("relink", undefined, "Checked again")}>Check again</Button>}</div>
+          <div className="section-label">Linked to {unresolved.length > 0 && <Button needs="tester" variant="ghost" size="sm" onClick={() => post("relink", undefined, "Checked again")}>Check again</Button>}</div>
           {t.refs.length === 0 ? <span className="faint">No requirements or test cases named.</span> : t.refs.map((r) => (
             <div key={r.id} className="row" style={{ gap: 8, padding: "2px 0", flexWrap: "wrap" }}>
               <span className="chip" style={r.state === "resolved" ? undefined : { color: "var(--blocked-fg)" }}>{r.state === "resolved" ? "linked" : r.state.replace("_", " ")}</span>
@@ -318,11 +320,11 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
             </div>
           ))}
           {t.testCase ? null : reqs === null ? (
-            <Button size="sm" style={{ marginTop: 6 }} onClick={() => setReqs(reqRefs.map((r) => r.raw).join(", "))}>Edit requirements</Button>
+            <Button needs="tester" size="sm" style={{ marginTop: 6 }} onClick={() => setReqs(reqRefs.map((r) => r.raw).join(", "))}>Edit requirements</Button>
           ) : (
             <div className="row" style={{ gap: 6, marginTop: 6 }}>
               <input className="input grow" aria-label="Requirements this test covers" placeholder="REQ-3, CHK-001" value={reqs} onChange={(e) => setReqs(e.target.value)} />
-              <Button variant="primary" onClick={() => run(() => api.patch(`/api/manual-tests/${id}`, { requirements: reqs.split(/[,\s]+/).filter(Boolean) }), "Saved").then(() => setReqs(null))}>Save</Button>
+              <Button needs="tester" variant="primary" onClick={() => run(() => api.patch(`/api/manual-tests/${id}`, { requirements: reqs.split(/[,\s]+/).filter(Boolean) }), "Saved").then(() => setReqs(null))}>Save</Button>
               <Button variant="ghost" onClick={() => setReqs(null)}>Cancel</Button>
             </div>
           )}

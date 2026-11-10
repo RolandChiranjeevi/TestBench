@@ -7,6 +7,7 @@ import { Empty, ListSkeleton, Modal, useConfirm, useToast } from "../components/
 import { ObservationStatusBadge, SeverityBadge } from "../components/Badge";
 import { Button, buttonClass } from "../components/Button";
 import { FilterChip } from "../components/FilterChip";
+import { useCan } from "../components/Access";
 
 type Kind = "load_test" | "security_review";
 type Severity = "info" | "low" | "medium" | "high" | "critical";
@@ -72,6 +73,7 @@ function StatusFilter({ counts, value, onChange }: { counts: Record<Status, numb
  * and are listed apart from the bug reports. Turning one into a bug is a decision made here, never automatic.
  */
 export function ObservationsPage() {
+  const canEdit = useCan("tester");
   const { pid = "" } = useParams();
   const [sp, setSp] = useSearchParams();
   const qc = useQueryClient();
@@ -213,7 +215,7 @@ export function ObservationsPage() {
                         {isOpenStatus(o.status) ? (
                           <>
                             <label className="faint" htmlFor={`st-${o.id}`}>Status</label>
-                            <select id={`st-${o.id}`} className="select" style={{ width: "auto" }} value={o.status} disabled={setStatus.isPending} onChange={(e) => setStatus.mutate({ id: o.id, status: e.target.value as Status })}>
+                            <select id={`st-${o.id}`} className="select" style={{ width: "auto" }} value={o.status} disabled={setStatus.isPending || !canEdit} onChange={(e) => setStatus.mutate({ id: o.id, status: e.target.value as Status })}>
                               {STATUSES.filter(([k]) => isOpenStatus(k)).map(([k, name]) => <option key={k} value={k}>{name}</option>)}
                             </select>
                             <span className="faint">{o.statusSetBy === "human" ? "set by a person" : "set by the agent"}</span>
@@ -226,16 +228,16 @@ export function ObservationsPage() {
                         <span className="spacer" />
                         {isOpenStatus(o.status) && (
                           <>
-                            <Button size="sm" disabled={closing.isPending} onClick={() => close(o, "archive")}>Archive</Button>
-                            <Button size="sm" disabled={closing.isPending} onClick={() => close(o, "resolve")}>Mark as resolved</Button>
+                            <Button needs="tester" size="sm" disabled={closing.isPending} onClick={() => close(o, "archive")}>Archive</Button>
+                            <Button needs="tester" size="sm" disabled={closing.isPending} onClick={() => close(o, "resolve")}>Mark as resolved</Button>
                           </>
                         )}
                         {(o.status === "archived" || o.status === "resolved" || (o.status === "converted" && !o.convertedBugId)) && (
-                          <Button size="sm" disabled={closing.isPending} onClick={() => close(o, "reopen")}>Reopen</Button>
+                          <Button needs="tester" size="sm" disabled={closing.isPending} onClick={() => close(o, "reopen")}>Reopen</Button>
                         )}
                         {o.convertedBugId
                           ? <Link className={buttonClass("secondary", "sm")} to={`/p/${pid}/bugs?bug=${o.convertedBugId}`}>Open the bug report</Link>
-                          : <Button size="sm" onClick={() => setConverting(o)}>Convert to bug</Button>}
+                          : <Button needs="tester" size="sm" onClick={() => setConverting(o)}>Convert to bug</Button>}
                       </div>
                     </div>
                   )}
@@ -261,7 +263,7 @@ export function ObservationsPage() {
           footer={
             <>
               <Button variant="ghost" onClick={() => setConverting(null)} disabled={convert.isPending}>Cancel</Button>
-              <Button variant="primary" disabled={convert.isPending} onClick={() => convert.mutate(converting.id)}>{convert.isPending ? "Making…" : "Make a bug report"}</Button>
+              <Button needs="tester" variant="primary" disabled={convert.isPending} onClick={() => convert.mutate(converting.id)}>{convert.isPending ? "Making…" : "Make a bug report"}</Button>
             </>
           }
         >

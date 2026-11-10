@@ -5,7 +5,7 @@
 // Usage:  node scripts/check-contrast.mjs <baseUrl>        e.g. http://127.0.0.1:4100
 // Point it at a THROWAWAY instance: the address is required on purpose, and with CONTRAST_SEED=1 it creates the demo project in an
 // empty instance. It only reads otherwise. Needs Chrome: TESTBENCH_CHROME_PATH or TESTBENCH_CHROME_CHANNEL (default "chrome") pick it.
-import { baseUrlFromArgs, discoverPages, launchBrowser } from "./lib/pages.mjs";
+import { baseUrlFromArgs, discoverPages, launchBrowser, withSession } from "./lib/pages.mjs";
 
 const BASE = baseUrlFromArgs("check-contrast.mjs");
 const PAGES = await discoverPages(BASE);
@@ -98,6 +98,7 @@ const groups = new Map();
 let checked = 0;
 for (const scheme of ["dark", "light"]) {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: scheme });
+  await withSession(ctx, BASE);
   const page = await ctx.newPage();
   for (const [name, path] of PAGES) {
     await page.goto(BASE + path, { waitUntil: "networkidle" });

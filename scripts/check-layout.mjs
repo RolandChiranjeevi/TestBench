@@ -7,7 +7,7 @@
 //  - or leaves no way to open the navigation on a phone.
 //
 // Usage:  node scripts/check-layout.mjs <baseUrl>        (a THROWAWAY instance; CHECK_SEED=1 fills an empty one with the demo project)
-import { baseUrlFromArgs, discoverPages, launchBrowser } from "./lib/pages.mjs";
+import { baseUrlFromArgs, discoverPages, launchBrowser, withSession } from "./lib/pages.mjs";
 
 const BASE = baseUrlFromArgs("check-layout.mjs");
 const PAGES = await discoverPages(BASE);
@@ -111,6 +111,7 @@ const failures = [];
 let views = 0;
 for (const width of WIDTHS) {
   const ctx = await browser.newContext({ viewport: { width, height: HEIGHT }, colorScheme: "dark" });
+  await withSession(ctx, BASE);
   const page = await ctx.newPage();
   for (const [name, path] of PAGES) {
     await page.goto(BASE + path, { waitUntil: "networkidle" });

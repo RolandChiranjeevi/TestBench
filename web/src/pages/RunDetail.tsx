@@ -16,6 +16,7 @@ import { Button, buttonClass } from "../components/Button";
 import { AutomatedDetail } from "./AutomatedDetail";
 import { NewRunModal } from "./Runs";
 import { BugReportModal, jiraLabel, jiraUrl } from "./BugReport";
+import { useCan } from "../components/Access";
 
 export function RunDetailPage() {
   const { pid, runId } = useParams();
@@ -72,7 +73,7 @@ function RunTitle({ run }: { run: RunDetail }) {
   return (
     <>
       <span className="truncate" onDoubleClick={() => { setValue(run.title); setEditing(true); }} title="Double-click to rename">{run.title}</span>
-      <Button variant="ghost" size="sm" icon onClick={() => { setValue(run.title); setEditing(true); }} aria-label="Rename run" title="Rename run"><Pencil size={12} /></Button>
+      <Button needs="tester" variant="ghost" size="sm" icon onClick={() => { setValue(run.title); setEditing(true); }} aria-label="Rename run" title="Rename run"><Pencil size={12} /></Button>
     </>
   );
 }
@@ -106,7 +107,7 @@ function RunHeader({ run, children }: { run: RunDetail; children?: ReactNode }) 
       <span className="spacer" />
       {rerunOf && <Link className="chip" to={`/p/${pid}/runs/${rerunOf.id}`} title="The run this one re-tests">Re-run of {rerunOf.title}</Link>}
       {failing.length > 0 && (
-        <Button size="sm"
+        <Button needs="tester" size="sm"
           disabled={!caseIds.length}
           onClick={() => setRerun(true)}
           title={caseIds.length ? `Start a manual run with the ${caseIds.length} failed or blocked ${caseIds.length === 1 ? "case" : "cases"}${unlinked ? `. ${unlinked} failing ${unlinked === 1 ? "test isn't" : "tests aren't"} linked to a case and can't be included` : ""}` : "None of the failing tests are linked to a case"}
@@ -115,7 +116,7 @@ function RunHeader({ run, children }: { run: RunDetail; children?: ReactNode }) 
         </Button>
       )}
       {children}
-      <Button variant="danger" size="sm" icon onClick={remove} title="Delete run" aria-label="Delete run">
+      <Button needs="tester" variant="danger" size="sm" icon onClick={remove} title="Delete run" aria-label="Delete run">
         <Trash2 size={14} />
       </Button>
       {rerun && (
@@ -141,6 +142,7 @@ const EXEC_STATUSES: { s: Status; key: string }[] = [
 ];
 
 function ManualRun({ run }: { run: RunDetail }) {
+  const canEdit = useCan("tester");
   const { runId } = useParams();
   const qc = useQueryClient();
   const toast = useToast();
@@ -207,10 +209,10 @@ function ManualRun({ run }: { run: RunDetail }) {
     k: () => select(results[Math.max(idx - 1, 0)]?.id),
     ArrowDown: () => select(results[Math.min(idx + 1, results.length - 1)]?.id),
     ArrowUp: () => select(results[Math.max(idx - 1, 0)]?.id),
-    p: () => mark("passed", true),
-    f: () => mark("failed", false),
-    b: () => mark("blocked", false),
-    s: () => mark("skipped", true),
+    p: () => canEdit && mark("passed", true),
+    f: () => canEdit && mark("failed", false),
+    b: () => canEdit && mark("blocked", false),
+    s: () => canEdit && mark("skipped", true),
   });
 
   const c = run.counts;
@@ -233,9 +235,9 @@ function ManualRun({ run }: { run: RunDetail }) {
         {run.environment && <span className="chip">{run.environment}</span>}
         {run.milestone && <span className="chip accent">{run.milestone}</span>}
         {run.status === "completed" ? (
-          <Button size="sm" onClick={() => complete.mutate("in_progress")}><RotateCcw size={12} /> Reopen</Button>
+          <Button needs="tester" size="sm" onClick={() => complete.mutate("in_progress")}><RotateCcw size={12} /> Reopen</Button>
         ) : (
-          <Button variant="primary" size="sm" onClick={() => complete.mutate("completed")} disabled={complete.isPending}>
+          <Button needs="tester" variant="primary" size="sm" onClick={() => complete.mutate("completed")} disabled={complete.isPending}>
             <Check size={13} /> Complete run
           </Button>
         )}
@@ -288,6 +290,7 @@ function ManualRun({ run }: { run: RunDetail }) {
 }
 
 function ExecutionPanel({ resultId, projectKey, run, onMark }: { resultId: number; projectKey: string; run: { title: string; environment: string; milestone: string }; onMark: (s: Status) => void }) {
+  const canEdit = useCan("tester");
   const [bugOpen, setBugOpen] = useState(false);
   const qc = useQueryClient();
   const toast = useToast();
@@ -408,14 +411,14 @@ function ExecutionPanel({ resultId, projectKey, run, onMark }: { resultId: numbe
         </div>
         <div className="status-btns">
           {EXEC_STATUSES.map(({ s, key }) => (
-            <button key={s} className={`status-btn ${s}${r.status === s ? " on" : ""}`} onClick={() => onMark(s)} aria-pressed={r.status === s}>
+            <button key={s} className={`status-btn ${s}${r.status === s ? " on" : ""}`} disabled={!canEdit} onClick={() => onMark(s)} aria-pressed={r.status === s}>
               <StatusIcon status={s} /> {STATUS_LABEL[s]} <Kbd>{key.toUpperCase()}</Kbd>
             </button>
           ))}
         </div>
         {(r.status === "failed" || r.status === "blocked") && (
           <div className="row" style={{ gap: 8 }}>
-            <Button size="sm" onClick={() => setBugOpen(true)}><Bug size={13} /> {r.jira_key ? "Edit bug report" : "Report bug"}</Button>
+            <Button needs="tester" size="sm" onClick={() => setBugOpen(true)}><Bug size={13} /> {r.jira_key ? "Edit bug report" : "Report bug"}</Button>
             {r.jira_key &&
               (jiraUrl(r.jira_key) ? (
                 <a className="chip accent" href={jiraUrl(r.jira_key)!} target="_blank" rel="noreferrer">{jiraLabel(r.jira_key)}</a>
@@ -457,9 +460,9 @@ function ExecutionPanel({ resultId, projectKey, run, onMark }: { resultId: numbe
                     )}
                   </div>
                   <div className="mini-status" role="group" aria-label={`Step ${i + 1} result`}>
-                    <button className={`passed${sr?.status === "passed" ? " on" : ""}`} onClick={() => markStep(s.id, "passed")} title="Passed" aria-pressed={sr?.status === "passed"}><Check size={14} /></button>
-                    <button className={`failed${sr?.status === "failed" ? " on" : ""}`} onClick={() => markStep(s.id, "failed")} title="Failed" aria-pressed={sr?.status === "failed"}><X size={14} /></button>
-                    <button className={`blocked${sr?.status === "blocked" ? " on" : ""}`} onClick={() => markStep(s.id, "blocked")} title="Blocked" aria-pressed={sr?.status === "blocked"}><Ban size={13} /></button>
+                    <button className={`passed${sr?.status === "passed" ? " on" : ""}`} disabled={!canEdit} onClick={() => markStep(s.id, "passed")} title="Passed" aria-pressed={sr?.status === "passed"}><Check size={14} /></button>
+                    <button className={`failed${sr?.status === "failed" ? " on" : ""}`} disabled={!canEdit} onClick={() => markStep(s.id, "failed")} title="Failed" aria-pressed={sr?.status === "failed"}><X size={14} /></button>
+                    <button className={`blocked${sr?.status === "blocked" ? " on" : ""}`} disabled={!canEdit} onClick={() => markStep(s.id, "blocked")} title="Blocked" aria-pressed={sr?.status === "blocked"}><Ban size={13} /></button>
                   </div>
                 </div>
               );
@@ -475,6 +478,7 @@ function ExecutionPanel({ resultId, projectKey, run, onMark }: { resultId: numbe
           rows={3}
           placeholder="What did you observe? Bug links, data used, device…"
           value={notes ?? ""}
+          readOnly={!canEdit}
           onChange={(e) => saveNotes(e.target.value)}
           onBlur={flushNotes}
           aria-label="Notes"
@@ -492,10 +496,11 @@ function ExecutionPanel({ resultId, projectKey, run, onMark }: { resultId: numbe
         )}
         <div
           className={`dropzone${over ? " over" : ""}`}
-          onClick={() => fileRef.current?.click()}
-          onDragOver={(e) => { e.preventDefault(); setOver(true); }}
+          onClick={() => canEdit && fileRef.current?.click()}
+          aria-disabled={!canEdit}
+          onDragOver={(e) => { e.preventDefault(); setOver(canEdit); }}
           onDragLeave={() => setOver(false)}
-          onDrop={(e) => { e.preventDefault(); setOver(false); upload(e.dataTransfer.files); }}
+          onDrop={(e) => { e.preventDefault(); setOver(false); if (canEdit) upload(e.dataTransfer.files); }}
           role="button"
           tabIndex={0}
           onKeyDown={(e) => e.key === "Enter" && fileRef.current?.click()}
@@ -533,7 +538,7 @@ function Thumb({ a, onDelete }: { a: Attachment; onDelete: () => void }) {
       <a href={url} target="_blank" rel="noreferrer" style={{ display: "contents" }}>
         {a.mime.startsWith("image/") ? <img src={url} alt={a.filename} /> : <span className="truncate" style={{ padding: 6 }}>{a.filename}</span>}
       </a>
-      <Button size="sm" icon className="x" onClick={onDelete} aria-label={`Remove ${a.filename}`}><X size={12} /></Button>
+      <Button needs="tester" size="sm" icon className="x" onClick={onDelete} aria-label={`Remove ${a.filename}`}><X size={12} /></Button>
     </div>
   );
 }

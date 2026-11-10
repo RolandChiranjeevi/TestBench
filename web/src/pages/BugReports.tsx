@@ -6,6 +6,7 @@ import { api, formatDateTime, parseDate, timeAgo, type Priority } from "../api";
 import { ConfirmModal, Empty, ListSkeleton, Modal, PRIORITY_LABEL, useToast } from "../components/ui";
 import { Badge, BugWorkflowBadge, CiStatusBadge, ReviewStatusBadge, SeverityBadge } from "../components/Badge";
 import { Button, buttonClass } from "../components/Button";
+import { useCan } from "../components/Access";
 
 type Status = "proposed" | "accepted" | "rejected" | "duplicate";
 interface Item {
@@ -131,11 +132,11 @@ export function BugReportsPage() {
       <div className="topbar">
         <h1>Bug reports</h1>
         <span className="spacer" />
-        <Button onClick={() => setDestinationOpen(true)} title="Where accepted reports are published">
+        <Button needs="admin" onClick={() => setDestinationOpen(true)} title="Where accepted reports are published">
           <Settings size={14} /> {dest?.destination ? `Linear · ${dest.destination.team.key}` : "Set up publishing"}
         </Button>
-        <Button onClick={() => setTokensOpen(true)} title="API tokens that let your CI send test results here"><KeyRound size={14} /> CI</Button>
-        <Button variant="primary" onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</Button>
+        <Button needs="admin" onClick={() => setTokensOpen(true)} title="API tokens that let your CI send test results here"><KeyRound size={14} /> CI</Button>
+        <Button needs="tester" variant="primary" onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</Button>
       </div>
       {tab !== "audits" && data && <LatestRunsStrip r={data.latestRuns} onShowNew={showNew} />}
       <div className="toolbar">
@@ -194,7 +195,7 @@ export function BugReportsPage() {
           <Empty
             icon={<Bug size={20} />}
             title={presence || filtered ? "No reports match these filters" : tab === "proposed" ? "Nothing waiting for review" : "No bug reports here"}
-            action={<Button onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</Button>}
+            action={<Button needs="tester" onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</Button>}
           >
             Reports from a test agent arrive as proposals. Nothing is accepted or sent anywhere until you decide.
           </Empty>
@@ -251,6 +252,7 @@ export function useRefresh(pid: string) {
 // ---------- One report ----------
 
 function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; onClose: () => void; onOpen: (id: number) => void }) {
+  const canEdit = useCan("tester");
   const toast = useToast();
   const refresh = useRefresh(pid);
   const { data: b } = useQuery({ queryKey: ["bug-report", id], queryFn: () => api.get<Detail>(`/api/bug-reports/${id}`) });
@@ -283,7 +285,7 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
       width={820}
       footer={
         <>
-          <Button variant="ghost" style={DANGER} onClick={() => setDeleting(true)}><Trash2 size={13} /> Delete</Button>
+          <Button needs="tester" variant="ghost" style={DANGER} onClick={() => setDeleting(true)}><Trash2 size={13} /> Delete</Button>
           <span className="spacer" />
           <Button onClick={onClose}>Close</Button>
         </>
@@ -295,8 +297,8 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
             <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
               <strong>The agent sent a newer version (revision {b.pendingUpdate.rev})</strong>
               <span className="spacer" />
-              <Button size="sm" onClick={() => post("ignore-update", undefined, "Kept your version")}>Keep mine</Button>
-              <Button variant="primary" size="sm" onClick={() => post("apply-update", undefined, "Applied the agent's version")}>Use the agent's version</Button>
+              <Button needs="tester" size="sm" onClick={() => post("ignore-update", undefined, "Kept your version")}>Keep mine</Button>
+              <Button needs="tester" variant="primary" size="sm" onClick={() => post("apply-update", undefined, "Applied the agent's version")}>Use the agent's version</Button>
             </div>
             <div className="faint" style={{ fontSize: "var(--fs-sm)", margin: "6px 0" }}>Your edits, review and links are not changed until you choose. Applying replaces the text below with the agent's.</div>
             {b.pendingUpdate.changes.map((c) => (
@@ -313,12 +315,12 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
         )}
 
         <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-          {b.status !== "accepted" && <Button variant="primary" onClick={() => post("review", { status: "accepted", note: note || undefined }, "Accepted. Nothing was sent to Jira or Linear.")}><Check size={14} /> Accept</Button>}
-          {b.status !== "rejected" && <Button onClick={() => post("review", { status: "rejected", note: note || undefined }, "Rejected")}>Reject</Button>}
-          {b.status !== "proposed" && <Button variant="ghost" onClick={() => post("review", { status: "proposed" }, "Back to proposed")}>Reopen</Button>}
+          {b.status !== "accepted" && <Button needs="tester" variant="primary" onClick={() => post("review", { status: "accepted", note: note || undefined }, "Accepted. Nothing was sent to Jira or Linear.")}><Check size={14} /> Accept</Button>}
+          {b.status !== "rejected" && <Button needs="tester" onClick={() => post("review", { status: "rejected", note: note || undefined }, "Rejected")}>Reject</Button>}
+          {b.status !== "proposed" && <Button needs="tester" variant="ghost" onClick={() => post("review", { status: "proposed" }, "Back to proposed")}>Reopen</Button>}
           <input className="input grow" aria-label="Review note" placeholder="Note about your decision (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
           {b.status === "accepted" && !b.publications.some((p) => p.destination === "linear" && (p.mode === "linked_existing" || p.state === "sent")) && (
-            <Button onClick={() => setPublishing(true)}><Send size={14} /> Publish to Linear…</Button>
+            <Button needs="tester" onClick={() => setPublishing(true)}><Send size={14} /> Publish to Linear…</Button>
           )}
         </div>
         {b.source === "agent_audit" && <RunStanding r={b.latestRun} />}
@@ -335,7 +337,7 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
           <div><div className="section-label">Agent's severity</div><Severity value={b.severity.agent} /></div>
           <div>
             <label className="section-label" htmlFor="human-sev">Your severity</label>
-            <select id="human-sev" className="select" value={b.severity.human ?? ""} onChange={(e) => run(() => api.patch(`/api/bug-reports/${id}`, { humanSeverity: e.target.value || null }))}>
+            <select id="human-sev" className="select" disabled={!canEdit} value={b.severity.human ?? ""} onChange={(e) => run(() => api.patch(`/api/bug-reports/${id}`, { humanSeverity: e.target.value || null }))}>
               <option value="">Not set</option>
               {(["low", "medium", "high", "critical"] as const).map((s) => <option key={s} value={s}>{PRIORITY_LABEL[s]}</option>)}
             </select>
@@ -350,11 +352,11 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
             <textarea className="textarea" aria-label="Expected result" rows={2} value={draft.expected} onChange={(e) => setDraft({ ...draft, expected: e.target.value })} placeholder="Expected result" />
             <textarea className="textarea" aria-label="Actual result" rows={2} value={draft.actual} onChange={(e) => setDraft({ ...draft, actual: e.target.value })} placeholder="Actual result" />
             <div className="row"><input className="input grow" aria-label="Environment" value={draft.environment} onChange={(e) => setDraft({ ...draft, environment: e.target.value })} placeholder="Environment" /><input className="input grow" aria-label="URL" value={draft.url} onChange={(e) => setDraft({ ...draft, url: e.target.value })} placeholder="URL" /></div>
-            <div className="row"><Button variant="primary" disabled={!draft.title.trim()} onClick={save}>Save</Button><Button variant="ghost" onClick={() => setEditing(false)}>Cancel</Button></div>
+            <div className="row"><Button needs="tester" variant="primary" disabled={!draft.title.trim()} onClick={save}>Save</Button><Button variant="ghost" onClick={() => setEditing(false)}>Cancel</Button></div>
           </div>
         ) : (
           <div className="col" style={{ gap: 10 }}>
-            <div className="row"><h2 style={{ margin: 0, fontSize: "var(--fs-lg)", overflowWrap: "anywhere" }}>{b.title}</h2><span className="spacer" /><Button size="sm" onClick={startEdit}><Pencil size={12} /> Edit</Button></div>
+            <div className="row"><h2 style={{ margin: 0, fontSize: "var(--fs-lg)", overflowWrap: "anywhere" }}>{b.title}</h2><span className="spacer" /><Button needs="tester" size="sm" onClick={startEdit}><Pencil size={12} /> Edit</Button></div>
             {b.editedAt && <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>You edited this {timeAgo(b.editedAt)}. A later import will not overwrite it without asking.</div>}
             {field("Description", b.description)}
             {b.steps.length > 0 && <div className="field"><div className="section-label">Steps</div><ol style={{ margin: 0, paddingLeft: 20 }}>{b.steps.map((s, i) => <li key={i} style={{ overflowWrap: "anywhere" }}>{s}</li>)}</ol></div>}
@@ -366,7 +368,7 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
         )}
 
         <div className="field">
-          <div className="section-label">Linked to {unresolved.length > 0 && <Button variant="ghost" size="sm" onClick={() => post("relink", undefined, "Checked again")}>Check again</Button>}</div>
+          <div className="section-label">Linked to {unresolved.length > 0 && <Button needs="tester" variant="ghost" size="sm" onClick={() => post("relink", undefined, "Checked again")}>Check again</Button>}</div>
           {b.refs.length === 0 ? <span className="faint">No requirements or test cases named.</span> : b.refs.map((r) => (
             <div key={r.id} className="row" style={{ gap: 8, padding: "2px 0", flexWrap: "wrap" }}>
               {r.state === "resolved" ? <span className="chip">linked</span> : <Badge tone="warn" icon="triangle-alert">{r.state.replace("_", " ")}</Badge>}
@@ -403,7 +405,7 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
               <option value="jira">Jira</option><option value="linear">Linear</option><option value="other">Other</option>
             </select>
             <input className="input grow" aria-label="Issue link" placeholder="https://… link to an issue that already covers this" value={link.url} onChange={(e) => setLink({ ...link, url: e.target.value })} />
-            <Button disabled={!link.url.trim()} onClick={() => post("external-link", { destination: link.destination, url: link.url.trim() }, "Linked. Nothing was sent to that system.").then(() => setLink({ ...link, url: "" }))}>Link</Button>
+            <Button needs="tester" disabled={!link.url.trim()} onClick={() => post("external-link", { destination: link.destination, url: link.url.trim() }, "Linked. Nothing was sent to that system.").then(() => setLink({ ...link, url: "" }))}>Link</Button>
           </div>
         </div>
 
@@ -414,7 +416,7 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
               <div key={s.id} className="row" style={{ gap: 8 }}>
                 <Button variant="ghost" size="sm" onClick={() => onOpen(s.id)}>{s.title}</Button><span className="faint">{s.status}</span>
                 <span className="spacer" />
-                <Button size="sm" onClick={() => post("duplicate", { ofId: s.id }, "Marked as a duplicate")}>This is a duplicate of it</Button>
+                <Button needs="tester" size="sm" onClick={() => post("duplicate", { ofId: s.id }, "Marked as a duplicate")}>This is a duplicate of it</Button>
               </div>
             ))}
           </div>
@@ -564,8 +566,8 @@ function TriageCard({ b, onChange }: { b: Detail; onChange: (body: { assignee?: 
           <span style={{ flex: 1, minWidth: 220 }}>
             The test is green again{b.resolvedSuspectedAt ? ` (${timeAgo(b.resolvedSuspectedAt)})` : ""}. CI never closes a bug: check it and decide.
           </span>
-          <Button variant="primary" size="sm" onClick={() => onChange({ workflowStatus: "closed" })}>Close bug</Button>
-          <Button size="sm" onClick={() => onChange({ workflowStatus: "open" })}>Still a problem</Button>
+          <Button needs="tester" variant="primary" size="sm" onClick={() => onChange({ workflowStatus: "closed" })}>Close bug</Button>
+          <Button needs="tester" size="sm" onClick={() => onChange({ workflowStatus: "open" })}>Still a problem</Button>
         </div>
       )}
     </div>
@@ -679,7 +681,7 @@ function CiTokensModal({ pid, onClose }: { pid: string; onClose: () => void }) {
         )}
         <div className="row" style={{ gap: 8 }}>
           <input className="input grow" aria-label="Token name" maxLength={80} value={name} onChange={(e) => setName(e.target.value)} placeholder="Name, for example GitHub Actions" />
-          <Button variant="primary" disabled={!name.trim()} onClick={create}><KeyRound size={14} /> Create token</Button>
+          <Button needs="admin" variant="primary" disabled={!name.trim()} onClick={create}><KeyRound size={14} /> Create token</Button>
         </div>
         <div className="field">
           <div className="section-label">Tokens</div>
@@ -691,7 +693,7 @@ function CiTokensModal({ pid, onClose }: { pid: string; onClose: () => void }) {
               <span className="faint">created {timeAgo(t.createdAt)}</span>
               <span className="faint">{t.lastUsedAt ? `last used ${timeAgo(t.lastUsedAt)}` : "never used"}</span>
               <span className="spacer" />
-              {t.revokedAt ? <span className="chip">Revoked</span> : <Button size="sm" onClick={() => setRevoking(t)}>Revoke</Button>}
+              {t.revokedAt ? <span className="chip">Revoked</span> : <Button needs="admin" size="sm" onClick={() => setRevoking(t)}>Revoke</Button>}
             </div>
           ))}
           {tokens && active.length === 0 && tokens.length > 0 && <div className="faint">No active tokens: CI cannot send results.</div>}
@@ -756,8 +758,8 @@ function PublicationRow({ p, run }: { p: Publication; run: <T>(fn: () => Promise
         {created && <Badge tone={state === "sent" ? "ok" : "warn"} icon={state === "sent" ? "circle-check" : "triangle-alert"}>{state === "sent" ? "published" : state === "failed" ? "not created" : "unclear"}</Badge>}
         {p.external_url ? <a href={p.external_url} target="_blank" rel="noreferrer noopener" style={{ overflowWrap: "anywhere" }}>{p.external_id || p.external_url} <ExternalLink size={11} /></a> : p.external_id}
         {p.completed_at && created && <span className="faint">{timeAgo(p.completed_at)}</span>}
-        {p.mode === "linked_existing" && <Button variant="ghost" size="sm" aria-label="Remove link" onClick={() => run(() => api.del(`/api/bug-publications/${p.id}`), "Link removed")}>Remove</Button>}
-        {created && state !== "sent" && <Button size="sm" onClick={() => run(() => api.post(`/api/bug-publications/${p.id}/check`), "Checked with Linear")}>Check status</Button>}
+        {p.mode === "linked_existing" && <Button needs="tester" variant="ghost" size="sm" aria-label="Remove link" onClick={() => run(() => api.del(`/api/bug-publications/${p.id}`), "Link removed")}>Remove</Button>}
+        {created && state !== "sent" && <Button needs="tester" size="sm" onClick={() => run(() => api.post(`/api/bug-publications/${p.id}/check`), "Checked with Linear")}>Check status</Button>}
       </div>
       {created && state !== "sent" && (
         <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>
@@ -767,7 +769,7 @@ function PublicationRow({ p, run }: { p: Publication; run: <T>(fn: () => Promise
       {failedFiles.length > 0 && (
         <div className="row" style={{ gap: 8, color: "var(--failed-fg)", fontSize: "var(--fs-md)" }}>
           <AlertTriangle size={13} /> {failedFiles.length} of {files.length} file{files.length === 1 ? "" : "s"} did not get attached to the issue.
-          <Button size="sm" onClick={() => run(() => api.post(`/api/bug-publications/${p.id}/retry-attachments`), "Tried the files again")}>Retry files</Button>
+          <Button needs="tester" size="sm" onClick={() => run(() => api.post(`/api/bug-publications/${p.id}/retry-attachments`), "Tried the files again")}>Retry files</Button>
         </div>
       )}
       {created && sent && (
@@ -806,7 +808,7 @@ function PublishModal({ id, pid, onClose }: { id: number; pid: string; onClose: 
         <>
           <span className="spacer" />
           <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" disabled={!ready || publish.isPending} onClick={() => publish.mutate()}><Send size={14} /> {publish.isPending ? "Creating…" : "Create the issue in Linear"}</Button>
+          <Button needs="tester" variant="primary" disabled={!ready || publish.isPending} onClick={() => publish.mutate()}><Send size={14} /> {publish.isPending ? "Creating…" : "Create the issue in Linear"}</Button>
         </>
       }
     >
@@ -900,7 +902,7 @@ function DestinationModal({ pid, onClose }: { pid: string; onClose: () => void }
           <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>Personal key from Linear: Settings, Account, Security &amp; access. It is stored encrypted on the server, never shown again, and is not part of backups.</span>
         </div>
         <div className="row" style={{ gap: 8 }}>
-          <Button disabled={load.isPending || (!token.trim() && !dest && !data?.serverKey)} onClick={() => load.mutate()}>{load.isPending ? "Checking…" : "Check key and load teams"}</Button>
+          <Button needs="admin" disabled={load.isPending || (!token.trim() && !dest && !data?.serverKey)} onClick={() => load.mutate()}>{load.isPending ? "Checking…" : "Check key and load teams"}</Button>
           {teams && (
             <select className="select" aria-label="Team" value={team} onChange={(e) => setTeam(e.target.value)}>
               {teams.map((t) => <option key={t.id} value={t.key}>{t.name} ({t.key})</option>)}
@@ -908,8 +910,8 @@ function DestinationModal({ pid, onClose }: { pid: string; onClose: () => void }
           )}
         </div>
         <div className="row" style={{ gap: 8 }}>
-          <Button variant="primary" disabled={!teams || !team || save.isPending} onClick={() => save.mutate()}>Save destination</Button>
-          {dest && <Button variant="ghost" style={DANGER} disabled={remove.isPending} onClick={() => remove.mutate()}>Remove</Button>}
+          <Button needs="admin" variant="primary" disabled={!teams || !team || save.isPending} onClick={() => save.mutate()}>Save destination</Button>
+          {dest && <Button needs="admin" variant="ghost" style={DANGER} disabled={remove.isPending} onClick={() => remove.mutate()}>Remove</Button>}
         </div>
       </div>
     </Modal>
@@ -943,7 +945,7 @@ function AuditsPanel({ pid }: { pid: string }) {
             <span className="spacer" />
             {a.planItems + a.coverageGaps > 0 && <Link className={buttonClass("secondary", "sm")} to={`/p/${pid}/test-plan?audit=${a.id}`}><ClipboardList size={12} /> Test plan</Link>}
             {a.hasReport && <Button size="sm" onClick={() => setReport(a)}><FileText size={12} /> Audit report</Button>}
-            <Button variant="ghost" size="sm" style={DANGER} onClick={() => setDel(a)}><Trash2 size={12} /> Delete</Button>
+            <Button needs="admin" variant="ghost" size="sm" style={DANGER} onClick={() => setDel(a)}><Trash2 size={12} /> Delete</Button>
           </div>
           <div className="faint" style={{ fontSize: "var(--fs-md)", marginTop: 4, display: "grid", gap: 2 }}>
             <div><span className="mono">{a.agentAuditId}</span> · {a.agent || "agent unknown"} · last imported {timeAgo(a.lastImportedAt)} ({a.imports} import{a.imports === 1 ? "" : "s"})</div>
@@ -1030,7 +1032,7 @@ export function ImportModal({ pid, onClose }: { pid: string; onClose: () => void
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" disabled={!s || preview.isPending || doImport.isPending} onClick={() => doImport.mutate()}>{doImport.isPending ? "Importing…" : "Import as proposals"}</Button>
+          <Button needs="tester" variant="primary" disabled={!s || preview.isPending || doImport.isPending} onClick={() => doImport.mutate()}>{doImport.isPending ? "Importing…" : "Import as proposals"}</Button>
         </>
       }
     >

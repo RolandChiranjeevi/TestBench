@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, BookOpenCheck, Bot, ClipboardList, Copy, Folder, Fo
 import { api, orderSuites, parseDate, type BackupInfo, type CaseDetail, type CaseSummary, type Project, type RequirementDetail, type Suite } from "../api";
 import { ConfirmModal, Empty, Kbd, Modal, PriorityIcon, StatusIcon, rowActivation, useConfirm, useHotkeys, useToast, ListSkeleton } from "../components/ui";
 import { Button } from "../components/Button";
+import { useCan } from "../components/Access";
 import { Badge } from "../components/Badge";
 import { FilterChip } from "../components/FilterChip";
 import { caseCounts, filterCases, openedFromProposal, type CaseTab } from "../caseFilter";
@@ -26,6 +27,7 @@ function createdText(createdAt: string | undefined): string {
 }
 
 export function CasesPage() {
+  const canEdit = useCan("tester");
   const confirm = useConfirm();
   const { pid } = useParams();
   const projectId = Number(pid);
@@ -176,7 +178,7 @@ export function CasesPage() {
     });
 
   useHotkeys({
-    c: () => setNewCase(true),
+    c: () => canEdit && setNewCase(true),
     "/": () => searchRef.current?.focus(),
     j: () => setFocus((f) => Math.min(f + 1, flat.length - 1)),
     k: () => setFocus((f) => Math.max(f - 1, 0)),
@@ -185,7 +187,7 @@ export function CasesPage() {
     Enter: () => flat[focus] && select(flat[focus].id),
     o: () => flat[focus] && select(flat[focus].id),
     x: () => flat[focus] && toggle(flat[focus].id),
-    r: () => checked.size > 0 && setRunModal(true),
+    r: () => canEdit && checked.size > 0 && setRunModal(true),
   });
 
   const deleteSuite = useMutation({
@@ -208,7 +210,7 @@ export function CasesPage() {
         <div className="topbar" style={{ padding: "0 8px 0 16px" }}>
           <h2 style={{ fontSize: "var(--fs-md)", color: "var(--text-3)", fontWeight: 500 }}>Suites</h2>
           <span className="spacer" />
-          <Button variant="ghost" size="sm" icon onClick={() => setSuiteModal({ parentId: null })} title="New suite" aria-label="New suite">
+          <Button needs="tester" variant="ghost" size="sm" icon onClick={() => setSuiteModal({ parentId: null })} title="New suite" aria-label="New suite">
             <Plus size={14} />
           </Button>
         </div>
@@ -238,7 +240,7 @@ export function CasesPage() {
             <div
               style={{ height: 24, borderRadius: 4, ...(drop?.id === "end" ? { boxShadow: "inset 0 2px 0 var(--accent)" } : {}) }}
               onDragOver={(e) => { e.preventDefault(); setDrop({ id: "end", zone: "after" }); }}
-              onDrop={(e) => { e.preventDefault(); const id = dragId; setDragId(null); setDrop(null); if (id != null) moveSuite.mutate({ id, parentId: null, beforeId: null }); }}
+              onDrop={(e) => { e.preventDefault(); const id = dragId; setDragId(null); setDrop(null); if (canEdit && id != null) moveSuite.mutate({ id, parentId: null, beforeId: null }); }}
             />
           )}
           {(noSuiteCount > 0 || caseDrag != null) && (
@@ -246,7 +248,7 @@ export function CasesPage() {
               className={`tree-item${suiteFilter === "none" ? " active" : ""}${drop?.id === "none" ? " drop-into" : ""}`}
               onClick={() => setParam("suite", "none")}
               onDragOver={(e) => { if (caseDrag == null) return; e.preventDefault(); if (drop?.id !== "none") setDrop({ id: "none", zone: "into" }); }}
-              onDrop={(e) => { if (caseDrag == null) return; e.preventDefault(); dropCases(null); }}
+              onDrop={(e) => { if (!canEdit || caseDrag == null) return; e.preventDefault(); dropCases(null); }}
             >
               <Inbox size={14} /> No suite <span className="count">{noSuiteCount}</span>
             </button>
@@ -286,7 +288,7 @@ export function CasesPage() {
               aria-label="Search cases"
             />
           </div>
-          <Button variant="primary" onClick={() => setNewCase(true)}>
+          <Button needs="tester" variant="primary" onClick={() => setNewCase(true)}>
             <Plus size={14} /> New case <Kbd>C</Kbd>
           </Button>
         </div>
@@ -306,22 +308,22 @@ export function CasesPage() {
           {checked.size > 0 ? (
             <>
               <span style={{ fontWeight: 500 }}>{checked.size} selected</span>
-              <Button size="sm" onClick={() => setRunModal(true)}>
+              <Button needs="tester" size="sm" onClick={() => setRunModal(true)}>
                 <Play size={12} /> Start run <Kbd>R</Kbd>
               </Button>
-              <Button size="sm" onClick={() => setBulkModal(true)}>
+              <Button needs="tester" size="sm" onClick={() => setBulkModal(true)}>
                 <Pencil size={12} /> Edit…
               </Button>
-              <Button size="sm" onClick={() => duplicate.mutate([...checked])} disabled={duplicate.isPending}>
+              <Button needs="tester" size="sm" onClick={() => duplicate.mutate([...checked])} disabled={duplicate.isPending}>
                 <Copy size={12} /> Duplicate
               </Button>
-              <Button size="sm" onClick={() => setLinkModal(true)}>
+              <Button needs="tester" size="sm" onClick={() => setLinkModal(true)}>
                 <BookOpenCheck size={12} /> Link to requirement
               </Button>
-              <Button size="sm" onClick={() => setTemplateModal(true)}>
+              <Button needs="tester" size="sm" onClick={() => setTemplateModal(true)}>
                 <ClipboardList size={12} /> Save as template
               </Button>
-              <Button variant="danger" size="sm" onClick={() => setDeleteModal(true)}>
+              <Button needs="tester" variant="danger" size="sm" onClick={() => setDeleteModal(true)}>
                 <Trash2 size={12} /> Delete
               </Button>
               <Button variant="ghost" size="sm" onClick={() => setChecked(new Set(visible.map((c) => c.id)))}>Select all {visible.length}</Button>
@@ -366,7 +368,7 @@ export function CasesPage() {
               <Empty
                 icon={<ListChecks size={20} />}
                 title="No test cases yet"
-                action={<Button variant="primary" onClick={() => setNewCase(true)}><Plus size={14} /> New case</Button>}
+                action={<Button needs="tester" variant="primary" onClick={() => setNewCase(true)}><Plus size={14} /> New case</Button>}
               >
                 Write your first manual test case. Group cases in suites, then start a run to execute them.
               </Empty>
@@ -385,7 +387,7 @@ export function CasesPage() {
                     <div
                       key={c.id}
                       className={`list-row${selectedId === c.id ? " selected" : ""}${focus === idx ? " focused" : ""}${caseDrag?.includes(c.id) ? " dragging" : ""}`}
-                      draggable
+                      draggable={canEdit}
                       onDragStart={(e) => {
                         // Dragging a ticked case takes every ticked case with it.
                         const ids = checked.has(c.id) ? [...checked] : [c.id];
@@ -495,6 +497,8 @@ function SuiteTree(props: {
   caseDrag: number[] | null;
   onDropCases: (suiteId: number) => void;
 }) {
+  const canEdit = useCan("tester");
+  const canAdmin = useCan("admin");
   const children = props.suites.filter((s) => s.parent_id === props.parentId);
   const { dragId, setDragId, drop, setDrop, onMove, suites } = props;
 
@@ -532,7 +536,7 @@ function SuiteTree(props: {
             tabIndex={0}
             className={`tree-item${props.active === s.id ? " active" : ""}${dragId === s.id ? " dragging" : ""}${drop?.id === s.id ? ` drop-${drop.zone}` : ""}`}
             style={{ paddingLeft: 8 + props.depth * 14 }}
-            draggable
+            draggable={canEdit}
             onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", s.name); setDragId(s.id); }}
             onDragEnd={() => { setDragId(null); setDrop(null); }}
             onDragOver={(e) => {
@@ -570,7 +574,7 @@ function SuiteTree(props: {
             <span className="truncate">{s.name}</span>
             <span className="count">{s.case_count}</span>
             <span className="actions">
-              <Button variant="ghost" size="sm" icon
+              <Button needs="tester" variant="ghost" size="sm" icon
                 style={{ width: 20, height: 20 }}
                 onClick={(e) => { e.stopPropagation(); setMenu(menu === s.id ? null : s.id); }}
                 aria-label={`Suite actions for ${s.name}`}
@@ -583,11 +587,11 @@ function SuiteTree(props: {
             <>
               <div style={{ position: "fixed", inset: 0, zIndex: 9 }} onClick={() => setMenu(null)} />
               <div className="card" style={{ position: "absolute", right: 0, top: 28, zIndex: 10, padding: 4, boxShadow: "var(--shadow)", background: "var(--bg-elev)", width: 170 }}>
-                <button className="nav-item" onClick={() => { setMenu(null); props.onAdd(s.id); }}><Plus size={13} /> Add sub-suite</button>
-                <button className="nav-item" onClick={() => { setMenu(null); props.onEdit(s); }}><Pencil size={13} /> Rename</button>
-                <button className="nav-item" disabled={children[0] === s} onClick={() => { setMenu(null); nudge(s, -1); }}><ArrowUp size={13} /> Move up</button>
-                <button className="nav-item" disabled={children.at(-1) === s} onClick={() => { setMenu(null); nudge(s, 1); }}><ArrowDown size={13} /> Move down</button>
-                <button className="nav-item" onClick={() => { setMenu(null); props.onDelete(s); }} style={{ color: "var(--failed-fg)" }}><Trash2 size={13} /> Delete</button>
+                <button className="nav-item" disabled={!canEdit} onClick={() => { setMenu(null); props.onAdd(s.id); }}><Plus size={13} /> Add sub-suite</button>
+                <button className="nav-item" disabled={!canEdit} onClick={() => { setMenu(null); props.onEdit(s); }}><Pencil size={13} /> Rename</button>
+                <button className="nav-item" disabled={!canEdit || children[0] === s} onClick={() => { setMenu(null); nudge(s, -1); }}><ArrowUp size={13} /> Move up</button>
+                <button className="nav-item" disabled={!canEdit || children.at(-1) === s} onClick={() => { setMenu(null); nudge(s, 1); }}><ArrowDown size={13} /> Move down</button>
+                <button className="nav-item" disabled={!canAdmin} title={canAdmin ? undefined : "Needs the admin role in this project"} onClick={() => { setMenu(null); props.onDelete(s); }} style={{ color: "var(--failed-fg)" }}><Trash2 size={13} /> Delete</button>
               </div>
             </>
           )}
@@ -641,7 +645,7 @@ function NewCaseModal({ projectId, suites, defaultSuite, requirementId, onClose,
           <label className="row muted" style={{ marginRight: "auto", fontSize: "var(--fs-md)", cursor: "pointer" }}>
             <input type="checkbox" className="checkbox" checked={another} onChange={(e) => setAnother(e.target.checked)} /> Create more
           </label>
-          <Button variant="primary" onClick={submit} disabled={!title.trim() || create.isPending}>
+          <Button needs="tester" variant="primary" onClick={submit} disabled={!title.trim() || create.isPending}>
             Create case <Kbd>↵</Kbd>
           </Button>
         </>
@@ -691,7 +695,7 @@ function SuiteModal({ projectId, suites, suite, parentId, onClose }: { projectId
       title={suite ? "Rename suite" : parent ? `New suite in ${parent.name}` : "New suite"}
       onClose={onClose}
       width={420}
-      footer={<Button variant="primary" disabled={!name.trim()} onClick={() => save.mutate()}>{suite ? "Save" : "Create suite"}</Button>}
+      footer={<Button needs="tester" variant="primary" disabled={!name.trim()} onClick={() => save.mutate()}>{suite ? "Save" : "Create suite"}</Button>}
     >
       <input
         className="input"
@@ -744,7 +748,7 @@ function BulkEditModal({ caseIds, suites, allTags, onClose, onDone }: { caseIds:
       title={`Edit ${caseIds.length} ${caseIds.length === 1 ? "case" : "cases"}`}
       onClose={onClose}
       width={480}
-      footer={<Button variant="primary" disabled={changes === 0 || save.isPending} onClick={() => save.mutate()}>Apply to {caseIds.length}</Button>}
+      footer={<Button needs="tester" variant="primary" disabled={changes === 0 || save.isPending} onClick={() => save.mutate()}>Apply to {caseIds.length}</Button>}
     >
       <div className="col" style={{ gap: 12 }}>
         <div className="field">

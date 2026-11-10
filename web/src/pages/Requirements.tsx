@@ -16,6 +16,7 @@ import type { CoverageGaps, ProposalList, RequirementOrigin } from "../api";
 import type { ReactNode } from "react";
 import { jiraLabel, jiraUrl } from "./BugReport";
 import { NewRunModal } from "./Runs";
+import { EditScope, useCan } from "../components/Access";
 
 export function CoverageChip({ coverage }: { coverage: Requirement["coverage"] }) {
   const detail = coverage.cases ? ` · ${coverage.passing}/${coverage.cases}` : "";
@@ -74,6 +75,7 @@ export function RequirementsPage() {
 }
 
 function RequirementsList({ tabStrip }: { tabStrip: ReactNode }) {
+  const canEdit = useCan("tester");
   const { pid } = useParams();
   const projectId = Number(pid);
   const [params, setParams] = useSearchParams();
@@ -101,7 +103,7 @@ function RequirementsList({ tabStrip }: { tabStrip: ReactNode }) {
       return n;
     }, { replace: true });
 
-  useHotkeys({ c: (e) => { e.preventDefault(); setCreating(true); }, "/": (e) => { e.preventDefault(); searchRef.current?.focus(); } }, !creating);
+  useHotkeys({ c: (e) => { e.preventDefault(); if (canEdit) setCreating(true); }, "/": (e) => { e.preventDefault(); searchRef.current?.focus(); } }, !creating);
 
   const active = reqs.filter((r) => r.status !== "deprecated");
   const counts: Record<Filter, number> = {
@@ -140,8 +142,8 @@ function RequirementsList({ tabStrip }: { tabStrip: ReactNode }) {
             <input ref={searchRef} className="input" placeholder="Search requirements" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search requirements" />
           </div>
           <a className={buttonClass("secondary", undefined, true)} href={`/api/projects/${pid}/agent/requirements?download=1`} title="Download the active requirements as a file for a test agent (read-only)" aria-label="Download requirements for the agent"><Download size={14} /></a>
-          <Button onClick={() => setImporting(true)}><Upload size={14} /> Import</Button>
-          <Button variant="primary" onClick={() => setCreating(true)}><Plus size={14} /> New requirement <Kbd>C</Kbd></Button>
+          <Button needs="tester" onClick={() => setImporting(true)}><Upload size={14} /> Import</Button>
+          <Button needs="tester" variant="primary" onClick={() => setCreating(true)}><Plus size={14} /> New requirement <Kbd>C</Kbd></Button>
         </div>
         {tabStrip}
         {cov && cov.summary.active > 0 && (
@@ -198,7 +200,7 @@ function RequirementsList({ tabStrip }: { tabStrip: ReactNode }) {
             reqs.length ? (
               <Empty icon={<Search size={20} />} title="No matching requirements">Try a different search or filter.</Empty>
             ) : (
-              <Empty icon={<BookOpenCheck size={20} />} title="No requirements yet" action={<Button variant="primary" onClick={() => setCreating(true)}><Plus size={14} /> New requirement</Button>}>
+              <Empty icon={<BookOpenCheck size={20} />} title="No requirements yet" action={<Button needs="tester" variant="primary" onClick={() => setCreating(true)}><Plus size={14} /> New requirement</Button>}>
                 Write down what the system should do, then link the test cases that prove it. Reports show which requirements are covered and which are failing.
               </Empty>
             )
@@ -275,7 +277,7 @@ function NewRequirementModal({ projectId, onClose, onCreated }: { projectId: num
     <Modal
       title={<span className="chip">New requirement</span>}
       onClose={onClose}
-      footer={<Button variant="primary" disabled={!title.trim() || create.isPending} onClick={submit}>Create requirement</Button>}
+      footer={<Button needs="tester" variant="primary" disabled={!title.trim() || create.isPending} onClick={submit}>Create requirement</Button>}
     >
       <div className="col" style={{ gap: 12 }}>
         <input className="bare title-input" autoFocus placeholder="e.g. A customer can pay with a saved card" aria-label="Title" value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} />
@@ -382,17 +384,18 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
         <CoverageChip coverage={data.coverage} />
         <span className="spacer" />
         {archived ? (
-          <Button variant="ghost" size="sm" title="Make it an approved requirement again. You become the approver." onClick={() => save.mutate({ status: "approved" })}><ArchiveRestore size={13} /> Restore</Button>
+          <Button needs="tester" variant="ghost" size="sm" title="Make it an approved requirement again. You become the approver." onClick={() => save.mutate({ status: "approved" })}><ArchiveRestore size={13} /> Restore</Button>
         ) : (
-          <Button variant="ghost" size="sm" title="Retire it: it stays, with its links and history, but is no longer an active requirement"
+          <Button needs="tester" variant="ghost" size="sm" title="Retire it: it stays, with its links and history, but is no longer an active requirement"
             onClick={async () => (await confirm({ title: `Deprecate REQ-${data.number}?`, body: <p style={{ margin: 0 }}>It stays, with its test case links and history, but stops counting as an active requirement: it leaves coverage and what a test agent reads. You can restore it later.</p>, confirmLabel: "Deprecate" })) && deprecate.mutate()}>
             <Archive size={13} /> Deprecate
           </Button>
         )}
-        <Button variant="danger" size="sm" icon title="Delete requirement" aria-label="Delete requirement" onClick={async () => (await confirm({ title: `Delete REQ-${data.number}?`, body: <p style={{ margin: 0 }}>The test cases stay, only the links are removed.</p>, confirmLabel: "Delete requirement" })) && remove.mutate()}><Trash2 size={14} /></Button>
+        <Button needs="admin" variant="danger" size="sm" icon title="Delete requirement" aria-label="Delete requirement" onClick={async () => (await confirm({ title: `Delete REQ-${data.number}?`, body: <p style={{ margin: 0 }}>The test cases stay, only the links are removed.</p>, confirmLabel: "Delete requirement" })) && remove.mutate()}><Trash2 size={14} /></Button>
         <Button variant="ghost" size="sm" icon onClick={onClose} title="Close" aria-label="Close"><X size={14} /></Button>
       </div>
       <div style={{ padding: "20px 28px 40px", display: "flex", flexDirection: "column", gap: 18 }}>
+        <EditScope>
         <textarea className="bare title-input" rows={1} value={text("title")} placeholder="Requirement title" aria-label="Title"
           onChange={(e) => setEdits((s) => ({ ...s, title: e.target.value.replace(/\n/g, " ") }))} onBlur={() => commit("title")} />
         <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
@@ -463,7 +466,7 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
             <span className="grow" style={{ fontSize: "var(--fs-md)" }}>
               The wording changed after {data.cases.filter((c) => c.review_needed).length} linked {data.cases.filter((c) => c.review_needed).length === 1 ? "case was" : "cases were"} written or last checked. Make sure they still test the right thing.
             </span>
-            <Button size="sm" onClick={() => review.mutate(undefined)} disabled={review.isPending}><Check size={12} /> All still correct</Button>
+            <Button needs="tester" size="sm" onClick={() => review.mutate(undefined)} disabled={review.isPending}><Check size={12} /> All still correct</Button>
           </div>
         )}
         <section>
@@ -540,17 +543,17 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
                   <span className="truncate grow">{c.title}</span>
                   {c.status === "deprecated" && <span className="chip">Deprecated</span>}
                   {c.review_needed && (
-                    <Button size="sm" title="Mark as still matching the requirement" onClick={(e) => { e.preventDefault(); e.stopPropagation(); review.mutate([c.id]); }}>Review</Button>
+                    <Button needs="tester" size="sm" title="Mark as still matching the requirement" onClick={(e) => { e.preventDefault(); e.stopPropagation(); review.mutate([c.id]); }}>Review</Button>
                   )}
                 </Link>
               ))}
             </div>
           )}
           <div className="row" style={{ marginTop: 8 }}>
-            <Button size="sm" onClick={() => setLinking(true)}><Link2 size={13} /> Link test cases</Button>
+            <Button needs="tester" size="sm" onClick={() => setLinking(true)}><Link2 size={13} /> Link test cases</Button>
             <Link className={buttonClass("ghost", "sm")} to={`/p/${pid}/cases?newFor=${data.id}`}>Write a new case</Link>
             <span className="spacer" />
-            <Button size="sm" disabled={!data.cases.some((c) => c.status !== "deprecated")} onClick={() => setRunning(true)}><Play size={12} /> Start run</Button>
+            <Button needs="tester" size="sm" disabled={!data.cases.some((c) => c.status !== "deprecated")} onClick={() => setRunning(true)}><Play size={12} /> Start run</Button>
           </div>
         </section>
         <section>
@@ -559,6 +562,7 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
             {data.history.map((h) => <RevisionRow key={h.id} rev={h} caseKey={caseKey} />)}
           </div>
         </section>
+        </EditScope>
       </div>
       {running && (
         <NewRunModal
@@ -583,7 +587,7 @@ function LinkCasesModal({ initial, onClose, onSave, saving }: { initial: number[
   const [selected, setSelected] = useState(new Set(initial));
   return (
     <Modal title="Link test cases" onClose={onClose} width={560}
-      footer={<Button variant="primary" disabled={saving} onClick={() => onSave([...selected])}>Save {selected.size} linked</Button>}>
+      footer={<Button needs="tester" variant="primary" disabled={saving} onClick={() => onSave([...selected])}>Save {selected.size} linked</Button>}>
       <CasePicker selected={selected} onChange={setSelected} />
     </Modal>
   );
@@ -647,7 +651,7 @@ export function LinkToRequirementModal({ caseIds, onClose, onDone }: { caseIds: 
   const open = reqs.filter((r) => r.status !== "deprecated");
   return (
     <Modal title={`Link ${caseIds.length} ${caseIds.length === 1 ? "case" : "cases"} to a requirement`} onClose={onClose} width={520}
-      footer={<Button variant="primary" disabled={picked == null || link.isPending} onClick={() => link.mutate()}>Link</Button>}>
+      footer={<Button needs="tester" variant="primary" disabled={picked == null || link.isPending} onClick={() => link.mutate()}>Link</Button>}>
       {open.length === 0 ? (
         <div className="muted">No requirements yet. Add some on the Requirements page first.</div>
       ) : (
@@ -690,7 +694,7 @@ function ImportRequirementsModal({ pid, onClose }: { pid: string; onClose: () =>
   const problems = ((preview.error as (Error & { problems?: string[] }) | null)?.problems) ?? [];
   return (
     <Modal title="Import requirements" onClose={onClose} width={720}
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" disabled={!s || doImport.isPending || (s.counts.new + s.counts.updated === 0)} onClick={() => doImport.mutate()}>{doImport.isPending ? "Importing…" : "Import"}</Button></>}>
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button needs="tester" variant="primary" disabled={!s || doImport.isPending || (s.counts.new + s.counts.updated === 0)} onClick={() => doImport.mutate()}>{doImport.isPending ? "Importing…" : "Import"}</Button></>}>
       <div className="col" style={{ gap: 12 }}>
         <div className="faint">A JSON file with <code className="inline">"format": "testbench-requirements"</code>, <code className="inline">"project"</code> (this project's key) and <code className="inline">"requirements"</code>. Each has a stable <code className="inline">id</code>: the same id is updated, a new id is added, and requirements that are not in the file are left alone.</div>
         <div className="row">
@@ -738,6 +742,7 @@ const fmtSize = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.
 
 /** Files that belong to a requirement: specs, mockups, mails. Drop, browse or paste (screenshots) to add. */
 function AttachmentsSection({ requirementId, attachments }: { requirementId: number; attachments: RequirementAttachment[] }) {
+  const canEdit = useCan("tester");
   const confirm = useConfirm();
   const invalidate = useInvalidate();
   const toast = useToast();
@@ -787,7 +792,7 @@ function AttachmentsSection({ requirementId, attachments }: { requirementId: num
                 {a.mime.startsWith("image/") ? <img src={url} alt="" style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4 }} /> : <FileText size={16} className="faint" />}
                 <a className="truncate grow" href={url} target="_blank" rel="noreferrer" download={a.filename} title={`Open ${a.filename}`}>{a.filename}</a>
                 <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>{fmtSize(a.size)}</span>
-                <Button
+                <Button needs="tester"
                   variant="danger" size="sm" icon
                   aria-label={`Remove ${a.filename}`}
                   onClick={async () => {
@@ -803,10 +808,11 @@ function AttachmentsSection({ requirementId, attachments }: { requirementId: num
       <div
         className={`dropzone${over ? " over" : ""}`}
         style={{ padding: 16 }}
-        onClick={() => fileRef.current?.click()}
+        onClick={() => canEdit && fileRef.current?.click()}
+        aria-disabled={!canEdit}
         onDragOver={(e) => { e.preventDefault(); setOver(true); }}
         onDragLeave={() => setOver(false)}
-        onDrop={(e) => { e.preventDefault(); setOver(false); upload(e.dataTransfer.files); }}
+        onDrop={(e) => { e.preventDefault(); setOver(false); if (canEdit) upload(e.dataTransfer.files); }}
         role="button"
         tabIndex={0}
         onKeyDown={(e) => e.key === "Enter" && fileRef.current?.click()}

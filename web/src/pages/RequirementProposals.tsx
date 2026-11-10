@@ -119,9 +119,9 @@ export function RequirementProposalsTab() {
               )}
               {p.status === "proposed" && (
                 <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-                  <Button variant="primary" size="sm" disabled={approve.isPending} onClick={() => ask(p)}><Check size={13} /> Approve</Button>
-                  <Button size="sm" onClick={() => setEditing(p)}><Pencil size={13} /> Edit</Button>
-                  <Button size="sm" onClick={() => setRejecting(p)}><X size={13} /> Reject</Button>
+                  <Button needs="tester" variant="primary" size="sm" disabled={approve.isPending} onClick={() => ask(p)}><Check size={13} /> Approve</Button>
+                  <Button needs="tester" size="sm" onClick={() => setEditing(p)}><Pencil size={13} /> Edit</Button>
+                  <Button needs="tester" size="sm" onClick={() => setRejecting(p)}><X size={13} /> Reject</Button>
                 </div>
               )}
             </div>
@@ -145,7 +145,7 @@ function EditProposalModal({ proposal, onClose, onSaved }: { proposal: Requireme
   });
   return (
     <Modal title="Edit proposal" onClose={onClose} width={620}
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" disabled={!f.title.trim() || save.isPending} onClick={() => save.mutate()}>Save changes</Button></>}>
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button needs="tester" variant="primary" disabled={!f.title.trim() || save.isPending} onClick={() => save.mutate()}>Save changes</Button></>}>
       <div className="col" style={{ gap: 12 }}>
         <p className="muted" style={{ margin: 0 }}>Change what you need before approving. The agent's version stays on record, and saving does not approve it.</p>
         <div className="field"><label htmlFor="ep-title">Title</label><input id="ep-title" className="input" autoFocus value={f.title} onChange={(e) => set("title", e.target.value)} /></div>
@@ -179,7 +179,7 @@ function RejectProposalModal({ proposal, onClose, onDone }: { proposal: Requirem
   });
   return (
     <Modal title={`Reject “${proposal.title}”?`} onClose={onClose} width={520}
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="danger-solid" disabled={!ok || reject.isPending} onClick={() => reject.mutate()}>Reject proposal</Button></>}>
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button needs="tester" variant="danger-solid" disabled={!ok || reject.isPending} onClick={() => reject.mutate()}>Reject proposal</Button></>}>
       <div className="col" style={{ gap: 10 }}>
         <p style={{ margin: 0 }}>No requirement is made. The proposal stays under Rejected, with the reason, and cannot be approved afterwards.</p>
         <div className="field">

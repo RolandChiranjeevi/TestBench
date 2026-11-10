@@ -33,7 +33,7 @@ export function TemplatesPanel({ templates, onStart, onEdit, onNew }: { template
       <Empty
         icon={<ClipboardList size={20} />}
         title="No run templates yet"
-        action={<Button variant="primary" onClick={onNew}><Plus size={14} /> New template</Button>}
+        action={<Button needs="tester" variant="primary" onClick={onNew}><Plus size={14} /> New template</Button>}
       >
         A template is a saved set of cases, like “Smoke test” or “Release regression”. Start a run from it in one click instead of ticking the same cases every sprint.
       </Empty>
@@ -56,11 +56,11 @@ export function TemplatesPanel({ templates, onStart, onEdit, onNew }: { template
                 {count} {count === 1 ? "case" : "cases"} · {t.last_used ? `last used ${timeAgo(t.last_used)} · ${t.run_count} ${t.run_count === 1 ? "run" : "runs"}` : "never used"}
               </span>
             </div>
-            <Button variant="primary" size="sm" disabled={count === 0} onClick={() => onStart(t)} title={count === 0 ? "This template has no runnable cases" : undefined}>
+            <Button needs="tester" variant="primary" size="sm" disabled={count === 0} onClick={() => onStart(t)} title={count === 0 ? "This template has no runnable cases" : undefined}>
               <Play size={12} /> Start run
             </Button>
-            <Button variant="ghost" size="sm" icon onClick={() => onEdit(t)} aria-label={`Edit ${t.name}`} title="Edit"><Pencil size={13} /></Button>
-            <Button variant="danger" size="sm" icon
+            <Button needs="tester" variant="ghost" size="sm" icon onClick={() => onEdit(t)} aria-label={`Edit ${t.name}`} title="Edit"><Pencil size={13} /></Button>
+            <Button needs="admin" variant="danger" size="sm" icon
               onClick={() => confirm(`Delete template "${t.name}"? Runs already started from it are kept.`) && remove.mutate(t.id)}
               aria-label={`Delete ${t.name}`}
               title="Delete"
@@ -107,7 +107,7 @@ export function TemplateModal({ template, initialCaseIds = [], onClose }: { temp
         <>
           <span className="muted" style={{ marginRight: "auto" }}>{count} of {runnable.length} cases</span>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" disabled={!name.trim() || count === 0 || save.isPending} onClick={() => save.mutate()}>
+          <Button needs="tester" variant="primary" disabled={!name.trim() || count === 0 || save.isPending} onClick={() => save.mutate()}>
             {template ? "Save changes" : "Create template"}
           </Button>
         </>

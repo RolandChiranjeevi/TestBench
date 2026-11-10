@@ -334,7 +334,7 @@ function BugReportDialog({ draft, resultId, jiraKey, attachmentCount, attachment
                 {linear!.teams.map((t) => <option key={t.id} value={t.id}>{t.key} · {t.name}</option>)}
               </select>
             )}
-            <Button variant="primary" disabled={!!saved || !fields.summary.trim() || createIssue.isPending || !!err || needsTeam} onClick={() => createIssue.mutate(tracker)}>
+            <Button needs="tester" variant="primary" disabled={!!saved || !fields.summary.trim() || createIssue.isPending || !!err || needsTeam} onClick={() => createIssue.mutate(tracker)}>
               {createIssue.isPending ? "Creating…" : "Create issue"}
             </Button>
           </div>
@@ -352,7 +352,7 @@ function BugReportDialog({ draft, resultId, jiraKey, attachmentCount, attachment
             onChange={(e) => setIssue(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && issue.trim() !== saved && saveIssue.mutate()}
           />
-          <Button disabled={issue.trim() === saved || saveIssue.isPending} onClick={() => saveIssue.mutate()}>Save</Button>
+          <Button needs="tester" disabled={issue.trim() === saved || saveIssue.isPending} onClick={() => saveIssue.mutate()}>Save</Button>
           {link && <a className={buttonClass("ghost", undefined, true)} href={link} target="_blank" rel="noreferrer" aria-label="Open issue"><ExternalLink size={14} /></a>}
         </div>
       </div>

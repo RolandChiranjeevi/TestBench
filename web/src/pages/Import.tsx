@@ -5,6 +5,7 @@ import { CheckCircle2, Download, FileUp, FolderOpen, GitBranch, Loader2, Papercl
 import { api, formatDateTime, timeAgo, type CheckResult, type GithubSource, type ImportResult, type Milestone, type Project, type WorkflowRun } from "../api";
 import { Github, Modal, useConfirm, useToast } from "../components/ui";
 import { Button, buttonClass } from "../components/Button";
+import { useCan } from "../components/Access";
 
 export function ImportPage() {
   return (
@@ -179,7 +180,7 @@ function UploadCard() {
         </div>
         <div className="row">
           <span className="spacer" />
-          <Button variant="primary" disabled={!files.length || upload.isPending} onClick={() => upload.mutate()}>
+          <Button needs="tester" variant="primary" disabled={!files.length || upload.isPending} onClick={() => upload.mutate()}>
             {upload.isPending ? <Loader2 size={14} className="spin" /> : <Download size={14} />} Import{files.length > 1 ? ` ${files.length} files` : ""}
           </Button>
         </div>
@@ -229,7 +230,7 @@ function GithubCard() {
               <Github size={12} /> {s.owner}/{s.repo}{s.workflow && <span className="count">{s.workflow}</span>}
             </button>
           ))}
-          <Button variant="ghost" size="sm" onClick={() => setAdding(true)}><Plus size={13} /> Connect repository</Button>
+          <Button needs="admin" variant="ghost" size="sm" onClick={() => setAdding(true)}><Plus size={13} /> Connect repository</Button>
         </div>
         {current ? (
           <>
@@ -240,7 +241,7 @@ function GithubCard() {
                 {current.artifact_pattern ? <>Artifacts matching <code className="inline">{current.artifact_pattern}</code></> : "All artifacts"} are scanned for .xml and .json reports.
               </span>
               <span className="spacer" />
-              <Button variant="danger" size="sm" onClick={async () => (await confirm({ title: `Disconnect ${current.owner}/${current.repo}?`, body: <p style={{ margin: 0 }}>Imported runs are kept.</p>, confirmLabel: "Disconnect" })) && remove.mutate(current.id)}>
+              <Button needs="admin" variant="danger" size="sm" onClick={async () => (await confirm({ title: `Disconnect ${current.owner}/${current.repo}?`, body: <p style={{ margin: 0 }}>Imported runs are kept.</p>, confirmLabel: "Disconnect" })) && remove.mutate(current.id)}>
                 <Trash2 size={12} /> Disconnect
               </Button>
             </div>
@@ -258,6 +259,7 @@ function GithubCard() {
 
 /** Imports new workflow runs by itself, so nobody has to click Import after every CI run. */
 function AutoImport({ source }: { source: GithubSource }) {
+  const canAdmin = useCan("admin");
   const { pid } = useParams();
   const qc = useQueryClient();
   const toast = useToast();
@@ -289,7 +291,7 @@ function AutoImport({ source }: { source: GithubSource }) {
   return (
     <div className="card" style={{ background: "var(--bg)", padding: 12, display: "flex", flexDirection: "column", gap: 12 }}>
       <label className="row" style={{ cursor: "pointer" }}>
-        <input type="checkbox" className="checkbox" checked={on} onChange={(e) => save.mutate({ autoImport: e.target.checked })} />
+        <input type="checkbox" className="checkbox" disabled={!canAdmin} checked={on} onChange={(e) => save.mutate({ autoImport: e.target.checked })} />
         <span style={{ fontWeight: 500 }}>Import new runs automatically</span>
         <span className="spacer" />
         {on && (
@@ -305,14 +307,14 @@ function AutoImport({ source }: { source: GithubSource }) {
               <label htmlFor="af">Only these branches</label>
               <input
                 id="af" className="input" placeholder="All branches, or e.g. main, release/*" value={filter}
-                onChange={(e) => setFilter(e.target.value)} onBlur={() => filter.trim() !== source.branch_filter && save.mutate({ branchFilter: filter })}
+                disabled={!canAdmin} onChange={(e) => setFilter(e.target.value)} onBlur={() => filter.trim() !== source.branch_filter && save.mutate({ branchFilter: filter })}
               />
             </div>
             <div className="field grow">
               <label htmlFor="as">Sprint / release for these runs</label>
               <input
                 id="as" className="input" list="auto-milestones" placeholder="Optional" value={sprint}
-                onChange={(e) => setSprint(e.target.value)} onBlur={() => sprint.trim() !== source.default_milestone && save.mutate({ defaultMilestone: sprint })}
+                disabled={!canAdmin} onChange={(e) => setSprint(e.target.value)} onBlur={() => sprint.trim() !== source.default_milestone && save.mutate({ defaultMilestone: sprint })}
               />
               <datalist id="auto-milestones">{milestones.map((m) => <option key={m.id} value={m.name} />)}</datalist>
             </div>
@@ -321,7 +323,7 @@ function AutoImport({ source }: { source: GithubSource }) {
             <label htmlFor="aw">Workflows allowed to deliver audit packages</label>
             <input
               id="aw" className="input" placeholder="e.g. audit.yml, 12345678 (workflow file name or id)" value={auditWf}
-              onChange={(e) => setAuditWf(e.target.value)} onBlur={() => auditWf.trim() !== source.audit_workflows && save.mutate({ auditWorkflows: auditWf })}
+              disabled={!canAdmin} onChange={(e) => setAuditWf(e.target.value)} onBlur={() => auditWf.trim() !== source.audit_workflows && save.mutate({ auditWorkflows: auditWf })}
             />
             <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>
               Only artifacts named testbench-audit-* from these workflows are imported as audit packages. Empty means no audit packages are imported from this repository.
@@ -333,7 +335,7 @@ function AutoImport({ source }: { source: GithubSource }) {
               imported automatically; older runs need Import below.
             </span>
             <span className="spacer" />
-            <Button size="sm" disabled={check.isPending} onClick={() => check.mutate()}>
+            <Button needs="admin" size="sm" disabled={check.isPending} onClick={() => check.mutate()}>
               {check.isPending ? <Loader2 size={12} className="spin" /> : <RefreshCw size={12} />} Check now
             </Button>
           </div>
@@ -395,7 +397,7 @@ function WorkflowRuns({ source }: { source: GithubSource }) {
           {r.imported_run_id ? (
             <Link to={`/p/${pid}/runs/${r.imported_run_id}`} className={buttonClass("secondary", "sm")}>View run</Link>
           ) : (
-            <Button size="sm"
+            <Button needs="tester" size="sm"
               disabled={r.status !== "completed" || importing != null || r.artifact_count === 0}
               onClick={() => importRun(r.id)}
               title={r.status !== "completed" ? "Still running" : r.artifact_count === 0 ? "No test artifacts on this run. Add an upload-artifact step to the workflow (see Setup below)." : undefined}
@@ -445,7 +447,7 @@ function AddSourceModal({ onClose, onAdded }: { onClose: () => void; onAdded: (i
       title="Connect a GitHub repository"
       onClose={onClose}
       width={480}
-      footer={<Button variant="primary" disabled={!repo.trim() || add.isPending} onClick={() => add.mutate()}>Connect</Button>}
+      footer={<Button needs="admin" variant="primary" disabled={!repo.trim() || add.isPending} onClick={() => add.mutate()}>Connect</Button>}
     >
       <div className="field">
         <label htmlFor="repo">Repository</label>
