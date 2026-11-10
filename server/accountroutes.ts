@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
-  AccountError, acceptInvite, acceptReset, audit, changePassword, checkLogin, createFirstOwner, createLink, createSession, ctxOf, listAudit, listLinks, listSessions,
+  AccountError, revokeUserSessions, acceptInvite, acceptReset, audit, changePassword, checkLogin, createFirstOwner, createLink, createSession, ctxOf, listAudit, listLinks, listSessions,
   linkProjectId, listUsers, normalizeEmail, peekLink, revokeLink, revokeSessionById, revokeSessionToken, SESSION_DAYS, setDisabled, updateProfile,
 } from "./accounts.ts";
 import type { AccountUser } from "./accountcontext.ts";
@@ -184,6 +184,13 @@ export function registerAccountRoutes(app: FastifyInstance, deps: AccountRouteDe
     return { ok: true };
   }));
   app.get("/api/me/sessions", wrap((req) => listSessions(needUser(req).id, req.sessionId ?? undefined)));
+  // Ends every session of the person except the one making the request (a device that was lost, a browser left open). The count is in the audit log, not the sessions.
+  app.post("/api/me/sessions/revoke-others", wrap((req) => {
+    const u = needUser(req);
+    const ended = revokeUserSessions(u.id, req.sessionId ?? undefined);
+    audit(ctxOf(u, req.ip), "sessions.revoked_others", { targetUserId: u.id, detail: { sessionsEnded: ended } });
+    return { ended };
+  }));
   app.post("/api/me/sessions/:id/revoke", wrap((req) => { revokeSessionById(needUser(req).id, idOf(req)); return { ok: true }; }));
 
   // ---------- The owner looks after the accounts ----------

@@ -61,7 +61,7 @@ describe("the table is sensible", () => {
   });
 
   it("changes need a project role or the owner; the other cases are named one by one", () => {
-    const own = new Set(["POST /api/logout", "PATCH /api/me", "POST /api/me/password", "POST /api/me/sessions/:id/revoke", "PUT /api/settings/display-name"]);
+    const own = new Set(["POST /api/logout", "PATCH /api/me", "POST /api/me/password", "POST /api/me/sessions/:id/revoke", "POST /api/me/sessions/revoke-others", "PUT /api/settings/display-name"]);
     const way = new Set(["POST /api/login", "POST /api/setup", "POST /api/join/:token", "POST /api/reset/:token"]);
     const tokenRoutes = new Set(["POST /api/projects/:id/ci/test-results", "POST /api/agent/projects/:id/requirement-proposals"]);
     const custom = new Set(["POST /api/invitations", "POST /api/invitations/:id/revoke"]);

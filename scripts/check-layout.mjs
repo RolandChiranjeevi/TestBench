@@ -39,7 +39,11 @@ function inspect({ width, sidebar, minList }) {
     if (left > sidebar + 2) problems.push(`the content starts ${Math.round(left)}px from the left; the sidebar should take at most ${sidebar}px at this width`);
   }
   const navItems = [...document.querySelectorAll(".sidebar .nav-item")].filter(visible);
-  if (width < 700) {
+  if (document.querySelector(".account-shell")) {
+    // A page outside the projects (/account, /admin) has no project sidebar; it must show the way back instead.
+    const back = [...document.querySelectorAll('.account-head a[href="/"]')].find(visible);
+    if (!back) problems.push("there is no visible way back to the project");
+  } else if (width < 700) {
     const menu = [...document.querySelectorAll("button")].find((b) => /open (the )?(menu|navigation)/i.test(b.getAttribute("aria-label") ?? "") && visible(b));
     if (!menu) problems.push("there is no visible button to open the navigation on a phone-sized screen");
   } else if (navItems.length < 6) {

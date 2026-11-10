@@ -41,7 +41,9 @@ async function person(name, projectId, role) {
   const joined = await call("POST", `/api/join/${invite.url.split("/").pop()}`, { name, email: `${name.toLowerCase()}@example.com`, password: PASSWORD });
   return joined.cookie;
 }
-const cookies = { owner, admin: await person("Ada", A, "admin"), tester: await person("Tess", A, "tester"), viewer: await person("Vera", A, "viewer"), outsider: await person("Bob", B, "tester"), nobody: await person("Nina", null) };
+const login = async (email, password) => (await call("POST", "/api/login", { email, password })).cookie;
+const alive = async (cookie) => (await fetch(BASE + "/api/me", { headers: { ...HDR, Cookie: `tb_sid=${cookie}` } })).status === 200;
+const cookies = { carl: await person("Carl", A, "tester"), owner, admin: await person("Ada", A, "admin"), tester: await person("Tess", A, "tester"), viewer: await person("Vera", A, "viewer"), outsider: await person("Bob", B, "tester"), nobody: await person("Nina", null) };
 
 // ---------- the browser ----------
 const browser = await launchBrowser();
@@ -132,6 +134,84 @@ for (const who of Object.keys(TABS)) {
   await v.page.locator(".project-switch").click();
   check("viewer: cannot make a project", (await v.page.getByRole("button", { name: /New project/ }).count()) === 0);
   await v.close();
+}
+
+// /account: a person's own name, email, password and sessions (Carl has his own, so the others' sessions stay as they are).
+{
+  const { page, close } = await open("carl", "/account");
+  const card = (title) => page.locator(".card").filter({ has: page.getByRole("heading", { name: title, exact: false }) });
+  check("account: the page", (await page.getByRole("heading", { name: "Your account", level: 1 }).count()) === 1);
+  const profile = card("Profile");
+  check("account: the profile shows the name and email", (await profile.getByLabel("Name").inputValue()) === "Carl" && (await profile.getByLabel("Email address").inputValue()) === "carl@example.com");
+  check("account: one session, marked", (await card("Sessions").locator("tbody tr").count()) === 1 && (await card("Sessions").getByText("This session").count()) === 1);
+
+  // The name needs no password.
+  await profile.getByLabel("Name").fill("Carl Carlsson");
+  await profile.getByRole("button", { name: "Save" }).click();
+  await page.getByText("Saved", { exact: true }).first().waitFor({ timeout: 10_000 });
+  check("account: the name was saved", (await (await fetch(BASE + "/api/me", { headers: { ...HDR, Cookie: `tb_sid=${cookies.carl}` } })).json()).user.name === "Carl Carlsson");
+
+  // The email takes the current password: the field appears, Save waits for it, a wrong one is refused, the right one works.
+  await profile.getByLabel("Email address").fill("carl.new@example.com");
+  const pw = profile.getByLabel("Current password");
+  check("account: the password field appears when the email changes", (await pw.count()) === 1);
+  check("account: Save waits for it", await profile.getByRole("button", { name: "Save" }).isDisabled());
+  await pw.fill("not the password!!");
+  await profile.getByRole("button", { name: "Save" }).click();
+  await page.getByText("Changing the email address takes your current password").first().waitFor({ timeout: 10_000 });
+  check("account: a wrong password changed nothing", (await (await fetch(BASE + "/api/me", { headers: { ...HDR, Cookie: `tb_sid=${cookies.carl}` } })).json()).user.email === "carl@example.com");
+  await pw.fill(PASSWORD);
+  await profile.getByRole("button", { name: "Save" }).click();
+  await page.waitForFunction(() => document.querySelector('input[type="email"]')?.value === "carl.new@example.com" && !document.querySelector('input[autocomplete="current-password"][aria-describedby="email-needs-password"]'), null, { timeout: 10_000 });
+  check("account: the email was changed", (await login("carl.new@example.com", PASSWORD)) !== undefined);
+
+  // Sessions: two more places, sign one out, then everywhere else.
+  const phone = await login("carl.new@example.com", PASSWORD);
+  const laptop = await login("carl.new@example.com", PASSWORD);
+  await page.reload({ waitUntil: "networkidle" });
+  const sessions = card("Sessions");
+  check("account: the sessions are listed", (await sessions.locator("tbody tr").count()) >= 3, `${await sessions.locator("tbody tr").count()}`);
+  await sessions.getByRole("button", { name: /^Sign out .* from / }).first().click();
+  await page.getByText("Signed out", { exact: true }).first().waitFor({ timeout: 10_000 });
+  check("account: one session was signed out", [await alive(phone), await alive(laptop)].filter(Boolean).length === 1);
+  await sessions.getByRole("button", { name: /Sign out everywhere else/ }).click();
+  await page.getByText(/Signed out of \d+ other session|There were no other sessions/).first().waitFor({ timeout: 10_000 });
+  check("account: everywhere else was signed out", !(await alive(phone)) && !(await alive(laptop)) && (await alive(cookies.carl)));
+  check("account: only this session is left", (await sessions.locator("tbody tr").count()) === 1);
+
+  // Password: a mismatch is caught before sending, a wrong current one is refused, the right ones work and end the other sessions.
+  const other = await login("carl.new@example.com", PASSWORD);
+  const password = card("Password");
+  const fill = async (cur, next, again) => { await password.getByLabel("Current password").fill(cur); await password.getByLabel("New password", { exact: true }).fill(next); await password.getByLabel("New password, again").fill(again); };
+  const NEW = "a brand new ui passphrase";
+  await fill(PASSWORD, NEW, NEW + "x");
+  await password.getByRole("button", { name: "Change password" }).click();
+  check("account: two different new passwords are caught", (await password.getByRole("alert").innerText()) === "The two new passwords are not the same");
+  await fill(PASSWORD, "short", "short");
+  await password.getByRole("button", { name: "Change password" }).click();
+  check("account: a short password is caught", /at least 10 characters/.test(await password.getByRole("alert").innerText()));
+  await fill("the wrong current one", NEW, NEW);
+  await password.getByRole("button", { name: "Change password" }).click();
+  await page.getByText("The current password is wrong").first().waitFor({ timeout: 10_000 });
+  check("account: a wrong current password changed nothing", (await login("carl.new@example.com", PASSWORD)) !== undefined);
+  await fill(PASSWORD, NEW, NEW);
+  await password.getByRole("button", { name: "Change password" }).click();
+  await page.getByText("Your password is changed").waitFor({ timeout: 10_000 });
+  check("account: the new password works", (await login("carl.new@example.com", NEW)) !== undefined);
+  let oldWorks = true; try { await login("carl.new@example.com", PASSWORD); } catch { oldWorks = false; }
+  check("account: the old password does not", !oldWorks);
+  check("account: another session ended, this one stays", !(await alive(other)) && (await alive(cookies.carl)));
+  await close();
+}
+{ // the way there: from a project (the sidebar) and from having no project
+  const a = await open("admin", `/p/${A}/cases`);
+  check("account: a link in the sidebar", (await a.page.locator('a[href="/account"]').count()) >= 1);
+  await a.close();
+  const n = await open("nobody", "/");
+  await n.page.getByRole("link", { name: /Your account/ }).click();
+  await n.page.waitForURL("**/account");
+  check("account: reachable with no project", (await n.page.getByRole("heading", { name: "Your account", level: 1 }).count()) === 1);
+  await n.close();
 }
 await browser.close();
 

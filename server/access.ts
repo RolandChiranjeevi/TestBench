@@ -38,7 +38,7 @@ export const ACCESS: Record<string, Need> = {
   "GET /api/join/:token": "anon", "POST /api/join/:token": "anon", "GET /join/:token": "anon",
   "GET /api/reset/:token": "anon", "POST /api/reset/:token": "anon", "GET /reset/:token": "anon",
   // ---- a signed-in account: its own things, and what is the same for everyone ----
-  "POST /api/logout": "user", "GET /api/me": "user", "PATCH /api/me": "user", "POST /api/me/password": "user", "GET /api/me/sessions": "user", "POST /api/me/sessions/:id/revoke": "user",
+  "POST /api/logout": "user", "GET /api/me": "user", "PATCH /api/me": "user", "POST /api/me/password": "user", "GET /api/me/sessions": "user", "POST /api/me/sessions/:id/revoke": "user", "POST /api/me/sessions/revoke-others": "user",
   "GET /api/projects": "user", // lists only the projects the account is a member of
   "GET /api/features": "user", "GET /api/github/status": "user", "GET /api/jira/status": "user", "GET /api/linear/status": "user",
   "GET /api/settings/display-name": "user", "PUT /api/settings/display-name": "user", "GET /api/settings/agent-proposals": "user", "GET /api/backup/info": "user",
