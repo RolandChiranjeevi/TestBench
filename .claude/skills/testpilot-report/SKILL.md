@@ -19,6 +19,7 @@ Paths in this file are relative to this file. The contract is
 Before starting, read:
 - `../testpilot/SKILL.md`
 - `../../references/audit-contract.md`
+- `../../references/agent-rules.md`
 
 Apply the shared boundaries, secret-handling rules and stop conditions.
 Execute only this reporting workflow. Do not start the full audit.
@@ -145,6 +146,26 @@ Each manual test proposal MUST have an `origin` object:
 
 `id` MUST be the matching `execution_id`, `bug_proposal_id` or
 `coverage_gap_id`.
+
+### Check for an existing proposal first
+
+Before creating a manual test proposal from a coverage gap:
+
+1. Check this package: at most one proposal per `coverage_gap_id`, and none
+   for a gap whose description and requirement already have a proposal in the
+   package.
+2. Check TestBench through the configured integration, using the agent token
+   only: look for an existing manual test proposal with the same requirement
+   and the same gap description (or the same gap id from an earlier audit of
+   this project).
+   - If such a read endpoint does not exist, or the agent token cannot read it:
+     skip the TestBench check, say so under Limitations in `report.md`, and
+     record a `testbench_backlog` item (kind `endpoint`). Never use the login
+     password for this check.
+   - If a match is found: do not create a new proposal. Name the existing
+     proposal in the coverage gap's description and in `report.md`.
+
+Record which of the two checks were made for each gap-based proposal.
 
 ## 6. Build the audit package
 

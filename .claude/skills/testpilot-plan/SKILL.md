@@ -21,6 +21,7 @@ Paths in this file are relative to this file. The contract is
 Before starting, read:
 - `../testpilot/SKILL.md`
 - `../../references/audit-contract.md`
+- `../../references/agent-rules.md`
 
 Apply the shared boundaries, secret-handling rules and stop conditions.
 Execute only this planning workflow. Do not start the full audit.
@@ -172,6 +173,12 @@ The scope contains:
 - Test-data constraints
 - Known out-of-scope areas
 - Stop conditions, including any added by the user
+
+`state_changes.allowed` may be `true` only when the project profile's
+`permissionMode` is `full`. With `observe_only` (the default, also when the
+field is missing), set `allowed: false` and `allowed_actions: []`, and record
+each check that would need a state change as a coverage gap. Do not propose
+`full` yourself; the user sets it through `init`.
 
 If the user only asks for “a QA pass” without a scope, propose a small,
 risk-based scope first and ask for confirmation. Do not assume that all active

@@ -69,6 +69,23 @@ Permitted external write paths are:
 
 Follow the delivery policy configured for the project.
 
+## Working rules
+
+`../../references/agent-rules.md` defines how the agent reasons and acts in
+every skill: claims grounded in checks made in the session, no fix without a
+root cause, the agent never approves, observe-only by default, no secrets in
+clear text, concrete limits (3 attempts, 100 objects, 30 s per external call),
+duplicate protection, no swallowed errors, and tool fallback. Every skill reads
+it before starting.
+
+When rules conflict, this order decides:
+
+1. Security (agent-approval rule, observe-only, secrets)
+2. The user's explicit request
+3. Scope: nothing beyond what was asked
+4. Review: change nothing while reviewing
+5. Debugging: root cause before any fix
+
 ## TestBench context
 
 Before fetching requirements or delivering an audit package, read:
@@ -90,6 +107,7 @@ The project profile must provide:
 - `requirementsPath`
 - `tokenEnvVar`
 - `deliveryEnabled`
+- `permissionMode`: `observe_only` or `full` (missing means `observe_only`)
 
 Example global configuration:
 
@@ -110,13 +128,18 @@ Example project profile:
   "requirementsSource": "black_box",
   "requirementsPath": "/api/agent/projects/5/requirements",
   "tokenEnvVar": "TESTBENCH_API_TOKEN_TS",
-  "deliveryEnabled": false
+  "deliveryEnabled": false,
+  "permissionMode": "observe_only"
 }
 ```
 
 Rules:
 
 - Resolve the active project from `activeProject`.
+- Treat `permissionMode` as authoritative for state-changing actions in the
+  target: `observe_only` (default) allows none; `full` allows those the
+  confirmed scope lists, and is set only by `init` after the user's explicit
+  confirmation (`../../references/agent-rules.md`, rule 4).
 - Read project-specific values only from the matching profile.
 - Do not duplicate project-specific fields in the global configuration.
 - Do not store token values, passwords, cookies or target URLs in configuration.

@@ -19,6 +19,7 @@ Paths in this file are relative to this file. The contract is
 Before starting, read:
 - `../testpilot/SKILL.md`
 - `../../references/audit-contract.md`
+- `../../references/agent-rules.md`
 
 Apply the shared boundaries, secret-handling rules and stop conditions.
 Execute only this run workflow. Do not start the full audit.
@@ -59,6 +60,7 @@ Use from the project profile:
 - `requirementsSource`
 - `requirementsPath`
 - `tokenEnvVar`
+- `permissionMode` (missing means `observe_only`)
 
 Rules:
 
@@ -91,6 +93,14 @@ Before the first check:
   plan and coverage gaps must be recorded in `<audit-id>/`. If not, stop and tell
   the user to run `plan` first. Do not run anything from an unapproved plan.
 - The stop conditions in `SKILL.md` apply during the whole run.
+- Check `permissionMode` against the plan. In `observe_only`, no plan item may
+  perform a state-changing action, whatever `scope.state_changes` says: if the
+  scope allows state changes or a plan item needs one, stop before the first
+  check and ask the user (the profile wins; `../../references/agent-rules.md`,
+  rule 4). Do not record such items as `skipped` on your own: the user decides
+  whether to set `full` through `init`, change the plan, or skip them.
+- In `full`, every state-changing action still needs an explicit allowed
+  action and limit in the scope (contract 5.6).
 
 Flow:
 

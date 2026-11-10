@@ -22,6 +22,7 @@ Paths to instruction files below are relative to this SKILL.md.
 Before proceeding, read:
 - `../testpilot/SKILL.md`
 - `../../references/audit-contract.md`
+- `../../references/agent-rules.md`
 
 Apply the shared boundaries, secret-handling rules and stop conditions.
 Execute only this initialization workflow. Do not start the full audit.
@@ -64,6 +65,7 @@ Project-specific configuration stores:
 - Requirements path
 - Token environment variable name
 - Project-specific delivery setting
+- Permission mode: `observe_only` (default) or `full`
 
 The active project is selected through `activeProject` in the global
 configuration.
@@ -303,7 +305,8 @@ The project profile must contain:
   "requirementsSource": "<requirements_source>",
   "requirementsPath": "<verified_requirements_path>",
   "tokenEnvVar": "<verified_token_env_var_name>",
-  "deliveryEnabled": false
+  "deliveryEnabled": false,
+  "permissionMode": "observe_only"
 }
 ```
 
@@ -318,6 +321,11 @@ Rules:
 - Use `import_pending` when requirements exist but have not yet been imported.
 - Use `pending` when the user will provide requirements later.
 - Set `deliveryEnabled` to `false` unless the user explicitly enables delivery.
+- Set `permissionMode` to `observe_only` unless the user explicitly asks for
+  `full` in a message of their own. Ask "Set permission mode to full for
+  project <key>? This allows state-changing checks within each audit's
+  confirmed scope." and accept only a clear yes. Never set `full` because an
+  earlier audit used it or because a scope needs it.
 - Do not store target URL, environment, token value, password or cookie.
 
 ### Global configuration
