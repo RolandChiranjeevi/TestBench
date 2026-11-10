@@ -11,6 +11,8 @@ import {
 } from "../api";
 import { Bug, Pencil } from "lucide-react";
 import { Empty, FrameworkBadge, Github, Kbd, PriorityIcon, ProgressBar, StatusIcon, STATUS_LABEL, rowActivation, useConfirm, useHotkeys, useToast, ListSkeleton } from "../components/ui";
+import { CiStatusBadge } from "../components/Badge";
+import { Button, buttonClass } from "../components/Button";
 import { AutomatedDetail } from "./AutomatedDetail";
 import { NewRunModal } from "./Runs";
 import { BugReportModal, jiraLabel, jiraUrl } from "./BugReport";
@@ -70,7 +72,7 @@ function RunTitle({ run }: { run: RunDetail }) {
   return (
     <>
       <span className="truncate" onDoubleClick={() => { setValue(run.title); setEditing(true); }} title="Double-click to rename">{run.title}</span>
-      <button className="btn ghost icon sm" onClick={() => { setValue(run.title); setEditing(true); }} aria-label="Rename run" title="Rename run"><Pencil size={12} /></button>
+      <Button variant="ghost" size="sm" icon onClick={() => { setValue(run.title); setEditing(true); }} aria-label="Rename run" title="Rename run"><Pencil size={12} /></Button>
     </>
   );
 }
@@ -104,19 +106,18 @@ function RunHeader({ run, children }: { run: RunDetail; children?: ReactNode }) 
       <span className="spacer" />
       {rerunOf && <Link className="chip" to={`/p/${pid}/runs/${rerunOf.id}`} title="The run this one re-tests">Re-run of {rerunOf.title}</Link>}
       {failing.length > 0 && (
-        <button
-          className="btn sm"
+        <Button size="sm"
           disabled={!caseIds.length}
           onClick={() => setRerun(true)}
           title={caseIds.length ? `Start a manual run with the ${caseIds.length} failed or blocked ${caseIds.length === 1 ? "case" : "cases"}${unlinked ? `. ${unlinked} failing ${unlinked === 1 ? "test isn't" : "tests aren't"} linked to a case and can't be included` : ""}` : "None of the failing tests are linked to a case"}
         >
           <RotateCcw size={12} /> Re-run failed ({caseIds.length})
-        </button>
+        </Button>
       )}
       {children}
-      <button className="btn ghost icon sm danger" onClick={remove} title="Delete run" aria-label="Delete run">
+      <Button variant="danger" size="sm" icon onClick={remove} title="Delete run" aria-label="Delete run">
         <Trash2 size={14} />
-      </button>
+      </Button>
       {rerun && (
         <NewRunModal
           initialCaseIds={caseIds}
@@ -232,11 +233,11 @@ function ManualRun({ run }: { run: RunDetail }) {
         {run.environment && <span className="chip">{run.environment}</span>}
         {run.milestone && <span className="chip accent">{run.milestone}</span>}
         {run.status === "completed" ? (
-          <button className="btn sm" onClick={() => complete.mutate("in_progress")}><RotateCcw size={12} /> Reopen</button>
+          <Button size="sm" onClick={() => complete.mutate("in_progress")}><RotateCcw size={12} /> Reopen</Button>
         ) : (
-          <button className="btn sm primary" onClick={() => complete.mutate("completed")} disabled={complete.isPending}>
+          <Button variant="primary" size="sm" onClick={() => complete.mutate("completed")} disabled={complete.isPending}>
             <Check size={13} /> Complete run
-          </button>
+          </Button>
         )}
       </RunHeader>
       <div className="toolbar" style={{ gap: 16 }}>
@@ -385,7 +386,7 @@ function ExecutionPanel({ resultId, projectKey, run, onMark }: { resultId: numbe
           {c.tags.map((t) => <span key={t} className="chip">{t}</span>)}
           <span className="spacer" />
           {c.id ? (
-            <Link to={`/p/${c.project_id}/cases?case=${c.id}`} className="btn ghost sm"><ExternalLink size={12} /> Open case</Link>
+            <Link to={`/p/${c.project_id}/cases?case=${c.id}`} className={buttonClass("ghost", "sm")}><ExternalLink size={12} /> Open case</Link>
           ) : (
             <span className="chip">Case deleted</span>
           )}
@@ -414,7 +415,7 @@ function ExecutionPanel({ resultId, projectKey, run, onMark }: { resultId: numbe
         </div>
         {(r.status === "failed" || r.status === "blocked") && (
           <div className="row" style={{ gap: 8 }}>
-            <button className="btn sm" onClick={() => setBugOpen(true)}><Bug size={13} /> {r.jira_key ? "Edit bug report" : "Report bug"}</button>
+            <Button size="sm" onClick={() => setBugOpen(true)}><Bug size={13} /> {r.jira_key ? "Edit bug report" : "Report bug"}</Button>
             {r.jira_key &&
               (jiraUrl(r.jira_key) ? (
                 <a className="chip accent" href={jiraUrl(r.jira_key)!} target="_blank" rel="noreferrer">{jiraLabel(r.jira_key)}</a>
@@ -532,7 +533,7 @@ function Thumb({ a, onDelete }: { a: Attachment; onDelete: () => void }) {
       <a href={url} target="_blank" rel="noreferrer" style={{ display: "contents" }}>
         {a.mime.startsWith("image/") ? <img src={url} alt={a.filename} /> : <span className="truncate" style={{ padding: 6 }}>{a.filename}</span>}
       </a>
-      <button className="btn icon sm x" onClick={onDelete} aria-label={`Remove ${a.filename}`}><X size={12} /></button>
+      <Button size="sm" icon className="x" onClick={onDelete} aria-label={`Remove ${a.filename}`}><X size={12} /></Button>
     </div>
   );
 }
@@ -579,7 +580,7 @@ function AutomatedRun({ run }: { run: RunDetail }) {
     <>
       <RunHeader run={run}>
         <FrameworkBadge framework={run.framework} />
-        {meta.url && <a className="btn sm" href={meta.url} target="_blank" rel="noreferrer"><Github size={12} /> View on GitHub</a>}
+        {meta.url && <a className={buttonClass("secondary", "sm")} href={meta.url} target="_blank" rel="noreferrer"><Github size={12} /> View on GitHub</a>}
       </RunHeader>
       <div className="content">
         <div style={{ padding: "18px 20px", display: "flex", gap: 32, alignItems: "flex-end", borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
@@ -637,7 +638,7 @@ function AutomatedRun({ run }: { run: RunDetail }) {
                       <span className="title">{r.test_title}</span>
                       <span className="meta">
                         {r.test_suite_path && r.test_suite_path !== file && <span className="faint truncate" style={{ maxWidth: 220 }}>{r.test_suite_path}</span>}
-                        {r.flaky ? <span className="chip" style={{ color: "var(--flaky-fg)" }}>flaky</span> : null}
+                        {r.flaky ? <CiStatusBadge value="flaky" /> : null}
                         {r.attachment_count > 0 && <span className="chip" title="Screenshots, videos and traces"><Paperclip size={10} /> {r.attachment_count}</span>}
                         {r.jira_key && <span className="chip accent" title="Linked Jira issue"><Bug size={10} /> {jiraLabel(r.jira_key)}</span>}
                         {r.case_id ? (
