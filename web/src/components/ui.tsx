@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { AlertCircle, CheckCircle2, X } from "lucide-react";
 import type { Counts, Priority, Status } from "../api";
 import { claimKeys, isClaimed } from "../hotkeys";
+import { Button } from "./Button";
 
 // ---------- Status icon (Linear-style circles) ----------
 
@@ -115,9 +116,9 @@ export function Modal({ title, onClose, children, footer, width }: { title: Reac
         <div className="modal-header">
           {title}
           <span className="spacer" />
-          <button className="btn ghost icon sm" onClick={onClose} aria-label="Close">
+          <Button variant="ghost" size="sm" icon onClick={onClose} aria-label="Close">
             <X size={14} />
-          </button>
+          </Button>
         </div>
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-footer">{footer}</div>}
@@ -244,8 +245,8 @@ export function ConfirmModal({ title, children, confirmLabel = "Delete", require
       width={480}
       footer={
         <>
-          <button className="btn ghost" onClick={onClose} disabled={busy}>Cancel</button>
-          <button className="btn danger-solid" disabled={!ok || busy} onClick={onConfirm}>{busy ? "Deleting…" : confirmLabel}</button>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button variant="danger-solid" disabled={!ok || busy} onClick={onConfirm}>{busy ? "Deleting…" : confirmLabel}</Button>
         </>
       }
     >

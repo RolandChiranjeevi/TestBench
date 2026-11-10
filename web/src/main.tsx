@@ -23,6 +23,7 @@ import { TestPlanPage } from "./pages/TestPlan";
 import { ObservationsPage } from "./pages/Observations";
 import { useObservationSummary } from "./observations";
 import "./styles.css";
+import { Button } from "./components/Button";
 
 const LAST_PROJECT = "testbench:lastProject";
 const storage = {
@@ -73,12 +74,12 @@ function Welcome() {
         title="Welcome to Testbench"
         action={
           <div className="row">
-            <button className="btn primary" onClick={() => setCreating(true)}>
+            <Button variant="primary" onClick={() => setCreating(true)}>
               <Plus size={14} /> Create project
-            </button>
-            <button className="btn" onClick={() => demo.mutate()} disabled={demo.isPending}>
+            </Button>
+            <Button onClick={() => demo.mutate()} disabled={demo.isPending}>
               <Sparkles size={14} /> Load demo project
-            </button>
+            </Button>
           </div>
         }
       >
@@ -116,10 +117,10 @@ function NewProjectModal({ onClose }: { onClose: () => void }) {
       width={460}
       footer={
         <>
-          <button className="btn ghost" onClick={onClose}>Cancel</button>
-          <button className="btn primary" disabled={!valid || create.isPending} onClick={() => create.mutate()}>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" disabled={!valid || create.isPending} onClick={() => create.mutate()}>
             Create project
-          </button>
+          </Button>
         </>
       }
     >
@@ -203,9 +204,9 @@ function ProjectLayout() {
     <div className="app">
       <a className="skip-link" href="#main" onClick={(e) => { e.preventDefault(); document.getElementById("main")?.focus(); }}>Skip to content</a>
       <header className="mobile-bar">
-        <button className="btn ghost icon" aria-label="Open navigation menu" aria-expanded={navOpen} onClick={() => setNavOpen(true)}>
+        <Button variant="ghost" icon aria-label="Open navigation menu" aria-expanded={navOpen} onClick={() => setNavOpen(true)}>
           <Menu size={18} />
-        </button>
+        </Button>
         <span className="project-badge">{project.key.slice(0, 2)}</span>
         <span className="truncate" style={{ fontWeight: 600 }}>{project.name}</span>
       </header>

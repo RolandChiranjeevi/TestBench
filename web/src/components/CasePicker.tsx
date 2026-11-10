@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Bot, Search } from "lucide-react";
 import { api, orderSuites, type CaseSummary, type Project, type Suite } from "../api";
 import { PriorityIcon } from "./ui";
+import { Button } from "./Button";
 
 /** Cases that can be put in a run: everything except deprecated ones. */
 export function useRunnableCases() {
@@ -40,8 +41,8 @@ export function CasePicker({ selected, onChange, maxHeight = 300 }: { selected: 
           <Search size={13} />
           <input className="input" placeholder="Filter cases" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Filter cases" />
         </div>
-        <button className="btn sm" onClick={() => setMany(shown.map((c) => c.id), true)}>Select {q ? "shown" : "all"}</button>
-        <button className="btn ghost sm" onClick={() => onChange(new Set())}>Clear</button>
+        <Button size="sm" onClick={() => setMany(shown.map((c) => c.id), true)}>Select {q ? "shown" : "all"}</Button>
+        <Button variant="ghost" size="sm" onClick={() => onChange(new Set())}>Clear</Button>
       </div>
       <div className="card" style={{ maxHeight, overflow: "auto" }}>
         {groups.length === 0 && <div className="muted" style={{ padding: 16 }}>No cases to pick. Create test cases first.</div>}
