@@ -1,8 +1,8 @@
 import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
+import { BrowserRouter, Link, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ChevronDown, FlaskConical, Menu, Plus, Sparkles } from "lucide-react";
+import { Archive, ChevronDown, FlaskConical, Menu, Plus, Sparkles, UserRound } from "lucide-react";
 import { api, parseDate, timeAgo, type BackupInfo, type Project } from "./api";
 import { ConfirmProvider, Empty, Modal, ToastProvider, useHotkeys, useToast } from "./components/ui";
 import { CasesPage } from "./pages/Cases";
@@ -23,7 +23,8 @@ import { TestPlanPage } from "./pages/TestPlan";
 import { ObservationsPage } from "./pages/Observations";
 import { useObservationSummary } from "./observations";
 import "./styles.css";
-import { Button } from "./components/Button";
+import { Button, buttonClass } from "./components/Button";
+import { AccountPage } from "./pages/Account";
 import { Can, ReadOnlyNotice, RoleTag, accessIn, useAccess, useAuthStatus } from "./components/Access";
 import { can, explainStatus } from "./access";
 
@@ -61,7 +62,7 @@ function Home() {
 function NoProjects() {
   return (
     <div style={{ height: "100%", display: "grid", placeItems: "center" }}>
-      <Empty icon={<FlaskConical size={20} />} title="You are not a member of any project yet">
+      <Empty icon={<FlaskConical size={20} />} title="You are not a member of any project yet" action={<Link to="/account" className={buttonClass()}><UserRound size={14} aria-hidden="true" /> Your account</Link>}>
         Ask an admin of a project to add you, or to send you an invitation link. Projects are made by the owner of this Testbench.
       </Empty>
     </div>
@@ -165,7 +166,7 @@ function NewProjectModal({ onClose }: { onClose: () => void }) {
 
 function ProjectLayout() {
   const { data: projects, isLoading } = useProjects();
-  const { isLoading: authLoading } = useAuthStatus();
+  const { data: auth, isLoading: authLoading } = useAuthStatus();
   const access = useAccess();
   const toast = useToast();
   const { pid } = useParams();
@@ -276,6 +277,11 @@ function ProjectLayout() {
         <SidebarNav pid={project.id} counts={navCounts} />
 
         <div className="sidebar-footer">
+          {auth?.mode === "accounts" && (
+            <NavLink to="/account" className="backup-nudge" title="Your account: name, email, password, sessions" aria-label="Your account">
+              <UserRound size={14} /> <span className="nav-label">Your account</span>
+            </NavLink>
+          )}
           {/* Nudge when there is no recent backup: the data lives only on this computer. */}
           {backup && can(access, "owner") && (() => {
             const last = parseDate(backup.lastBackupAt);
@@ -320,6 +326,7 @@ createRoot(document.getElementById("root")!).render(
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Home />} />
+            <Route path="/account" element={<AccountPage />} />
             <Route path="/p/:pid" element={<ProjectLayout />}>
               <Route index element={<Navigate to="dashboard" replace />} />
               <Route path="dashboard" element={<DashboardPage />} />

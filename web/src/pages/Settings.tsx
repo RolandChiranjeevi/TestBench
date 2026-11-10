@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Navigate, NavLink, useParams } from "react-router-dom";
+import { Link, Navigate, NavLink, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, KeyRound, LogOut, Pencil, ShieldAlert, Trash2 } from "lucide-react";
 import { api, timeAgo, type DisplayName, type Project } from "../api";
@@ -435,6 +435,7 @@ function Account() {
               ? <>You are signed in as <strong>{auth.user.name}</strong> ({auth.user.email}){auth.user.isOwner ? ", the owner of this Testbench" : ""}.</>
               : "This Testbench is protected with a password, and you are signed in."}
           </div>
+          {auth.mode === "accounts" && <div className="muted"><Link to="/account">Your account</Link>: change your email or password, and see where you are signed in.</div>}
           <div className="row">
             <Button onClick={async () => { await api.post("/api/logout"); window.location.href = "/login"; }}><LogOut size={14} /> Sign out</Button>
           </div>

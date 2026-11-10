@@ -240,6 +240,26 @@ describe("a person's own account", () => {
     const mine = (await call("GET", "/api/me/sessions", { cookie: state.owner })).json();
     assert.ok(mine.every((s: { id: number }) => s.id !== victim.id), "a person only sees their own sessions");
   });
+
+  it("sign out everywhere else ends every other session of the person, keeps this one, and touches nobody else's", async () => {
+    const phone = (await login(state.piaEmail, NEW)).cookie!;
+    const laptop = (await login(state.piaEmail, NEW)).cookie!;
+    const ownersBefore = (await call("GET", "/api/me/sessions", { cookie: state.owner })).json().length;
+    assert.equal(await status(call("POST", "/api/me/sessions/revoke-others", { cookie: state.pia, guard: false })), 403, "the browser guard applies");
+    assert.equal(await status(call("POST", "/api/me/sessions/revoke-others")), 401, "signed in only");
+    const res = await call("POST", "/api/me/sessions/revoke-others", { cookie: state.pia });
+    assert.equal(res.statusCode, 200);
+    assert.ok(res.json().ended >= 2, `ended ${res.json().ended}`);
+    assert.equal(await status(call("GET", "/api/me", { cookie: phone })), 401);
+    assert.equal(await status(call("GET", "/api/me", { cookie: laptop })), 401);
+    assert.equal(await status(call("GET", "/api/me", { cookie: state.pia })), 200, "this one stays");
+    const left = (await call("GET", "/api/me/sessions", { cookie: state.pia })).json();
+    assert.deepEqual(left.map((s: { current: boolean }) => s.current), [true]);
+    assert.equal((await call("GET", "/api/me/sessions", { cookie: state.owner })).json().length, ownersBefore, "another person's sessions are untouched");
+    assert.equal((await call("POST", "/api/me/sessions/revoke-others", { cookie: state.pia })).json().ended, 0, "nothing left to end");
+    const log = (await call("GET", "/api/audit-log?limit=20", { cookie: state.owner })).json();
+    assert.ok(log.some((e: { action: string; detail: { sessionsEnded: number } }) => e.action === "sessions.revoked_others" && e.detail.sessionsEnded >= 2), "it is in the audit log");
+  });
 });
 
 describe("the owner looks after the accounts", () => {

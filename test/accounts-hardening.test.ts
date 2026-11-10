@@ -217,7 +217,7 @@ describe("the browser guard covers every write route", () => {
     const routes: ["POST" | "PUT" | "PATCH" | "DELETE", string, unknown?][] = [
       ["POST", "/api/projects", { name: "x", key: "XX" }], ["POST", "/api/demo"], ["POST", "/api/restore"], ["PUT", "/api/settings/agent-proposals", { enabled: true }],
       ["PUT", "/api/settings/display-name", { name: "x" }], ["PATCH", "/api/me", { name: "x" }], ["POST", "/api/me/password", { current: GOOD, next: "x".repeat(12) }],
-      ["POST", "/api/me/sessions/1/revoke"], ["POST", "/api/users/2/disable"], ["POST", "/api/users/2/enable"], ["POST", "/api/users/2/reset-link"],
+      ["POST", "/api/me/sessions/1/revoke"], ["POST", "/api/me/sessions/revoke-others"], ["POST", "/api/users/2/disable"], ["POST", "/api/users/2/enable"], ["POST", "/api/users/2/reset-link"],
       ["POST", "/api/invitations", { email: "a@b.co" }], ["POST", "/api/invitations/1/revoke"], ["POST", "/api/logout"], ["POST", "/api/login", { email: "a@b.co", password: GOOD }],
       ["POST", "/api/setup", { email: "a@b.co", password: GOOD }], ["POST", "/api/join/x", { name: "n", email: "a@b.co", password: GOOD }], ["POST", "/api/reset/x", { password: GOOD }],
       ["POST", "/api/projects/1/agent/tokens", { name: "x" }], ["POST", "/api/projects/1/ci/tokens", { name: "x" }], ["DELETE", "/api/projects/1"],
