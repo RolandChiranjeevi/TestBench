@@ -326,7 +326,9 @@ Rules:
   project <key>? This allows state-changing checks within each audit's
   confirmed scope." and accept only a clear yes. Never set `full` because an
   earlier audit used it or because a scope needs it.
-- Do not store target URL, environment, token value, password or cookie.
+- Do not store target URL, environment, token value, password or cookie in the
+  project profile. An API target profile (`config/targets/<name>.json`) may hold a
+  non-production base URL, never a secret.
 
 ### Global configuration
 

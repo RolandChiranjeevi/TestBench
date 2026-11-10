@@ -28,6 +28,11 @@ Paths in this file are relative to this `SKILL.md`.
 - `deliver`: transform a validated audit package and import it to TestBench
   after user confirmation (dry-run first, then real import). See
   `../testpilot-deliver/SKILL.md`.
+- `api-testing`: the API variant of discover → plan → run → report → deliver
+  for a REST or GraphQL target described by a target profile
+  (`config/targets/<name>.json`); `tools/apitest/runner.py` replaces Playwright
+  and the package, contract and delivery are unchanged. See
+  `../testpilot-api-testing/SKILL.md`.
 
 ## Command order
 
@@ -142,7 +147,9 @@ Rules:
   confirmation (`../../references/agent-rules.md`, rule 4).
 - Read project-specific values only from the matching profile.
 - Do not duplicate project-specific fields in the global configuration.
-- Do not store token values, passwords, cookies or target URLs in configuration.
+- Do not store token values, passwords, cookies or target URLs in the TestBench
+  project profile. An API target profile (`config/targets/<name>.json`) may hold
+  a non-production base URL, never a secret.
 - Treat `deliveryEnabled` in the project profile as authoritative.
 - If the active profile is missing, invalid or unreadable, pause and ask the user.
 

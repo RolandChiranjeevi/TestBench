@@ -63,7 +63,9 @@ Use from the project profile:
 Rules:
 
 - Do not read project-specific values from the global configuration.
-- Do not store token values, passwords, cookies or target URLs in configuration.
+- Do not store token values, passwords, cookies or target URLs in the TestBench
+  project profile. An API target profile (`config/targets/<name>.json`) may hold
+  a non-production base URL, never a secret.
 - If the active profile is missing, invalid or unreadable, pause and ask the user.
 
 ## 2. Before the first step

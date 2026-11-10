@@ -87,7 +87,25 @@ Rules:
   the agent stops and asks rather than run a state-changing check. Production
   targets need two separate confirmations in `discover`. The agent's working
   rules are in `.claude/references/agent-rules.md`.
-- Do not store token values, passwords, cookies or target URLs in configuration.
+- Do not store token values, passwords, cookies or target URLs in the TestBench project profile. An API target profile (`config/targets/<name>.json`) may hold a non-production base URL, never a secret.
+
+### API target profiles
+
+`config/targets/<name>.json` describes an API target for `/testpilot-api-testing`
+(template: `.claude/skills/testpilot-api-testing/templates/target-profile.json`).
+
+| Field | Use |
+|---|---|
+| `baseUrl` | Non-production base URL; every request must be under it |
+| `environment`, `production` | `production: true` needs two confirmations recorded by `discover` before the runner accepts it |
+| `permissionMode` | `observe_only` or `full`; effective mode is `full` only when the project profile says `full` too |
+| `auth` | `type` (`none`, `bearer`, `cookie`, `header`, `basic`), `tokenEnvVar`, an optional `login` request, `expiredTokenEnvVar`, `secondAccount.body`: environment variable **names** only, as `${env:NAME}` |
+| `schema` | `{ "type": "openapi" \| "graphql", "file": "..." }` for contract checks |
+| `limits` | `timeoutSeconds` (max 30), `maxAttempts` (max 3), `maxRequestsPerRun`, `rateLimitProbeMax` |
+
+The runner refuses a profile that holds a literal secret. Run a plan with
+`python3 tools/apitest/runner.py <audit-id> [--dry-run]`; tests with
+`python3 -m unittest discover -s tests` (in-process mock server, no network).
 
 ## 3. Environment variables
 
