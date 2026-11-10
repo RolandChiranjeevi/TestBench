@@ -334,6 +334,79 @@ for (const who of Object.keys(TABS)) {
   await w.close();
 }
 
+// AI suggestions of bugs: read, change, confirm as a bug, dismiss and restore. Confirming is a person's decision and the person is saved.
+{
+  const key = (await call("GET", "/api/projects", undefined, owner)).json.find((x) => x.id === A).key;
+  const files = { "manifest.json": { format: "testbench-audit-package", version: 1, audit: { id: "ui-bug-audit", title: "UI bug audit", project: key, agent: { name: "ui-check-agent" } }, files: [], parts: {} },
+    "bugs.json": { version: 1, bugs: [1, 2, 3, 4].map((n) => ({ sourceId: `ui-bug-${n}`, title: `UI bug ${n}`, description: "Found by the UI check" })) } };
+  const form = new FormData();
+  for (const [name, content] of Object.entries(files)) { form.append("relpath", name); form.append("file", new Blob([JSON.stringify(content)], { type: "application/json" }), name); }
+  const seeded = await fetch(`${BASE}/api/projects/${A}/audit-import`, { method: "POST", headers: { "X-Testbench": "1", Cookie: `tb_sid=${owner}` }, body: form });
+  check("bug suggestions: seeded", seeded.ok, `${seeded.status}`);
+  const tokenRes = (await call("POST", `/api/projects/${A}/ci/tokens`, { name: "ui check" }, owner)).json;
+  const ci = await fetch(`${BASE}/api/projects/${A}/ci/test-results`, { method: "POST", headers: { ...HDR, Authorization: `Bearer ${tokenRes.token}` }, body: JSON.stringify({ runId: "ui-bug-run", commitSha: "abc1234567", branch: "main", repository: "o/r", pipelineUrl: "https://github.com/o/r/actions/runs/1", startedAt: "2026-11-04T07:00:00Z", finishedAt: "2026-11-04T07:04:00Z", results: [{ testKey: "ui-ci-bug", title: "UI CI failure", status: "failed", durationMs: 1, error: "boom", steps: [], attachments: [], tags: [] }] }) });
+  check("bug suggestions: a CI failure was seeded", ci.ok, `${ci.status}`);
+  const bugRows = async () => (await call("GET", `/api/projects/${A}/bug-reports?status=all`, undefined, owner)).json.items;
+  const bugOf = async (title) => (await bugRows()).find((b) => b.title === title);
+
+  const { page, close } = await open("tester", `/p/${A}/bugs`);
+  const row = (title) => page.locator(".suggestion-row", { hasText: title });
+  check("bug suggestions: the tabs are Suggested, Confirmed, Dismissed", await eventually(async () => JSON.stringify((await texts(page, '[role="tab"]')).map((t) => t.replace(/\d+$/, "").trim()).slice(0, 3)) === JSON.stringify(["Suggested", "Confirmed", "Dismissed"])));
+  check("bug suggestions: an agent's bug is marked AI, with Confirm bug and Dismiss", await eventually(async () => (await row("UI bug 1").getByText("AI suggestion").count()) === 1 && (await row("UI bug 1").getByRole("button", { name: /Confirm bug/ }).count()) === 1 && (await row("UI bug 1").getByRole("button", { name: "Dismiss" }).count()) === 1));
+  check("bug suggestions: a CI bug says From CI and is not marked AI", await eventually(async () => (await row("UI CI failure").getByText("From CI").count()) === 1 && (await row("UI CI failure").getByText("AI suggestion").count()) === 0));
+
+  // From the row.
+  await row("UI bug 1").getByRole("button", { name: /Confirm bug/ }).click();
+  check("bug suggestions: confirmed, with the person saved", await eventually(async () => { const b = await bugOf("UI bug 1"); return b?.status === "accepted" && b.reviewedBy === "Tess"; }));
+  await page.getByRole("tab", { name: /^Confirmed/ }).click();
+  check("bug suggestions: the Confirmed tab says who", await eventually(async () => (await row("UI bug 1").innerText()).includes("Confirmed by Tess")));
+  check("bug suggestions: and calls it bug #N", await eventually(async () => /bug #\d+/.test(await row("UI bug 1").innerText())));
+  await page.getByRole("tab", { name: /^Suggested/ }).click();
+
+  // Edit first, then confirm: what is typed is saved with it.
+  await row("UI bug 2").locator(".row-main").click();
+  const dlg = page.getByRole("dialog");
+  check("bug suggestions: the modal has Triage as its own section", await eventually(async () => (await dlg.locator(".section-label", { hasText: /^Triage$/ }).count()) === 1));
+  await dlg.getByRole("button", { name: "Edit", exact: true }).click();
+  await dlg.getByLabel("Title").fill("UI bug 2, in my words");
+  await dlg.getByRole("button", { name: /Confirm bug/ }).click();
+  check("bug suggestions: the modal says Confirmed as bug #N, with a link", await eventually(async () => /Confirmed as bug #\d+\. Not published anywhere\./.test(await dlg.getByRole("status").first().innerText())));
+  check("bug suggestions: and it has the edited words", await eventually(async () => { const b = await bugOf("UI bug 2, in my words"); return b?.status === "accepted" && b.reviewedBy === "Tess"; }));
+  check("bug suggestions: the modal says Confirmed by", await eventually(async () => (await dlg.getByText("Confirmed by Tess").count()) === 1));
+  check("bug suggestions: a confirmed bug has no way back to Suggested", (await dlg.getByRole("button", { name: /Suggested/ }).count()) === 0);
+  await dlg.getByRole("link", { name: /bug #\d+/ }).click();
+  check("bug suggestions: the Confirmed as bug #N link keeps the same bug open", await eventually(async () => page.url().includes("bug=") && (await dlg.getByText("Confirmed by Tess").count()) === 1));
+  await dlg.locator(".modal-footer").getByRole("button", { name: "Close", exact: true }).click();
+
+  // Dismiss is not deleting, and it can be undone.
+  await row("UI bug 3").getByRole("button", { name: "Dismiss" }).click();
+  check("bug suggestions: a dismissed one is kept, as rejected", await eventually(async () => { const b = await bugOf("UI bug 3"); return b?.status === "rejected" && b.reviewedBy === "Tess"; }));
+  await page.getByRole("tab", { name: /^Dismissed/ }).click();
+  check("bug suggestions: and it can be restored", await eventually(async () => (await row("UI bug 3").getByRole("button", { name: /Restore to Suggested/ }).count()) === 1));
+  await row("UI bug 3").getByRole("button", { name: /Restore to Suggested/ }).click();
+  check("bug suggestions: restored to Suggested", await eventually(async () => (await bugOf("UI bug 3"))?.status === "proposed"));
+  // And from the modal.
+  await page.getByRole("tab", { name: /^Suggested/ }).click();
+  await row("UI bug 3").getByRole("button", { name: "Dismiss" }).click();
+  check("bug suggestions: dismissed again", await eventually(async () => (await bugOf("UI bug 3"))?.status === "rejected"));
+  await page.getByRole("tab", { name: /^Dismissed/ }).click();
+  await row("UI bug 3").locator(".row-main").click();
+  await page.getByRole("dialog").getByRole("button", { name: /Restore to Suggested/ }).click();
+  check("bug suggestions: restored from the modal too", await eventually(async () => (await bugOf("UI bug 3"))?.status === "proposed"));
+  await page.getByRole("dialog").locator(".modal-footer").getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByRole("tab", { name: /^Confirmed/ }).click();
+  check("bug suggestions: a confirmed bug has no Restore on its row", (await row("UI bug 1").getByRole("button", { name: /Restore/ }).count()) === 0);
+  await close();
+
+  // A viewer can read them but not act.
+  const v = await open("viewer", `/p/${A}/bugs`);
+  check("bug suggestions: a viewer's Confirm bug and Dismiss are off", await eventually(async () => (await v.page.locator(".suggestion-row", { hasText: "UI bug 4" }).getByRole("button", { name: /Confirm bug/ }).isDisabled()) && (await v.page.locator(".suggestion-row", { hasText: "UI bug 4" }).getByRole("button", { name: "Dismiss" }).isDisabled())));
+  await v.page.locator(".suggestion-row", { hasText: "UI bug 4" }).locator(".row-main").click();
+  check("bug suggestions: and so are they in the modal", await eventually(async () => (await v.page.getByRole("dialog").getByRole("button", { name: /Confirm bug/ }).isDisabled()) && (await v.page.getByRole("dialog").getByRole("button", { name: "Dismiss", exact: true }).isDisabled())));
+  await v.close();
+  check("bug suggestions: nothing was confirmed by the viewer, the import or CI", (await bugRows()).filter((b) => b.status === "accepted").every((b) => b.reviewedBy === "Tess"));
+}
+
 // /admin: the owner looks after the accounts and reads the audit log; nobody else is offered it.
 {
   const { page, close } = await open("owner", "/admin/accounts");

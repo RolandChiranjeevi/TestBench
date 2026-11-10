@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Bug, Check, ClipboardList, EyeOff, ExternalLink, FileText, FolderOpen, KeyRound, Link2, Paperclip, Pencil, Send, Settings, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, Bug, Check, ClipboardList, EyeOff, ExternalLink, FileText, FolderOpen, KeyRound, Link2, Paperclip, Pencil, Send, Settings, Trash2, Undo2, Upload, UserCheck } from "lucide-react";
 import { api, formatDateTime, parseDate, timeAgo, type Priority } from "../api";
 import { ConfirmModal, Empty, ListSkeleton, Modal, PRIORITY_LABEL, useToast } from "../components/ui";
 import { Badge, BugWorkflowBadge, CiStatusBadge, ReviewStatusBadge, SeverityBadge } from "../components/Badge";
@@ -10,7 +10,7 @@ import { useCan } from "../components/Access";
 
 type Status = "proposed" | "accepted" | "rejected" | "duplicate";
 interface Item {
-  id: number; sourceId: string; title: string; status: Status; severity: Priority | null; foundAt: string | null; importedAt: string;
+  id: number; sourceId: string; title: string; status: Status; reviewedBy: string | null; reviewedAt: string | null; severity: Priority | null; foundAt: string | null; importedAt: string;
   auditTitle: string; auditDeleted: boolean; unresolvedRefs: number; attachments: number; attachmentProblems: number; pendingUpdate: boolean; published: boolean; presence: Presence;
   source: Source; testKey: string | null; tags: string[]; workflowStatus: Workflow; assignee: string;
   ci: { lastStatus: CiStatus | null; lastAt: string | null; flaky: boolean; failedRuns: number; branch: string; commit: string; pipelineUrl: string } | null;
@@ -47,7 +47,7 @@ interface List { items: Item[]; counts: Record<string, number>; presenceCounts: 
 interface Ref { id: number; kind: string; raw: string; state: string; reason: string; label: string; target: { kind: string; id: number } | null }
 interface Attachment { id: number; declared_path: string; filename: string; mime: string; size: number; label: string; stored_name: string | null; state: string; reason: string; active: number }
 interface Detail {
-  id: number; projectId: number; sourceId: string; status: Status; reviewedAt: string | null; reviewNote: string; editedAt: string | null;
+  id: number; projectId: number; sourceId: string; status: Status; reviewedAt: string | null; reviewedBy: string | null; reviewNote: string; editedAt: string | null;
   title: string; description: string; steps: string[]; expected: string; actual: string; environment: string; url: string;
   severity: { tool: { tool: string; value: string; ruleId?: string } | null; agent: Priority | null; human: Priority | null; effective: Priority | null };
   confidence: number | null; agentReview: { status: string; method: string; notes: string } | null; foundAt: string | null; importedAt: string; fingerprint: string;
@@ -89,7 +89,23 @@ interface Summary {
 }
 
 type Tab = Status | "all" | "audits";
-const TAB_LABEL: Record<Tab, string> = { proposed: "Proposed", accepted: "Accepted", rejected: "Rejected", duplicate: "Duplicates", all: "All", audits: "Audits" };
+const TAB_LABEL: Record<Tab, string> = { proposed: "Suggested", accepted: "Confirmed", rejected: "Dismissed", duplicate: "Duplicates", all: "All", audits: "Audits" };
+/** What each decision is called here. The server keeps proposed, accepted, rejected and duplicate. */
+const DECISION_WORD: Record<Status, string> = { proposed: "Suggested", accepted: "Confirmed", rejected: "Dismissed", duplicate: "Duplicate" };
+const DECIDED_BY: Record<Status, string> = { proposed: "Restored by", accepted: "Confirmed by", rejected: "Dismissed by", duplicate: "Marked as a duplicate by" };
+
+/**
+ * Who made a bug suggestion. A test agent's report and an observation that a person turned into a bug are AI suggestions; a failing CI test is not
+ * (it is a fact from a test run), so it says where it came from and is not marked as AI.
+ */
+function Origin({ source }: { source: Source }) {
+  if (source === "ci") return <span className="chip" title="Reported by CI from a failing test. Nothing becomes a bug until you confirm it.">From CI</span>;
+  return (
+    <Badge tone="accent" title={source === "manual" ? "A test agent's observation that a person turned into a suggestion. Nothing becomes a bug until you confirm it." : "Suggested by a test agent. Nothing becomes a bug until you confirm it."}>
+      {source === "manual" ? "AI suggestion · from an observation" : "AI suggestion"}
+    </Badge>
+  );
+}
 const RUN_STATE: Record<string, string> = { linked: "Linked to the run", pending: "Waiting for the run to be imported", none: "No GitHub run named", deleted: "The run was deleted" };
 const DANGER = { color: "var(--failed-fg)" };
 
@@ -113,6 +129,17 @@ export function BugReportsPage() {
   const NO_FILTER = { source: "", workflow: "", severity: "", tag: "", testKey: "", new: "" as NewFilter };
   const [filter, setFilter] = useState(NO_FILTER);
   const [tokensOpen, setTokensOpen] = useState(false);
+  const toast = useToast();
+  const refresh = useRefresh(pid!);
+  const [deciding, setDeciding] = useState(false);
+  /** Confirm, dismiss or restore one suggestion from the list. The person is saved by the server. */
+  const decide = (b: Item, status: "accepted" | "rejected" | "proposed") => {
+    setDeciding(true);
+    api.post(`/api/bug-reports/${b.id}/review`, { status })
+      .then(() => { refresh(); toast("success", status === "accepted" ? `Confirmed as bug #${b.id}. Not published anywhere.` : status === "rejected" ? "Dismissed. It is under Dismissed if you want it back." : "Back in Suggested"); })
+      .catch((e: Error) => toast("error", e.message))
+      .finally(() => setDeciding(false));
+  };
   const { data: dest } = useQuery({ queryKey: ["destination", pid], queryFn: () => api.get<{ destination: Destination | null; serverKey: boolean }>(`/api/projects/${pid}/destination`) });
   const open = Number(params.get("bug")) || null;
   const statusParam = tab === "audits" ? "proposed" : tab;
@@ -132,7 +159,7 @@ export function BugReportsPage() {
       <div className="topbar">
         <h1>Bug reports</h1>
         <span className="spacer" />
-        <Button needs="admin" onClick={() => setDestinationOpen(true)} title="Where accepted reports are published">
+        <Button needs="admin" onClick={() => setDestinationOpen(true)} title="Where confirmed bugs are published">
           <Settings size={14} /> {dest?.destination ? `Linear · ${dest.destination.team.key}` : "Set up publishing"}
         </Button>
         <Button needs="admin" onClick={() => setTokensOpen(true)} title="API tokens that let your CI send test results here"><KeyRound size={14} /> CI</Button>
@@ -197,16 +224,17 @@ export function BugReportsPage() {
             title={presence || filtered ? "No reports match these filters" : tab === "proposed" ? "Nothing waiting for review" : "No bug reports here"}
             action={<Button needs="tester" onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</Button>}
           >
-            Reports from a test agent arrive as proposals. Nothing is accepted or sent anywhere until you decide.
+            AI suggestions arrive here. Nothing becomes a bug until you confirm it.
           </Empty>
         ) : (
           data.items.map((b) => (
-            <button key={b.id} className="list-row" style={{ width: "100%", textAlign: "left" }} onClick={() => setOpen(b.id)}>
-              <span className="id mono truncate" style={{ width: 88 }} title={b.testKey ?? b.sourceId}>{b.source === "ci" ? `#${b.id}` : b.sourceId}</span>
+            <div key={b.id} className="list-row suggestion-row">
+              <button className="row-main" onClick={() => setOpen(b.id)}>
+              <span className="id mono truncate" style={{ width: 96 }} title={b.testKey ?? b.sourceId}>{b.status === "accepted" ? `bug #${b.id}` : b.source === "ci" ? `#${b.id}` : b.sourceId}</span>
               <span className="title">{b.title}</span>
               <span className="meta">
                 {b.newIn && <Badge tone="accent" title={newWhy(b.newIn, data?.latestRuns)}>New</Badge>}
-                {b.source === "ci" && <span className="chip" title={`Reported by CI. Test key: ${b.testKey}`}>CI</span>}
+                <Origin source={b.source} />
                 {b.ci?.lastStatus && (
                   <CiStatusBadge value={b.ci.lastStatus} title="The latest CI result of this test"
                     label={`${CI_STATUS_LABEL[b.ci.lastStatus]}${b.ci.failedRuns > 0 ? ` · ${b.ci.failedRuns} failed run${b.ci.failedRuns === 1 ? "" : "s"}` : ""}`} />
@@ -227,10 +255,17 @@ export function BugReportsPage() {
                 {b.presence === "missing" && <Badge tone="warn" icon="eye-off" title="This report was not in the latest run of its audit. It is kept as it is.">Not in latest run</Badge>}
                 {b.published && <span className="chip"><Link2 size={11} /> linked</span>}
                 <Severity value={b.severity} />
-                {tab === "all" && <StatusChip status={b.status} />}
+                {tab === "all" && <span className="chip">{DECISION_WORD[b.status]}</span>}
+                {b.status !== "proposed" && b.reviewedBy && <span className="faint" title={b.reviewedAt ? formatDateTime(b.reviewedAt) : undefined}>{DECIDED_BY[b.status]} {b.reviewedBy}</span>}
                 <span className="faint" title={b.auditTitle}>{timeAgo(b.importedAt)}</span>
               </span>
-            </button>
+              </button>
+              <span className="row-actions">
+                {b.status === "proposed" && <Button needs="tester" variant="primary" size="sm" disabled={deciding} onClick={() => decide(b, "accepted")}><Check size={13} /> Confirm bug</Button>}
+                {b.status === "proposed" && <Button needs="tester" size="sm" disabled={deciding} title="Not a bug, or not now. It goes to Dismissed, and you can restore it." onClick={() => decide(b, "rejected")}>Dismiss</Button>}
+                {b.status === "rejected" && <Button needs="tester" size="sm" disabled={deciding} onClick={() => decide(b, "proposed")}><Undo2 size={13} /> Restore to Suggested</Button>}
+              </span>
+            </div>
           ))
         )}
       </div>
@@ -262,6 +297,7 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
   const [link, setLink] = useState({ destination: "jira", url: "" });
   const [deleting, setDeleting] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [justConfirmed, setJustConfirmed] = useState(false);
   const run = <T,>(fn: () => Promise<T>, ok?: string) => fn().then((r) => { refresh(); if (ok) toast("success", ok); return r; }).catch((e: Error) => { toast("error", e.message); });
   const post = (path: string, body?: unknown, ok?: string) => run(() => api.post(`/api/bug-reports/${id}/${path}`, body), ok);
 
@@ -272,6 +308,18 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
   };
   const save = () =>
     run(() => api.patch(`/api/bug-reports/${id}`, { ...draft, steps: draft.steps.split("\n").map((s) => s.trim()).filter(Boolean) }), "Saved").then(() => setEditing(false));
+  /** Confirm the bug. Edits that are not saved yet are saved with it, so that what is confirmed is what is on screen. */
+  const confirm = async () => {
+    try {
+      if (editing) {
+        if (!draft.title.trim()) { toast("error", "The title cannot be empty"); return; }
+        await api.patch(`/api/bug-reports/${id}`, { ...draft, steps: draft.steps.split("\n").map((s) => s.trim()).filter(Boolean) });
+        setEditing(false);
+      }
+      await api.post(`/api/bug-reports/${id}/review`, { status: "accepted", note: note || undefined });
+      refresh(); setJustConfirmed(true); toast("success", `Confirmed as bug #${id}. Not published anywhere.`);
+    } catch (e) { toast("error", (e as Error).message); }
+  };
   const problems = b.attachments.filter((a) => a.state !== "stored");
   const stored = b.attachments.filter((a) => a.state === "stored" && a.active);
   const unresolved = b.refs.filter((r) => r.state !== "resolved");
@@ -280,7 +328,7 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
 
   return (
     <Modal
-      title={<span className="row" style={{ gap: 8 }}>{b.source === "ci" ? <span className="chip">CI</span> : <span className="mono faint">{b.sourceId}</span>}<StatusChip status={b.status} /></span>}
+      title={<span className="row" style={{ gap: 8 }}><Origin source={b.source} />{b.source !== "ci" && <span className="mono faint">{b.sourceId}</span>}<span className="chip">{b.status === "accepted" ? `Confirmed · bug #${b.id}` : DECISION_WORD[b.status]}</span></span>}
       onClose={onClose}
       width={820}
       footer={
@@ -315,20 +363,42 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
         )}
 
         <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-          {b.status !== "accepted" && <Button needs="tester" variant="primary" onClick={() => post("review", { status: "accepted", note: note || undefined }, "Accepted. Nothing was sent to Jira or Linear.")}><Check size={14} /> Accept</Button>}
-          {b.status !== "rejected" && <Button needs="tester" onClick={() => post("review", { status: "rejected", note: note || undefined }, "Rejected")}>Reject</Button>}
-          {b.status !== "proposed" && <Button needs="tester" variant="ghost" onClick={() => post("review", { status: "proposed" }, "Back to proposed")}>Reopen</Button>}
-          <input className="input grow" aria-label="Review note" placeholder="Note about your decision (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
+          {b.status !== "accepted" && <Button needs="tester" variant="primary" onClick={confirm}><Check size={14} /> Confirm bug</Button>}
+          {b.status !== "rejected" && <Button needs="tester" title="Not a bug, or not now. It goes to Dismissed, and you can restore it." onClick={() => { setJustConfirmed(false); post("review", { status: "rejected", note: note || undefined }, "Dismissed. It is under Dismissed if you want it back."); }}>Dismiss</Button>}
+          {(b.status === "rejected" || b.status === "duplicate") && <Button needs="tester" variant="ghost" onClick={() => post("review", { status: "proposed" }, "Back in Suggested")}><Undo2 size={13} /> {b.status === "rejected" ? "Restore to Suggested" : "Not a duplicate: move back to Suggested"}</Button>}
+          <input className="input grow" aria-label="Review note" placeholder="Reason (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
           {b.status === "accepted" && !b.publications.some((p) => p.destination === "linear" && (p.mode === "linked_existing" || p.state === "sent")) && (
             <Button needs="tester" onClick={() => setPublishing(true)}><Send size={14} /> Publish to Linear…</Button>
           )}
         </div>
+        {justConfirmed && b.status === "accepted" && (
+          <div className="card" role="status" style={{ padding: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", borderColor: "var(--passed)" }}>
+            <Check size={15} aria-hidden="true" />
+            <span>Confirmed as <Link to={`/p/${pid}/bugs?bug=${b.id}`}><strong>bug #{b.id}</strong></Link>. Not published anywhere.</span>
+          </div>
+        )}
+        {b.status === "proposed" && (
+          <div className="card" style={{ padding: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <UserCheck size={15} aria-hidden="true" />
+            <span style={{ fontSize: "var(--fs-md)" }} className="grow">
+              {editing
+                ? "Change what you like below, then confirm. Your unsaved changes are saved with it."
+                : b.source === "ci"
+                  ? "Reported by CI from a failing test. Check it, change it if you like, then confirm it as a bug."
+                  : "A suggestion. Read it, change it if you like, then confirm it as a bug. Nothing becomes a bug until you do."}
+            </span>
+          </div>
+        )}
+        {b.status !== "proposed" && b.reviewedBy && <div className="faint" title={b.reviewedAt ? formatDateTime(b.reviewedAt) : undefined}>{DECIDED_BY[b.status]} {b.reviewedBy}</div>}
         {b.source === "agent_audit" && <RunStanding r={b.latestRun} />}
         {b.reviewNote && <div className="faint">Note: {b.reviewNote}{b.reviewedAt ? ` · ${timeAgo(b.reviewedAt)}` : ""}</div>}
         {b.duplicateOf && <div>Duplicate of <Button variant="ghost" size="sm" onClick={() => onOpen(b.duplicateOf!.id)}>{b.duplicateOf.title}</Button></div>}
-        <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>Accepting is only your decision in Testbench. Publishing to Linear is a separate step: you get a preview of exactly what is sent and approve it first.</div>
+        <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>Confirming is only your decision in Testbench. Publishing to Linear is a separate step: you get a preview of exactly what is sent and approve it first.</div>
 
-        <TriageCard b={b} onChange={(body) => post("triage", body)} />
+        <div className="field">
+          <div className="section-label">Triage</div>
+          <TriageCard b={b} onChange={(body) => post("triage", body)} />
+        </div>
         {b.ci && <CiSection ci={b.ci} workflow={b.workflowStatus} />}
 
         {/* Three separate judgements */}
@@ -411,7 +481,7 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
 
         {b.status !== "duplicate" && b.similar.length > 0 && (
           <div className="field">
-            <div className="section-label">Similar reports (same fingerprint)</div>
+            <div className="section-label">Duplicates: similar reports (same fingerprint)</div>
             {b.similar.map((s) => (
               <div key={s.id} className="row" style={{ gap: 8 }}>
                 <Button variant="ghost" size="sm" onClick={() => onOpen(s.id)}>{s.title}</Button><span className="faint">{s.status}</span>

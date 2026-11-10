@@ -360,6 +360,45 @@ describe("an import is drafts until a person approves them, with their account",
   });
 });
 
+describe("confirming a bug suggestion", () => {
+  const rowOf = (id: number | string) => db.prepare("SELECT review_status AS s, reviewed_by AS by, reviewed_by_user_id AS uid FROM bug_reports WHERE id = ?").get(id) as { s: string; by: string; uid: number | null };
+
+  it("a tester confirms, dismisses, restores and marks a duplicate, and the account is saved each time; a viewer gets 403 and a stranger 404, and nothing changes", async () => {
+    const id = fixture("bug", projects.A).id;
+    const url = `/api/bug-reports/${id}/review`;
+    assert.ok(denied403(await call("POST", url, { cookie: people.vie.cookie, body: { status: "accepted" } })), "a viewer cannot");
+    assert.ok(denied404(await call("POST", url, { cookie: people.bob.cookie, body: { status: "accepted" } })), "nor someone from another project");
+    assert.equal(rowOf(id).s, "proposed");
+
+    assert.equal((await call("POST", url, { cookie: people.tes.cookie, body: { status: "accepted" } })).statusCode, 200);
+    assert.deepEqual([rowOf(id).s, rowOf(id).uid], ["accepted", people.tes.id]);
+    assert.ok(rowOf(id).by, "the name is saved too");
+    assert.equal((await call("POST", url, { cookie: people.adm.cookie, body: { status: "rejected", note: "not a bug" } })).statusCode, 200);
+    assert.deepEqual([rowOf(id).s, rowOf(id).uid], ["rejected", people.adm.id]);
+    assert.equal((await call("POST", url, { cookie: people.tes.cookie, body: { status: "proposed" } })).statusCode, 200, "restored");
+    assert.deepEqual([rowOf(id).s, rowOf(id).uid], ["proposed", people.tes.id]);
+    assert.equal((await call("POST", url, { cookie: people.tes.cookie, body: { status: "accepted" } })).statusCode, 200);
+    const back = await call("POST", url, { cookie: people.tes.cookie, body: { status: "proposed" } });
+    assert.equal(back.statusCode, 409, "a confirmed bug is not restored");
+    assert.equal(rowOf(id).s, "accepted");
+    assert.equal((await call("POST", url, { cookie: people.tes.cookie, body: { status: "rejected" } })).statusCode, 200);
+    assert.equal((await call("POST", url, { cookie: people.tes.cookie, body: { status: "proposed" } })).statusCode, 200, "a dismissed one is");
+
+    const other = fixture("bug", projects.A).id;
+    assert.ok(denied403(await call("POST", `/api/bug-reports/${id}/duplicate`, { cookie: people.vie.cookie, body: { ofId: other } })));
+    assert.equal((await call("POST", `/api/bug-reports/${id}/duplicate`, { cookie: people.tes.cookie, body: { ofId: other } })).statusCode, 200);
+    assert.deepEqual([rowOf(id).s, rowOf(id).uid], ["duplicate", people.tes.id]);
+  });
+
+  it("the detail says who confirmed it", async () => {
+    const id = fixture("bug", projects.A).id;
+    await call("POST", `/api/bug-reports/${id}/review`, { cookie: people.tes.cookie, body: { status: "accepted" } });
+    const detail = await call("GET", `/api/bug-reports/${id}`, { cookie: people.vie.cookie });
+    assert.equal(detail.json().reviewedBy, rowOf(id).by);
+    assert.ok(detail.json().reviewedAt);
+  });
+});
+
 describe("adding a suggestion to the project", () => {
   const stateOf = (id: number | string) => db.prepare("SELECT review_status AS s, case_id AS c FROM manual_tests WHERE id = ?").get(id) as { s: string; c: number | null };
 

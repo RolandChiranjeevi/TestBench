@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { db, parseJson, UPLOAD_DIR } from "./db.ts";
+import { actorName, actorUserId } from "./actor.ts";
 import { BUG_SOURCES, bugEvents, ciDetail, WORKFLOW_STATUSES, type WorkflowStatus } from "./ci.ts";
 import { latestRuns, newBugIds } from "./latestruns.ts";
 import type { FileBag } from "./importers/bag.ts";
@@ -405,7 +406,7 @@ export function listBugReports(projectId: number, opts: BugListFilter = {}) {
   if (opts.presence) { where.push(`${PRESENCE_EXPR} = ?`); args.push(opts.presence); }
   const rows = db.prepare(`
     WITH ${PRESENCE_CTE}
-    SELECT b.id, b.source_id, b.title, b.review_status, b.agent_severity, b.human_severity, b.found_at, b.imported_at, b.audit_id, b.origin, b.latest_rev, b.applied_rev, b.ignored_rev,
+    SELECT b.id, b.source_id, b.title, b.review_status, b.reviewed_by, b.reviewed_at, b.agent_severity, b.human_severity, b.found_at, b.imported_at, b.audit_id, b.origin, b.latest_rev, b.applied_rev, b.ignored_rev,
       b.source, b.test_key, b.tags, b.workflow_status, b.assignee, b.last_ci_status, b.last_ci_at, b.ci_flaky,
       (SELECT COUNT(*) FROM bug_occurrences o JOIN ci_results x ON x.id = o.ci_result_id WHERE o.bug_report_id = b.id AND x.status = 'failed') AS failed_runs,
       (SELECT r.branch || char(31) || r.commit_sha || char(31) || r.pipeline_url FROM bug_occurrences o JOIN ci_results x ON x.id = o.ci_result_id JOIN ci_runs r ON r.id = x.ci_run_id
@@ -422,7 +423,7 @@ export function listBugReports(projectId: number, opts: BugListFilter = {}) {
   for (const r of db.prepare(`WITH ${PRESENCE_CTE} SELECT ${PRESENCE_EXPR} AS p, COUNT(*) AS n FROM bug_reports b LEFT JOIN cur c ON c.audit_id = b.audit_id WHERE ${baseWhere.join(" AND ")} GROUP BY p`).all(...base) as { p: Presence; n: number }[]) presenceCounts[r.p] = r.n;
   return {
     items: rows.map((r) => ({
-      id: r.id, sourceId: r.source_id, title: r.title, status: r.review_status as ReviewStatus, severity: effective(r), foundAt: r.found_at, importedAt: r.imported_at,
+      id: r.id, sourceId: r.source_id, title: r.title, status: r.review_status as ReviewStatus, reviewedBy: (r.reviewed_by as string) || null, reviewedAt: r.reviewed_at as string | null, severity: effective(r), foundAt: r.found_at, importedAt: r.imported_at,
       auditTitle: json<{ title?: string }>(r.origin, {}).title ?? "", auditDeleted: r.audit_id == null && r.source === "agent_audit",
       source: r.source as string, testKey: r.test_key as string | null, tags: json<string[]>(r.tags, []), workflowStatus: r.workflow_status as WorkflowStatus, assignee: r.assignee as string,
       ci: r.source === "ci" ? (() => {
@@ -508,7 +509,7 @@ export function getBugReport(id: number) {
   const audit = b.audit_id ? (db.prepare("SELECT id, title, agent_audit_id, run_id, run_state, source, github_repo, github_run_id, (narrative_stored_name IS NOT NULL) AS has_report FROM audits WHERE id = ?").get(b.audit_id) as Record<string, any>) : null;
   const dupOf = b.duplicate_of_id ? (db.prepare("SELECT id, title FROM bug_reports WHERE id = ?").get(b.duplicate_of_id) as { id: number; title: string } | undefined) : undefined;
   return {
-    id: b.id, projectId: b.project_id, sourceId: b.source_id, status: b.review_status as ReviewStatus, reviewedAt: b.reviewed_at, reviewNote: b.review_note, editedAt: b.edited_at,
+    id: b.id, projectId: b.project_id, sourceId: b.source_id, status: b.review_status as ReviewStatus, reviewedAt: b.reviewed_at, reviewedBy: (b.reviewed_by as string) || null, reviewNote: b.review_note, editedAt: b.edited_at,
     title: b.title, description: b.description, steps: json<string[]>(b.steps, []), expected: b.expected, actual: b.actual, environment: b.environment, url: b.url,
     severity: { tool: json(b.tool_impact, null), agent: b.agent_severity, human: b.human_severity, effective: effective(b) },
     confidence: b.confidence, agentReview: json(b.agent_review, null), foundAt: b.found_at, importedAt: b.imported_at,
@@ -581,9 +582,11 @@ export function updateBugReport(id: number, patch: { title?: string; description
 
 /** Only a person calls this. Accepting does not publish anything anywhere. */
 export function reviewBugReport(id: number, status: "proposed" | "accepted" | "rejected", note?: string) {
-  exists(id);
+  const current = exists(id);
+  // A confirmed bug is not restored to Suggested: restoring is for what was dismissed (or marked a duplicate by mistake).
+  if (status === "proposed" && current.review_status === "accepted") throw new AuditError(409, "This is a confirmed bug. It cannot be moved back to Suggested.");
   db.prepare(`UPDATE bug_reports SET review_status = ?, reviewed_at = CASE WHEN ? = 'proposed' THEN NULL ELSE datetime('now') END,
-      review_note = COALESCE(?, review_note), duplicate_of_id = NULL WHERE id = ?`).run(status, status, note ?? null, id);
+      review_note = COALESCE(?, review_note), duplicate_of_id = NULL, reviewed_by = ?, reviewed_by_user_id = ? WHERE id = ?`).run(status, status, note ?? null, actorName(), actorUserId(), id);
 }
 
 /** Records that this report is the same bug as another report of the project. Nothing is merged. */
@@ -594,7 +597,7 @@ export function markDuplicate(id: number, ofId: number, note?: string) {
   if (other.project_id !== b.project_id) throw new AuditError(400, "That report is in another project");
   const target = db.prepare("SELECT duplicate_of_id FROM bug_reports WHERE id = ?").get(ofId) as { duplicate_of_id: number | null };
   if (target.duplicate_of_id === id) throw new AuditError(400, "That report is already marked as a duplicate of this one");
-  db.prepare("UPDATE bug_reports SET review_status = 'duplicate', duplicate_of_id = ?, reviewed_at = datetime('now'), review_note = COALESCE(?, review_note) WHERE id = ?").run(ofId, note ?? null, id);
+  db.prepare("UPDATE bug_reports SET review_status = 'duplicate', duplicate_of_id = ?, reviewed_at = datetime('now'), review_note = COALESCE(?, review_note), reviewed_by = ?, reviewed_by_user_id = ? WHERE id = ?").run(ofId, note ?? null, actorName(), actorUserId(), id);
 }
 
 /** Notes that an existing issue in Jira, Linear or elsewhere already covers this report. Nothing is sent to that system. */
