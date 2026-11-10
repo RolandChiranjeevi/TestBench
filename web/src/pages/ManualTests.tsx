@@ -6,6 +6,8 @@ import { api, formatDateTime, formatViewport, timeAgo, type Priority, type Viewp
 import { ConfirmModal, Empty, ListSkeleton, Modal, PriorityIcon, PRIORITY_LABEL, useToast } from "../components/ui";
 import { proposalCaseLink } from "../caseFilter";
 import { ImportModal, Severity, StatusChip, useRefresh, whenShort } from "./BugReports";
+import { Button, buttonClass } from "../components/Button";
+import { Badge } from "../components/Badge";
 
 type Status = "proposed" | "accepted" | "rejected";
 type Presence = "present" | "missing" | "no_later_run";
@@ -63,7 +65,7 @@ export function ManualTestsPage() {
       <div className="topbar">
         <h1>Agent proposals</h1>
         <span className="spacer" />
-        <button className="btn primary" onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</button>
+        <Button variant="primary" onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</Button>
       </div>
       {latest && (
         <section aria-label="Latest audit" className="row" style={{ flexShrink: 0, gap: 8, flexWrap: "wrap", minHeight: 24, padding: "6px 16px 6px 20px", borderBottom: "1px solid var(--border)", fontSize: "var(--fs-md)" }}>
@@ -72,7 +74,7 @@ export function ManualTestsPage() {
           <span className="faint" aria-hidden="true">·</span><span style={{ overflowWrap: "anywhere" }}>{latest.auditTitle}</span>
           <span className="faint" aria-hidden="true">·</span>
           {latest.newCount > 0
-            ? <button className="btn sm" onClick={() => { setTab("all"); setCategory(""); setPriority(""); setWcag(""); setPresence(""); setQ(""); setOnlyNew(true); }} aria-label={`${latest.newCount} new ${latest.newCount === 1 ? "proposal" : "proposals"} from the latest audit: show ${latest.newCount === 1 ? "it" : "them"}`} title="Show the proposals that came with this audit import">{latest.newCount} new</button>
+            ? <Button size="sm" onClick={() => { setTab("all"); setCategory(""); setPriority(""); setWcag(""); setPresence(""); setQ(""); setOnlyNew(true); }} aria-label={`${latest.newCount} new ${latest.newCount === 1 ? "proposal" : "proposals"} from the latest audit: show ${latest.newCount === 1 ? "it" : "them"}`} title="Show the proposals that came with this audit import">{latest.newCount} new</Button>
             : <span className="faint">0 new</span>}
         </section>
       )}
@@ -121,7 +123,7 @@ export function ManualTestsPage() {
           <ListSkeleton />
         ) : !data?.items.length ? (
           <Empty icon={<ClipboardCheck size={20} />} title={filtered ? "No proposals match these filters" : tab === "proposed" ? "Nothing waiting for review" : "No proposals here"}
-            action={<button className="btn" onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</button>}>
+            action={<Button onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</Button>}>
             An audit package can carry a manual-tests.json: checks an automatic run cannot decide, such as reading order with a screen reader.
           </Empty>
         ) : (
@@ -130,16 +132,16 @@ export function ManualTestsPage() {
               <span className="id mono truncate" style={{ width: 120 }} title={t.sourceId}>{t.sourceId}</span>
               <span className="title">{t.title}</span>
               <span className="meta">
-                {t.isNew && <span className="chip accent" title={`First proposed in the latest audit import${latest ? ` (${whenShort(latest.importedAt)} · ${latest.auditTitle})` : ""}. It stops being new when a newer import with proposals arrives.`}>New</span>}
-                {t.pendingUpdate && <span className="chip accent" title="The agent sent a newer version. Review it.">Update waiting</span>}
-                {t.presence === "missing" && <span className="chip" style={{ color: "var(--blocked-fg)" }} title="This test was not in the latest run of its audit. It is kept as it is."><EyeOff size={11} /> Not in latest run</span>}
+                {t.isNew && <Badge tone="accent" title={`First proposed in the latest audit import${latest ? ` (${whenShort(latest.importedAt)} · ${latest.auditTitle})` : ""}. It stops being new when a newer import with proposals arrives.`}>New</Badge>}
+                {t.pendingUpdate && <Badge tone="accent" icon="eye" title="The agent sent a newer version. Review it.">Update waiting</Badge>}
+                {t.presence === "missing" && <Badge tone="warn" icon="eye-off" title="This test was not in the latest run of its audit. It is kept as it is.">Not in latest run</Badge>}
                 {t.unresolvedRefs > 0 && <span className="chip" title="References that match nothing in this project"><AlertTriangle size={11} /> {t.unresolvedRefs} unresolved</span>}
                 <span className="chip">{CATEGORY_LABEL[t.category]}</span>
                 {t.wcag.length > 0 && <span className="chip" title={`WCAG ${t.wcag.join(", ")}`}>WCAG {t.wcag.length > 2 ? `${t.wcag.slice(0, 2).join(", ")}…` : t.wcag.join(", ")}</span>}
                 {t.viewports.length > 0 && <span className="chip" title={t.viewports.join("; ")}>{t.viewports.length} viewport{t.viewports.length === 1 ? "" : "s"}</span>}
                 {t.testCase
                   ? <span className="chip" title="The test case made from this proposal. Run it in Runs."><ClipboardCheck size={11} /> Test case {t.testCase}</span>
-                  : <span className="chip" style={{ color: "var(--blocked-fg)" }} title="Testbench does not run this. A person has to."><UserCheck size={11} /> {t.status === "proposed" ? "Needs your review" : t.status === "accepted" ? "Accepted: create a test case" : "Not used"}</span>}
+                  : <Badge tone={t.status === "proposed" ? "accent" : t.status === "accepted" ? "warn" : "neutral"} icon={t.status === "proposed" ? "eye" : t.status === "accepted" ? "circle-check" : "circle-x"} title="Testbench does not run this. A person has to.">{t.status === "proposed" ? "Needs your review" : t.status === "accepted" ? "Accepted: create a test case" : "Not used"}</Badge>}
                 <Severity value={t.priority} />
                 {tab === "all" && <StatusChip status={t.status} />}
                 <span className="faint" title={t.auditTitle}>{timeAgo(t.importedAt)}</span>
@@ -206,7 +208,7 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
       title={<span className="row" style={{ gap: 8 }}><span className="mono faint">{t.sourceId}</span><StatusChip status={t.status} /></span>}
       onClose={onClose}
       width={820}
-      footer={<><button className="btn ghost" style={DANGER} onClick={() => setDeleting(true)}><Trash2 size={13} /> Delete</button><span className="spacer" /><button className="btn" onClick={onClose}>Close</button></>}
+      footer={<><Button variant="ghost" style={DANGER} onClick={() => setDeleting(true)}><Trash2 size={13} /> Delete</Button><span className="spacer" /><Button onClick={onClose}>Close</Button></>}
     >
       <div className="col" style={{ gap: 14 }}>
         {t.testCase ? (
@@ -217,7 +219,7 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
               {t.testCase.lastStatus ? ` Latest result: ${t.testCase.lastStatus}.` : " It has not been run yet."}
             </span>
             <span className="spacer" />
-            <Link className="btn sm" to={caseLink!.to} state={caseLink!.state}>Open the test case</Link>
+            <Link className={buttonClass("secondary", "sm")} to={caseLink!.to} state={caseLink!.state}>Open the test case</Link>
           </div>
         ) : (
           <div className="card" style={{ padding: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -225,7 +227,7 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
             <span style={{ fontSize: "var(--fs-md)" }} className="grow">
               {t.status === "proposed" ? "Proposed by a test agent. Review it first; a person has to run it." : t.status === "accepted" ? "Accepted. Create a test case from it to run it in Runs and have it count as coverage. Testbench does not run it or decide its result." : "Rejected. It is kept for reference and is not used."}
             </span>
-            {t.status === "accepted" && <button className="btn primary sm" onClick={() => run(() => api.post(`/api/manual-tests/${id}/create-case`), "Test case created. Run it in Runs.")}><ClipboardCheck size={13} /> Create test case</button>}
+            {t.status === "accepted" && <Button variant="primary" size="sm" onClick={() => run(() => api.post(`/api/manual-tests/${id}/create-case`), "Test case created. Run it in Runs.")}><ClipboardCheck size={13} /> Create test case</Button>}
           </div>
         )}
 
@@ -234,8 +236,8 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
             <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
               <strong>The agent sent a newer version (revision {t.pendingUpdate.rev})</strong>
               <span className="spacer" />
-              <button className="btn sm" onClick={() => post("ignore-update", undefined, "Kept your version")}>Keep mine</button>
-              <button className="btn primary sm" onClick={() => post("apply-update", undefined, "Applied the agent's version")}>Use the agent's version</button>
+              <Button size="sm" onClick={() => post("ignore-update", undefined, "Kept your version")}>Keep mine</Button>
+              <Button variant="primary" size="sm" onClick={() => post("apply-update", undefined, "Applied the agent's version")}>Use the agent's version</Button>
             </div>
             <div className="faint" style={{ fontSize: "var(--fs-sm)", margin: "6px 0" }}>Your edits, your review and your own priority are not changed until you choose. Applying replaces the text below with the agent's.</div>
             {t.pendingUpdate.changes.map((c) => (
@@ -249,9 +251,9 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
         )}
 
         <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-          {t.status !== "accepted" && <button className="btn primary" onClick={() => post("review", { status: "accepted", note: note || undefined }, "Accepted. Nothing was run.")}><Check size={14} /> Accept</button>}
-          {t.status !== "rejected" && <button className="btn" onClick={() => post("review", { status: "rejected", note: note || undefined }, "Rejected")}>Reject</button>}
-          {t.status !== "proposed" && <button className="btn ghost" onClick={() => post("review", { status: "proposed" }, "Back to proposed")}>Reopen</button>}
+          {t.status !== "accepted" && <Button variant="primary" onClick={() => post("review", { status: "accepted", note: note || undefined }, "Accepted. Nothing was run.")}><Check size={14} /> Accept</Button>}
+          {t.status !== "rejected" && <Button onClick={() => post("review", { status: "rejected", note: note || undefined }, "Rejected")}>Reject</Button>}
+          {t.status !== "proposed" && <Button variant="ghost" onClick={() => post("review", { status: "proposed" }, "Back to proposed")}>Reopen</Button>}
           <input className="input grow" aria-label="Review note" placeholder="Note about your decision (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
         </div>
         {t.reviewNote && <div className="faint">Note: {t.reviewNote}{t.reviewedAt ? ` · ${timeAgo(t.reviewedAt)}` : ""}</div>}
@@ -277,11 +279,11 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
             <textarea className="textarea" aria-label="Preconditions" rows={2} value={draft.preconditions} onChange={(e) => setDraft({ ...draft, preconditions: e.target.value })} placeholder="Preconditions" />
             <textarea className="textarea" aria-label="Steps, one per line" rows={5} value={draft.steps} onChange={(e) => setDraft({ ...draft, steps: e.target.value })} placeholder="Steps, one per line" />
             <textarea className="textarea" aria-label="Expected result" rows={3} value={draft.expected} onChange={(e) => setDraft({ ...draft, expected: e.target.value })} placeholder="Expected result" />
-            <div className="row"><button className="btn primary" disabled={!draft.title.trim() || !draft.expected.trim() || !draft.steps.trim()} onClick={save}>Save</button><button className="btn ghost" onClick={() => setEditing(false)}>Cancel</button></div>
+            <div className="row"><Button variant="primary" disabled={!draft.title.trim() || !draft.expected.trim() || !draft.steps.trim()} onClick={save}>Save</Button><Button variant="ghost" onClick={() => setEditing(false)}>Cancel</Button></div>
           </div>
         ) : (
           <div className="col" style={{ gap: 10 }}>
-            <div className="row"><h2 style={{ margin: 0, fontSize: "var(--fs-lg)", overflowWrap: "anywhere" }}>{t.title}</h2><span className="spacer" />{!t.testCase && <button className="btn sm" onClick={startEdit}><Pencil size={12} /> Edit</button>}</div>
+            <div className="row"><h2 style={{ margin: 0, fontSize: "var(--fs-lg)", overflowWrap: "anywhere" }}>{t.title}</h2><span className="spacer" />{!t.testCase && <Button size="sm" onClick={startEdit}><Pencil size={12} /> Edit</Button>}</div>
             {edited && <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>You edited this {timeAgo(t.editedAt!)}. A later import will not overwrite it without asking.</div>}
             <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
               <span className="chip">{CATEGORY_LABEL[t.category]}</span>
@@ -307,7 +309,7 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
         )}
 
         <div className="field">
-          <div className="section-label">Linked to {unresolved.length > 0 && <button className="btn ghost sm" onClick={() => post("relink", undefined, "Checked again")}>Check again</button>}</div>
+          <div className="section-label">Linked to {unresolved.length > 0 && <Button variant="ghost" size="sm" onClick={() => post("relink", undefined, "Checked again")}>Check again</Button>}</div>
           {t.refs.length === 0 ? <span className="faint">No requirements or test cases named.</span> : t.refs.map((r) => (
             <div key={r.id} className="row" style={{ gap: 8, padding: "2px 0", flexWrap: "wrap" }}>
               <span className="chip" style={r.state === "resolved" ? undefined : { color: "var(--blocked-fg)" }}>{r.state === "resolved" ? "linked" : r.state.replace("_", " ")}</span>
@@ -316,12 +318,12 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
             </div>
           ))}
           {t.testCase ? null : reqs === null ? (
-            <button className="btn sm" style={{ marginTop: 6 }} onClick={() => setReqs(reqRefs.map((r) => r.raw).join(", "))}>Edit requirements</button>
+            <Button size="sm" style={{ marginTop: 6 }} onClick={() => setReqs(reqRefs.map((r) => r.raw).join(", "))}>Edit requirements</Button>
           ) : (
             <div className="row" style={{ gap: 6, marginTop: 6 }}>
               <input className="input grow" aria-label="Requirements this test covers" placeholder="REQ-3, CHK-001" value={reqs} onChange={(e) => setReqs(e.target.value)} />
-              <button className="btn primary" onClick={() => run(() => api.patch(`/api/manual-tests/${id}`, { requirements: reqs.split(/[,\s]+/).filter(Boolean) }), "Saved").then(() => setReqs(null))}>Save</button>
-              <button className="btn ghost" onClick={() => setReqs(null)}>Cancel</button>
+              <Button variant="primary" onClick={() => run(() => api.patch(`/api/manual-tests/${id}`, { requirements: reqs.split(/[,\s]+/).filter(Boolean) }), "Saved").then(() => setReqs(null))}>Save</Button>
+              <Button variant="ghost" onClick={() => setReqs(null)}>Cancel</Button>
             </div>
           )}
         </div>
