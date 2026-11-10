@@ -1,7 +1,7 @@
-import { StrictMode, useEffect, useState } from "react";
+import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
-import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, ChevronDown, FlaskConical, Menu, Plus, Sparkles } from "lucide-react";
 import { api, parseDate, timeAgo, type BackupInfo, type Project } from "./api";
 import { ConfirmProvider, Empty, Modal, ToastProvider, useHotkeys, useToast } from "./components/ui";
@@ -24,6 +24,8 @@ import { ObservationsPage } from "./pages/Observations";
 import { useObservationSummary } from "./observations";
 import "./styles.css";
 import { Button } from "./components/Button";
+import { Can, ReadOnlyNotice, RoleTag, accessIn, useAccess, useAuthStatus } from "./components/Access";
+import { can, explainStatus } from "./access";
 
 const LAST_PROJECT = "testbench:lastProject";
 const storage = {
@@ -47,11 +49,23 @@ const useProjects = () => useQuery({ queryKey: ["projects"], queryFn: () => api.
 
 function Home() {
   const { data, isLoading } = useProjects();
+  const access = useAccess();
   if (isLoading) return null;
-  if (!data?.length) return <Welcome />;
+  if (!data?.length) return can(access, "owner") ? <Welcome /> : <NoProjects />;
   const last = Number(storage.get(LAST_PROJECT));
   const project = data.find((p) => p.id === last) ?? data[0];
   return <Navigate to={`/p/${project.id}/dashboard`} replace />;
+}
+
+/** Someone who is not the owner and belongs to no project yet: only an admin of a project (or the owner) can bring them in. */
+function NoProjects() {
+  return (
+    <div style={{ height: "100%", display: "grid", placeItems: "center" }}>
+      <Empty icon={<FlaskConical size={20} />} title="You are not a member of any project yet">
+        Ask an admin of a project to add you, or to send you an invitation link. Projects are made by the owner of this Testbench.
+      </Empty>
+    </div>
+  );
 }
 
 function Welcome() {
@@ -74,10 +88,10 @@ function Welcome() {
         title="Welcome to Testbench"
         action={
           <div className="row">
-            <Button variant="primary" onClick={() => setCreating(true)}>
+            <Button variant="primary" needs="owner" onClick={() => setCreating(true)}>
               <Plus size={14} /> Create project
             </Button>
-            <Button onClick={() => demo.mutate()} disabled={demo.isPending}>
+            <Button needs="owner" onClick={() => demo.mutate()} disabled={demo.isPending}>
               <Sparkles size={14} /> Load demo project
             </Button>
           </div>
@@ -118,7 +132,7 @@ function NewProjectModal({ onClose }: { onClose: () => void }) {
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" disabled={!valid || create.isPending} onClick={() => create.mutate()}>
+          <Button needs="owner" variant="primary" disabled={!valid || create.isPending} onClick={() => create.mutate()}>
             Create project
           </Button>
         </>
@@ -151,8 +165,17 @@ function NewProjectModal({ onClose }: { onClose: () => void }) {
 
 function ProjectLayout() {
   const { data: projects, isLoading } = useProjects();
+  const { isLoading: authLoading } = useAuthStatus();
+  const access = useAccess();
+  const toast = useToast();
   const { pid } = useParams();
   const project = projects?.find((p) => p.id === Number(pid));
+  // A project that was in the list and is gone from it: the person was removed from it (or it was deleted) while the page was open.
+  const hadProject = useRef(false);
+  useEffect(() => {
+    if (project) hadProject.current = true;
+    else if (hadProject.current && projects) toast("error", "You no longer have access to this project.");
+  }, [project, projects, toast]);
   const navigate = useNavigate();
   const [menu, setMenu] = useState(false);
   const { data: backup } = useQuery({ queryKey: ["backup-info"], queryFn: () => api.get<BackupInfo>("/api/backup/info"), staleTime: 60_000 });
@@ -193,7 +216,7 @@ function ProjectLayout() {
   // Active observations (load tests, security reviews that are still being looked at: observed, needs review, confirmed). Archived, resolved and converted are not counted.
   const { data: obsSummary } = useObservationSummary(pid);
 
-  if (isLoading) return null;
+  if (isLoading || authLoading) return null;
   if (!project) return <Navigate to="/" replace />;
 
   // The numbers beside some pages: what waits for a decision, and what is still active.
@@ -213,6 +236,7 @@ function ProjectLayout() {
         </Button>
         <span className="project-badge">{project.key.slice(0, 2)}</span>
         <span className="truncate" style={{ fontWeight: 600 }}>{project.name}</span>
+        <RoleTag access={access} />
       </header>
       {navOpen && <div className="nav-backdrop" onClick={() => setNavOpen(false)} />}
       <aside className={`sidebar${navOpen ? " open" : ""}`}>
@@ -224,6 +248,7 @@ function ProjectLayout() {
           <button className="project-switch" onClick={() => setMenu((m) => !m)} aria-expanded={menu}>
             <span className="project-badge">{project.key.slice(0, 2)}</span>
             <span className="truncate">{project.name}</span>
+            <RoleTag access={access} />
             <ChevronDown size={13} className="muted" />
           </button>
           {menu && (
@@ -234,12 +259,15 @@ function ProjectLayout() {
                   <button key={p.id} className={`nav-item${p.id === project.id ? " active" : ""}`} onClick={() => { setMenu(false); navigate(`/p/${p.id}/cases`); }}>
                     <span className="project-badge">{p.key.slice(0, 2)}</span>
                     <span className="truncate">{p.name}</span>
+                    <RoleTag access={accessIn(access, p)} />
                   </button>
                 ))}
-                <div style={{ borderTop: "1px solid var(--border)", margin: "4px 0" }} />
-                <button className="nav-item" onClick={() => { setMenu(false); setCreating(true); }}>
-                  <Plus size={14} /> New project
-                </button>
+                <Can needs="owner">
+                  <div style={{ borderTop: "1px solid var(--border)", margin: "4px 0" }} />
+                  <button className="nav-item" onClick={() => { setMenu(false); setCreating(true); }}>
+                    <Plus size={14} /> New project
+                  </button>
+                </Can>
               </div>
             </>
           )}
@@ -249,7 +277,7 @@ function ProjectLayout() {
 
         <div className="sidebar-footer">
           {/* Nudge when there is no recent backup: the data lives only on this computer. */}
-          {backup && (() => {
+          {backup && can(access, "owner") && (() => {
             const last = parseDate(backup.lastBackupAt);
             const stale = !last || Date.now() - last.getTime() > 7 * 864e5;
             const text = last ? `Backed up ${timeAgo(backup.lastBackupAt)}` : "Not backed up yet";
@@ -263,6 +291,7 @@ function ProjectLayout() {
         </div>
       </aside>
       <main className="main" id="main" tabIndex={-1}>
+        <ReadOnlyNotice />
         <Outlet />
       </main>
       {creating && <NewProjectModal onClose={() => setCreating(false)} />}
@@ -272,7 +301,16 @@ function ProjectLayout() {
 
 applyTheme();
 
-const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: true, staleTime: 5_000, retry: 1 } } });
+// A plain "Not found" from a project's route means the person is not (or no longer) a member of it: fetch the list again, and the project is gone from it.
+const lostAccess = (error: unknown) => {
+  const e = error as { status?: number; message?: string };
+  if (explainStatus(e.status ?? 0, e.message ?? "").kind === "lost-access") void queryClient.invalidateQueries({ queryKey: ["projects"] });
+};
+const queryClient: QueryClient = new QueryClient({
+  queryCache: new QueryCache({ onError: lostAccess }),
+  mutationCache: new MutationCache({ onError: lostAccess }),
+  defaultOptions: { queries: { refetchOnWindowFocus: true, staleTime: 5_000, retry: 1 } },
+});
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

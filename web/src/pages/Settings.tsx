@@ -9,6 +9,10 @@ import { BackupPage } from "./Backup";
 import { NAV_SHORTCUTS, PAGE_SHORTCUTS } from "../shortcuts";
 import { getTheme, setTheme, type Theme } from "../theme";
 import { Button } from "../components/Button";
+import { Card } from "../components/Card";
+import { MembersSection } from "./Members";
+import { useAccess } from "../components/Access";
+import { can, needsText, SETTINGS_NEEDS, visibleSettings } from "../access";
 
 interface AgentToken { id: number; name: string; prefix: string; createdAt: string; lastUsedAt: string | null; revokedAt: string | null }
 /** The answer to creating a token. `token` is in it this once and is never stored by the server (only its hash) or by this page. */
@@ -17,6 +21,7 @@ interface NewAgentToken { id: number; name: string; prefix: string; createdAt: s
 export const SETTINGS_SECTIONS = [
   ["agent", "Agent access"],
   ["project", "Project"],
+  ["members", "Members"],
   ["data", "Data"],
   ["shortcuts", "Keyboard shortcuts"],
   ["account", "Account"],
@@ -25,26 +30,33 @@ type Section = (typeof SETTINGS_SECTIONS)[number][0];
 
 export function SettingsPage() {
   const { pid, section } = useParams();
+  const access = useAccess();
+  // Tabs the person can make no use of are left out. The first one that is left is where Settings opens.
+  const tabs = visibleSettings(SETTINGS_SECTIONS, access);
   const known = SETTINGS_SECTIONS.find(([id]) => id === section);
-  if (!known) return <Navigate to={`/p/${pid}/settings/agent`} replace />;
+  if (!known) return <Navigate to={`/p/${pid}/settings/${tabs[0][0]}`} replace />;
   const id = known[0] as Section;
+  const allowed = can(access, SETTINGS_NEEDS[id]);
   return (
     <>
       <div className="topbar">
         <h1>Settings</h1>
       </div>
       <nav className="tabs" aria-label="Settings sections" style={{ padding: "8px 20px 0", flexWrap: "wrap" }}>
-        {SETTINGS_SECTIONS.map(([s, label]) => (
+        {tabs.map(([s, label]) => (
           <NavLink key={s} to={`/p/${pid}/settings/${s}`} className={({ isActive }) => `tab${isActive ? " active" : ""}`}>{label}</NavLink>
         ))}
       </nav>
       <div className="content">
-        {id === "data" ? (
+        {!allowed ? (
+          <Empty icon={<ShieldAlert size={20} />} title="You cannot use this page">{needsText(SETTINGS_NEEDS[id])}. Ask an admin of the project, or the owner of this Testbench.</Empty>
+        ) : id === "data" ? (
           <BackupPage embedded />
         ) : (
           <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16, maxWidth: 760 }}>
             {id === "agent" && <><AgentAccess pid={Number(pid)} /><ProposalAccess pid={Number(pid)} /></>}
             {id === "project" && <ProjectSection pid={Number(pid)} />}
+            {id === "members" && <MembersSection pid={Number(pid)} />}
             {id === "shortcuts" && <Shortcuts />}
             {id === "account" && <><YourName /><Appearance /><Account /></>}
           </div>
@@ -53,13 +65,6 @@ export function SettingsPage() {
     </>
   );
 }
-
-const Card = ({ icon, title, children }: { icon?: ReactNode; title: string; children: ReactNode }) => (
-  <div className="card">
-    <div className="card-header" role="heading" aria-level={2}>{icon} {title}</div>
-    <div className="card-body col" style={{ gap: 12 }}>{children}</div>
-  </div>
-);
 
 // ---------- Agent access ----------
 
@@ -242,7 +247,7 @@ function ProposalAccess({ pid }: { pid: number }) {
         </div>
         <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
           <span role="status">Agent proposals are <strong>{enabled ? "on" : "off"}</strong> for this installation.</span>
-          <Button variant={enabled ? "secondary" : "primary"} disabled={toggle.isPending || !setting} onClick={() => toggle.mutate(!enabled)}>{enabled ? "Switch off" : "Switch on"}</Button>
+          <Button variant={enabled ? "secondary" : "primary"} needs="owner" disabled={toggle.isPending || !setting} onClick={() => toggle.mutate(!enabled)}>{enabled ? "Switch off" : "Switch on"}</Button>
         </div>
         {enabled && (
           <>

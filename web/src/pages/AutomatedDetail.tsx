@@ -61,7 +61,7 @@ export function AutomatedDetail({ resultId }: { resultId: number }) {
             <span className="chip accent">{jiraLabel(d.jira_key)}</span>
           ))}
         {canReport && (
-          <Button size="sm" onClick={() => setBugOpen(true)}><Bug size={13} /> {d.jira_key ? "Edit bug report" : "Report bug"}</Button>
+          <Button needs="tester" size="sm" onClick={() => setBugOpen(true)}><Bug size={13} /> {d.jira_key ? "Edit bug report" : "Report bug"}</Button>
         )}
       </div>
 

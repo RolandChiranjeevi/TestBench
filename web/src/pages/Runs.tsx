@@ -34,7 +34,7 @@ export function RunsPage() {
         <Button onClick={() => navigate(`/p/${pid}/import`)}>
           <Download size={14} /> Import results
         </Button>
-        <Button variant="primary" onClick={() => setCreating(true)}>
+        <Button needs="tester" variant="primary" onClick={() => setCreating(true)}>
           <Plus size={14} /> New manual run <Kbd>C</Kbd>
         </Button>
       </div>
@@ -48,7 +48,7 @@ export function RunsPage() {
         </div>
         <span className="spacer" />
         {kind === "templates" && templates.length > 0 && (
-          <Button size="sm" onClick={() => setEditing("new")}><Plus size={13} /> New template</Button>
+          <Button needs="tester" size="sm" onClick={() => setEditing("new")}><Plus size={13} /> New template</Button>
         )}
       </div>
       <div className="content">
@@ -60,7 +60,7 @@ export function RunsPage() {
             title="No runs yet"
             action={
               <div className="row">
-                <Button variant="primary" onClick={() => setCreating(true)}><Plus size={14} /> New manual run</Button>
+                <Button needs="tester" variant="primary" onClick={() => setCreating(true)}><Plus size={14} /> New manual run</Button>
                 <Button onClick={() => navigate(`/p/${pid}/import`)}><Download size={14} /> Import results</Button>
               </div>
             }
@@ -199,7 +199,7 @@ export function NewRunModal({ initialCaseIds = [], initialTitle, template, rerun
         <>
           <span className="muted" style={{ marginRight: "auto" }}>{caseIds.length} of {runnable.length} cases</span>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button variant="primary"
+          <Button needs="tester" variant="primary"
             disabled={!caseIds.length || !title.trim() || (saveAs && !saveName.trim()) || create.isPending}
             onClick={() => create.mutate()}
           >

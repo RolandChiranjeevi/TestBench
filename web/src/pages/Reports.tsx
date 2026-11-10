@@ -5,6 +5,7 @@ import { Archive, Calendar, Check, ExternalLink, FileDown, FileJson, FileSpreads
 import { api, type ChecklistItem, type Milestone } from "../api";
 import { Empty, Modal, useConfirm, useToast, ListSkeleton } from "../components/ui";
 import { Button, buttonClass } from "../components/Button";
+import { EditScope } from "../components/Access";
 
 type MilestoneEdit = Partial<{ name: string; kind: string; startDate: string | null; endDate: string | null }>;
 
@@ -86,7 +87,7 @@ export function ReportsPage() {
           <div className="toolbar" style={{ padding: "0 8px 0 16px" }}>
             <span className="muted" style={{ fontWeight: 500 }}>Sprints &amp; releases</span>
             <span className="spacer" />
-            <Button variant="ghost" size="sm" icon onClick={() => setCreating(true)} title="New sprint or release" aria-label="New sprint or release"><Plus size={14} /></Button>
+            <Button needs="tester" variant="ghost" size="sm" icon onClick={() => setCreating(true)} title="New sprint or release" aria-label="New sprint or release"><Plus size={14} /></Button>
           </div>
           <div className="reports-sprints">
             {milestones?.map((m) => (
@@ -118,7 +119,7 @@ export function ReportsPage() {
 
         <div className="pane grow" style={{ display: "flex", flexDirection: "column", background: "var(--bg-sidebar)" }}>
           {isLoading ? <ListSkeleton /> : !milestones?.length ? (
-            <Empty icon={<Calendar size={20} />} title="No sprints or releases yet" action={<Button variant="primary" onClick={() => setCreating(true)}><Plus size={14} /> New sprint</Button>}>
+            <Empty icon={<Calendar size={20} />} title="No sprints or releases yet" action={<Button needs="tester" variant="primary" onClick={() => setCreating(true)}><Plus size={14} /> New sprint</Button>}>
               Give a run a sprint or release name when you create it or import results. Each one gets a report here, with a comparison to the one before.
             </Empty>
           ) : current ? (
@@ -167,7 +168,7 @@ function MilestoneBar({ m, onChange, onDelete }: { m: Milestone; onChange: (b: M
       </label>
       <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>Dates label the report and order sprints for comparison.</span>
       {m.run_count === 0 && (
-        <Button variant="danger" size="sm" style={{ marginLeft: "auto" }} onClick={onDelete}>
+        <Button needs="admin" variant="danger" size="sm" style={{ marginLeft: "auto" }} onClick={onDelete}>
           <Trash2 size={13} /> Delete empty {m.kind}
         </Button>
       )}
@@ -196,7 +197,7 @@ function NewMilestoneModal({ onClose }: { onClose: () => void }) {
       title="New sprint or release"
       onClose={onClose}
       width={440}
-      footer={<Button variant="primary" disabled={!name.trim() || create.isPending} onClick={() => create.mutate()}>Create</Button>}
+      footer={<Button needs="tester" variant="primary" disabled={!name.trim() || create.isPending} onClick={() => create.mutate()}>Create</Button>}
     >
       <div className="field">
         <label htmlFor="mname">Name</label>
@@ -250,6 +251,7 @@ function ChecklistPanel({ milestone, others, onChanged }: { milestone: Milestone
       </button>
       {open && (
         <div style={{ maxHeight: 260, overflow: "auto" }}>
+          <EditScope>
           {items.map((i) => (
             <div key={i.id} className="row" style={{ padding: "6px 16px", borderTop: "1px solid var(--border)", minHeight: 36 }}>
               <input type="checkbox" className="checkbox" checked={!!i.done_at} aria-label={`Done: ${i.title}`}
@@ -268,12 +270,12 @@ function ChecklistPanel({ milestone, others, onChanged }: { milestone: Milestone
                     onChange={(e) => { const v = e.target.value; if (v) run.mutate(() => api.patch<ChecklistItem[]>(`/api/checklist/${i.id}`, { doneAt: new Date(v).toISOString().slice(0, 16) })); }} />
                 </label>
               )}
-              <Button variant="danger" size="sm" icon aria-label={`Delete ${i.title}`} onClick={() => run.mutate(() => api.del<ChecklistItem[]>(`/api/checklist/${i.id}`))}><Trash2 size={12} /></Button>
+              <Button needs="tester" variant="danger" size="sm" icon aria-label={`Delete ${i.title}`} onClick={() => run.mutate(() => api.del<ChecklistItem[]>(`/api/checklist/${i.id}`))}><Trash2 size={12} /></Button>
             </div>
           ))}
           <div className="row" style={{ padding: "8px 16px", borderTop: items.length ? "1px solid var(--border)" : undefined }}>
             <input className="input grow" placeholder="Add a task, e.g. Regression signed off by QA" value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} aria-label="New task" />
-            <Button size="sm" onClick={add} disabled={!title.trim()}><Plus size={13} /> Add</Button>
+            <Button needs="tester" size="sm" onClick={add} disabled={!title.trim()}><Plus size={13} /> Add</Button>
             {others.length > 0 && (
               <select className="select" style={{ width: 150, height: 28 }} value="" aria-label="Copy tasks from another sprint"
                 onChange={(e) => { const from = Number(e.target.value); if (from) run.mutate(() => api.post<ChecklistItem[]>(`${base}/copy`, { fromId: from })); }}>
@@ -282,6 +284,7 @@ function ChecklistPanel({ milestone, others, onChanged }: { milestone: Milestone
               </select>
             )}
           </div>
+          </EditScope>
         </div>
       )}
     </div>

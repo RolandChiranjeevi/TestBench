@@ -81,7 +81,7 @@ export function CoverageGapsTab() {
     <div className="col" style={{ gap: 20, padding: "16px 20px", maxWidth: 960 }}>
       <div className="row" style={{ gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
         <p className="muted" style={{ margin: 0, flex: "1 1 360px" }}>What is not covered yet. These lists are groundwork for proposals; nothing here creates or changes a requirement. Link what already exists, or write the missing requirement.</p>
-        <Button disabled={generating || data.counts.casesWithoutRequirement + data.counts.observationsWithoutLink === 0}
+        <Button needs="tester" disabled={generating || data.counts.casesWithoutRequirement + data.counts.observationsWithoutLink === 0}
           title="Fixed rules turn test cases without a requirement and observations without a link into proposals for new requirements. They start as proposals: you approve, edit or reject them."
           onClick={generate}><Sparkles size={14} /> Generate proposals</Button>
       </div>
@@ -96,7 +96,7 @@ export function CoverageGapsTab() {
                 <PriorityIcon priority={r.priority} />
                 <Link className="id mono" to={`/p/${pid}/requirements?req=${r.id}`}>REQ-{r.number}</Link>
                 <span className="title">{r.title}</span>
-                <span className="meta"><OriginBadge origin={r.origin} /><Button size="sm" onClick={() => setLinkReq(r.id)}><Link2 size={12} /> Link test cases</Button></span>
+                <span className="meta"><OriginBadge origin={r.origin} /><Button needs="tester" size="sm" onClick={() => setLinkReq(r.id)}><Link2 size={12} /> Link test cases</Button></span>
               </div>
             ))}
           </div>
@@ -112,7 +112,7 @@ export function CoverageGapsTab() {
                 <PriorityIcon priority={c.priority} />
                 <Link className="id mono" to={`/p/${pid}/cases?case=${c.id}`}>{key}-{c.number}</Link>
                 <span className="title">{c.title}</span>
-                <span className="meta"><Button size="sm" onClick={() => setLinkCase(c.id)}><Link2 size={12} /> Link to a requirement</Button></span>
+                <span className="meta"><Button needs="tester" size="sm" onClick={() => setLinkCase(c.id)}><Link2 size={12} /> Link to a requirement</Button></span>
               </div>
             ))}
           </div>
@@ -127,7 +127,7 @@ export function CoverageGapsTab() {
               <div key={o.id} role="listitem" className="list-row" style={{ cursor: "default" }}>
                 <Link className="id mono" to={`/p/${pid}/observations#obs-${o.label}`}>{o.label}</Link>
                 <span className="title">{o.title}</span>
-                <span className="meta"><span className="faint">{KIND_NAME[o.kind] ?? o.kind}</span><SeverityBadge value={o.severity as Parameters<typeof SeverityBadge>[0]["value"]} /><Button size="sm" onClick={() => setLinkObs(o)}><Link2 size={12} /> Link</Button></span>
+                <span className="meta"><span className="faint">{KIND_NAME[o.kind] ?? o.kind}</span><SeverityBadge value={o.severity as Parameters<typeof SeverityBadge>[0]["value"]} /><Button needs="tester" size="sm" onClick={() => setLinkObs(o)}><Link2 size={12} /> Link</Button></span>
               </div>
             ))}
           </div>
@@ -152,7 +152,7 @@ function LinkCasesToRequirement({ requirementId, onClose, onDone }: { requiremen
   });
   return (
     <Modal title="Link test cases to this requirement" onClose={onClose} width={560}
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" disabled={ids.size === 0 || save.isPending} onClick={() => save.mutate()}>Link {ids.size || ""} test case{ids.size === 1 ? "" : "s"}</Button></>}>
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button needs="tester" variant="primary" disabled={ids.size === 0 || save.isPending} onClick={() => save.mutate()}>Link {ids.size || ""} test case{ids.size === 1 ? "" : "s"}</Button></>}>
       <CasePicker selected={ids} onChange={setIds} />
     </Modal>
   );
@@ -174,7 +174,7 @@ function LinkObservationModal({ observation, onClose, onDone }: { observation: C
   const toggle = (id: number) => setReqIds((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   return (
     <Modal title={`Link ${observation.label}`} onClose={onClose} width={600}
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" disabled={reqIds.size + caseIds.size === 0 || save.isPending} onClick={() => save.mutate()}>Save links</Button></>}>
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button needs="tester" variant="primary" disabled={reqIds.size + caseIds.size === 0 || save.isPending} onClick={() => save.mutate()}>Save links</Button></>}>
       <div className="col" style={{ gap: 14 }}>
         <p style={{ margin: 0 }}>“{observation.title}”. Choose the requirements and test cases it is about. This only links them; it does not make a bug or change anything else.</p>
         <fieldset style={{ border: 0, padding: 0, margin: 0 }}>

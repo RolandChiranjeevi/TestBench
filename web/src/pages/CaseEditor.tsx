@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, BookOpenCheck, Bot, Copy, Link2, Check, ChevronsUpD
 import { api, timeAgo, type CaseDetail, type Priority, type Requirement, type Suite } from "../api";
 import { ConfirmModal, FrameworkBadge, Modal, PriorityIcon, PRIORITY_LABEL, StatusIcon, useToast } from "../components/ui";
 import { Button } from "../components/Button";
+import { EditScope, useCan } from "../components/Access";
 
 interface DraftStep { uid: string; id?: number; action: string; expected: string }
 interface Draft {
@@ -179,7 +180,7 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
           {saveState === "error" && <span style={{ color: "var(--failed-fg)" }}>Not saved</span>}
         </span>
         <span className="spacer" />
-        <Button variant="ghost" size="sm" icon
+        <Button needs="tester" variant="ghost" size="sm" icon
           title="Duplicate as a draft"
           aria-label="Duplicate case"
           onClick={async () => {
@@ -195,7 +196,7 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
         >
           <Copy size={14} />
         </Button>
-        <Button variant="danger" size="sm" icon onClick={() => setConfirming(true)} title="Delete case" aria-label="Delete case">
+        <Button needs="tester" variant="danger" size="sm" icon onClick={() => setConfirming(true)} title="Delete case" aria-label="Delete case">
           <Trash2 size={14} />
         </Button>
         <Button variant="ghost" size="sm" icon onClick={onClose} title="Close (Esc)" aria-label="Close">
@@ -204,6 +205,7 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
       </div>
 
       <div style={{ padding: "20px 28px 40px", display: "flex", flexDirection: "column", gap: 18 }}>
+        <EditScope>
         <textarea
           className="bare title-input"
           rows={1}
@@ -302,15 +304,15 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
                     aria-label={`Step ${i + 1} expected result`}
                   />
                   <div className="step-actions">
-                    <Button variant="ghost" size="sm" icon onClick={() => moveStep(i, -1)} disabled={i === 0} aria-label="Move up"><ArrowUp size={12} /></Button>
-                    <Button variant="ghost" size="sm" icon onClick={() => moveStep(i, 1)} disabled={i === draft.steps.length - 1} aria-label="Move down"><ArrowDown size={12} /></Button>
-                    <Button variant="danger" size="sm" icon onClick={() => update({ steps: draft.steps.filter((_, j) => j !== i) }, true)} aria-label="Delete step"><Trash2 size={12} /></Button>
+                    <Button needs="tester" variant="ghost" size="sm" icon onClick={() => moveStep(i, -1)} disabled={i === 0} aria-label="Move up"><ArrowUp size={12} /></Button>
+                    <Button needs="tester" variant="ghost" size="sm" icon onClick={() => moveStep(i, 1)} disabled={i === draft.steps.length - 1} aria-label="Move down"><ArrowDown size={12} /></Button>
+                    <Button needs="tester" variant="danger" size="sm" icon onClick={() => update({ steps: draft.steps.filter((_, j) => j !== i) }, true)} aria-label="Delete step"><Trash2 size={12} /></Button>
                   </div>
                 </div>
               ))}
             </div>
           )}
-          <Button variant="ghost" size="sm" style={{ marginTop: 8 }} onClick={addStep}>
+          <Button needs="tester" variant="ghost" size="sm" style={{ marginTop: 8 }} onClick={addStep}>
             <Plus size={13} /> Add step {draft.steps.length > 0 && <span className="kbd">⌘↵</span>}
           </Button>
         </section>
@@ -331,12 +333,12 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
                 {r.review_needed && <TriangleAlert size={11} aria-hidden="true" style={{ color: "var(--blocked-fg)" }} />}REQ-{r.number} <span className="truncate" style={{ maxWidth: 200 }}>{r.title}</span>
               </Link>
             ))}
-            <Button variant="ghost" size="sm" onClick={() => setLinkingReqs(true)}><Link2 size={13} /> Link</Button>
+            <Button needs="tester" variant="ghost" size="sm" onClick={() => setLinkingReqs(true)}><Link2 size={13} /> Link</Button>
           </div>
           {data.requirements.filter((r) => r.review_needed).map((r) => (
             <div key={r.id} className="row" style={{ marginTop: 8, fontSize: "var(--fs-md)", color: "var(--blocked-fg)" }}>
               <span className="grow">REQ-{r.number} was reworded after this case was linked. Check the case still fits.</span>
-              <Button size="sm" onClick={async () => {
+              <Button needs="tester" size="sm" onClick={async () => {
                 await api.post(`/api/requirements/${r.id}/review`, { caseIds: [caseId] });
                 for (const k of ["case", "requirements", "requirement"]) qc.invalidateQueries({ queryKey: [k] });
               }}>Still correct</Button>
@@ -384,6 +386,7 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
             </div>
           )}
         </section>
+        </EditScope>
       </div>
       {confirming && (
         <ConfirmModal title={`Delete ${data.project_key}-${data.number}?`} confirmLabel="Delete case" onConfirm={remove} onClose={() => setConfirming(false)}>
@@ -421,7 +424,7 @@ function LinkRequirementsModal({ caseId, projectId, current, onClose }: { caseId
     }
   };
   return (
-    <Modal title="Link requirements" onClose={onClose} width={520} footer={<Button variant="primary" disabled={saving} onClick={save}>Save {selected.size} linked</Button>}>
+    <Modal title="Link requirements" onClose={onClose} width={520} footer={<Button needs="tester" variant="primary" disabled={saving} onClick={save}>Save {selected.size} linked</Button>}>
       {reqs.length === 0 ? (
         <div className="muted">No requirements yet. Add some on the Requirements page first.</div>
       ) : (
