@@ -5,8 +5,18 @@
  */
 export type Tone = "ok" | "fail" | "warn" | "info" | "accent" | "crit" | "neutral";
 export type IconName = "chevrons-up" | "chevron-up" | "diamond" | "chevron-down" | "shield-alert" | "info" | "circle" | "eye" | "circle-check" | "archive" | "bug"
-  | "circle-x" | "copy" | "triangle-alert" | "eye-off";
+  | "circle-x" | "copy" | "triangle-alert" | "eye-off" | "circle-minus";
 export interface BadgeLook { tone: Tone; icon: IconName; label: string }
+
+/** How well a requirement is covered by test cases. No test case is a gap (neutral, minus); a test case that has not run yet is neutral too (empty circle). */
+export type CoverageState = "uncovered" | "failing" | "passing" | "partial" | "untested";
+export const COVERAGE_LOOK: Record<CoverageState, BadgeLook> = {
+  uncovered: { tone: "neutral", icon: "circle-minus", label: "No test cases" },
+  failing: { tone: "fail", icon: "circle-x", label: "Failing" },
+  passing: { tone: "ok", icon: "circle-check", label: "Passing" },
+  partial: { tone: "warn", icon: "triangle-alert", label: "Partly tested" },
+  untested: { tone: "neutral", icon: "circle", label: "Not run yet" },
+};
 
 export type Severity = "info" | "low" | "medium" | "high" | "critical";
 export type ObservationStatus = "observed" | "needs_review" | "confirmed" | "resolved" | "archived" | "converted";

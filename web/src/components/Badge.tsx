@@ -1,14 +1,14 @@
 import type { ReactNode } from "react";
-import { Archive, Bug, ChevronDown, ChevronUp, ChevronsUp, Circle, CircleCheck, CircleX, Copy, Diamond, Eye, EyeOff, Info, ShieldAlert, TriangleAlert } from "lucide-react";
+import { Archive, Bug, ChevronDown, ChevronUp, ChevronsUp, Circle, CircleCheck, CircleMinus, CircleX, Copy, Diamond, Eye, EyeOff, Info, ShieldAlert, TriangleAlert } from "lucide-react";
 import {
-  BUG_WORKFLOW_LOOK, CI_STATUS_LOOK, OBSERVATION_STATUS_LOOK, priorityLook, REVIEW_STATUS_LOOK, SEVERITY_LOOK,
-  type BadgeLook, type BugWorkflow, type CiStatus, type IconName, type ObservationStatus, type ReviewStatus, type Severity, type Tone,
+  BUG_WORKFLOW_LOOK, CI_STATUS_LOOK, COVERAGE_LOOK, OBSERVATION_STATUS_LOOK, priorityLook, REVIEW_STATUS_LOOK, SEVERITY_LOOK,
+  type BadgeLook, type BugWorkflow, type CiStatus, type CoverageState, type IconName, type ObservationStatus, type ReviewStatus, type Severity, type Tone,
 } from "../statuses";
 
 const ICONS = {
   "chevrons-up": ChevronsUp, "chevron-up": ChevronUp, diamond: Diamond, "chevron-down": ChevronDown, "shield-alert": ShieldAlert,
   info: Info, circle: Circle, eye: Eye, "circle-check": CircleCheck, archive: Archive, bug: Bug,
-  "circle-x": CircleX, copy: Copy, "triangle-alert": TriangleAlert, "eye-off": EyeOff,
+  "circle-x": CircleX, copy: Copy, "triangle-alert": TriangleAlert, "eye-off": EyeOff, "circle-minus": CircleMinus,
 } satisfies Record<IconName, unknown>;
 
 /** A small label with an icon and a word. The tone gives the colour; it is never the only signal. `title` is the explanation shown on hover. */
@@ -33,3 +33,4 @@ export const ObservationStatusBadge = ({ value }: { value: ObservationStatus }) 
 export const ReviewStatusBadge = ({ value, ...p }: { value: ReviewStatus } & LookProps) => <FromLook look={REVIEW_STATUS_LOOK[value]} {...p} />;
 export const CiStatusBadge = ({ value, ...p }: { value: CiStatus } & LookProps) => <FromLook look={CI_STATUS_LOOK[value]} {...p} />;
 export const BugWorkflowBadge = ({ value, ...p }: { value: BugWorkflow } & LookProps) => <FromLook look={BUG_WORKFLOW_LOOK[value]} {...p} />;
+export const CoverageBadge = ({ value, ...p }: { value: CoverageState } & LookProps) => <FromLook look={COVERAGE_LOOK[value]} {...p} />;

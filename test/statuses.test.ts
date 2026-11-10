@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { SEVERITIES, STATUSES } from "../server/observations.ts";
 import { WORKFLOW_STATUSES } from "../server/ci.ts";
-import { BUG_WORKFLOW_LOOK, CI_STATUS_LOOK, OBSERVATION_STATUS_LOOK, priorityLook, REVIEW_STATUS_LOOK, SEVERITY_LOOK, type BadgeLook } from "../web/src/statuses.ts";
+import { BUG_WORKFLOW_LOOK, CI_STATUS_LOOK, COVERAGE_LOOK, OBSERVATION_STATUS_LOOK, priorityLook, REVIEW_STATUS_LOOK, SEVERITY_LOOK, type BadgeLook } from "../web/src/statuses.ts";
 
 // How a priority, a severity and an observation status look is decided in one place (web/src/statuses.ts). The server owns the lists of allowed values,
 // so these tests fail when a value is added there and nobody says what it looks like.
@@ -57,6 +57,21 @@ describe("bug reports", () => {
   it("a test in CI is green when it passed, red when it failed and yellow when it is flaky, each with its own icon", () => {
     assert.deepEqual(["passed", "failed", "flaky"].map((s) => CI_STATUS_LOOK[s as keyof typeof CI_STATUS_LOOK].tone), ["ok", "fail", "warn"]);
     assert.equal(new Set(Object.values(CI_STATUS_LOOK).map((l) => l.icon)).size, 3);
+  });
+});
+
+describe("requirement coverage", () => {
+  it("has a look for each of the five states the server computes", () => {
+    assert.deepEqual(Object.keys(COVERAGE_LOOK).sort(), ["failing", "partial", "passing", "uncovered", "untested"]);
+    for (const l of Object.values(COVERAGE_LOOK)) assert.ok(complete(l), JSON.stringify(l));
+  });
+
+  it("passing is green, failing red, partial yellow, and the two states with nothing to show are neutral", () => {
+    assert.deepEqual(["passing", "failing", "partial", "uncovered", "untested"].map((s) => COVERAGE_LOOK[s as keyof typeof COVERAGE_LOOK].tone), ["ok", "fail", "warn", "neutral", "neutral"]);
+  });
+
+  it("every state has its own icon, so the neutral ones differ without colour", () => {
+    assert.equal(new Set(Object.values(COVERAGE_LOOK).map((l) => l.icon)).size, 5);
   });
 });
 
