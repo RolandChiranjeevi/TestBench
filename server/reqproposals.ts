@@ -45,6 +45,17 @@ interface Row {
 
 const projectKey = (projectId: number) => (db.prepare("SELECT key FROM projects WHERE id = ?").get(projectId) as { key: string } | undefined)?.key;
 
+/** The one place a proposal row is made: by an agent (createProposals) or by a rule (gapproposals.ts). It starts as `proposed`; the agent's version is kept in `original`. */
+export function insertProposal(
+  projectId: number,
+  x: { title: string; description: string; acceptanceCriteria: string; rationale: string; kind: string; suggestedPriority: string; basis: string },
+  proposedBy: string, gapKey = "",
+): number {
+  const original = JSON.stringify({ title: x.title, description: x.description, acceptanceCriteria: x.acceptanceCriteria, rationale: x.rationale, kind: x.kind, suggestedPriority: x.suggestedPriority, basis: x.basis });
+  return (db.prepare(`INSERT INTO requirement_proposals (project_id, title, description, acceptance_criteria, rationale, kind, suggested_priority, basis, proposed_by, original, gap_key)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`).get(projectId, x.title, x.description, x.acceptanceCriteria, x.rationale, x.kind, x.suggestedPriority, x.basis, proposedBy, original, gapKey) as { id: number }).id;
+}
+
 /** Validates the whole batch first; if anything is wrong nothing is made. `proposedBy` is the agent's name from its token. */
 export function createProposals(projectId: number, body: unknown, proposedBy: string) {
   const key = projectKey(projectId);
@@ -63,12 +74,9 @@ export function createProposals(projectId: number, body: unknown, proposedBy: st
 
   const unresolved: { proposal: number; ref: string; reason: string }[] = [];
   const created: { id: number }[] = [];
-  const insert = db.prepare(`INSERT INTO requirement_proposals (project_id, title, description, acceptance_criteria, rationale, kind, suggested_priority, basis, proposed_by, original)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`);
   db.transaction(() => {
     items.forEach((x, i) => {
-      const original = JSON.stringify({ title: x.title, description: x.description, acceptanceCriteria: x.acceptanceCriteria, rationale: x.rationale, kind: x.kind, suggestedPriority: x.suggestedPriority, basis: x.basis });
-      const id = (insert.get(projectId, x.title, x.description, x.acceptanceCriteria, x.rationale, x.kind, x.suggestedPriority, x.basis, proposedBy, original) as { id: number }).id;
+      const id = insertProposal(projectId, x, proposedBy);
       created.push({ id });
       for (const r of [...new Set(x.observations)]) {
         const m = /^OBS-(\d+)$/i.exec(r);
@@ -151,6 +159,10 @@ export function approveProposal(id: number) {
     });
     const caseIds = (db.prepare("SELECT case_id FROM proposal_cases WHERE proposal_id = ?").all(id) as { case_id: number }[]).map((c) => c.case_id);
     if (caseIds.length) setRequirementCases(requirementId, row.project_id, caseIds);
+    // A person approved it: the observations it was about are now linked to the requirement, which takes them off the coverage gap list.
+    for (const o of db.prepare("SELECT observation_id FROM proposal_observations WHERE proposal_id = ?").all(id) as { observation_id: number }[]) {
+      db.prepare("INSERT OR IGNORE INTO observation_requirements (observation_id, requirement_id) VALUES (?, ?)").run(o.observation_id, requirementId);
+    }
     if (row.rationale.trim()) recordRevision(requirementId, [{ field: "why it was proposed", to: row.rationale }], false, row.proposed_by || "agent");
     db.prepare("UPDATE requirement_proposals SET status = 'approved', decided_by = ?, decided_at = datetime('now'), resulting_requirement_id = ?, updated_at = datetime('now') WHERE id = ?").run(me, requirementId, id);
     return { proposal: getProposal(id)!, requirementId };

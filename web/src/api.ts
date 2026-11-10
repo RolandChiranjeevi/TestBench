@@ -270,5 +270,12 @@ export interface CoverageGaps {
   casesWithoutRequirement: { id: number; number: number; title: string; priority: Priority; status: CaseSummary["status"] }[];
   observationsWithoutLink: { id: number; label: string; title: string; kind: string; severity: string; status: string }[];
 }
+/** What "Generate proposals" made, or in a dry run would make. The rules are fixed (no model): see server/gapproposals.ts. */
+export interface GenerateResult {
+  dryRun: boolean; counts: { created: number; skipped: number; notGenerated: number; more: number };
+  created: { id: number | null; gap: string; rule: string; title: string }[];
+  skipped: { gap: string; label: string; reason: string }[];
+  notGenerated: { gap: string; label: string; title: string; reason: string }[];
+}
 /** The name recorded on what a person does. `verified` is always false: there are no accounts yet. */
 export interface DisplayName { name: string; recordedAs: string; verified: boolean }

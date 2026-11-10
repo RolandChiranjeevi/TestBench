@@ -339,6 +339,9 @@ CREATE TABLE IF NOT EXISTS observation_cases (
   case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
   PRIMARY KEY (observation_id, case_id)
 );`);
+  // Which coverage gap a generated proposal came from (case:12, obs:7). A gap gets one proposal, ever; empty for proposals an agent made.
+  if (!hasColumn("requirement_proposals", "gap_key")) d.exec("ALTER TABLE requirement_proposals ADD COLUMN gap_key TEXT NOT NULL DEFAULT ''");
+  d.exec("CREATE UNIQUE INDEX IF NOT EXISTS requirement_proposals_gap ON requirement_proposals(project_id, gap_key) WHERE gap_key != ''");
 }
 
 /** Creates missing tables and columns, and fills in data for features added later. Safe to run on every start. */
