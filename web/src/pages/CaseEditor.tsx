@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, BookOpenCheck, Bot, Copy, Link2, Check, ChevronsUpDown, CircleDot, Folder, Loader2, Plus, Trash2, X } from "lucide-react";
 import { api, timeAgo, type CaseDetail, type Priority, type Requirement, type Suite } from "../api";
 import { ConfirmModal, FrameworkBadge, Modal, PriorityIcon, PRIORITY_LABEL, StatusIcon, useToast } from "../components/ui";
+import { Button } from "../components/Button";
 
 interface DraftStep { uid: string; id?: number; action: string; expected: string }
 interface Draft {
@@ -178,8 +179,7 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
           {saveState === "error" && <span style={{ color: "var(--failed-fg)" }}>Not saved</span>}
         </span>
         <span className="spacer" />
-        <button
-          className="btn ghost icon sm"
+        <Button variant="ghost" size="sm" icon
           title="Duplicate as a draft"
           aria-label="Duplicate case"
           onClick={async () => {
@@ -194,13 +194,13 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
           }}
         >
           <Copy size={14} />
-        </button>
-        <button className="btn ghost icon sm danger" onClick={() => setConfirming(true)} title="Delete case" aria-label="Delete case">
+        </Button>
+        <Button variant="danger" size="sm" icon onClick={() => setConfirming(true)} title="Delete case" aria-label="Delete case">
           <Trash2 size={14} />
-        </button>
-        <button className="btn ghost icon sm" onClick={onClose} title="Close (Esc)" aria-label="Close">
+        </Button>
+        <Button variant="ghost" size="sm" icon onClick={onClose} title="Close (Esc)" aria-label="Close">
           <X size={14} />
-        </button>
+        </Button>
       </div>
 
       <div style={{ padding: "20px 28px 40px", display: "flex", flexDirection: "column", gap: 18 }}>
@@ -302,17 +302,17 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
                     aria-label={`Step ${i + 1} expected result`}
                   />
                   <div className="step-actions">
-                    <button className="btn ghost icon sm" onClick={() => moveStep(i, -1)} disabled={i === 0} aria-label="Move up"><ArrowUp size={12} /></button>
-                    <button className="btn ghost icon sm" onClick={() => moveStep(i, 1)} disabled={i === draft.steps.length - 1} aria-label="Move down"><ArrowDown size={12} /></button>
-                    <button className="btn ghost icon sm danger" onClick={() => update({ steps: draft.steps.filter((_, j) => j !== i) }, true)} aria-label="Delete step"><Trash2 size={12} /></button>
+                    <Button variant="ghost" size="sm" icon onClick={() => moveStep(i, -1)} disabled={i === 0} aria-label="Move up"><ArrowUp size={12} /></Button>
+                    <Button variant="ghost" size="sm" icon onClick={() => moveStep(i, 1)} disabled={i === draft.steps.length - 1} aria-label="Move down"><ArrowDown size={12} /></Button>
+                    <Button variant="danger" size="sm" icon onClick={() => update({ steps: draft.steps.filter((_, j) => j !== i) }, true)} aria-label="Delete step"><Trash2 size={12} /></Button>
                   </div>
                 </div>
               ))}
             </div>
           )}
-          <button className="btn ghost sm" style={{ marginTop: 8 }} onClick={addStep}>
+          <Button variant="ghost" size="sm" style={{ marginTop: 8 }} onClick={addStep}>
             <Plus size={13} /> Add step {draft.steps.length > 0 && <span className="kbd">⌘↵</span>}
-          </button>
+          </Button>
         </section>
 
         {data.proposal && (
@@ -331,15 +331,15 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
                 {r.review_needed && <span className="dot" style={{ background: "var(--blocked)" }} />}REQ-{r.number} <span className="truncate" style={{ maxWidth: 200 }}>{r.title}</span>
               </Link>
             ))}
-            <button className="btn ghost sm" onClick={() => setLinkingReqs(true)}><Link2 size={13} /> Link</button>
+            <Button variant="ghost" size="sm" onClick={() => setLinkingReqs(true)}><Link2 size={13} /> Link</Button>
           </div>
           {data.requirements.filter((r) => r.review_needed).map((r) => (
             <div key={r.id} className="row" style={{ marginTop: 8, fontSize: "var(--fs-md)", color: "var(--blocked-fg)" }}>
               <span className="grow">REQ-{r.number} was reworded after this case was linked. Check the case still fits.</span>
-              <button className="btn sm" onClick={async () => {
+              <Button size="sm" onClick={async () => {
                 await api.post(`/api/requirements/${r.id}/review`, { caseIds: [caseId] });
                 for (const k of ["case", "requirements", "requirement"]) qc.invalidateQueries({ queryKey: [k] });
-              }}>Still correct</button>
+              }}>Still correct</Button>
             </div>
           ))}
         </section>
@@ -421,7 +421,7 @@ function LinkRequirementsModal({ caseId, projectId, current, onClose }: { caseId
     }
   };
   return (
-    <Modal title="Link requirements" onClose={onClose} width={520} footer={<button className="btn primary" disabled={saving} onClick={save}>Save {selected.size} linked</button>}>
+    <Modal title="Link requirements" onClose={onClose} width={520} footer={<Button variant="primary" disabled={saving} onClick={save}>Save {selected.size} linked</Button>}>
       {reqs.length === 0 ? (
         <div className="muted">No requirements yet. Add some on the Requirements page first.</div>
       ) : (
