@@ -80,6 +80,8 @@ export async function discoverPages(base) {
     ["Settings, members", `/p/${pid}/settings/members`],
     ["Settings, your name", `/p/${pid}/settings/account`],
     ["Your account", "/account"],
+    ["Administration, accounts", "/admin/accounts"],
+    ["Administration, audit log", "/admin/audit-log"],
     ["Backup & restore", `/p/${pid}/backup`],
   ];
 }

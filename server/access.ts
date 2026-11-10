@@ -45,7 +45,7 @@ export const ACCESS: Record<string, Need> = {
   "GET /trace-viewer/*": "user", // Playwright's viewer: code only, it opens a trace the person already has
   // ---- the owner ----
   "POST /api/projects": "owner", "POST /api/demo": "owner", "GET /api/backup": "owner", "POST /api/restore": "owner", "PUT /api/settings/agent-proposals": "owner",
-  "GET /api/users": "owner", "POST /api/users/:id/disable": "owner", "POST /api/users/:id/enable": "owner", "POST /api/users/:id/reset-link": "owner", "GET /api/audit-log": "owner",
+  "GET /api/users": "owner", "GET /api/users/:id/memberships": "owner", "POST /api/users/:id/disable": "owner", "POST /api/users/:id/enable": "owner", "POST /api/users/:id/reset-link": "owner", "GET /api/audit-log": "owner",
   // ---- invitations: the owner, or the admin of the project an invitation is for ----
   "GET /api/invitations": "custom", "POST /api/invitations": "custom", "POST /api/invitations/:id/revoke": "custom",
   // ---- machine tokens: each opens one route of one project and nothing else ----

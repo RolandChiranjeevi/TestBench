@@ -6,7 +6,7 @@
 //  - the notice for a viewer, and the buttons that are off (with their reason) for a viewer but not for a tester,
 //  - which settings tabs each role gets, and what the members page shows (email addresses and the forms only for an admin),
 //  - that someone who is not in a project is sent away from it, and that someone in no project is told so.
-// Then it runs the contrast and layout checks as a viewer and as an admin, which the other checks (on an instance without accounts) never see.
+// Then it runs the contrast and layout checks as a viewer and as the owner, which the other checks (on an instance without accounts) never see.
 //
 // Usage:  node scripts/check-roles-ui.mjs http://127.0.0.1:4100      (an EMPTY instance with no accounts, started on this computer)
 //         CHECK_CPU_THROTTLE=8 node scripts/check-roles-ui.mjs ...   (the same, with the browser 8 times slower)
@@ -228,6 +228,89 @@ for (const who of Object.keys(TABS)) {
   check("account: reachable with no project", await eventually(async () => (await n.page.getByRole("heading", { name: "Your account", level: 1 }).count()) === 1));
   await n.close();
 }
+
+// /admin: the owner looks after the accounts and reads the audit log; nobody else is offered it.
+{
+  const { page, close } = await open("owner", "/admin/accounts");
+  check("admin: the page", (await page.getByRole("heading", { name: "Administration", level: 1 }).count()) === 1);
+  const row = (name) => page.getByRole("row", { name: new RegExp(name) });
+  check("admin: everyone is listed", await eventually(async () => (await page.locator("table").first().locator("tbody tr").count()) >= 7));
+  check("admin: the owner has every project", (await row("Olle Owner").innerText()).includes("All projects (admin)"));
+  check("admin: an admin's projects and role", await eventually(async () => /\(admin\)/.test(await row("Ada").innerText())));
+  check("admin: a viewer's projects and role", await eventually(async () => /\(viewer\)/.test(await row("Vera").innerText())));
+  check("admin: a person in no project", await eventually(async () => /none/.test(await row("Nina").innerText())));
+  check("admin: the owner cannot switch off their own account", await page.getByRole("button", { name: "Switch off Olle Owner" }).isDisabled());
+
+  // Switch an account off and on again.
+  await page.getByRole("button", { name: "Switch off Nina" }).click();
+  await page.getByRole("button", { name: "Switch off", exact: true }).click();
+  await page.getByText("Account switched off").first().waitFor({ timeout: 10_000 });
+  check("admin: the account shows as switched off", await eventually(async () => /Switched off/.test(await row("Nina").innerText())));
+  check("admin: its session ended at once", !(await alive(cookies.nobody)));
+  let canSignIn = true; try { await login("nina@example.com", PASSWORD); } catch { canSignIn = false; }
+  check("admin: a switched-off account cannot sign in", !canSignIn);
+  await page.getByRole("button", { name: "Switch on Nina" }).click();
+  await page.getByRole("button", { name: "Switch on", exact: true }).click();
+  await page.getByText("Account switched on").first().waitFor({ timeout: 10_000 });
+  check("admin: the account shows as active again", await eventually(async () => /Active/.test(await row("Nina").innerText())));
+  check("admin: and can sign in", (await login("nina@example.com", PASSWORD)) !== undefined);
+
+  // A password reset link: shown once, works once.
+  await page.getByRole("button", { name: "Make a password reset link for Tess" }).click();
+  const resetUrl = await page.locator("code.inline.mono").first().innerText();
+  check("admin: the reset link is shown", /\/reset\/[\w-]{20,}$/.test(resetUrl), resetUrl);
+  const token = resetUrl.split("/").pop();
+  check("admin: the link is for that person", (await call("GET", `/api/reset/${token}`)).json.email === "tess@example.com");
+  await page.getByRole("button", { name: "I have handed it over" }).click();
+  check("admin: the link is gone from the page once handed over", await eventually(async () => (await page.locator("code.inline.mono").count()) === 0));
+
+  // An invitation with no project: made, listed, revoked.
+  await page.getByLabel("Email address (optional)").fill("newbie@example.com");
+  await page.getByRole("button", { name: "Make invitation link" }).click();
+  const inviteUrl = await page.locator("code.inline.mono").first().innerText();
+  check("admin: the invitation link is shown", /\/join\/[\w-]{20,}$/.test(inviteUrl), inviteUrl);
+  const invRow = page.getByRole("row", { name: /newbie@example.com/ });
+  check("admin: the open invitation is listed, with no project", await eventually(async () => /no project/.test(await invRow.innerText())));
+  await invRow.getByRole("button", { name: /Revoke/ }).click();
+  await page.getByText("Invitation revoked").first().waitFor({ timeout: 10_000 });
+  check("admin: a revoked invitation leaves the list", await eventually(async () => (await page.getByRole("row", { name: /newbie@example.com/ }).count()) === 0));
+  let usable = true; try { await call("GET", `/api/join/${inviteUrl.split("/").pop()}`); } catch { usable = false; }
+  check("admin: and cannot be used", !usable);
+  await close();
+}
+{
+  const { page, close } = await open("owner", "/admin/audit-log");
+  const rows = page.locator("table tbody tr");
+  check("audit log: entries", await eventually(async () => (await rows.count()) >= 10));
+  check("audit log: in words", await eventually(async () => /switched off Nina's account/.test(await page.locator("table").innerText())));
+  check("audit log: the account switch is there with its event name", (await page.locator("table code.inline", { hasText: "account.disabled" }).count()) >= 1);
+  const events = async () => (await page.locator("table tbody tr td:nth-child(3)").allInnerTexts()).map((t) => t.trim());
+  for (const [label, prefix] of [["Passwords", "password."], ["Sign-ins", "login."], ["Members and roles", "member"]]) {
+    await page.getByLabel("Kind of event").selectOption({ label });
+    check(`audit log: the filter ${label}`, await eventually(async () => { const e = await events(); return e.length > 0 && e.every((x) => x.startsWith(prefix)); }));
+  }
+  await page.getByLabel("Kind of event").selectOption({ label: "Everything" });
+  await eventually(async () => (await rows.count()) >= 10);
+  const more = page.getByRole("button", { name: "Load older" });
+  if (await eventually(async () => (await more.count()) === 1, 2000)) {
+    const before = await rows.count();
+    await more.click();
+    check("audit log: older entries load", await eventually(async () => (await rows.count()) > before));
+  }
+  await close();
+}
+for (const who of ["admin", "tester", "viewer"]) { // nobody but the owner is offered it, and a direct visit explains why
+  const { page, close } = await open(who, `/p/${A}/cases`);
+  check(`${who}: no Administration link`, await eventually(async () => (await page.locator('a[href="/account"]').count()) >= 1) && (await page.locator('a[href^="/admin"]').count()) === 0);
+  await page.goto(BASE + "/admin/accounts", { waitUntil: "networkidle" });
+  check(`${who}: /admin explains that it is for the owner`, await eventually(async () => (await page.getByText("Only the owner can open this").count()) === 1));
+  await close();
+}
+{
+  const { page, close } = await open("owner", `/p/${A}/cases`);
+  check("owner: an Administration link", await eventually(async () => (await page.locator('a[href="/admin/accounts"]').count()) >= 1));
+  await close();
+}
 await browser.close();
 
 if (failures.length) {
@@ -239,7 +322,8 @@ console.log("Roles UI OK: labels, notices, off buttons with their reason, settin
 // ---------- contrast and layout, as people with accounts see the app ----------
 const here = (f) => fileURLToPath(new URL(f, import.meta.url));
 let bad = 0;
-for (const [who, script] of [["viewer", "check-contrast.mjs"], ["viewer", "check-layout.mjs"], ["admin", "check-contrast.mjs"]]) {
+// The owner sees everything an admin sees and the /admin pages with their tables; a viewer sees the read-only app and the explanation on /admin.
+for (const [who, script] of [["viewer", "check-contrast.mjs"], ["viewer", "check-layout.mjs"], ["owner", "check-contrast.mjs"], ["owner", "check-layout.mjs"]]) {
   console.log(`\n${script} as ${who}:`);
   const r = spawnSync(process.execPath, [here(script), BASE], { stdio: "inherit", env: { ...process.env, CHECK_COOKIE: `tb_sid=${cookies[who]}` } });
   if (r.status !== 0) bad++;

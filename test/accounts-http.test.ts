@@ -279,6 +279,20 @@ describe("the owner looks after the accounts", () => {
     assert.equal(await status(call("POST", "/api/users/999999/reset-link", { cookie: state.owner })), 404);
   });
 
+  it("the owner sees which projects an account is in, and with which role; nobody else does", async () => {
+    assert.deepEqual((await call("GET", `/api/users/${state.piaId}/memberships`, { cookie: state.owner })).json().map((m: { name: string; role: string }) => [m.name, m.role]), [["Acme", "tester"]], "the project she was added to when she joined");
+    const project = (await call("POST", "/api/projects", { cookie: state.owner, body: { name: "Zeta", key: "ZE" } })).json();
+    const other = (await call("POST", "/api/projects", { cookie: state.owner, body: { name: "Alpha", key: "AL" } })).json();
+    for (const [p, role] of [[project.id, "viewer"], [other.id, "admin"]] as const) assert.equal(await status(call("POST", `/api/projects/${p}/members`, { cookie: state.owner, body: { email: state.piaEmail, role } })), 200);
+    const list = (await call("GET", `/api/users/${state.piaId}/memberships`, { cookie: state.owner })).json();
+    assert.deepEqual(list.map((m: { name: string; key: string; role: string }) => [m.name, m.key, m.role]), [["Acme", "AC", "tester"], ["Alpha", "AL", "admin"], ["Zeta", "ZE", "viewer"]], "by project name");
+    assert.deepEqual(Object.keys(list[0]).sort(), ["key", "name", "projectId", "role"], "nothing about the account itself");
+    assert.equal(await status(call("GET", "/api/users/999999/memberships", { cookie: state.owner })), 404);
+    const piaNow = (await login(state.piaEmail, "a reset passphrase")).cookie!; // her earlier sessions ended when her password was reset
+    assert.equal(await status(call("GET", `/api/users/${state.piaId}/memberships`, { cookie: piaNow })), 403, "an ordinary account, even for itself");
+    assert.equal(await status(call("GET", `/api/users/${state.piaId}/memberships`)), 401);
+  });
+
   it("turning an account off ends its sessions at once, and it cannot sign in until turned on; the owner cannot turn off their own account", async () => {
     const session = (await login(state.piaEmail, "a reset passphrase")).cookie!;
     assert.equal(await status(call("POST", `/api/users/${state.piaId}/disable`, { cookie: state.owner })), 200);
@@ -300,6 +314,26 @@ describe("the owner looks after the accounts", () => {
     const ids = log.map((e) => e.id);
     assert.deepEqual(ids, [...ids].sort((a, b) => b - a));
     assert.equal((await call("GET", "/api/audit-log?limit=2&before=999999", { cookie: state.owner })).json().length, 2);
+  });
+
+  it("the audit log can be filtered by the start of the action; a filter with anything else in it is refused", async () => {
+    const get = async (q: string) => (await call("GET", `/api/audit-log?limit=500${q}`, { cookie: state.owner })).json() as { id: number; action: string }[];
+    const all = await get("");
+    const password = await get("&action=password.");
+    assert.ok(password.length > 0 && password.length < all.length);
+    assert.ok(password.every((e) => e.action.startsWith("password.")));
+    assert.deepEqual(password.map((e) => e.id), all.filter((e) => e.action.startsWith("password.")).map((e) => e.id), "the same entries, in the same order");
+    assert.deepEqual([...new Set((await get("&action=password.reset")).map((e) => e.action))].sort(), ["password.reset", "password.reset_link_created"]);
+    assert.deepEqual(await get("&action=no.such.thing"), []);
+    assert.ok((await get("&action=login.&limit=2")).length <= 500);
+    const before = password.at(-1)!.id;
+    assert.ok((await get(`&action=password.&before=${before}`)).every((e) => e.id < before), "the filter and paging work together");
+    for (const bad of ["%25", "a'%20OR%20'1'='1", "password.%25", "UPPER", "a%20b", "x".repeat(61), "_"]) {
+      const r = await call("GET", `/api/audit-log?action=${bad}`, { cookie: state.owner });
+      assert.ok(r.statusCode === 400 || (bad === "_" && r.statusCode === 200 && r.json().length === 0), `${bad} -> ${r.statusCode}`);
+    }
+    const piaNow = (await login(state.piaEmail, "a reset passphrase")).cookie!;
+    assert.equal(await status(call("GET", "/api/audit-log?action=password.", { cookie: piaNow })), 403, "owner only, with or without a filter");
   });
 });
 
