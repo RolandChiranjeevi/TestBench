@@ -110,7 +110,7 @@ export function listRequirements(projectId: number) {
   const byReq = new Map<number, { id: number; active: boolean; review: boolean }[]>();
   for (const l of links) {
     if (!byReq.has(l.requirement_id)) byReq.set(l.requirement_id, []);
-    byReq.get(l.requirement_id)!.push({ id: l.case_id, active: l.case_status !== "deprecated", review: !!l.review });
+    byReq.get(l.requirement_id)!.push({ id: l.case_id, active: l.case_status === "ready", review: !!l.review });
   }
   const overviews = requirementOverviews(projectId);
   return rows.map((r) => {
@@ -119,7 +119,7 @@ export function listRequirements(projectId: number) {
       ...shape(r),
       links: overviews.get(r.id)!,
       caseIds: linked.map((l) => l.id),
-      /** Linked cases that are not deprecated: only these count towards coverage. */
+      /** Linked cases that are ready: only these count towards coverage (a draft, such as one made from an AI suggestion, does not, and neither does a deprecated one). */
       activeCaseIds: linked.filter((l) => l.active).map((l) => l.id),
       coverage: classify(linked.filter((l) => l.active).map((l) => latest.get(l.id))),
       /** Active linked cases that haven't been confirmed since the requirement's wording last changed. */
@@ -145,7 +145,7 @@ export function getRequirement(id: number) {
     (h) => ({ id: h.id, at: h.changed_at, by: h.changed_by, material: !!h.material, changes: parseJson<RevisionChange[]>(h.changes, []) }),
   );
   const attachments = db.prepare("SELECT id, filename, stored_name, mime, size, created_at FROM requirement_attachments WHERE requirement_id = ? ORDER BY id").all(id);
-  return { ...shape(row), links: requirementOverviews(row.project_id).get(row.id)!, linked: requirementLinks(id), cases, history, attachments, coverage: classify(cases.filter((c) => c.status !== "deprecated").map((c) => c.last_status ?? undefined)) };
+  return { ...shape(row), links: requirementOverviews(row.project_id).get(row.id)!, linked: requirementLinks(id), cases, history, attachments, coverage: classify(cases.filter((c) => c.status === "ready").map((c) => c.last_status ?? undefined)) };
 }
 
 export function requirementsForCase(caseId: number) {

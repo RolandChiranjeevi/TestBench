@@ -56,7 +56,7 @@ import { roleOf } from "./members.ts";
 import { coverageGaps, getObservationLinks, setObservationLinks } from "./coveragegaps.ts";
 import { generateProposals } from "./gapproposals.ts";
 import { agentRequirementsForToken, parseAgentQuery } from "./agentapi.ts";
-import { applyManualUpdate, createCaseFromProposal, deleteManualTest, getManualTest, ignoreManualUpdate, listManualTests, relinkManualRefs, reviewManualTest, updateManualTest } from "./manualtests.ts";
+import { applyManualUpdate, addToProject, createCaseFromProposal, deleteManualTest, getManualTest, ignoreManualUpdate, listManualTests, relinkManualRefs, reviewManualTest, updateManualTest } from "./manualtests.ts";
 import { addRequirementCases, createRequirement, kindProblem, REQUIREMENT_KINDS, getRequirement, linkCaseByTags, listRequirements, markReviewed, recordRevision, requirementsForCase, requirementSummary, setCaseRequirements, setRequirementCases, type RevisionChange } from "./requirements.ts";
 import { dashboardData, listMilestones, milestoneReport } from "./stats.ts";
 import { parseReport, type Framework, type ParsedReport } from "./importers/parse.ts";
@@ -1190,6 +1190,13 @@ app.post("/api/manual-tests/:id/review", (req) => {
   const body = z.object({ status: z.enum(["proposed", "accepted", "rejected"]), note: z.string().max(2000).optional() }).parse(req.body);
   audited(() => reviewManualTest(id, body.status, body.note));
   return getManualTest(id);
+});
+// A person takes a suggestion into the project in one step: accepted and made into a test case, as a draft.
+app.post("/api/manual-tests/:id/add-to-project", (req) => {
+  const id = idParam(req);
+  const body = z.object({ note: z.string().max(2000).optional() }).parse(req.body ?? {});
+  const made = audited(() => addToProject(id, body.note));
+  return { case: made, manualTest: getManualTest(id) };
 });
 // A person turns an accepted proposal into a test case of the project (to be run in Runs).
 app.post("/api/manual-tests/:id/create-case", (req) => {

@@ -266,6 +266,74 @@ for (const who of Object.keys(TABS)) {
   await t.close();
 }
 
+// AI suggestions of test cases: read, change, add to the project as drafts, and decide what becomes ready.
+{
+  const key = (await call("GET", "/api/projects", undefined, owner)).json.find((x) => x.id === A).key;
+  const test = (n) => ({ sourceId: `ui-sugg-${n}`, title: `UI suggestion ${n}`, description: "Made by the UI check", preconditions: "", steps: ["Open the page", "Check it"], expected: `It works (${n})`, priority: "medium", category: "functional", wcag: [], refs: { requirements: [], cases: [], tests: [] } });
+  const files = { "manifest.json": { format: "testbench-audit-package", version: 1, audit: { id: "ui-check-audit", title: "UI check audit", project: key, agent: { name: "ui-check-agent" } }, files: [], parts: {} },
+    "bugs.json": { version: 1, bugs: [] }, "manual-tests.json": { version: 1, tests: [1, 2, 3, 4, 5, 6].map(test) } };
+  const form = new FormData();
+  for (const [name, content] of Object.entries(files)) { form.append("relpath", name); form.append("file", new Blob([JSON.stringify(content)], { type: "application/json" }), name); }
+  const seeded = await fetch(`${BASE}/api/projects/${A}/audit-import`, { method: "POST", headers: { "X-Testbench": "1", Cookie: `tb_sid=${owner}` }, body: form });
+  check("suggestions: seeded", seeded.ok, `${seeded.status}`);
+  const manualRows = async () => (await call("GET", `/api/projects/${A}/manual-tests?status=all`, undefined, owner)).json.items.filter((i) => i.sourceId.startsWith("ui-sugg-"));
+  const caseOf = async (title) => (await call("GET", `/api/projects/${A}/cases`, undefined, owner)).json.find((c) => c.title === title);
+
+  const { page, close } = await open("tester", `/p/${A}/manual-tests`);
+  const row = (title) => page.locator(".suggestion-row", { hasText: title });
+  check("suggestions: the tabs are Suggested, Added, Rejected", await eventually(async () => JSON.stringify((await texts(page, '[role="tab"]')).map((t) => t.replace(/\d+$/, "").trim()).slice(0, 3)) === JSON.stringify(["Suggested", "Added", "Rejected"])));
+  check("suggestions: marked as AI, with Add to project and Dismiss", await eventually(async () => (await row("UI suggestion 1").getByText("AI suggestion").count()) === 1 && (await row("UI suggestion 1").getByRole("button", { name: /Add to project/ }).count()) === 1 && (await row("UI suggestion 1").getByRole("button", { name: "Dismiss" }).count()) === 1));
+
+  // One suggestion from its row.
+  await row("UI suggestion 1").getByRole("button", { name: /Add to project/ }).click();
+  check("suggestions: 'Added as KEY (draft)' with a link", await eventually(async () => /Added as .+ \(draft\)/.test(await page.getByRole("status").first().innerText())));
+  const one = await caseOf("UI suggestion 1");
+  check("suggestions: it is a draft case", one?.status === "draft", JSON.stringify(one?.status));
+
+  // Edit first, then add: what is typed is saved with it.
+  await row("UI suggestion 2").locator(".row-main").click();
+  const dlg = page.getByRole("dialog");
+  await dlg.getByRole("button", { name: "Edit", exact: true }).click();
+  await dlg.getByLabel("Title").fill("UI suggestion 2, in my words");
+  await dlg.getByRole("button", { name: /Add to project/ }).click();
+  check("suggestions: the modal says it was added as a draft", await eventually(async () => /Added as .+ \(draft\)/.test(await dlg.innerText())));
+  check("suggestions: and it has the edited words", (await caseOf("UI suggestion 2, in my words"))?.status === "draft");
+  await dlg.locator(".modal-footer").getByRole("button", { name: "Close", exact: true }).click();
+
+  // Several at once: add two, dismiss one, restore it.
+  await row("UI suggestion 3").getByLabel(/^Select/).check();
+  await row("UI suggestion 4").getByLabel(/^Select/).check();
+  check("suggestions: the selection is counted", await eventually(async () => (await page.getByRole("button", { name: "Add 2 to project", exact: true }).count()) === 1));
+  await page.getByRole("button", { name: "Add 2 to project", exact: true }).click();
+  check("suggestions: both were added as drafts", await eventually(async () => (await caseOf("UI suggestion 3"))?.status === "draft" && (await caseOf("UI suggestion 4"))?.status === "draft"));
+  await row("UI suggestion 5").getByLabel(/^Select/).check();
+  await page.getByRole("button", { name: "Dismiss 1", exact: true }).click();
+  check("suggestions: a dismissed one is not deleted, it is Rejected", await eventually(async () => (await manualRows()).find((m) => m.title === "UI suggestion 5")?.status === "rejected"));
+  await page.getByRole("tab", { name: /^Rejected/ }).click();
+  check("suggestions: and it can be restored", await eventually(async () => (await row("UI suggestion 5").getByRole("button", { name: /Restore to Suggested/ }).count()) === 1));
+  await row("UI suggestion 5").getByRole("button", { name: /Restore to Suggested/ }).click();
+  check("suggestions: restored to Suggested", await eventually(async () => (await manualRows()).find((m) => m.title === "UI suggestion 5")?.status === "proposed"));
+  await close();
+
+  // A viewer can read them but not act.
+  const v = await open("viewer", `/p/${A}/manual-tests`);
+  check("suggestions: a viewer's Add to project is off", await eventually(async () => (await v.page.locator(".suggestion-row", { hasText: "UI suggestion 6" }).getByRole("button", { name: /Add to project/ }).isDisabled())));
+  await v.close();
+
+  // The draft case says what it is, and Mark ready is the person's decision.
+  const c = await caseOf("UI suggestion 1");
+  const t = await open("tester", `/p/${A}/cases?case=${c.id}`);
+  check("suggestions: the case says it is an AI suggestion and a draft", await eventually(async () => (await t.page.getByText("Made from an AI suggestion. It is a draft until you mark it ready.").count()) === 1));
+  check("suggestions: with the chip", (await t.page.getByText("AI suggestion · Draft").count()) >= 1);
+  await t.page.getByRole("button", { name: "Mark ready" }).click();
+  check("suggestions: marked ready by the person", await eventually(async () => (await caseOf("UI suggestion 1"))?.status === "ready"));
+  check("suggestions: the banner is gone once it is ready", await eventually(async () => (await t.page.getByText("It is a draft until you mark it ready.").count()) === 0));
+  await t.close();
+  const w = await open("viewer", `/p/${A}/cases?case=${(await caseOf("UI suggestion 2, in my words")).id}`);
+  check("suggestions: a viewer cannot mark it ready", await eventually(async () => (await w.page.getByRole("button", { name: "Mark ready" }).isDisabled())));
+  await w.close();
+}
+
 // /admin: the owner looks after the accounts and reads the audit log; nobody else is offered it.
 {
   const { page, close } = await open("owner", "/admin/accounts");

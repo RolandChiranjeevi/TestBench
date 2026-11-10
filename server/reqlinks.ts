@@ -70,7 +70,7 @@ export function requirementOverviews(projectId: number): Map<number, Requirement
   for (const r of reqs) out.set(r.id, { manualTests: { accepted: 0, proposed: 0 }, bugs: { open: 0, proposed: 0 }, cases: 0, withoutTest: true, audit: "no_audit" });
   for (const r of db.prepare(`
       SELECT rc.requirement_id AS id, COUNT(*) AS n FROM requirement_cases rc JOIN cases c ON c.id = rc.case_id JOIN requirements q ON q.id = rc.requirement_id
-      WHERE q.project_id = ? AND c.status != 'deprecated' GROUP BY rc.requirement_id`).all(projectId) as { id: number; n: number }[]) get(r.id).cases = r.n;
+      WHERE q.project_id = ? AND c.status = 'ready' GROUP BY rc.requirement_id`).all(projectId) as { id: number; n: number }[]) get(r.id).cases = r.n;
   for (const r of db.prepare(`
       SELECT x.requirement_id AS id, m.review_status AS s, COUNT(DISTINCT m.id) AS n FROM manual_test_refs x JOIN manual_tests m ON m.id = x.manual_test_id
       WHERE m.project_id = ? AND x.requirement_id IS NOT NULL AND m.review_status IN ('accepted', 'proposed') GROUP BY x.requirement_id, m.review_status`).all(projectId) as { id: number; s: "accepted" | "proposed"; n: number }[]) get(r.id).manualTests[r.s] = r.n;
@@ -80,9 +80,15 @@ export function requirementOverviews(projectId: number): Map<number, Requirement
     if (r.s === "accepted") get(r.id).bugs.open = r.n;
     else get(r.id).bugs.proposed = r.n;
   }
+  // An accepted suggestion that has become a test case counts through that test case, so it counts only while the case is ready (not a draft, not deprecated).
+  const draftAccepted = new Map<number, number>();
+  for (const r of db.prepare(`
+      SELECT x.requirement_id AS id, COUNT(DISTINCT m.id) AS n FROM manual_test_refs x JOIN manual_tests m ON m.id = x.manual_test_id JOIN cases c ON c.id = m.case_id
+      WHERE m.project_id = ? AND x.requirement_id IS NOT NULL AND m.review_status = 'accepted' AND c.status != 'ready' GROUP BY x.requirement_id`).all(projectId) as { id: number; n: number }[]) draftAccepted.set(r.id, r.n);
   const { referenced, known } = latestRunReferences(projectId);
   for (const [id, o] of out) {
-    o.withoutTest = o.cases === 0 && o.manualTests.accepted === 0;
+    // A suggestion a person accepted counts (until it becomes a test case, which then counts instead if it is ready).
+    o.withoutTest = o.cases === 0 && o.manualTests.accepted - (draftAccepted.get(id) ?? 0) <= 0;
     o.audit = !known ? "no_audit" : referenced.has(id) ? "referenced" : "not_referenced";
   }
   return out;

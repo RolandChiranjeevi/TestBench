@@ -153,6 +153,7 @@ function writeCaseSteps(caseId: number, steps: { action: string; expected: strin
  * is linked to the requirements it names, and is run in Runs like any other case. Nothing is run here and no result is made.
  */
 export function createCaseFromProposal(id: number) {
+  // The case starts as a draft: an AI suggestion never becomes a ready test case on its own. A person marks it ready (and only ready cases count as coverage).
   const m = db.prepare("SELECT * FROM manual_tests WHERE id = ?").get(id) as Record<string, any> | undefined;
   if (!m) throw new AuditError(404, "Manual test not found");
   if (m.review_status !== "accepted") throw new AuditError(409, "Accept the proposal first. Only a proposal you have accepted can become a test case.");
@@ -168,7 +169,7 @@ export function createCaseFromProposal(id: number) {
     const n = db.prepare("UPDATE projects SET next_case_number = next_case_number + 1 WHERE id = ? RETURNING next_case_number - 1 AS n").get(m.project_id) as { n: number };
     const pos = (db.prepare("SELECT COALESCE(MAX(position), -1) + 1 AS p FROM cases WHERE project_id = ?").get(m.project_id) as { p: number }).p;
     const caseId = (db.prepare(`INSERT INTO cases (project_id, suite_id, number, title, description, preconditions, priority, status, tags, position)
-        VALUES (?, NULL, ?, ?, ?, ?, ?, 'ready', ?, ?) RETURNING id`)
+        VALUES (?, NULL, ?, ?, ?, ?, ?, 'draft', ?, ?) RETURNING id`)
       .get(m.project_id, n.n, payload.title, payload.description, payload.preconditions, payload.priority, JSON.stringify(caseTags(payload)), pos) as { id: number }).id;
     writeCaseSteps(caseId, caseSteps(payload));
     for (const r of db.prepare("SELECT DISTINCT requirement_id AS rid FROM manual_test_refs WHERE manual_test_id = ? AND requirement_id IS NOT NULL").all(id) as { rid: number }[]) {
@@ -176,6 +177,25 @@ export function createCaseFromProposal(id: number) {
     }
     db.prepare("UPDATE manual_tests SET case_id = ? WHERE id = ?").run(caseId, id);
     return { caseId, number: n.n, key: caseKey(m.project_id, n.n) };
+  })();
+}
+
+/**
+ * One step for a person: take a suggestion into the project. It is accepted (when it is still a suggestion) and made into a test case, as a draft, in one transaction, so
+ * nothing is left half done. A suggestion that has already become a test case is refused with 409 and nothing changes, so repeating the request makes no second case.
+ * A dismissed suggestion has to be restored to Suggested first: that is a decision of its own. `note` is an optional short remark kept with the review.
+ */
+export function addToProject(id: number, note?: string) {
+  return db.transaction(() => {
+    const m = db.prepare("SELECT id, project_id, review_status, case_id FROM manual_tests WHERE id = ?").get(id) as { id: number; project_id: number; review_status: ManualStatus; case_id: number | null } | undefined;
+    if (!m) throw new AuditError(404, "Manual test not found");
+    if (m.case_id) {
+      const c = db.prepare("SELECT number FROM cases WHERE id = ?").get(m.case_id) as { number: number } | undefined;
+      if (c) throw new AuditError(409, `This suggestion is already the test case ${caseKey(m.project_id, c.number)}.`);
+    }
+    if (m.review_status === "rejected") throw new AuditError(409, "This suggestion was dismissed. Restore it to Suggested first if you want to add it.");
+    if (m.review_status === "proposed") reviewManualTest(id, "accepted", note);
+    return createCaseFromProposal(id);
   })();
 }
 
@@ -255,7 +275,7 @@ export function listManualTests(projectId: number, opts: ManualListOpts = {}) {
       ${PRESENCE_EXPR} AS presence,
       (SELECT COUNT(*) FROM manual_test_refs r WHERE r.manual_test_id = m.id AND r.state != 'resolved') AS unresolved_refs,
       (SELECT COUNT(*) FROM manual_test_refs r WHERE r.manual_test_id = m.id AND r.requirement_id IS NOT NULL) AS requirements,
-      (SELECT number FROM cases WHERE id = m.case_id) AS case_number, (SELECT key FROM projects WHERE id = m.project_id) AS project_key
+      (SELECT number FROM cases WHERE id = m.case_id) AS case_number, (SELECT id FROM cases WHERE id = m.case_id) AS case_id_now, (SELECT status FROM cases WHERE id = m.case_id) AS case_status, (SELECT key FROM projects WHERE id = m.project_id) AS project_key
     FROM manual_tests m LEFT JOIN cur c ON c.audit_id = m.audit_id WHERE ${where.join(" AND ")} ORDER BY m.imported_at DESC, m.id DESC LIMIT 500`).all(...args) as Record<string, any>[];
   const counts = db.prepare("SELECT review_status AS s, COUNT(*) AS n FROM manual_tests WHERE project_id = ? GROUP BY review_status").all(projectId) as { s: string; n: number }[];
   const presenceCounts: Record<Presence, number> = { present: 0, missing: 0, no_later_run: 0 };
@@ -267,7 +287,7 @@ export function listManualTests(projectId: number, opts: ManualListOpts = {}) {
       id: r.id, sourceId: r.source_id, title: r.title, status: r.review_status as ManualStatus, category: r.category as ManualCategory,
       priority: effective(r), wcag: json<string[]>(r.wcag, []), viewports: json<Viewport[]>(r.viewports, []).map(viewportText),
       importedAt: r.imported_at, auditTitle: json<{ title?: string }>(r.origin, {}).title ?? "", auditDeleted: r.audit_id == null,
-      unresolvedRefs: r.unresolved_refs, requirements: r.requirements, edited: !!r.edited_at, testCase: r.case_number ? `${r.project_key}-${r.case_number}` : null,
+      unresolvedRefs: r.unresolved_refs, requirements: r.requirements, edited: !!r.edited_at, testCase: r.case_number ? `${r.project_key}-${r.case_number}` : null, testCaseId: (r.case_id_now ?? null) as number | null, testCaseStatus: (r.case_status ?? null) as string | null,
       pendingUpdate: r.latest_rev > r.applied_rev && r.latest_rev > r.ignored_rev, presence: r.presence as Presence, isNew: fresh.ids.has(r.id),
     })),
     latest: fresh.latest,

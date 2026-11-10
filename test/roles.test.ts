@@ -360,6 +360,44 @@ describe("an import is drafts until a person approves them, with their account",
   });
 });
 
+describe("adding a suggestion to the project", () => {
+  const stateOf = (id: number | string) => db.prepare("SELECT review_status AS s, case_id AS c FROM manual_tests WHERE id = ?").get(id) as { s: string; c: number | null };
+
+  it("a tester adds it as a draft; a viewer and a stranger cannot; repeating it, or adding a dismissed one, is 409", async () => {
+    const id = fixture("manualtest", projects.A).id;
+    const url = `/api/manual-tests/${id}/add-to-project`;
+    assert.ok(denied403(await call("POST", url, { cookie: people.vie.cookie, body: {} })), "a viewer cannot");
+    assert.ok(denied404(await call("POST", url, { cookie: people.bob.cookie, body: {} })), "nor someone from another project");
+    assert.deepEqual(stateOf(id), { s: "proposed", c: null }, "nothing changed");
+
+    const added = await call("POST", url, { cookie: people.tes.cookie, body: { note: "Checked it" } });
+    assert.equal(added.statusCode, 200, added.body);
+    assert.deepEqual([added.json().manualTest.status, added.json().manualTest.testCase.status, added.json().manualTest.reviewNote], ["accepted", "draft", "Checked it"]);
+    assert.match(added.json().case.key, /^ALP-\d+$/);
+
+    const again = await call("POST", url, { cookie: people.tes.cookie, body: {} });
+    assert.equal(again.statusCode, 409);
+    assert.match(again.json().error, /already the test case/);
+    assert.equal((db.prepare("SELECT COUNT(*) AS n FROM cases WHERE id IN (SELECT case_id FROM manual_tests WHERE id = ?)").get(id) as { n: number }).n, 1);
+
+    const dismissed = fixture("manualtest", projects.A).id;
+    assert.equal((await call("POST", `/api/manual-tests/${dismissed}/review`, { cookie: people.tes.cookie, body: { status: "rejected" } })).statusCode, 200);
+    const refused = await call("POST", `/api/manual-tests/${dismissed}/add-to-project`, { cookie: people.tes.cookie, body: {} });
+    assert.equal(refused.statusCode, 409);
+    assert.match(refused.json().error, /Restore it to Suggested first/);
+    assert.equal((await call("POST", `/api/manual-tests/${dismissed}/review`, { cookie: people.tes.cookie, body: { status: "proposed" } })).statusCode, 200, "restored");
+    assert.equal((await call("POST", `/api/manual-tests/${dismissed}/add-to-project`, { cookie: people.tes.cookie, body: {} })).statusCode, 200);
+  });
+
+  it("an admin of another project cannot add a suggestion of this one, and gets the same 404 as for one that does not exist", async () => {
+    const inB = fixture("manualtest", projects.B).id;
+    const other = await call("POST", `/api/manual-tests/${inB}/add-to-project`, { cookie: people.adm.cookie, body: {} });
+    const missing = await call("POST", "/api/manual-tests/99999999/add-to-project", { cookie: people.adm.cookie, body: {} });
+    assert.deepEqual([other.statusCode, other.body], [missing.statusCode, missing.body]);
+    assert.deepEqual(stateOf(inB), { s: "proposed", c: null });
+  });
+});
+
 describe("an agent can never approve, reject, generate or change anything but its own route", () => {
   it("every route except the three token routes refuses an agent, CI or proposal token, with or without a login", async () => {
     assert.equal((await call("PUT", "/api/settings/agent-proposals", { cookie: ownerCookie, body: { enabled: true } })).statusCode, 200);

@@ -415,8 +415,8 @@ export function CasesPage() {
                       </span>
                       <span className="meta">
                         {c.is_new && <Badge tone="accent" title={createdText(c.created_at)}>New</Badge>}
-                        {c.from_proposal && <span className="chip" title="Made from an agent proposal"><Lightbulb size={11} />{!compact && " proposal"}</span>}
-                        {!compact && c.status === "draft" && <span className="chip">Draft</span>}
+                        {c.from_proposal && <span className="chip" title="Made from an AI suggestion by a test agent"><Lightbulb size={11} />{!compact && ` AI suggestion${c.status === "draft" ? " · Draft" : ""}`}</span>}
+                        {!compact && c.status === "draft" && !c.from_proposal && <span className="chip">Draft</span>}
                         {!!c.requirement_count && (
                           <span className="chip" title={`${c.requirement_count} linked requirement(s)`}><BookOpenCheck size={11} /> {c.requirement_count}{!compact && " req"}</span>
                         )}
