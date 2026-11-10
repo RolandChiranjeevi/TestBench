@@ -385,8 +385,8 @@ function Appearance() {
 }
 
 /**
- * The name Testbench records on what you do: created by, approved by and the change log of a requirement. There are no accounts yet, so it is what you type here,
- * and it is not verified: anyone who can use this Testbench can type any name.
+ * The name Testbench records on what you do: created by, approved by and the change log of a requirement. With an account it is the name of that account; without,
+ * what you type here. Neither is verified: the name is not checked against a real person, and one account can be shared.
  */
 function YourName() {
   const qc = useQueryClient();
@@ -403,7 +403,9 @@ function YourName() {
   return (
     <Card icon={<Pencil size={15} />} title="Your name">
       <div className="muted">
-        Recorded on what you do: who created or approved a requirement, and the change log. There are no accounts yet, so this is the name you type here. It is <strong>not verified</strong>.
+        {data?.source === "account"
+          ? <>Recorded on what you do: who created or approved a requirement, and the change log. It is recorded using your account, as the name you gave it. Testbench does not check that it is your real name.</>
+          : <>Recorded on what you do: who created or approved a requirement, and the change log. There are no accounts here, so this is the name you type, and nothing checks it.</>}
       </div>
       <form className="row" style={{ gap: 8, flexWrap: "wrap" }} onSubmit={(e) => { e.preventDefault(); if (dirty) save.mutate(value.trim()); }}>
         <label className="sr-only" style={{ position: "absolute", left: -9999 }} htmlFor="display-name">Your name</label>
@@ -418,12 +420,16 @@ function YourName() {
 }
 
 function Account() {
-  const { data: auth } = useQuery({ queryKey: ["auth"], queryFn: () => api.get<{ enabled: boolean; authenticated: boolean }>("/api/auth/status"), staleTime: 60_000 });
+  const { data: auth } = useQuery({ queryKey: ["auth"], queryFn: () => api.get<{ enabled: boolean; authenticated: boolean; mode?: string; user?: { name: string; email: string; isOwner: boolean } }>("/api/auth/status"), staleTime: 60_000 });
   return (
     <Card icon={<LogOut size={15} />} title="Account">
       {auth?.enabled ? (
         <>
-          <div className="muted">This Testbench is protected with a password, and you are signed in.</div>
+          <div className="muted">
+            {auth.mode === "accounts" && auth.user
+              ? <>You are signed in as <strong>{auth.user.name}</strong> ({auth.user.email}){auth.user.isOwner ? ", the owner of this Testbench" : ""}.</>
+              : "This Testbench is protected with a password, and you are signed in."}
+          </div>
           <div className="row">
             <Button onClick={async () => { await api.post("/api/logout"); window.location.href = "/login"; }}><LogOut size={14} /> Sign out</Button>
           </div>

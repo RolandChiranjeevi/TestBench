@@ -27,6 +27,8 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json tsconfig.json ./
 COPY server ./server
+# The accounts command line (make the owner, reset a password): docker compose exec testbench npm run accounts -- list
+COPY scripts/accounts.ts ./scripts/accounts.ts
 RUN mkdir -p /data && chown node:node /data
 USER node
 VOLUME /data

@@ -27,7 +27,7 @@ export type RequirementStatus = "draft" | "approved" | "deprecated";
 export interface RequirementRef { id: number; number: number; title: string; status: RequirementStatus; priority: Priority; review_needed: boolean }
 export interface RequirementAttachment { id: number; filename: string; stored_name: string; mime: string; size: number; created_at: string }
 export interface RevisionChange { field: string; from?: string; to?: string; added?: number[]; removed?: number[] }
-/** `by` is the display name a person had set in Settings when they made the change: as typed, not verified. */
+/** `by` is the display name a person had set in Settings when they made the change: as typed (the name of the account, once there are accounts). */
 export interface RequirementRevision { id: number; at: string; by: string; material: boolean; changes: RevisionChange[] }
 export type RequirementKind = "functional" | "accessibility" | "responsive" | "security_privacy" | "business_rule" | "usability";
 export interface Viewport { device?: string; width?: number; height?: number; breakpoint?: string }
@@ -277,5 +277,5 @@ export interface GenerateResult {
   skipped: { gap: string; label: string; reason: string }[];
   notGenerated: { gap: string; label: string; title: string; reason: string }[];
 }
-/** The name recorded on what a person does. `verified` is always false: there are no accounts yet. */
-export interface DisplayName { name: string; recordedAs: string; verified: boolean }
+/** The name recorded on what a person does. `source`: "account" is the name of the account signed in, "typed" the name entered in Settings. Neither is verified. */
+export interface DisplayName { name: string; recordedAs: string; source: "account" | "typed" }

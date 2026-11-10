@@ -3,9 +3,19 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { isCiIngest } from "./ci.ts";
 import { isAgentRead } from "./agenttokens.ts";
 import { isAgentPropose } from "./proposetokens.ts";
+import { accountsState, sessionFromToken } from "./accounts.ts";
+import { enterAs } from "./accountcontext.ts";
+import { ACCOUNT_COOKIE, cookieValue, makeAccountSession, registerAccountRoutes, type AuthMode } from "./accountroutes.ts";
+import { loginPage, PAGE_CSP } from "./accountpages.ts";
 
 /**
- * Optional shared-password login, for Testbench instances that other people reach over a network. Off unless TESTBENCH_PASSWORD is set.
+ * Who may use this Testbench. Four modes, by what exists (see accounts.ts):
+ *  - open:     nothing is set up. No login. The way Testbench has always run on one computer.
+ *  - password: TESTBENCH_PASSWORD is set and no account exists. The shared-password login described below.
+ *  - accounts: at least one account exists. Everyone signs in with their own email and password; sessions are kept on the server and can be ended. Permanent.
+ *  - locked:   accounts were on but none exist (an old backup was restored). Everything is refused until an owner is made on the server.
+ *
+ * The shared-password login: off unless TESTBENCH_PASSWORD is set.
  *
  * - The password is only kept as a scrypt hash in memory and compared in constant time.
  * - A session is a signed, expiring cookie (HttpOnly, SameSite=Strict, Secure over HTTPS). Its key is derived from the password,
@@ -146,66 +156,106 @@ const LOGIN_PAGE = `<!doctype html>
 
 // ---------- Wiring ----------
 
-const PUBLIC_PATHS = new Set(["/login", "/api/login", "/api/auth/status"]);
+const PUBLIC_PATHS = new Set(["/login", "/api/login", "/api/auth/status", "/setup", "/api/setup", "/api/setup/status"]);
+const PUBLIC_PREFIXES = ["/join/", "/api/join/", "/reset/", "/api/reset/"];
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Adds /api/auth/status always, and (when `cfg` is set) the login routes and a gate in front of everything else. */
+/**
+ * The gate in front of everything, and the login routes. The mode is worked out on every request, because it changes while the server runs: the first account turns
+ * "open" or "password" into "accounts" for good.
+ */
 export function registerAuth(app: FastifyInstance, cfg: AuthConfig | null) {
-  // Cheap hardening for every response.
+  // Cheap hardening for every response (a route may set a stricter value itself).
   app.addHook("onSend", async (_req, reply) => {
     reply.header("X-Content-Type-Options", "nosniff");
-    reply.header("Referrer-Policy", "same-origin");
+    if (!reply.getHeader("Referrer-Policy")) reply.header("Referrer-Policy", "same-origin");
   });
+  app.decorateRequest("user", null);
+  app.decorateRequest("sessionId", null);
 
-  if (!cfg) {
-    app.get("/api/auth/status", async () => ({ enabled: false, authenticated: true }));
-    return;
-  }
-
-  const key = deriveSessionKey(cfg.password);
-  const check = makePasswordChecker(cfg.password);
-  const limiter = makeLimiter();
-  const ttlMs = cfg.sessionDays * 24 * 60 * 60 * 1000;
-  const isAuthed = (req: FastifyRequest) => verifySessionToken(key, readCookie(req.headers.cookie, COOKIE));
+  const legacy = cfg ? { key: deriveSessionKey(cfg.password), check: makePasswordChecker(cfg.password), limiter: makeLimiter(), ttlMs: cfg.sessionDays * 24 * 60 * 60 * 1000 } : null;
+  const mode = (): AuthMode => { const s = accountsState(); return s !== "open" ? s : cfg ? "password" : "open"; };
   const isHttps = (req: FastifyRequest) => req.protocol === "https";
+  const legacyAuthed = (req: FastifyRequest) => !!legacy && verifySessionToken(legacy.key, readCookie(req.headers.cookie, COOKIE));
+  const accountUser = (req: FastifyRequest) => sessionFromToken(cookieValue(req.headers.cookie, ACCOUNT_COOKIE));
+  const session = makeAccountSession({ makeLimiter });
+  const LOCKED = "Accounts are on but no account exists (was an older backup restored?). Make the owner on the server: npm run accounts -- create-owner";
 
   app.addHook("onRequest", async (req, reply: FastifyReply) => {
+    const m = mode();
+    if (m === "open") return;
     const path = req.url.split("?")[0];
-    // CI's route, the agent's read route and the agent's proposal route skip the login cookie only because their handlers require their own API token on every call.
-    if (PUBLIC_PATHS.has(path) || isCiIngest(req.method, req.url) || isAgentRead(req.method, req.url) || isAgentPropose(req.method, req.url) || isAuthed(req)) return;
+    if (m === "locked") {
+      if (path === "/api/auth/status") return;
+      return reply.code(503).send(path.startsWith("/api/") ? { error: LOCKED } : LOCKED);
+    }
+    // CI's route, the agent's read route and the agent's proposal route skip the login only because their handlers require their own API token on every call.
+    const tokenRoute = isCiIngest(req.method, req.url) || isAgentRead(req.method, req.url) || isAgentPropose(req.method, req.url);
+    let allowed = tokenRoute || PUBLIC_PATHS.has(path) || (m === "accounts" && PUBLIC_PREFIXES.some((x) => path.startsWith(x)));
+    if (m === "accounts") {
+      const found = accountUser(req);
+      if (found) {
+        req.user = found.user;
+        req.sessionId = found.sessionId;
+        enterAs(found.user); // from here on, whatever this request records as "who" is this person
+        allowed = true;
+      }
+    } else if (legacyAuthed(req)) allowed = true;
+    if (allowed) return;
     if (path.startsWith("/api/") || (req.method !== "GET" && req.method !== "HEAD")) return reply.code(401).send({ error: "Sign in required" });
     return reply.code(302).header("Location", "/login").send();
   });
 
-  app.get("/api/auth/status", async (req) => ({ enabled: true, authenticated: isAuthed(req) }));
+  app.get("/api/auth/status", async (req) => {
+    const m = mode();
+    if (m === "open") return { enabled: false, authenticated: true };
+    if (m === "password") return { enabled: true, authenticated: legacyAuthed(req) };
+    if (m === "locked") return { enabled: true, authenticated: false, mode: "locked" };
+    const found = accountUser(req);
+    return { enabled: true, authenticated: !!found, mode: "accounts", ...(found ? { user: { id: found.user.id, email: found.user.email, name: found.user.name, isOwner: found.user.isOwner } } : {}) };
+  });
 
   app.get("/login", async (req, reply) => {
-    if (isAuthed(req)) return reply.code(302).header("Location", "/").send();
+    const m = mode();
+    if (m === "open") return reply.callNotFound();
+    if (m === "locked") return reply.code(503).type("text/plain; charset=utf-8").send(LOCKED);
+    if (m === "accounts" ? !!accountUser(req) : legacyAuthed(req)) return reply.code(302).header("Location", "/").send();
     return reply
       .type("text/html; charset=utf-8")
       .header("Cache-Control", "no-store")
       .header("X-Frame-Options", "DENY")
-      .header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
-      .send(LOGIN_PAGE);
+      .header("Content-Security-Policy", PAGE_CSP)
+      .send(m === "accounts" ? loginPage() : LOGIN_PAGE);
   });
 
   app.post("/api/login", async (req, reply) => {
+    const m = mode();
+    if (m === "open" || m === "locked") return reply.callNotFound();
+    if (m === "accounts") return session.login(req, reply);
+    const limiter = legacy!.limiter;
     const wait = limiter.blockedFor(req.ip);
     if (wait > 0) {
       return reply.code(429).header("Retry-After", String(Math.ceil(wait / 1000))).send({ error: `Too many wrong passwords. Try again in ${Math.ceil(wait / 60_000)} minutes.` });
     }
     const password = (req.body as { password?: unknown } | null)?.password;
-    if (typeof password !== "string" || !check(password)) {
+    if (typeof password !== "string" || !legacy!.check(password)) {
       limiter.fail(req.ip);
       await sleep(400); // slows guessing even before the limit is reached
       return reply.code(401).send({ error: "Wrong password" });
     }
     limiter.reset(req.ip);
     return reply
-      .header("Set-Cookie", cookie(createSessionToken(key, ttlMs), Math.floor(ttlMs / 1000), isHttps(req)))
+      .header("Set-Cookie", cookie(createSessionToken(legacy!.key, legacy!.ttlMs), Math.floor(legacy!.ttlMs / 1000), isHttps(req)))
       .header("Cache-Control", "no-store")
       .send({ ok: true });
   });
 
-  app.post("/api/logout", async (req, reply) => reply.header("Set-Cookie", cookie("", 0, isHttps(req))).send({ ok: true }));
+  app.post("/api/logout", async (req, reply) => {
+    const m = mode();
+    if (m === "open" || m === "locked") return reply.callNotFound();
+    if (m === "accounts") return session.logout(req, reply);
+    return reply.header("Set-Cookie", cookie("", 0, isHttps(req))).send({ ok: true });
+  });
+
+  registerAccountRoutes(app, { mode, legacyPasswordOk: legacy ? legacy.check : null, makeLimiter });
 }

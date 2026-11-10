@@ -259,7 +259,7 @@ CREATE INDEX IF NOT EXISTS observation_evidence_obs ON observation_evidence(obse
 /**
  * Where a requirement came from and who stood behind it, and the proposals an agent can make for new ones. Safe to run on every start.
  *  - origin: human | import | ai_suggestion. (`source` stays what it was: free text such as a Jira key.) Requirements that were imported have an external id.
- *  - created_by / approved_by are the display name a person entered in Settings, as typed, not verified (there are no accounts yet); for an AI suggestion
+ *  - created_by / approved_by are the display name a person entered in Settings, as typed (or, with accounts, the name of the signed-in account; neither is checked against a real person); for an AI suggestion
  *    created_by is the agent. approved_by is empty for a draft.
  *  - A proposal lives in its own table until a person approves it. Approving makes an ordinary requirement with origin ai_suggestion. The two triggers
  *    make the database itself refuse an ai_suggestion requirement without an approver, whatever the code does.
@@ -342,6 +342,69 @@ CREATE TABLE IF NOT EXISTS observation_cases (
   // Which coverage gap a generated proposal came from (case:12, obs:7). A gap gets one proposal, ever; empty for proposals an agent made.
   if (!hasColumn("requirement_proposals", "gap_key")) d.exec("ALTER TABLE requirement_proposals ADD COLUMN gap_key TEXT NOT NULL DEFAULT ''");
   d.exec("CREATE UNIQUE INDEX IF NOT EXISTS requirement_proposals_gap ON requirement_proposals(project_id, gap_key) WHERE gap_key != ''");
+}
+
+/**
+ * Accounts: who may use Testbench. Safe to run on every start; an installation without accounts keeps working as before (see accounts.ts for the three states).
+ *  - users: an email (unique, any case) and a password hash (scrypt, see accounts.ts). A user is disabled, never deleted, so what they did stays attributed.
+ *  - sessions: only a hash of the cookie value is kept, so a copy of the database cannot be used to sign in. A session can be revoked.
+ *  - account_links: invitation and password-reset links. Only a hash of the link's token is kept; a link works once and expires. `project_id` and `role` are for
+ *    project membership (a later step) and are empty for now.
+ *  - audit_log: append-only. Two triggers refuse any update or delete, so what happened to accounts and permissions cannot be rewritten from inside Testbench.
+ */
+export function migrateAccounts(d: Database.Database) {
+  d.exec(`
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  name TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  is_owner INTEGER NOT NULL DEFAULT 0 CHECK (is_owner IN (0, 1)),   -- the owner runs the installation: backups, users, who may create projects
+  disabled_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_login_at TEXT,
+  password_changed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS sessions (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,                  -- sha256 of the cookie value; the value itself is never stored
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at TEXT NOT NULL,
+  last_seen_at TEXT,
+  ip TEXT NOT NULL DEFAULT '', user_agent TEXT NOT NULL DEFAULT '',
+  revoked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
+CREATE TABLE IF NOT EXISTS account_links (
+  id INTEGER PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('invite', 'reset')),
+  token_hash TEXT NOT NULL UNIQUE,                  -- sha256 of the token; the token is shown once, when the link is made
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,   -- reset: whose password
+  email TEXT NOT NULL DEFAULT '',                   -- invite: the address it is meant for (optional)
+  note TEXT NOT NULL DEFAULT '',
+  project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,   -- project membership comes later: empty for now
+  role TEXT CHECK (role IS NULL OR role IN ('admin', 'tester', 'viewer')),
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at TEXT NOT NULL,
+  used_at TEXT, used_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  revoked_at TEXT
+);
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INTEGER PRIMARY KEY,
+  at TEXT NOT NULL DEFAULT (datetime('now')),
+  actor_user_id INTEGER,                            -- no foreign keys: the log must outlive whatever it names
+  actor_label TEXT NOT NULL DEFAULT '',             -- the name at the time, or "cli" / "setup" / "anonymous"
+  action TEXT NOT NULL,
+  target_user_id INTEGER,
+  project_id INTEGER,
+  ip TEXT NOT NULL DEFAULT '',
+  detail TEXT NOT NULL DEFAULT '{}'                 -- never a password, a token or a hash
+);
+CREATE INDEX IF NOT EXISTS audit_log_at ON audit_log(at);
+CREATE TRIGGER IF NOT EXISTS audit_log_no_update BEFORE UPDATE ON audit_log BEGIN SELECT RAISE(ABORT, 'The audit log is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS audit_log_no_delete BEFORE DELETE ON audit_log BEGIN SELECT RAISE(ABORT, 'The audit log is append-only'); END;`);
 }
 
 /** Creates missing tables and columns, and fills in data for features added later. Safe to run on every start. */
@@ -881,6 +944,7 @@ CREATE INDEX IF NOT EXISTS bug_events_bug ON bug_events(bug_report_id);`);
 
   migrateObservations(d);
   migrateRequirementModel(d);
+  migrateAccounts(d);
 
   // Make sure every sprint named on a run has a sprint record.
   const named = d.prepare("SELECT DISTINCT project_id, milestone FROM runs WHERE milestone != ''").all() as { project_id: number; milestone: string }[];

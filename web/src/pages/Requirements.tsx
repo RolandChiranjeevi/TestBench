@@ -423,7 +423,7 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
             <span className="muted">Created by <b>{data.created_by || "unknown"}</b> {whenText(data.created_at)}</span>
             {data.approved_by ? <span className="muted">Approved by <b>{data.approved_by}</b>{data.approved_at ? ` ${whenText(data.approved_at)}` : ""}</span> : <span className="faint">{data.status === "draft" ? "Not approved yet" : "No approver recorded"}</span>}
           </div>
-          <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>Names are the display names set in Settings, as typed. They are not verified.</span>
+          <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>With accounts the names are those of the accounts people are signed in with. Without accounts they are the display names set in Settings, as typed. Neither is checked against a real person.</span>
         </section>
         <section>
           <div className="section-label">Description</div>

@@ -1,10 +1,12 @@
 import { getSetting, setSetting } from "./db.ts";
 import { AuditError } from "./auditcommon.ts";
+import { currentUser } from "./accountcontext.ts";
 
 /**
- * Who made a change. Testbench has no accounts yet (one shared password at most), so the name is the display name a person entered in Settings, kept as typed.
- * It is recorded on requirements (created_by, approved_by) and in their change log, and it is NOT verified: anyone who can use the installation can type any
- * name. When accounts arrive this is where the signed-in user's name comes from instead.
+ * Who made a change. With accounts on it is the name of the account that is signed in. That ties the entry to an account, not to a verified person: the name was
+ * chosen by whoever made the account, the email address is not checked, and one account can be shared. Without accounts (one shared password at most) it is the display
+ * name a person entered in Settings, kept as typed: anyone who can use the installation can type any name.
+ * It is recorded on requirements (created_by, approved_by) and in their change log.
  */
 export const DISPLAY_NAME_KEY = "display_name";
 export const UNNAMED = "unnamed user";
@@ -24,4 +26,4 @@ export function setDisplayName(name: unknown): string {
 }
 
 /** The name to record for a change a person makes now. Never empty, so "approved by" always says something. */
-export const actorName = (): string => getDisplayName() || UNNAMED;
+export const actorName = (): string => currentUser()?.name || getDisplayName() || UNNAMED;

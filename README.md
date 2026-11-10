@@ -51,10 +51,10 @@ All settings are environment variables. None are required.
 | Variable | Default | What it does |
 | --- | --- | --- |
 | `TESTBENCH_PORT` | `4100` | Port to listen on (`TESTBENCH_API_PORT` also works). |
-| `TESTBENCH_HOST` | `127.0.0.1` | Address to listen on. Anything other than this computer requires a password. |
+| `TESTBENCH_HOST` | `127.0.0.1` | Address to listen on. Anything other than this computer requires a login: an account, or `TESTBENCH_PASSWORD`. |
 | `TESTBENCH_DATA` | `./data` | Where the database, uploads and backups are kept. |
-| `TESTBENCH_PASSWORD` | none | Turns on the login page (at least 8 characters). |
-| `TESTBENCH_SESSION_DAYS` | `7` | How long a sign-in lasts. |
+| `TESTBENCH_PASSWORD` | none | Turns on the shared-password login page (at least 8 characters). Once the first account exists it is asked for once, to make that account, and is ignored after that. |
+| `TESTBENCH_SESSION_DAYS` | `7` | How long a sign-in lasts (the shared password's cookie, and an account's session). |
 | `TESTBENCH_ALLOWED_HOSTS` | none | Extra host names the app answers to, comma-separated, e.g. `testbench.example.com,my-machine.tailnet.ts.net`. Exact names only (no ports, no wildcards; case is ignored). `localhost`, `127.0.0.1` and `::1` are always allowed and every other name gets `403 {"error":"Forbidden host"}`. A name that points at a tunnel makes Testbench reachable from outside: read "A public address" below first. |
 | `TESTBENCH_TRUST_PROXY` | off | Set to `1` behind a reverse proxy so HTTPS is detected and the secure cookie flag is set. |
 | `TESTBENCH_ALLOW_NO_AUTH` | off | Set to `1` to allow listening beyond localhost without a password. Only for a port that is itself published on localhost only. |
@@ -68,15 +68,17 @@ All settings are environment variables. None are required.
 
 ## Running it for a team
 
-Testbench has one shared password, not user accounts. That is enough for a small team that trusts each other, and it keeps the setup small.
+Testbench can run in three ways: with no login on one computer (the default), with one shared password, or with accounts, where everyone signs in with their own
+email and password. Accounts are what to use for a team: they say who did what, and a person's access can be ended without changing the password for everyone.
 To host it on a server:
 
-1. **Set a password and the host name** (in `docker-compose.yml`, remove `TESTBENCH_ALLOW_NO_AUTH` and add):
+1. **Make the owner account and set the host name.** On the server, make the first account (see "Accounts" below), then in `docker-compose.yml` remove
+   `TESTBENCH_ALLOW_NO_AUTH` and add:
    ```yaml
-   TESTBENCH_PASSWORD: "a long passphrase"
    TESTBENCH_ALLOWED_HOSTS: "testbench.example.com"
    TESTBENCH_TRUST_PROXY: "1"
    ```
+   (The older way still works: `TESTBENCH_PASSWORD: "a long passphrase"` is a shared password for everyone, until the first account is made.)
 2. **Put it behind HTTPS.** Without HTTPS the password and every request can be read on the network. A reverse proxy such as
    [Caddy](https://caddyserver.com) does it in two lines and gets the certificate for you:
    ```
@@ -87,6 +89,35 @@ To host it on a server:
    Keep the port published on `127.0.0.1:4100` so only the proxy can reach it.
 3. **Keep a copy of the data elsewhere.** Automatic backups land in `/data/backups` on the same server; copy them off it.
 
+### Accounts
+
+Accounts have three states. **Open**: no account exists, and Testbench works as it always has. **Accounts**: at least one account exists, and everything needs a
+sign-in. This is permanent: there is no setting that turns it off, and restoring an old backup cannot reopen it. **Locked**: accounts were on, but none exists (an older
+backup was restored over the database). Everything is refused until the owner is made again on the server.
+
+- **The first account** is the owner: it looks after the accounts and, later, the backups. Make it by opening `/setup` on the computer Testbench runs on (it is only
+  offered from there: a request that comes through a proxy and was not addressed to localhost is refused), or on the server with `npm run accounts -- create-owner --email you@example.com --name "Your Name"` (**in Docker use this**:
+  `docker compose exec testbench npm run accounts -- create-owner --email you@example.com`; `/setup` does not work there, because the container sees the request as coming
+  from Docker's network, not from localhost). The password is typed at a prompt or piped in, never given as an
+  argument. With `TESTBENCH_PASSWORD` set, `/setup` asks for that shared password once; after the first account it is ignored.
+- **More people** are invited by the owner. An invitation is a link (seven days, works once, optionally for one email address). **Testbench sends no email**: the owner
+  copies the link and hands it over. The same goes for a forgotten password: the owner makes a one-time reset link, or on the server
+  `npm run accounts -- reset-password --email ...` sets one. Changing or resetting a password ends every other session of that account and cancels its open reset links. Changing the email address takes the current password.
+- **Passwords** are hashed with scrypt, each with its own salt, at least 10 characters. A sign-in is a random session on the server (`HttpOnly`, `SameSite=Strict`,
+  `Secure` over HTTPS) that can be ended from Settings or by turning the account off, which is immediate. Five wrong attempts from one address, or ten for one email
+  address, are blocked for 15 minutes (so someone who knows an email address can slow that person's sign-in for a while; the owner can always use the command line).
+- **Who did what.** What a person creates or approves is recorded under the name of the account they are signed in with. That is the name on the account, which the person
+  chose themselves: Testbench does not check that it is their real name or that the email address is theirs, and one account can be shared by several people. The owner can read an
+  append-only audit log of accounts and sign-ins (`GET /api/audit-log`): it holds no passwords, tokens or hashes, and the database refuses any edit or delete of it.
+- **Backups** contain the accounts (as hashes) and the audit log, so treat them as secrets. Downloading and restoring a backup, loading the demo and switching agent
+  proposals on or off are for the owner only. Restoring a backup ends every session, and the audit log goes back to what the backup had.
+- **Turning an account off** ends its sessions at once. Machine tokens made earlier (CI, agent, propose tokens) belong to a project, not to the person, and **stay valid**:
+  that is deliberate, since a CI job must not stop when someone leaves. Revoke them under the project's settings if they should go too.
+> **Interim: this is not project isolation.** Until project membership and roles arrive (the next step), every signed-in account can read and change every project and
+> every upload, create and delete projects, and make or revoke CI, agent and propose tokens. Only the owner can manage accounts, read the audit log, download or restore
+> a backup, load the demo and switch agent proposals. What accounts give you today is a sign-in, a name on what is recorded, and the audit log, not separation between
+> people. Do not give an account to someone who must not see all projects.
+
 ### Access at a glance
 
 Five things stand between a request and your data. Each answers the same way every time and says no more than it has to:
@@ -94,7 +125,7 @@ Five things stand between a request and your data. Each answers the same way eve
 | Layer | Setting | What happens |
 | --- | --- | --- |
 | Host check | built in, extended by `TESTBENCH_ALLOWED_HOSTS` | A request for any other host name gets `403 {"error":"Forbidden host"}` before anything else, the CI route included. |
-| Login | `TESTBENCH_PASSWORD` | Without a valid cookie every page, API route, upload and report gets `401 {"error":"Sign in required"}` (pages go to `/login`). A wrong or missing password gets `401 {"error":"Wrong password"}`; five wrong ones from one address get `429` for 15 minutes. |
+| Login | accounts, or `TESTBENCH_PASSWORD` | Without a valid cookie every page, API route, upload and report gets `401 {"error":"Sign in required"}` (pages go to `/login`). A wrong or missing password gets `401` (`"Wrong password"`, or with accounts `"Wrong email or password"`, the same for an unknown email); five wrong ones from one address get `429` for 15 minutes. |
 | Browser guard | built in | A change (any request that is not GET or HEAD) without the `X-Testbench` header gets `403`. |
 | CI token | **Bug reports → CI** | Only `POST /api/projects/<id>/ci/test-results`, with `Authorization: Bearer <token>`. It needs neither the login nor the header, works for one project and that route only, and an invalid or missing token gets `401`. |
 | Agent token | `docs/requirements.md` | Only `GET /api/agent/projects/<id>/requirements`, with `Authorization: Bearer tbag_…`: the active requirements of that project, read-only. It needs neither the login nor the header, opens nothing else, and a missing, wrong or revoked token gets `401`, a token of another project `403`. Made and revoked by whoever is signed in (there are no roles), at most five per project. |
@@ -119,15 +150,16 @@ What the login does: the password is checked with scrypt in constant time; a sig
 (`HttpOnly`, `SameSite=Strict`, `Secure` over HTTPS); five wrong passwords block an address for 15 minutes; everything including uploaded
 files and reports is behind it; changing the password signs everyone out.
 
-What it does not do: there are no individual users, so nothing records who changed what, and there is no password reset (change the variable
-and restart). It is a small tool and has not been audited. Run one instance per team (the data is a single SQLite file), and if it will face the
+What it does not do: with only the shared password there are no individual users, so nothing records who changed what, and there is no password reset (change the
+variable and restart). Accounts fix both; per-project roles are still to come. It is a small tool and has not been audited. Run one instance per team (the data is a single SQLite file), and if it will face the
 open internet, put it behind a VPN or your own single sign-on proxy as well. To report a security problem, see [SECURITY.md](SECURITY.md).
 
 ## Known limitations
 
 Testbench is young. These are the limits to expect today:
 
-- **One shared password, no users.** Nothing records who changed what, and there is no password reset.
+- **No roles per project yet.** With accounts, every account can use every project and only the owner manages accounts. With only the shared password there are no users at all: nothing records who changed what, and there is no password reset.
+- **No email.** Invitations and password resets are links the owner hands over, or the command line on the server.
 - **One instance per team.** The data is a single SQLite file: no clustering, no several servers writing at once.
 - **It only works while it runs.** Automatic GitHub imports and the daily backup happen only while the process is up.
 - **Backups stay on the same disk by default.** Point `TESTBENCH_BACKUP_DIR` at a synced folder, or copy them elsewhere.
