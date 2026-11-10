@@ -49,6 +49,7 @@ export async function discoverPages(base) {
 
   return [
     ["Dashboard", `/p/${pid}/dashboard`],
+    ["Test plan", `/p/${pid}/test-plan`],
     ["Requirements", `/p/${pid}/requirements`],
     ["Requirement open", `/p/${pid}/requirements${requirements[0] ? `?req=${requirements[0].id}` : ""}`],
     ["Test cases", `/p/${pid}/cases`],
@@ -64,6 +65,7 @@ export async function discoverPages(base) {
     ...(observations.items?.[0] ? [["Observation open", `/p/${pid}/observations#obs-${observations.items[0].label}`]] : []),
     ["Manual tests", `/p/${pid}/manual-tests`],
     ["Sprint reports", `/p/${pid}/reports${milestones[0] ? `/${milestones[0].id}` : ""}`],
+    ["Settings", `/p/${pid}/settings`],
     ["Backup & restore", `/p/${pid}/backup`],
   ];
 }

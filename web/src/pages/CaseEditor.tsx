@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, BookOpenCheck, Bot, Copy, Link2, Check, ChevronsUpDown, CircleDot, Folder, Loader2, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, BookOpenCheck, Bot, Copy, Link2, Check, ChevronsUpDown, CircleDot, Folder, Loader2, Plus, Trash2, X, TriangleAlert } from "lucide-react";
 import { api, timeAgo, type CaseDetail, type Priority, type Requirement, type Suite } from "../api";
 import { ConfirmModal, FrameworkBadge, Modal, PriorityIcon, PRIORITY_LABEL, StatusIcon, useToast } from "../components/ui";
 import { Button } from "../components/Button";
@@ -328,7 +328,7 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
             {data.requirements.length === 0 && <span className="muted" style={{ fontSize: "var(--fs-md)" }}>Not linked to a requirement.</span>}
             {data.requirements.map((r) => (
               <Link key={r.id} to={`/p/${pid}/requirements?req=${r.id}`} className="chip" title={r.review_needed ? `${r.title} (reworded, review needed)` : r.title} style={{ textDecoration: r.status === "deprecated" ? "line-through" : undefined, borderColor: r.review_needed ? "var(--blocked)" : undefined }}>
-                {r.review_needed && <span className="dot" style={{ background: "var(--blocked)" }} />}REQ-{r.number} <span className="truncate" style={{ maxWidth: 200 }}>{r.title}</span>
+                {r.review_needed && <TriangleAlert size={11} aria-hidden="true" style={{ color: "var(--blocked-fg)" }} />}REQ-{r.number} <span className="truncate" style={{ maxWidth: 200 }}>{r.title}</span>
               </Link>
             ))}
             <Button variant="ghost" size="sm" onClick={() => setLinkingReqs(true)}><Link2 size={13} /> Link</Button>
