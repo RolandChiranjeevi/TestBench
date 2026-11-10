@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { db, parseJson } from "./db.ts";
 import { actorName, actorUserId } from "./actor.ts";
+import { audit } from "./accounts.ts";
 import { createRequirement, kindProblem, recordRevision, REQUIREMENT_KINDS, type RevisionChange } from "./requirements.ts";
 import { idText, normViewports, normWcag, PRIORITIES, str, viewportSchema, wcagCriterion, type Viewport } from "./shapes.ts";
 
@@ -8,6 +9,9 @@ import { idText, normViewports, normWcag, PRIORITIES, str, viewportSchema, wcagC
  * Requirements in a structured file, for a Testbench project.
  *   { "format": "testbench-requirements", "version": 1, "project": "SHOP", "requirements": [ { "id": "CHK-001", "title": "…" } ] }
  * Rules:
+ *  - An import never approves a requirement. A new requirement lands as a draft (whatever status the file gives it, except "deprecated"), with who ran the import,
+ *    when, and the file's name. A requirement that already exists keeps its status (an import can retire it, not approve it). A person then approves the drafts
+ *    ("Review and approve N requirements", approveImported below).
  *  - The file names the project it is for; a file for another project is refused whole, and requirements are only ever looked up in the
  *    project being imported into.
  *  - A requirement is identified by `id`: a stable id it was imported with, or a Testbench number (REQ-3) of an existing requirement.
@@ -66,6 +70,8 @@ export interface RequirementImportSummary {
   dryRun: boolean;
   project: string;
   counts: { new: number; unchanged: number; updated: number };
+  /** How many of the new requirements will be drafts (all of them, except any the file retires). */
+  asDrafts: number;
   /** Requirements of the project that are not in the file. They are left as they are. */
   untouched: number;
   items: RequirementImportItem[];
@@ -122,7 +128,9 @@ function plan(projectId: number, items: Item[]) {
       const same = rows.find((r) => r.title.trim().toLowerCase() === it.title.toLowerCase());
       if (same) warnings.push(`REQ-${same.number} in this project has the same title. If this is that requirement, use the id REQ-${same.number} to update it instead of adding a second one.`);
     }
-    const next: Fields = { title: it.title, description: it.description, kind: it.kind, priority: it.priority, status: it.status, source: it.source, wcag: it.wcag, viewports: it.viewports };
+    // An import never approves: a new requirement is a draft (or retired, if the file says so); an existing one keeps its status unless the file retires it.
+    const status = existing ? (it.status === "deprecated" ? "deprecated" : existing.status) : it.status === "approved" ? "draft" : it.status;
+    const next: Fields = { title: it.title, description: it.description, kind: it.kind, priority: it.priority, status, source: it.source, wcag: it.wcag, viewports: it.viewports };
     const changes: { field: keyof Fields; from: string; to: string }[] = [];
     if (existing) {
       const cur: Fields = { ...existing, wcag: parseJson<string[]>(existing.wcag, []), viewports: parseJson<Viewport[]>(existing.viewports, []) };
@@ -142,7 +150,7 @@ function plan(projectId: number, items: Item[]) {
 }
 
 /** Reads and checks a requirements file against the project. With dryRun it only says what would happen. */
-export function importRequirements(projectId: number, content: string, opts: { dryRun?: boolean } = {}): RequirementImportSummary {
+export function importRequirements(projectId: number, content: string, opts: { dryRun?: boolean; fileName?: string } = {}): RequirementImportSummary {
   const project = db.prepare("SELECT id, key FROM projects WHERE id = ?").get(projectId) as { id: number; key: string } | undefined;
   if (!project) throw new RequirementImportError(404, "Project not found");
   if (content.length > 5 * 1024 * 1024) throw new RequirementImportError(400, "The file is larger than 5 MB.");
@@ -151,7 +159,7 @@ export function importRequirements(projectId: number, content: string, opts: { d
 
   const counts = { new: 0, unchanged: 0, updated: 0 };
   const summary: RequirementImportSummary = {
-    dryRun: !!opts.dryRun, project: project.key, counts,
+    dryRun: !!opts.dryRun, project: project.key, counts, asDrafts: planned.filter((p) => !p.existing && p.next.status === "draft").length,
     untouched: rows.length - planned.filter((p) => p.existing).length,
     items: planned.map((p) => {
       const action = !p.existing ? "new" : p.changes.length ? "update" : "unchanged";
@@ -167,15 +175,13 @@ export function importRequirements(projectId: number, content: string, opts: { d
   db.transaction(() => {
     for (const p of planned) {
       if (!p.existing) {
-        createRequirement(projectId, { ...p.next, externalId: p.it.id, origin: "import" });
+        const id = createRequirement(projectId, { ...p.next, externalId: p.it.id, origin: "import" });
+        db.prepare("UPDATE requirements SET imported_by = ?, imported_by_user_id = ?, imported_at = datetime('now'), import_ref = ? WHERE id = ?").run(actorName(), actorUserId(), (opts.fileName ?? "").slice(0, 200), id);
       } else if (p.changes.length) {
         const n = p.next;
-        // A requirement that the import makes approved is approved by the person who ran the import.
-        db.prepare(`UPDATE requirements SET title = ?, description = ?, kind = ?, priority = ?, status = ?, source = ?, wcag = ?, viewports = ?, updated_at = datetime('now'),
-            approved_by_user_id = CASE WHEN ? = 'approved' AND approved_by = '' THEN ? ELSE approved_by_user_id END,
-            approved_by = CASE WHEN ? = 'approved' AND approved_by = '' THEN ? ELSE approved_by END,
-            approved_at = CASE WHEN ? = 'approved' AND approved_by = '' THEN datetime('now') ELSE approved_at END WHERE id = ?`)
-          .run(n.title, n.description, n.kind, n.priority, n.status, n.source, JSON.stringify(n.wcag), JSON.stringify(n.viewports), n.status, actorUserId(), n.status, actorName(), n.status, p.existing.id);
+        // Who approved a requirement is not touched by an import.
+        db.prepare("UPDATE requirements SET title = ?, description = ?, kind = ?, priority = ?, status = ?, source = ?, wcag = ?, viewports = ?, updated_at = datetime('now') WHERE id = ?")
+          .run(n.title, n.description, n.kind, n.priority, n.status, n.source, JSON.stringify(n.wcag), JSON.stringify(n.viewports), p.existing.id);
         const changes: RevisionChange[] = p.changes.map((c) => ({ field: c.field, from: c.from, to: c.to }));
         // A changed title or description asks for a second look at the linked test cases, like an edit in the editor does.
         recordRevision(p.existing.id, changes, p.changes.some((c) => c.field === "title" || c.field === "description"));
@@ -183,4 +189,24 @@ export function importRequirements(projectId: number, content: string, opts: { d
     }
   })();
   return summary;
+}
+
+/**
+ * The explicit step after an import: a person reviews the imported drafts and approves them, all or the ones they pick. Only drafts that came from an import, in this
+ * project, are touched. The approver is the person signed in (with their account), and the audit log says how many were approved.
+ */
+export function approveImported(projectId: number, ids?: unknown, ip = ""): { approved: number; ids: number[] } {
+  if (ids !== undefined && (!Array.isArray(ids) || ids.length > REQUIREMENT_FILE_LIMIT * 2 || ids.some((i) => !Number.isInteger(i)))) throw new RequirementImportError(400, "ids must be a list of requirement ids");
+  const pick = ids as number[] | undefined;
+  return db.transaction(() => {
+    const rows = db.prepare(`SELECT id FROM requirements WHERE project_id = ? AND origin = 'import' AND status = 'draft'${pick ? ` AND id IN (${pick.map(() => "?").join(",") || "NULL"})` : ""} ORDER BY number`)
+      .all(projectId, ...(pick ?? [])) as { id: number }[];
+    const me = actorName();
+    for (const r of rows) {
+      db.prepare("UPDATE requirements SET status = 'approved', approved_by = ?, approved_by_user_id = ?, approved_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(me, actorUserId(), r.id);
+      recordRevision(r.id, [{ field: "status", from: "draft", to: "approved" }, { field: "approved by", from: "", to: me }], false);
+    }
+    if (rows.length) audit({ userId: actorUserId(), label: me, ip }, "requirements.bulk_approved", { projectId, detail: { count: rows.length } });
+    return { approved: rows.length, ids: rows.map((r) => r.id) };
+  })();
 }

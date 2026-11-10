@@ -331,6 +331,35 @@ describe("a requirement keeps the account next to the name", () => {
   });
 });
 
+describe("an import is drafts until a person approves them, with their account", () => {
+  const file = (key: string) => JSON.stringify({ format: "testbench-requirements", version: 1, project: key, requirements: [
+    { id: "IMP-1", title: "Imported one", status: "active" }, { id: "IMP-2", title: "Imported two", status: "approved" },
+  ] });
+
+  it("a tester imports, the requirements are drafts that name who imported them; a viewer cannot approve; the tester approves and the account is recorded and logged", async () => {
+    const key = (db.prepare("SELECT key FROM projects WHERE id = ?").get(projects.A) as { key: string }).key;
+    const imported = await call("POST", `/api/projects/${projects.A}/requirements/import`, { cookie: people.tes.cookie, body: { content: file(key), fileName: "shop.json" } });
+    assert.equal(imported.statusCode, 200, imported.body);
+    assert.equal(imported.json().asDrafts, 2);
+    const rows = db.prepare("SELECT id, status, imported_by, imported_by_user_id AS uid, import_ref, approved_by FROM requirements WHERE project_id = ? AND external_id LIKE 'IMP-%' ORDER BY external_id").all(projects.A) as { id: number; status: string; imported_by: string; uid: number; import_ref: string; approved_by: string }[];
+    assert.deepEqual(rows.map((r) => [r.status, r.imported_by, r.uid, r.import_ref, r.approved_by]), [["draft", "tes", people.tes.id, "shop.json", ""], ["draft", "tes", people.tes.id, "shop.json", ""]]);
+
+    assert.ok(denied403(await call("POST", `/api/projects/${projects.A}/requirements/approve-imported`, { cookie: people.vie.cookie, body: {} })), "a viewer cannot");
+    assert.ok(denied404(await call("POST", `/api/projects/${projects.A}/requirements/approve-imported`, { cookie: people.bob.cookie, body: {} })), "nor someone outside the project");
+    assert.equal((db.prepare("SELECT COUNT(*) AS n FROM requirements WHERE project_id = ? AND status = 'draft' AND origin = 'import'").get(projects.A) as { n: number }).n >= 2, true, "nothing was approved");
+
+    const one = await call("POST", `/api/projects/${projects.A}/requirements/approve-imported`, { cookie: people.adm.cookie, body: { ids: [rows[0].id] } });
+    assert.deepEqual([one.statusCode, one.json().approved], [200, 1]);
+    const all = await call("POST", `/api/projects/${projects.A}/requirements/approve-imported`, { cookie: people.tes.cookie, body: {} });
+    assert.equal(all.json().approved >= 1, true);
+    const done = db.prepare("SELECT approved_by, approved_by_user_id AS uid, status FROM requirements WHERE id IN (?, ?) ORDER BY id").all(rows[0].id, rows[1].id);
+    assert.deepEqual(done, [{ approved_by: "adm", uid: people.adm.id, status: "approved" }, { approved_by: "tes", uid: people.tes.id, status: "approved" }], "each approver is an account");
+
+    const log = (await call("GET", "/api/audit-log?limit=20&action=requirements.", { cookie: ownerCookie })).json() as { actorUserId: number; projectId: number; detail: { count: number } }[];
+    assert.deepEqual(log.slice(0, 2).map((e) => [e.actorUserId, e.projectId, e.detail.count]), [[people.tes.id, projects.A, all.json().approved], [people.adm.id, projects.A, 1]], "newest first, with the account");
+  });
+});
+
 describe("an agent can never approve, reject, generate or change anything but its own route", () => {
   it("every route except the three token routes refuses an agent, CI or proposal token, with or without a login", async () => {
     assert.equal((await call("PUT", "/api/settings/agent-proposals", { cookie: ownerCookie, body: { enabled: true } })).statusCode, 200);

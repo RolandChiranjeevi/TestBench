@@ -427,6 +427,10 @@ CREATE TABLE IF NOT EXISTS project_members (
   PRIMARY KEY (project_id, user_id)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS project_members_user ON project_members(user_id);`);
+  // Where an imported requirement came from: who ran the import, when, and the file it was in. An import creates drafts; a person approves them (see reqimport.ts).
+  for (const [col, ddl] of [["imported_by", "TEXT NOT NULL DEFAULT ''"], ["imported_by_user_id", "INTEGER"], ["imported_at", "TEXT"], ["import_ref", "TEXT NOT NULL DEFAULT ''"]] as const) {
+    if (!hasColumn("requirements", col)) d.exec(`ALTER TABLE requirements ADD COLUMN ${col} ${ddl}`);
+  }
   for (const [table, col] of [["requirements", "created_by_user_id"], ["requirements", "approved_by_user_id"], ["requirement_proposals", "decided_by_user_id"], ["requirement_revisions", "by_user_id"]] as const) {
     if (!hasColumn(table, col)) d.exec(`ALTER TABLE ${table} ADD COLUMN ${col} INTEGER`);
   }

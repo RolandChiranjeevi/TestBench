@@ -10,7 +10,7 @@ import { importAuditPackage } from "../server/audits.ts";
 import { checkPackageDir, readPackageDir } from "../server/importers/auditbuild.ts";
 import { bagFromFiles } from "../server/importers/bag.ts";
 import { getManualTest, listManualTests } from "../server/manualtests.ts";
-import { importRequirements } from "../server/reqimport.ts";
+import { approveImported, importRequirements } from "../server/reqimport.ts";
 import { agentRequirements } from "../server/agentexport.ts";
 
 const EXAMPLE = join(import.meta.dirname, "..", "examples", "audit-package");
@@ -43,6 +43,8 @@ describe("the example package and the example requirements", () => {
   it("imports after the example requirements, and every reference of the manual tests resolves", () => {
     const p = project();
     importRequirements(p.id, requirementsFor(p.key));
+    // an import only makes drafts; the example needs its active requirements approved (CART-RULE-1 is a draft in the file, and stays one)
+    approveImported(p.id, (db.prepare("SELECT id FROM requirements WHERE project_id = ? AND external_id != 'CART-RULE-1'").all(p.id) as { id: number }[]).map((r) => r.id));
     const s = importAuditPackage(bagFromFiles(readPackageDir(forProject(p.key))), { projectId: p.id, source: "upload" });
     assert.deepEqual(s.manualTests.counts, { new: 3, unchanged: 0, updated: 0, pending: 0 });
     const tests = listManualTests(p.id, { status: "proposed" }).items;

@@ -229,6 +229,43 @@ for (const who of Object.keys(TABS)) {
   await n.close();
 }
 
+// An import makes drafts; a person reviews and approves them.
+{
+  const key = (await call("GET", "/api/projects", undefined, owner)).json.find((x) => x.id === A).key;
+  const content = JSON.stringify({ format: "testbench-requirements", version: 1, project: key, requirements: [
+    { id: "UI-IMP-1", title: "Imported by the UI check, one", status: "active" }, { id: "UI-IMP-2", title: "Imported by the UI check, two", status: "approved" },
+  ] });
+  const { page, close } = await open("tester", `/p/${A}/requirements`);
+  await page.getByRole("button", { name: /^Import/ }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.locator('input[type="file"]').setInputFiles({ name: "ui-check.json", mimeType: "application/json", buffer: Buffer.from(content) });
+  check("import: the preview says they become drafts", await eventually(async () => /2 new requirements are added as drafts/.test(await dialog.innerText())));
+  await dialog.getByRole("button", { name: "Import", exact: true }).click();
+  await page.getByText(/Imported: 2 new \(2 as drafts\)/).first().waitFor({ timeout: 10_000 });
+  const banner = page.getByRole("button", { name: /^Review and approve \d+ requirements?$/ });
+  check("import: a button to review and approve appears", await eventually(async () => (await banner.count()) === 1));
+  const status = async () => (await call("GET", `/api/projects/${A}/requirements`, undefined, owner)).json.filter((r) => r.external_id?.startsWith("UI-IMP-")).map((r) => `${r.status}:${r.origin}`);
+  check("import: they are drafts, not approved", JSON.stringify(await status()) === JSON.stringify(["draft:import", "draft:import"]), JSON.stringify(await status()));
+  await close();
+
+  const v = await open("viewer", `/p/${A}/requirements`);
+  check("import: a viewer cannot approve", await eventually(async () => (await v.page.getByRole("button", { name: /^Review and approve/ }).isDisabled())));
+  await v.close();
+
+  const t = await open("tester", `/p/${A}/requirements`);
+  await t.page.getByRole("button", { name: /^Review and approve \d+ requirements?$/ }).click();
+  const modal = t.page.getByRole("dialog");
+  await modal.getByLabel(/Approve REQ-\d+ Imported by the UI check, two/).uncheck();
+  check("import: the pick is counted", await eventually(async () => (await modal.getByRole("button", { name: "Approve 1 requirement", exact: true }).count()) === 1));
+  await modal.getByRole("button", { name: "Approve 1 requirement", exact: true }).click();
+  await t.page.getByText("Approved 1 requirement").first().waitFor({ timeout: 10_000 });
+  check("import: only the picked one was approved", JSON.stringify(await status()) === JSON.stringify(["approved:import", "draft:import"]), JSON.stringify(await status()));
+  const approved = (await call("GET", `/api/projects/${A}/requirements`, undefined, owner)).json.find((r) => r.external_id === "UI-IMP-1");
+  check("import: the approver is the person who approved", approved.approved_by === "Tess", `${approved.approved_by}`);
+  check("import: the banner counts what is left", await eventually(async () => (await t.page.getByRole("button", { name: "Review and approve 1 requirement", exact: true }).count()) === 1));
+  await t.close();
+}
+
 // /admin: the owner looks after the accounts and reads the audit log; nobody else is offered it.
 {
   const { page, close } = await open("owner", "/admin/accounts");

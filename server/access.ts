@@ -101,7 +101,7 @@ export const ACCESS: Record<string, Need> = {
   "GET /api/projects/:id/audits": v(), "GET /api/projects/:id/audit-rejections": v(), "POST /api/projects/:id/audit-import": t(), "GET /api/projects/:id/coverage-gaps": v(),
   "GET /api/audits/:id/plan": v("audit"), "GET /api/audits/:id/report": v("audit"), "GET /api/audits/:id/deletion-preview": a("audit"), "DELETE /api/audits/:id": a("audit"),
   // requirements, their proposals, and generating proposals
-  "GET /api/projects/:id/requirements": v(), "GET /api/projects/:id/requirements/coverage": v(), "POST /api/projects/:id/requirements": t(), "POST /api/projects/:id/requirements/import": t(),
+  "GET /api/projects/:id/requirements": v(), "GET /api/projects/:id/requirements/coverage": v(), "POST /api/projects/:id/requirements": t(), "POST /api/projects/:id/requirements/import": t(), "POST /api/projects/:id/requirements/approve-imported": t(),
   "GET /api/requirements/:id": v("requirement"), "PATCH /api/requirements/:id": t("requirement"), "DELETE /api/requirements/:id": a("requirement"),
   "POST /api/requirements/:id/attachments": t("requirement"), "POST /api/requirements/:id/cases": t("requirement"), "POST /api/requirements/:id/deprecate": t("requirement"), "POST /api/requirements/:id/review": t("requirement"),
   "DELETE /api/requirement-attachments/:id": t("reqattachment"),

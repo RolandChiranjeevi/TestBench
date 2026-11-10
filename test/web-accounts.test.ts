@@ -72,7 +72,7 @@ describe("the audit log in words", () => {
   it("every action the server writes has words, found by reading the server's own source", () => {
     const sources = [...readdirSync("server").filter((f) => f.endsWith(".ts")).map((f) => join("server", f)), "scripts/accounts.ts"];
     const found = new Set<string>();
-    for (const f of sources) for (const m of readFileSync(f, "utf8").matchAll(/["'`]((?:account|login|password|profile|invitation|member|members|sessions?)\.[a-z_]+)["'`]/g)) found.add(m[1]);
+    for (const f of sources) for (const m of readFileSync(f, "utf8").matchAll(/["'`]((?:account|login|password|profile|invitation|member|members|requirements|sessions?)\.[a-z_]+)["'`]/g)) found.add(m[1]);
     assert.deepEqual([...found].sort(), [...AUDIT_ACTIONS].sort(), "the list in web/src/accounts.ts is the server's list");
     for (const a of AUDIT_ACTIONS) assert.ok(!describeAudit(e(a), names).includes(a), `${a} has words of its own`);
   });

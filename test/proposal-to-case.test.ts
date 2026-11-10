@@ -8,7 +8,7 @@ import { importAuditPackage } from "../server/audits.ts";
 import { agentRequirements } from "../server/agentexport.ts";
 import { applyManualUpdate, createCaseFromProposal, getManualTest, ignoreManualUpdate, listManualTests, reviewManualTest, updateManualTest } from "../server/manualtests.ts";
 import { getRequirement, listRequirements } from "../server/requirements.ts";
-import { importRequirements } from "../server/reqimport.ts";
+import { approveImported, importRequirements } from "../server/reqimport.ts";
 
 let n = 0;
 const proj = () => makeProject(`PC${++n}`, `Proposal to case ${n}`);
@@ -29,6 +29,7 @@ function run(p: { id: number; key: string }, tests: unknown[]) {
 const setup = () => {
   const p = proj();
   importRequirements(p.id, JSON.stringify({ format: "testbench-requirements", version: 1, project: p.key, requirements: [{ id: "CHK-A11Y", title: "Keyboard users can pay", kind: "accessibility", wcag: ["2.4.3"] }] }));
+  approveImported(p.id);
   run(p, [test()]);
   const id = (db.prepare("SELECT id FROM manual_tests WHERE project_id = ?").get(p.id) as { id: number }).id;
   return { p, id };
@@ -172,6 +173,7 @@ describe("after the test case exists", () => {
     const { p, id } = setup();
     const other = proj();
     importRequirements(other.id, JSON.stringify({ format: "testbench-requirements", version: 1, project: other.key, requirements: [{ id: "CHK-A11Y", title: "The other project's own" }] }));
+    approveImported(other.id);
     reviewManualTest(id, "accepted");
     const c = createCaseFromProposal(id);
     assert.deepEqual(listRequirements(other.id)[0].caseIds, []);

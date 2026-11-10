@@ -37,7 +37,7 @@ import {
   getAuditPlan, listAudits, listBugReports, listRejectedPackages, markDuplicate, previewAuditDeletion, relinkBugRefs, reviewBugReport, unlinkExternalIssue, updateBugReport,
 } from "./audits.ts";
 import { agentRequirements } from "./agentexport.ts";
-import { importRequirements, RequirementImportError } from "./reqimport.ts";
+import { approveImported, importRequirements, RequirementImportError } from "./reqimport.ts";
 import { requirementCoverage } from "./reqlinks.ts";
 import { normViewports, normWcag, viewportSchema, wcagCriterion, type Viewport } from "./shapes.ts";
 import { LIMITS as AUDIT_LIMITS, PackageError } from "./importers/auditpackage.ts";
@@ -1415,10 +1415,10 @@ app.get("/api/projects/:id/requirements/coverage", (req) => requirementCoverage(
 // Import requirements from a structured file. {"content": "<the file's text>"}, or the file's own JSON. ?dryRun=1 only says what would happen.
 app.post("/api/projects/:id/requirements/import", { bodyLimit: 6 * 1024 * 1024 }, (req) => {
   const projectId = idParam(req);
-  const body = req.body as { content?: unknown } | null;
+  const body = req.body as { content?: unknown; fileName?: unknown } | null;
   const content = typeof body?.content === "string" ? body.content : JSON.stringify(body ?? {});
   try {
-    return importRequirements(projectId, content, { dryRun: (req.query as { dryRun?: string }).dryRun === "1" });
+    return importRequirements(projectId, content, { dryRun: (req.query as { dryRun?: string }).dryRun === "1", fileName: typeof body?.fileName === "string" ? body.fileName : "" });
   } catch (e) {
     throw e instanceof RequirementImportError ? new HttpError(e.status, e.message, e.problems) : e;
   }
@@ -1457,6 +1457,15 @@ app.patch("/api/requirements/:id", (req) => {
     if (body.caseIds) setRequirementCases(id, cur.project_id, body.caseIds);
   })();
   return getRequirement(id);
+});
+
+// After an import: a person approves the imported drafts (all, or the ids given). Nothing else is approved by this.
+app.post("/api/projects/:id/requirements/approve-imported", (req) => {
+  try {
+    return approveImported(idParam(req), (req.body as { ids?: unknown } | null)?.ids, req.ip);
+  } catch (e) {
+    throw e instanceof RequirementImportError ? new HttpError(e.status, e.message, e.problems) : e;
+  }
 });
 
 // Add cases to a requirement without replacing the ones already linked (bulk link from the case list).
