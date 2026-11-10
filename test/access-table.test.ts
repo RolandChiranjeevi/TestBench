@@ -1,7 +1,7 @@
 import "./env.ts";
 import assert from "node:assert/strict";
 import { after, describe, it } from "node:test";
-import { ACCESS, KINDS, REGISTERED, accessTableProblems, checkAccessTable, type Need } from "../server/access.ts";
+import { ACCESS, KINDS, PRODUCTION_ONLY, REGISTERED, accessTableProblems, checkAccessTable, type Need } from "../server/access.ts";
 import { isAgentRead } from "../server/agenttokens.ts";
 import { isCiIngest } from "../server/ci.ts";
 import { isAgentPropose } from "../server/proposetokens.ts";
@@ -23,7 +23,8 @@ describe("every route has a decision, and every decision has a route", () => {
   it("the real app registered routes, and the table covers exactly those", () => {
     assert.ok(routes.length > 150, `only ${routes.length} routes were seen: the tracker is not installed first`);
     assert.deepEqual(accessTableProblems(REGISTERED), { missing: [], stale: [] });
-    assert.equal(Object.keys(ACCESS).length, routes.length);
+    assert.equal(Object.keys(ACCESS).length, routes.length + PRODUCTION_ONLY.size, "the table holds the routes seen here, plus the ones only a production build has");
+    assert.deepEqual([...PRODUCTION_ONLY], ["GET /*"], "the production-only routes are named on purpose");
     assert.doesNotThrow(() => checkAccessTable());
   });
 

@@ -108,14 +108,22 @@ export const ACCESS: Record<string, Need> = {
   "GET /api/projects/:id/requirement-proposals": v(), "GET /api/requirement-proposals/:id": v("proposal"), "PATCH /api/requirement-proposals/:id": t("proposal"),
   "POST /api/requirement-proposals/:id/approve": t("proposal"), "POST /api/requirement-proposals/:id/reject": t("proposal"),
   "POST /api/projects/:id/generate-proposals": t(),
+  // the built web app (its pages, scripts and styles, and index.html for every page of it): only registered by a production build, see PRODUCTION_ONLY
+  "GET /*": "user",
   // the files themselves: the name is looked up to the project it belongs to (result attachments, requirement attachments, bug evidence, audit narratives)
   "GET /uploads/*": v("file"),
 };
 
+/**
+ * Lines of the table for routes that exist only in a production build (NODE_ENV=production with the web app built into dist/): they are registered there and not
+ * while developing or testing, so their absence is not a stale line. test/access-production.test.ts starts the app that way and checks the table against it.
+ */
+export const PRODUCTION_ONLY: ReadonlySet<string> = new Set(["GET /*"]);
+
 /** The routes that exist and are not in the table, and the table's lines that are not routes. Both lists are empty when the table is right. */
 export function accessTableProblems(registered: readonly string[]): { missing: string[]; stale: string[] } {
   const have = new Set(registered);
-  return { missing: [...have].filter((r) => !(r in ACCESS)).sort(), stale: Object.keys(ACCESS).filter((r) => !have.has(r)).sort() };
+  return { missing: [...have].filter((r) => !(r in ACCESS)).sort(), stale: Object.keys(ACCESS).filter((r) => !have.has(r) && !PRODUCTION_ONLY.has(r)).sort() };
 }
 
 /** Every route that was registered, as "METHOD /pattern" (HEAD and OPTIONS are left out: HEAD is its GET). Filled by trackRoutes. */
