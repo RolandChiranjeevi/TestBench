@@ -2,6 +2,7 @@ import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypt
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { isCiIngest } from "./ci.ts";
 import { isAgentRead } from "./agenttokens.ts";
+import { isAgentPropose } from "./proposetokens.ts";
 
 /**
  * Optional shared-password login, for Testbench instances that other people reach over a network. Off unless TESTBENCH_PASSWORD is set.
@@ -170,8 +171,8 @@ export function registerAuth(app: FastifyInstance, cfg: AuthConfig | null) {
 
   app.addHook("onRequest", async (req, reply: FastifyReply) => {
     const path = req.url.split("?")[0];
-    // CI's route and the agent's read route skip the login cookie only because their handlers require their own API token on every call.
-    if (PUBLIC_PATHS.has(path) || isCiIngest(req.method, req.url) || isAgentRead(req.method, req.url) || isAuthed(req)) return;
+    // CI's route, the agent's read route and the agent's proposal route skip the login cookie only because their handlers require their own API token on every call.
+    if (PUBLIC_PATHS.has(path) || isCiIngest(req.method, req.url) || isAgentRead(req.method, req.url) || isAgentPropose(req.method, req.url) || isAuthed(req)) return;
     if (path.startsWith("/api/") || (req.method !== "GET" && req.method !== "HEAD")) return reply.code(401).send({ error: "Sign in required" });
     return reply.code(302).header("Location", "/login").send();
   });

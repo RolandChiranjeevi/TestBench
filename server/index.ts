@@ -26,7 +26,7 @@ import { exportCasesCsv, exportJson, exportMarkdownZip, exportRequirementsCsv, e
 import { htmlToPdf } from "./pdf.ts";
 import { renderReport } from "./reportHtml.ts";
 import { automationCandidates, insightsData } from "./insights.ts";
-import { addRequirementAttachment, removeRequirementAttachment, requirementAttachmentFiles } from "./requirements.ts";
+import { addRequirementAttachment, deprecateRequirement, removeRequirementAttachment, requirementAttachmentFiles, RequirementError } from "./requirements.ts";
 import { dismissSuggestion, listSuggestions, SuggestError, suggestLinks, typesafeConfig } from "./linksuggest.ts";
 import { addChecklistItem, copyChecklist, listChecklist } from "./checklist.ts";
 import { createIssue, LinearError, linearEnabled, listTeams } from "./linear.ts";
@@ -44,7 +44,10 @@ import { LIMITS as AUDIT_LIMITS, PackageError } from "./importers/auditpackage.t
 import { archiveObservation, convertToBug, getObservation, importObservations, listObservations, ObservationError, observationSummary, reopenObservation, resolveObservation, setObservationStatus } from "./observations.ts";
 import { listCases } from "./newcases.ts";
 import { LOGGER_OPTIONS } from "./logging.ts";
-import { authenticateAgentToken, createAgentToken, listAgentTokens, revokeAgentToken } from "./agenttokens.ts";
+import { authenticateAgentToken, createAgentToken, isAgentRead, listAgentTokens, revokeAgentToken } from "./agenttokens.ts";
+import { agentCredentialKind, agentProposalsEnabled, authenticateProposeToken, createProposeToken, isAgentPropose, listProposeTokens, revokeProposeToken, setAgentProposalsEnabled } from "./proposetokens.ts";
+import { approveProposal, createProposals, editProposal, getProposal, listProposals, rejectProposal } from "./reqproposals.ts";
+import { actorName, getDisplayName, setDisplayName } from "./actor.ts";
 import { agentRequirementsForToken, parseAgentQuery } from "./agentapi.ts";
 import { applyManualUpdate, createCaseFromProposal, deleteManualTest, getManualTest, ignoreManualUpdate, listManualTests, relinkManualRefs, reviewManualTest, updateManualTest } from "./manualtests.ts";
 import { addRequirementCases, createRequirement, kindProblem, REQUIREMENT_KINDS, getRequirement, linkCaseByTags, listRequirements, markReviewed, recordRevision, requirementsForCase, requirementSummary, setCaseRequirements, setRequirementCases, type RevisionChange } from "./requirements.ts";
@@ -76,12 +79,19 @@ app.addHook("onRequest", async (req, reply) => {
   const host = (req.headers.host ?? "").replace(/:\d+$/, "").toLowerCase();
   if (!ALLOWED_HOSTS.has(host)) return reply.code(403).send({ error: "Forbidden host" });
   // CI is not a browser: its route is authenticated by an API token instead of the header (a web page cannot add an Authorization token it does not have).
-  if (req.method !== "GET" && req.method !== "HEAD" && req.headers["x-testbench"] !== "1" && !isCiIngest(req.method, req.url)) {
+  if (req.method !== "GET" && req.method !== "HEAD" && req.headers["x-testbench"] !== "1" && !isCiIngest(req.method, req.url) && !isAgentPropose(req.method, req.url)) {
     return reply.code(403).send({ error: "Missing X-Testbench header" });
   }
 });
 // Optional password login (TESTBENCH_PASSWORD). Registered right after the guard above, so it runs before every route and static file.
 registerAuth(app, auth);
+// An agent credential (a read, proposal or CI token) opens its own route and nothing else. Registered after the login check, so with a password set a stranger still
+// gets "sign in" first; whatever is left is refused here, so an agent can never approve, reject, edit or deprecate a requirement, with or without a login being set up.
+app.addHook("onRequest", async (req, reply) => {
+  if (agentCredentialKind(req.headers.authorization) && !isCiIngest(req.method, req.url) && !isAgentRead(req.method, req.url) && !isAgentPropose(req.method, req.url)) {
+    return reply.code(403).send({ error: "An agent token opens only its own route. Requirements are decided by a person." });
+  }
+});
 // A CI request that is too large is answered 413 only after its body has been read and thrown away. Answering and closing at once makes the
 // operating system reset the connection while the client is still writing, so the client sees ECONNRESET or EPIPE and never the 413.
 // Reading is bounded: above drainBytes, or if the client is too slow, the connection is dropped instead.
@@ -1333,6 +1343,8 @@ app.delete("/api/templates/:id", (req) => {
 const requirementBody = z.object({
   title: z.string().trim().min(1).max(300),
   description: z.string().max(50000).optional(),
+  /** One criterion per line. */
+  acceptanceCriteria: z.string().max(20000).optional(),
   priority: z.enum(["low", "medium", "high", "critical"]).optional(),
   status: z.enum(["draft", "approved", "deprecated"]).optional(),
   /** Free text: a Jira story key, a link, a document name. */
@@ -1401,15 +1413,22 @@ app.patch("/api/requirements/:id", (req) => {
   const externalId = body.externalId === undefined ? cur.external_id : body.externalId;
   if (externalId !== cur.external_id) externalIdTaken(cur.project_id, externalId, id);
   db.transaction(() => {
-    const next = { title: body.title ?? cur.title, description: body.description ?? cur.description, priority: body.priority ?? cur.priority, status: body.status ?? cur.status, source: body.source ?? cur.source, kind, external_id: externalId, wcag: JSON.stringify(wcag), viewports: JSON.stringify(viewports) };
-    db.prepare("UPDATE requirements SET title = ?, description = ?, priority = ?, status = ?, source = ?, kind = ?, external_id = ?, wcag = ?, viewports = ?, updated_at = datetime('now') WHERE id = ?").run(
-      next.title, next.description, next.priority, next.status, next.source, next.kind, next.external_id, next.wcag, next.viewports, id,
+    const next = { title: body.title ?? cur.title, description: body.description ?? cur.description, acceptance_criteria: body.acceptanceCriteria ?? cur.acceptance_criteria, priority: body.priority ?? cur.priority, status: body.status ?? cur.status, source: body.source ?? cur.source, kind, external_id: externalId, wcag: JSON.stringify(wcag), viewports: JSON.stringify(viewports) };
+    // Who approved it: the person who makes it approved now. Taking it back to draft clears that; deprecating keeps it.
+    const becomesApproved = next.status === "approved" && cur.status !== "approved";
+    const backToDraft = next.status === "draft" && cur.status !== "draft";
+    const approvedBy: string = becomesApproved ? actorName() : backToDraft ? "" : cur.approved_by;
+    const approvedAt: string | null = becomesApproved ? new Date().toISOString().slice(0, 19).replace("T", " ") : backToDraft ? null : cur.approved_at;
+    db.prepare("UPDATE requirements SET title = ?, description = ?, acceptance_criteria = ?, priority = ?, status = ?, source = ?, kind = ?, external_id = ?, wcag = ?, viewports = ?, approved_by = ?, approved_at = ?, updated_at = datetime('now') WHERE id = ?").run(
+      next.title, next.description, next.acceptance_criteria, next.priority, next.status, next.source, next.kind, next.external_id, next.wcag, next.viewports, approvedBy, approvedAt, id,
     );
     // Wording changes ask for a second look at the linked cases; the rest is just recorded.
-    const changes: RevisionChange[] = (["title", "description", "priority", "status", "source", "kind", "external_id", "wcag", "viewports"] as const)
+    const changes: RevisionChange[] = (["title", "description", "acceptance_criteria", "priority", "status", "source", "kind", "external_id", "wcag", "viewports"] as const)
       .filter((f) => next[f] !== cur[f])
-      .map((f) => ({ field: f === "external_id" ? "id" : f, from: String(cur[f] ?? ""), to: String(next[f] ?? "") }));
-    recordRevision(id, changes, changes.some((c) => c.field === "title" || c.field === "description"));
+      .map((f) => ({ field: f === "external_id" ? "id" : f === "acceptance_criteria" ? "acceptance criteria" : f, from: String(cur[f] ?? ""), to: String(next[f] ?? "") }));
+    if (approvedBy !== cur.approved_by) changes.push({ field: "approved by", from: String(cur.approved_by ?? ""), to: approvedBy });
+    // Wording changes (the title, the description and the acceptance criteria) ask for a second look at the linked cases; the rest is just recorded.
+    recordRevision(id, changes, changes.some((c) => c.field === "title" || c.field === "description" || c.field === "acceptance criteria"));
     if (body.caseIds) setRequirementCases(id, cur.project_id, body.caseIds);
   })();
   return getRequirement(id);
@@ -1467,6 +1486,76 @@ app.delete("/api/requirements/:id", async (req) => {
   await Promise.all(files.map((f) => unlink(join(UPLOAD_DIR, f)).catch(() => {})));
   return { ok: true };
 });
+
+// ---- Who made a change, requirement proposals from a test agent, and the proposal tokens. A proposal is not a requirement until a person approves it. ----
+const asRequirementHttp = (e: unknown) => (e instanceof RequirementError ? new HttpError(e.status, e.message, e.problems) : e instanceof AuditError ? new HttpError(e.status, e.message) : e);
+function requirementsApi<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (e) {
+    throw asRequirementHttp(e);
+  }
+}
+
+// Take a requirement out of use without deleting it (it keeps its links and history). A person's action.
+app.post("/api/requirements/:id/deprecate", (req) => requirementsApi(() => {
+  const id = idParam(req);
+  const body = z.object({ reason: z.string().max(2000).optional() }).parse(req.body ?? {});
+  deprecateRequirement(id, body.reason ?? "");
+  return getRequirement(id);
+}));
+
+// The display name recorded on what a person does (created by, approved by, the change log). As typed, not verified: there are no accounts yet.
+app.get("/api/settings/display-name", () => ({ name: getDisplayName(), recordedAs: actorName(), verified: false }));
+app.put("/api/settings/display-name", (req) => requirementsApi(() => {
+  setDisplayName((req.body as { name?: unknown } | null)?.name);
+  return { name: getDisplayName(), recordedAs: actorName(), verified: false };
+}));
+
+// Whether a test agent may make proposals at all. Off until a person switches it on.
+app.get("/api/settings/agent-proposals", () => ({ enabled: agentProposalsEnabled() }));
+app.put("/api/settings/agent-proposals", (req) => {
+  const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
+  setAgentProposalsEnabled(enabled);
+  return { enabled: agentProposalsEnabled() };
+});
+app.get("/api/projects/:id/propose-tokens", (req) => listProposeTokens(idParam(req)));
+app.post("/api/projects/:id/propose-tokens", (req, reply) => {
+  const id = idParam(req);
+  const body = z.object({ name: z.string().max(200) }).parse(req.body);
+  reply.header("Cache-Control", "no-store");
+  return audited(() => createProposeToken(id, body.name));
+});
+app.post("/api/propose-tokens/:id/revoke", (req) => {
+  audited(() => revokeProposeToken(idParam(req)));
+  return { ok: true };
+});
+
+// The test agent's route: it makes proposals with a proposal token and can do nothing else. The proposals start as `proposed` and change nothing until a person approves.
+const proposeLimiter = makeLimiter({ max: 20, windowMs: 15 * 60_000 });
+app.post("/api/agent/projects/:id/requirement-proposals", { bodyLimit: 2 * 1024 * 1024 }, async (req, reply) => {
+  const id = idParam(req);
+  if (proposeLimiter.blockedFor(req.ip) > 0) return reply.code(429).send({ error: "Too many failed attempts. Try again later." });
+  const auth = authenticateProposeToken(req.headers.authorization, id);
+  if (auth.state === "off") throw new HttpError(403, "Agent proposals are switched off on this installation");
+  if (auth.state === "invalid") {
+    proposeLimiter.fail(req.ip);
+    throw new HttpError(401, "A valid proposal token is required: send it as Authorization: Bearer <token>");
+  }
+  if (auth.state === "other_project") {
+    proposeLimiter.fail(req.ip);
+    throw new HttpError(403, "This token does not belong to this project");
+  }
+  if (auth.state !== "ok") throw new HttpError(401, "A valid proposal token is required");
+  reply.header("Cache-Control", "no-store");
+  return requirementsApi(() => createProposals(id, req.body, `agent: ${auth.name}`));
+});
+
+app.get("/api/projects/:id/requirement-proposals", (req) => requirementsApi(() => listProposals(idParam(req), (req.query as { status?: string }).status || undefined)));
+app.get("/api/requirement-proposals/:id", (req) => must(getProposal(idParam(req)), "Proposal"));
+app.patch("/api/requirement-proposals/:id", (req) => requirementsApi(() => editProposal(idParam(req), req.body)));
+app.post("/api/requirement-proposals/:id/approve", (req) => requirementsApi(() => approveProposal(idParam(req))));
+app.post("/api/requirement-proposals/:id/reject", (req) => requirementsApi(() => rejectProposal(idParam(req), (req.body as { reason?: unknown } | null)?.reason)));
 
 // Set the requirements a test case covers (the same links, edited from the case's side).
 app.put("/api/cases/:id/requirements", (req) => {
