@@ -4,7 +4,7 @@ runner.py passes every request and response through here before storing evidence
 target profile that holds a literal secret (find_literal_secrets).
 """
 import re
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, quote_plus, urlencode, urlsplit, urlunsplit
 
 MASK = "[redacted]"
 SECRET_KEY = re.compile(r"(password|passwd|secret|token|api[_-]?key|authorization|cookie|session|credential|private[_-]?key)", re.I)
@@ -56,12 +56,48 @@ def redact_json(value):
     return value
 
 
-def redact_url(url):
-    parts = urlsplit(str(url))
-    if not parts.query:
-        return str(url)
-    query = [(k, MASK if is_secret_key(k) else v) for k, v in parse_qsl(parts.query, keep_blank_values=True)]
-    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+MIN_SECRET_LENGTH = 4  # shorter values would mask ordinary text; they are masked by key or pattern only
+
+
+def _variants(secret):
+    return {secret, quote(secret, safe=""), quote_plus(secret)}
+
+
+def mask_secrets(value, secrets):
+    """Replaces every known secret value (and its URL-encoded forms) in strings, dict keys and values, lists."""
+    needles = sorted({v for s in (secrets or ()) if isinstance(s, str) and len(s) >= MIN_SECRET_LENGTH for v in _variants(s)}, key=len, reverse=True)
+    if not needles:
+        return value
+
+    def walk(node):
+        if isinstance(node, str):
+            for needle in needles:
+                node = node.replace(needle, MASK)
+            return node
+        if isinstance(node, dict):
+            return {walk(k) if isinstance(k, str) else k: walk(v) for k, v in node.items()}
+        if isinstance(node, list):
+            return [walk(v) for v in node]
+        return node
+
+    return walk(value)
+
+
+def redact_url(url, secrets=()):
+    """Masks userinfo, secret-looking query keys, token patterns in the path and query values, and known secret values."""
+    text = str(url)
+    parts = urlsplit(text)
+    netloc = parts.netloc
+    if "@" in netloc:
+        netloc = MASK + "@" + netloc.rsplit("@", 1)[1]
+    path = redact_text(parts.path)
+    query = parts.query
+    if query:
+        query = urlencode([(k, MASK if is_secret_key(k) else redact_text(v)) for k, v in parse_qsl(query, keep_blank_values=True)])
+    fragment = redact_text(parts.fragment)
+    cleaned = urlunsplit((parts.scheme, netloc, path, query, fragment)) if (netloc != parts.netloc or path != parts.path or query != parts.query
+                                                                         or fragment != parts.fragment) else text
+    return mask_secrets(cleaned, secrets)
 
 
 def find_literal_secrets(profile):
