@@ -135,4 +135,24 @@ describe("requirement and proposal routes", () => {
     await call("/api/settings/agent-proposals", "PUT", { enabled: false });
     assert.equal((await call(`/api/agent/projects/${projectId}/requirement-proposals`, "POST", proposal(), AGENT)).status, 403);
   });
+
+  it("coverage gaps and observation links: the lists are right, links stay in the project, and an agent token reaches none of it", async () => {
+    const other = await json(await call("/api/projects", "POST", { name: "Other", key: "OTH" }));
+    const mine = await json(await call(`/api/projects/${projectId}/requirements`, "POST", { title: "Needs a test", status: "approved" }));
+    const theirs = await json(await call(`/api/projects/${other.id}/requirements`, "POST", { title: "Theirs", status: "approved" }));
+    const gaps = await json(await call(`/api/projects/${projectId}/coverage-gaps`));
+    assert.ok(gaps.requirementsWithoutCases.some((r: { id: number }) => r.id === mine.id));
+    assert.equal(gaps.requirementsWithoutCases.some((r: { id: number }) => r.id === theirs.id), false, "another project's requirement is not listed");
+    assert.equal((await call(`/api/projects/999999/coverage-gaps`)).status, 404);
+    assert.equal((await call(`/api/observations/999999/links`)).status, 404);
+    assert.equal((await call(`/api/observations/999999/links`, "PUT", { requirementIds: [] })).status, 404);
+
+    // Linking a real observation needs an audit, which only an audit import makes; that is covered on function level (coverage-gaps.test.ts). Here: an agent
+    // credential reaches none of these routes, and a write without the X-Testbench header is refused.
+    const AGENT_READ = { Authorization: "Bearer tbag_whatever" };
+    for (const [path, method, body] of [[`/api/projects/${projectId}/coverage-gaps`, "GET", undefined], ["/api/observations/1/links", "PUT", { requirementIds: [] }], ["/api/observations/1/links", "GET", undefined]] as const) {
+      assert.equal((await call(path, method, body, { ...HUMAN, ...AGENT_READ })).status, 403, `${method} ${path}`);
+    }
+    assert.equal((await call("/api/observations/1/links", "PUT", { requirementIds: [] }, {})).status, 403, "no X-Testbench header");
+  });
 });

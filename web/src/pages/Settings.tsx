@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Navigate, NavLink, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, KeyRound, LogOut, Pencil, ShieldAlert, Trash2 } from "lucide-react";
-import { api, timeAgo, type Project } from "../api";
+import { api, timeAgo, type DisplayName, type Project } from "../api";
 import { ConfirmModal, Empty, Kbd, useToast } from "../components/ui";
 import { DeleteProjectModal, RenameProjectModal } from "../components/ProjectModals";
 import { BackupPage } from "./Backup";
@@ -43,10 +43,10 @@ export function SettingsPage() {
           <BackupPage embedded />
         ) : (
           <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16, maxWidth: 760 }}>
-            {id === "agent" && <AgentAccess pid={Number(pid)} />}
+            {id === "agent" && <><AgentAccess pid={Number(pid)} /><ProposalAccess pid={Number(pid)} /></>}
             {id === "project" && <ProjectSection pid={Number(pid)} />}
             {id === "shortcuts" && <Shortcuts />}
-            {id === "account" && <><Appearance /><Account /></>}
+            {id === "account" && <><YourName /><Appearance /><Account /></>}
           </div>
         )}
       </div>
@@ -186,6 +186,127 @@ Authorization: Bearer $TESTBENCH_API_TOKEN`}
   );
 }
 
+// ---------- Requirement proposals ----------
+
+interface ProposeToken { id: number; name: string; prefix: string; createdAt: string; lastUsedAt: string | null; revokedAt: string | null }
+interface NewProposeToken extends ProposeToken { token: string }
+
+/**
+ * Lets a test agent suggest requirements. Off until you switch it on, here, for the whole installation. A proposal token can create proposals and nothing else:
+ * it cannot read requirements, and only a person approves, edits or rejects a proposal. Like the read token it is shown once and only its hash is kept.
+ */
+function ProposalAccess({ pid }: { pid: number }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [name, setName] = useState("");
+  const [fresh, setFresh] = useState<NewProposeToken | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [revoking, setRevoking] = useState<ProposeToken | null>(null);
+  const key = ["propose-tokens", pid];
+  const { data: setting } = useQuery({ queryKey: ["agent-proposals"], queryFn: () => api.get<{ enabled: boolean }>("/api/settings/agent-proposals") });
+  const enabled = !!setting?.enabled;
+  const { data: tokens } = useQuery({ queryKey: key, queryFn: () => api.get<ProposeToken[]>(`/api/projects/${pid}/propose-tokens`), refetchInterval: 15_000 });
+  const toggle = useMutation({
+    mutationFn: (on: boolean) => api.put<{ enabled: boolean }>("/api/settings/agent-proposals", { enabled: on }),
+    onSuccess: (r) => { qc.invalidateQueries({ queryKey: ["agent-proposals"] }); toast("success", r.enabled ? "Agent proposals are on" : "Agent proposals are off"); },
+    onError: (e: Error) => toast("error", e.message),
+  });
+  const create = useMutation({ mutationFn: (n: string) => api.post<NewProposeToken>(`/api/projects/${pid}/propose-tokens`, { name: n }) });
+  const revoke = useMutation({
+    mutationFn: (id: number) => api.post(`/api/propose-tokens/${id}/revoke`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: key }); setRevoking(null); toast("success", "Token revoked"); },
+    onError: (e: Error) => toast("error", e.message),
+  });
+  const submit = async () => {
+    if (!name.trim()) return;
+    try {
+      const t = await create.mutateAsync(name.trim());
+      create.reset(); // drop the answer, which holds the token, from the mutation cache
+      setFresh(t); setCopied(false); setName("");
+      qc.invalidateQueries({ queryKey: key });
+    } catch (e) {
+      toast("error", (e as Error).message);
+    }
+  };
+  const copy = async () => {
+    if (!fresh) return;
+    try { await navigator.clipboard.writeText(fresh.token); setCopied(true); } catch { toast("error", "Could not copy. Select the token and copy it by hand."); }
+  };
+  const active = tokens?.filter((t) => !t.revokedAt) ?? [];
+  return (
+    <>
+      <Card icon={<KeyRound size={15} />} title="Requirement proposals">
+        <div className="muted">
+          A test agent can suggest new requirements. They are <strong>proposals</strong>, kept apart from your requirements: nothing changes until a person approves one under Requirements, Proposals.
+          A proposal token can create proposals and nothing else. It cannot read requirements, and it cannot approve, edit or reject anything.
+        </div>
+        <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+          <span role="status">Agent proposals are <strong>{enabled ? "on" : "off"}</strong> for this installation.</span>
+          <Button variant={enabled ? "secondary" : "primary"} disabled={toggle.isPending || !setting} onClick={() => toggle.mutate(!enabled)}>{enabled ? "Switch off" : "Switch on"}</Button>
+        </div>
+        {enabled && (
+          <>
+            <form className="row" style={{ gap: 8, flexWrap: "wrap" }} onSubmit={(e) => { e.preventDefault(); submit(); }}>
+              <input aria-label="Proposal token name" className="input" style={{ flex: "1 1 220px", maxWidth: 320 }} value={name} maxLength={200} onChange={(e) => setName(e.target.value)} placeholder="Name, for example qa-agent" />
+              <Button variant="primary" type="submit" disabled={!name.trim() || create.isPending}><KeyRound size={14} /> Create proposal token</Button>
+            </form>
+            {fresh && (
+              <div role="status" className="card" style={{ padding: 12, background: "var(--bg)", borderColor: "var(--blocked-fg)" }}>
+                <div className="row" style={{ gap: 8, alignItems: "flex-start", color: "var(--blocked-fg)" }}>
+                  <ShieldAlert size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <span style={{ color: "var(--text-2)" }}>Copy <strong>{fresh.name}</strong> now. It is not shown again. Keep it in an environment variable or a secret, never in a file in a repository.</span>
+                </div>
+                <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                  <code className="inline mono" style={{ wordBreak: "break-all", userSelect: "all" }}>{fresh.token}</code>
+                  <Button size="sm" onClick={copy}>{copied ? <Check size={13} /> : <Copy size={13} />} {copied ? "Copied" : "Copy"}</Button>
+                  <Button variant="ghost" size="sm" onClick={() => setFresh(null)}>I have saved it</Button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </Card>
+
+      {enabled && (
+        <Card title={`Proposal tokens for this project${tokens ? ` (${active.length} active)` : ""}`}>
+          {!tokens?.length ? (
+            <Empty icon={<KeyRound size={20} />} title="No proposal tokens yet">Create one above, then give it to your agent as an environment variable.</Empty>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table className="table" style={{ width: "100%" }}>
+                <thead><tr><th style={{ textAlign: "left" }}>Name</th><th style={{ textAlign: "left" }}>Token</th><th style={{ textAlign: "left" }}>Created</th><th style={{ textAlign: "left" }}>Last used</th><th style={{ textAlign: "left" }}>Status</th><th><span className="sr-only" style={{ position: "absolute", left: -9999 }}>Actions</span></th></tr></thead>
+                <tbody>
+                  {tokens.map((t) => (
+                    <tr key={t.id} style={t.revokedAt ? { color: "var(--text-3)" } : undefined}>
+                      <td>{t.name}</td><td><code className="inline">{t.prefix}…</code></td><td>{timeAgo(t.createdAt)}</td><td>{t.lastUsedAt ? timeAgo(t.lastUsedAt) : "never"}</td>
+                      <td>{t.revokedAt ? `Revoked ${timeAgo(t.revokedAt)}` : "Active"}</td>
+                      <td style={{ textAlign: "right" }}>{!t.revokedAt && <Button size="sm" aria-label={`Revoke ${t.name}`} onClick={() => setRevoking(t)}><Trash2 size={13} /> Revoke</Button>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="faint" style={{ fontSize: "var(--fs-md)" }}>A project can have three active proposal tokens. Revoking is the only way to end one.</div>
+          <pre className="mono" style={{ margin: 0, padding: 10, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--radius)", overflowX: "auto" }}>
+{`POST ${window.location.origin}/api/agent/projects/${pid}/requirement-proposals
+Authorization: Bearer $TESTBENCH_PROPOSE_TOKEN
+Content-Type: application/json
+
+[{ "title": "...", "rationale": "...", "suggestedPriority": "high", "observations": ["OBS-3"] }]`}
+          </pre>
+        </Card>
+      )}
+
+      {revoking && (
+        <ConfirmModal title={`Revoke "${revoking.name}"?`} confirmLabel="Revoke token" busy={revoke.isPending} onConfirm={() => revoke.mutate(revoking.id)} onClose={() => setRevoking(null)}>
+          <p style={{ margin: 0 }}>An agent using <code className="inline">{revoking.prefix}…</code> gets an error from the next request. This cannot be undone; make a new token if it is still needed.</p>
+        </ConfirmModal>
+      )}
+    </>
+  );
+}
+
 // ---------- Project ----------
 
 function ProjectSection({ pid }: { pid: number }) {
@@ -258,6 +379,39 @@ function Appearance() {
         {THEMES.map(([value, label]) => (
           <button key={value} type="button" role="radio" aria-checked={theme === value} className={`tab${theme === value ? " active" : ""}`} onClick={() => { setTheme(value); setChoice(value); }}>{label}</button>
         ))}
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * The name Testbench records on what you do: created by, approved by and the change log of a requirement. There are no accounts yet, so it is what you type here,
+ * and it is not verified: anyone who can use this Testbench can type any name.
+ */
+function YourName() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const { data } = useQuery({ queryKey: ["display-name"], queryFn: () => api.get<DisplayName>("/api/settings/display-name") });
+  const [draft, setDraft] = useState<string | null>(null);
+  const value = draft ?? data?.name ?? "";
+  const dirty = draft !== null && draft.trim() !== (data?.name ?? "");
+  const save = useMutation({
+    mutationFn: (n: string) => api.put<DisplayName>("/api/settings/display-name", { name: n }),
+    onSuccess: (r) => { qc.setQueryData(["display-name"], r); setDraft(null); toast("success", r.name ? `Saved. Changes are recorded as ${r.name}.` : "Name cleared"); },
+    onError: (e: Error) => toast("error", e.message),
+  });
+  return (
+    <Card icon={<Pencil size={15} />} title="Your name">
+      <div className="muted">
+        Recorded on what you do: who created or approved a requirement, and the change log. There are no accounts yet, so this is the name you type here. It is <strong>not verified</strong>.
+      </div>
+      <form className="row" style={{ gap: 8, flexWrap: "wrap" }} onSubmit={(e) => { e.preventDefault(); if (dirty) save.mutate(value.trim()); }}>
+        <label className="sr-only" style={{ position: "absolute", left: -9999 }} htmlFor="display-name">Your name</label>
+        <input id="display-name" className="input" style={{ flex: "1 1 220px", maxWidth: 320 }} value={value} maxLength={80} placeholder="For example Anna Berg" onChange={(e) => setDraft(e.target.value)} />
+        <Button variant="primary" type="submit" disabled={!dirty || save.isPending}>Save</Button>
+      </form>
+      <div className="faint" style={{ fontSize: "var(--fs-md)" }} role="status">
+        {data ? (data.name ? <>Changes are recorded as <strong>{data.recordedAs}</strong>.</> : <>No name is set, so changes are recorded as “{data.recordedAs}”.</>) : null}
       </div>
     </Card>
   );

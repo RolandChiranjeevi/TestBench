@@ -52,6 +52,8 @@ export async function discoverPages(base) {
     ["Test plan", `/p/${pid}/test-plan`],
     ["Requirements", `/p/${pid}/requirements`],
     ["Requirement open", `/p/${pid}/requirements${requirements[0] ? `?req=${requirements[0].id}` : ""}`],
+    ["Requirement proposals", `/p/${pid}/requirements?tab=proposals`],
+    ["Coverage gaps", `/p/${pid}/requirements?tab=gaps`],
     ["Test cases", `/p/${pid}/cases`],
     ["Test case open", `/p/${pid}/cases${cases[0] ? `?case=${cases[0].id}` : ""}`],
     ["Runs", `/p/${pid}/runs`],
@@ -66,6 +68,7 @@ export async function discoverPages(base) {
     ["Manual tests", `/p/${pid}/manual-tests`],
     ["Sprint reports", `/p/${pid}/reports${milestones[0] ? `/${milestones[0].id}` : ""}`],
     ["Settings", `/p/${pid}/settings`],
+    ["Settings, your name", `/p/${pid}/settings/account`],
     ["Backup & restore", `/p/${pid}/backup`],
   ];
 }

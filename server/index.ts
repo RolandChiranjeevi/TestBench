@@ -48,6 +48,7 @@ import { authenticateAgentToken, createAgentToken, isAgentRead, listAgentTokens,
 import { agentCredentialKind, agentProposalsEnabled, authenticateProposeToken, createProposeToken, isAgentPropose, listProposeTokens, revokeProposeToken, setAgentProposalsEnabled } from "./proposetokens.ts";
 import { approveProposal, createProposals, editProposal, getProposal, listProposals, rejectProposal } from "./reqproposals.ts";
 import { actorName, getDisplayName, setDisplayName } from "./actor.ts";
+import { coverageGaps, getObservationLinks, setObservationLinks } from "./coveragegaps.ts";
 import { agentRequirementsForToken, parseAgentQuery } from "./agentapi.ts";
 import { applyManualUpdate, createCaseFromProposal, deleteManualTest, getManualTest, ignoreManualUpdate, listManualTests, relinkManualRefs, reviewManualTest, updateManualTest } from "./manualtests.ts";
 import { addRequirementCases, createRequirement, kindProblem, REQUIREMENT_KINDS, getRequirement, linkCaseByTags, listRequirements, markReviewed, recordRevision, requirementsForCase, requirementSummary, setCaseRequirements, setRequirementCases, type RevisionChange } from "./requirements.ts";
@@ -1496,6 +1497,12 @@ function requirementsApi<T>(fn: () => T): T {
     throw asRequirementHttp(e);
   }
 }
+
+// What is not covered yet: requirements without a test case, test cases without a requirement, observations without a link. Only lists; nothing is made.
+app.get("/api/projects/:id/coverage-gaps", (req) => requirementsApi(() => coverageGaps(idParam(req))));
+// The requirements and test cases an observation is linked to (a person's decision).
+app.get("/api/observations/:id/links", (req) => requirementsApi(() => getObservationLinks(idParam(req))));
+app.put("/api/observations/:id/links", (req) => requirementsApi(() => setObservationLinks(idParam(req), req.body)));
 
 // Take a requirement out of use without deleting it (it keeps its links and history). A person's action.
 app.post("/api/requirements/:id/deprecate", (req) => requirementsApi(() => {
