@@ -2,7 +2,7 @@ import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ChevronDown, FlaskConical, Menu, Plus, Sparkles, UserRound } from "lucide-react";
+import { Archive, ChevronDown, FlaskConical, Menu, Plus, ShieldCheck, Sparkles, UserRound } from "lucide-react";
 import { api, parseDate, timeAgo, type BackupInfo, type Project } from "./api";
 import { ConfirmProvider, Empty, Modal, ToastProvider, useHotkeys, useToast } from "./components/ui";
 import { CasesPage } from "./pages/Cases";
@@ -25,6 +25,7 @@ import { useObservationSummary } from "./observations";
 import "./styles.css";
 import { Button, buttonClass } from "./components/Button";
 import { AccountPage } from "./pages/Account";
+import { AdminAccountsPage, AdminAuditLogPage } from "./pages/Admin";
 import { Can, ReadOnlyNotice, RoleTag, accessIn, useAccess, useAuthStatus } from "./components/Access";
 import { can, explainStatus } from "./access";
 
@@ -70,6 +71,7 @@ function NoProjects() {
 }
 
 function Welcome() {
+  const { data: auth } = useAuthStatus();
   const [creating, setCreating] = useState(false);
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -95,6 +97,7 @@ function Welcome() {
             <Button needs="owner" onClick={() => demo.mutate()} disabled={demo.isPending}>
               <Sparkles size={14} /> Load demo project
             </Button>
+            {auth?.mode === "accounts" && <Link to="/admin/accounts" className={buttonClass()}><ShieldCheck size={14} aria-hidden="true" /> Administration</Link>}
           </div>
         }
       >
@@ -282,6 +285,11 @@ function ProjectLayout() {
               <UserRound size={14} /> <span className="nav-label">Your account</span>
             </NavLink>
           )}
+          {auth?.mode === "accounts" && auth.user?.isOwner && (
+            <NavLink to="/admin/accounts" className="backup-nudge" title="Administration: accounts and the audit log" aria-label="Administration">
+              <ShieldCheck size={14} /> <span className="nav-label">Administration</span>
+            </NavLink>
+          )}
           {/* Nudge when there is no recent backup: the data lives only on this computer. */}
           {backup && can(access, "owner") && (() => {
             const last = parseDate(backup.lastBackupAt);
@@ -327,6 +335,9 @@ createRoot(document.getElementById("root")!).render(
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/account" element={<AccountPage />} />
+            <Route path="/admin" element={<Navigate to="/admin/accounts" replace />} />
+            <Route path="/admin/accounts" element={<AdminAccountsPage />} />
+            <Route path="/admin/audit-log" element={<AdminAuditLogPage />} />
             <Route path="/p/:pid" element={<ProjectLayout />}>
               <Route index element={<Navigate to="dashboard" replace />} />
               <Route path="dashboard" element={<DashboardPage />} />

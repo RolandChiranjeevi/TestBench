@@ -436,6 +436,7 @@ function Account() {
               : "This Testbench is protected with a password, and you are signed in."}
           </div>
           {auth.mode === "accounts" && <div className="muted"><Link to="/account">Your account</Link>: change your email or password, and see where you are signed in.</div>}
+          {auth.mode === "accounts" && auth.user?.isOwner && <div className="muted"><Link to="/admin/accounts">Administration</Link>: everyone's accounts, invitations, password reset links, and the audit log.</div>}
           <div className="row">
             <Button onClick={async () => { await api.post("/api/logout"); window.location.href = "/login"; }}><LogOut size={14} /> Sign out</Button>
           </div>

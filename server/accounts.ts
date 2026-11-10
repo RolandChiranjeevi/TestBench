@@ -131,9 +131,15 @@ export function audit(ctx: AuditCtx, action: string, opts: { targetUserId?: numb
 }
 export const ctxOf = (user: AccountUser | null, ip = ""): AuditCtx => ({ userId: user?.id ?? null, label: user?.name ?? "anonymous", ip });
 
-export function listAudit(opts: { limit?: number; before?: number } = {}) {
+/** `action` keeps the entries whose action starts with it ("member." for everything about members, "password.reset" for one). Letters, dots and underscores only. */
+export const AUDIT_ACTION_FILTER = /^[a-z_.]{1,60}$/;
+export function listAudit(opts: { limit?: number; before?: number; action?: string } = {}) {
   const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500);
-  const rows = db.prepare(`SELECT * FROM audit_log ${opts.before ? "WHERE id < ?" : ""} ORDER BY id DESC LIMIT ?`).all(...(opts.before ? [opts.before, limit] : [limit])) as Record<string, any>[];
+  if (opts.action !== undefined && !AUDIT_ACTION_FILTER.test(opts.action)) throw new AccountError(400, "The filter can only have letters, dots and underscores");
+  const where: string[] = []; const args: (string | number)[] = [];
+  if (opts.before) { where.push("id < ?"); args.push(opts.before); }
+  if (opts.action) { where.push("action LIKE ? ESCAPE '\\'"); args.push(opts.action.replace(/[\\%_]/g, "\\$&") + "%"); }
+  const rows = db.prepare(`SELECT * FROM audit_log ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY id DESC LIMIT ?`).all(...args, limit) as Record<string, any>[];
   return rows.map((r) => ({ id: r.id, at: r.at, actorUserId: r.actor_user_id, actor: r.actor_label, action: r.action, targetUserId: r.target_user_id, projectId: r.project_id, ip: r.ip, detail: JSON.parse(r.detail) as Record<string, unknown> }));
 }
 
@@ -189,6 +195,11 @@ export function sessionFromToken(token: string | undefined): { user: AccountUser
 
 export const revokeSessionToken = (token: string | undefined) => { if (token) db.prepare("UPDATE sessions SET revoked_at = datetime('now') WHERE token_hash = ? AND revoked_at IS NULL").run(sha256(token)); };
 /** Every session of a user, except one that is kept (the one making the change). */
+/** The projects an account is a member of, with its role in each (the owner of the installation has no rows: an admin of every project). */
+export function membershipsOf(userId: number) {
+  return (db.prepare("SELECT p.id, p.name, p.key, m.role FROM project_members m JOIN projects p ON p.id = m.project_id WHERE m.user_id = ? ORDER BY p.name").all(userId) as { id: number; name: string; key: string; role: string }[])
+    .map((r) => ({ projectId: r.id, name: r.name, key: r.key, role: r.role }));
+}
 export const revokeUserSessions = (userId: number, exceptId?: number) =>
   db.prepare("UPDATE sessions SET revoked_at = datetime('now') WHERE user_id = ? AND revoked_at IS NULL AND id != ?").run(userId, exceptId ?? -1).changes;
 /** After a backup is restored: sessions in it may be older than what was revoked since, so nobody stays signed in. */

@@ -75,7 +75,7 @@ describe("the table is sensible", () => {
 
   it("the owner-only set is exactly this (a change here is a decision, not an accident)", () => {
     assert.deepEqual(list((n) => n === "owner"), [
-      "GET /api/audit-log", "GET /api/backup", "GET /api/users", "POST /api/demo", "POST /api/projects", "POST /api/restore", "POST /api/users/:id/disable",
+      "GET /api/audit-log", "GET /api/backup", "GET /api/users", "GET /api/users/:id/memberships", "POST /api/demo", "POST /api/projects", "POST /api/restore", "POST /api/users/:id/disable",
       "POST /api/users/:id/enable", "POST /api/users/:id/reset-link", "PUT /api/settings/agent-proposals",
     ].sort());
   });

@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
-  AccountError, revokeUserSessions, acceptInvite, acceptReset, audit, changePassword, checkLogin, createFirstOwner, createLink, createSession, ctxOf, listAudit, listLinks, listSessions,
+  AccountError, revokeUserSessions, membershipsOf, getUser, acceptInvite, acceptReset, audit, changePassword, checkLogin, createFirstOwner, createLink, createSession, ctxOf, listAudit, listLinks, listSessions,
   linkProjectId, listUsers, normalizeEmail, peekLink, revokeLink, revokeSessionById, revokeSessionToken, SESSION_DAYS, setDisabled, updateProfile,
 } from "./accounts.ts";
 import type { AccountUser } from "./accountcontext.ts";
@@ -196,6 +196,7 @@ export function registerAccountRoutes(app: FastifyInstance, deps: AccountRouteDe
   // ---------- The owner looks after the accounts ----------
 
   app.get("/api/users", wrap((req) => { needOwner(req); return listUsers().map((u) => ({ ...publicUser(u), disabledAt: u.disabledAt })); }));
+  app.get("/api/users/:id/memberships", wrap((req) => { needOwner(req); const id = idOf(req); if (!getUser(id)) throw new AccountError(404, "Account not found"); return membershipsOf(id); }));
   app.post("/api/users/:id/disable", wrap((req) => { const u = setDisabled(needOwner(req), idOf(req), true, req.ip); return { ...publicUser(u), disabledAt: u.disabledAt }; }));
   app.post("/api/users/:id/enable", wrap((req) => { const u = setDisabled(needOwner(req), idOf(req), false, req.ip); return { ...publicUser(u), disabledAt: u.disabledAt }; }));
   // A link, not an email: Testbench sends nothing. The owner hands it over. It works once, for seven days, and is shown only here.
@@ -254,8 +255,8 @@ export function registerAccountRoutes(app: FastifyInstance, deps: AccountRouteDe
   app.delete("/api/projects/:id/members/:userId", wrap((req) => { removeMember(needUser(req), projectIdOf(req), Number((req.params as { userId?: string }).userId), req.ip); return { ok: true }; }));
   app.get("/api/audit-log", wrap((req) => {
     needOwner(req);
-    const q = req.query as { limit?: string; before?: string };
-    return listAudit({ limit: Number(q.limit) || undefined, before: Number(q.before) || undefined });
+    const q = req.query as { limit?: string; before?: string; action?: string };
+    return listAudit({ limit: Number(q.limit) || undefined, before: Number(q.before) || undefined, action: q.action });
   }));
 }
 
