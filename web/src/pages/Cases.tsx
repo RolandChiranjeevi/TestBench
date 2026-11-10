@@ -4,6 +4,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, BookOpenCheck, Bot, ClipboardList, Copy, Folder, FolderOpen, Inbox, Lightbulb, ListChecks, MoreHorizontal, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
 import { api, orderSuites, parseDate, type BackupInfo, type CaseDetail, type CaseSummary, type Project, type RequirementDetail, type Suite } from "../api";
 import { ConfirmModal, Empty, Kbd, Modal, PriorityIcon, StatusIcon, rowActivation, useConfirm, useHotkeys, useToast, ListSkeleton } from "../components/ui";
+import { Button } from "../components/Button";
+import { Badge } from "../components/Badge";
+import { FilterChip } from "../components/FilterChip";
 import { caseCounts, filterCases, openedFromProposal, type CaseTab } from "../caseFilter";
 import { CaseEditor } from "./CaseEditor";
 import { NewRunModal } from "./Runs";
@@ -205,9 +208,9 @@ export function CasesPage() {
         <div className="topbar" style={{ padding: "0 8px 0 16px" }}>
           <h2 style={{ fontSize: "var(--fs-md)", color: "var(--text-3)", fontWeight: 500 }}>Suites</h2>
           <span className="spacer" />
-          <button className="btn ghost icon sm" onClick={() => setSuiteModal({ parentId: null })} title="New suite" aria-label="New suite">
+          <Button variant="ghost" size="sm" icon onClick={() => setSuiteModal({ parentId: null })} title="New suite" aria-label="New suite">
             <Plus size={14} />
-          </button>
+          </Button>
         </div>
         <div className="tree">
           <button className={`tree-item${suiteFilter == null ? " active" : ""}`} onClick={() => setParam("suite", null)}>
@@ -283,9 +286,9 @@ export function CasesPage() {
               aria-label="Search cases"
             />
           </div>
-          <button className="btn primary" onClick={() => setNewCase(true)}>
+          <Button variant="primary" onClick={() => setNewCase(true)}>
             <Plus size={14} /> New case <Kbd>C</Kbd>
-          </button>
+          </Button>
         </div>
         <div className="toolbar">
           {/* Select everything that is shown (after the search and filter). Ticks all, partly ticked when some are selected. */}
@@ -303,28 +306,28 @@ export function CasesPage() {
           {checked.size > 0 ? (
             <>
               <span style={{ fontWeight: 500 }}>{checked.size} selected</span>
-              <button className="btn sm" onClick={() => setRunModal(true)}>
+              <Button size="sm" onClick={() => setRunModal(true)}>
                 <Play size={12} /> Start run <Kbd>R</Kbd>
-              </button>
-              <button className="btn sm" onClick={() => setBulkModal(true)}>
+              </Button>
+              <Button size="sm" onClick={() => setBulkModal(true)}>
                 <Pencil size={12} /> Edit…
-              </button>
-              <button className="btn sm" onClick={() => duplicate.mutate([...checked])} disabled={duplicate.isPending}>
+              </Button>
+              <Button size="sm" onClick={() => duplicate.mutate([...checked])} disabled={duplicate.isPending}>
                 <Copy size={12} /> Duplicate
-              </button>
-              <button className="btn sm" onClick={() => setLinkModal(true)}>
+              </Button>
+              <Button size="sm" onClick={() => setLinkModal(true)}>
                 <BookOpenCheck size={12} /> Link to requirement
-              </button>
-              <button className="btn sm" onClick={() => setTemplateModal(true)}>
+              </Button>
+              <Button size="sm" onClick={() => setTemplateModal(true)}>
                 <ClipboardList size={12} /> Save as template
-              </button>
-              <button className="btn sm danger" onClick={() => setDeleteModal(true)}>
+              </Button>
+              <Button variant="danger" size="sm" onClick={() => setDeleteModal(true)}>
                 <Trash2 size={12} /> Delete
-              </button>
-              <button className="btn ghost sm" onClick={() => setChecked(new Set(visible.map((c) => c.id)))}>Select all {visible.length}</button>
-              <button className="btn ghost sm" onClick={() => setChecked(new Set())}>
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setChecked(new Set(visible.map((c) => c.id)))}>Select all {visible.length}</Button>
+              <Button variant="ghost" size="sm" onClick={() => setChecked(new Set())}>
                 <X size={12} /> Clear
-              </button>
+              </Button>
             </>
           ) : (
             <div className="tabs" role="tablist">
@@ -346,16 +349,12 @@ export function CasesPage() {
         {cases && cases.length > 0 && (
           <section aria-label="New test cases" className="row" style={{ flexShrink: 0, gap: 8, flexWrap: "wrap", minHeight: 24, padding: "6px 16px 6px 20px", borderBottom: "1px solid var(--border)", fontSize: "var(--fs-md)" }}>
             {counts.new > 0
-              ? <button className="btn sm" onClick={() => { setFilter("all"); setOnlyProposal(false); setSearch(""); setOnlyNew(true); }} aria-label={`${counts.new} new test ${counts.new === 1 ? "case" : "cases"} in the last ${NEW_CASE_WINDOW_DAYS} days: show ${counts.new === 1 ? "it" : "them"}`} title="Show the test cases created in this period">{counts.new} new</button>
+              ? <Button size="sm" onClick={() => { setFilter("all"); setOnlyProposal(false); setSearch(""); setOnlyNew(true); }} aria-label={`${counts.new} new test ${counts.new === 1 ? "case" : "cases"} in the last ${NEW_CASE_WINDOW_DAYS} days: show ${counts.new === 1 ? "it" : "them"}`} title="Show the test cases created in this period">{counts.new} new</Button>
               : <span className="faint">0 new</span>}
             <span>test {counts.new === 1 ? "case" : "cases"} in the last {NEW_CASE_WINDOW_DAYS} days</span>
             <span className="row" style={{ gap: 6, flexWrap: "wrap", marginLeft: "auto" }}>
-              <button className={`btn sm${onlyNew ? " primary" : ""}`} aria-pressed={onlyNew} onClick={() => setOnlyNew(!onlyNew)} title={`Only cases created in the last ${NEW_CASE_WINDOW_DAYS} days`}>
-                New <span className="count">{counts.new}</span>
-              </button>
-              <button className={`btn sm${onlyProposal ? " primary" : ""}`} aria-pressed={onlyProposal} onClick={() => setOnlyProposal(!onlyProposal)} title="Only test cases made from an agent proposal">
-                From agent proposal <span className="count">{counts.proposal}</span>
-              </button>
+              <FilterChip pressed={onlyNew} count={counts.new} onClick={() => setOnlyNew(!onlyNew)} title={`Only cases created in the last ${NEW_CASE_WINDOW_DAYS} days`}>New</FilterChip>
+              <FilterChip pressed={onlyProposal} count={counts.proposal} onClick={() => setOnlyProposal(!onlyProposal)} title="Only test cases made from an agent proposal">From agent proposal</FilterChip>
             </span>
           </section>
         )}
@@ -367,7 +366,7 @@ export function CasesPage() {
               <Empty
                 icon={<ListChecks size={20} />}
                 title="No test cases yet"
-                action={<button className="btn primary" onClick={() => setNewCase(true)}><Plus size={14} /> New case</button>}
+                action={<Button variant="primary" onClick={() => setNewCase(true)}><Plus size={14} /> New case</Button>}
               >
                 Write your first manual test case. Group cases in suites, then start a run to execute them.
               </Empty>
@@ -413,14 +412,14 @@ export function CasesPage() {
                         {c.title}
                       </span>
                       <span className="meta">
-                        {c.is_new && <span className="chip accent" title={createdText(c.created_at)}>New</span>}
+                        {c.is_new && <Badge tone="accent" title={createdText(c.created_at)}>New</Badge>}
                         {c.from_proposal && <span className="chip" title="Made from an agent proposal"><Lightbulb size={11} />{!compact && " proposal"}</span>}
                         {!compact && c.status === "draft" && <span className="chip">Draft</span>}
                         {!!c.requirement_count && (
                           <span className="chip" title={`${c.requirement_count} linked requirement(s)`}><BookOpenCheck size={11} /> {c.requirement_count}{!compact && " req"}</span>
                         )}
                         {c.automated_count > 0 && (
-                          <span className="chip accent" title={`${c.automated_count} automated test(s)`}>
+                          <span className="chip" title={`${c.automated_count} automated test(s)`}>
                             <Bot size={11} /> {c.automated_count}{!compact && " auto"}
                           </span>
                         )}
@@ -571,14 +570,13 @@ function SuiteTree(props: {
             <span className="truncate">{s.name}</span>
             <span className="count">{s.case_count}</span>
             <span className="actions">
-              <button
-                className="btn ghost icon sm"
+              <Button variant="ghost" size="sm" icon
                 style={{ width: 20, height: 20 }}
                 onClick={(e) => { e.stopPropagation(); setMenu(menu === s.id ? null : s.id); }}
                 aria-label={`Suite actions for ${s.name}`}
               >
                 <MoreHorizontal size={13} />
-              </button>
+              </Button>
             </span>
           </div>
           {menu === s.id && (
@@ -643,9 +641,9 @@ function NewCaseModal({ projectId, suites, defaultSuite, requirementId, onClose,
           <label className="row muted" style={{ marginRight: "auto", fontSize: "var(--fs-md)", cursor: "pointer" }}>
             <input type="checkbox" className="checkbox" checked={another} onChange={(e) => setAnother(e.target.checked)} /> Create more
           </label>
-          <button className="btn primary" onClick={submit} disabled={!title.trim() || create.isPending}>
+          <Button variant="primary" onClick={submit} disabled={!title.trim() || create.isPending}>
             Create case <Kbd>↵</Kbd>
-          </button>
+          </Button>
         </>
       }
     >
@@ -693,7 +691,7 @@ function SuiteModal({ projectId, suites, suite, parentId, onClose }: { projectId
       title={suite ? "Rename suite" : parent ? `New suite in ${parent.name}` : "New suite"}
       onClose={onClose}
       width={420}
-      footer={<button className="btn primary" disabled={!name.trim()} onClick={() => save.mutate()}>{suite ? "Save" : "Create suite"}</button>}
+      footer={<Button variant="primary" disabled={!name.trim()} onClick={() => save.mutate()}>{suite ? "Save" : "Create suite"}</Button>}
     >
       <input
         className="input"
@@ -746,7 +744,7 @@ function BulkEditModal({ caseIds, suites, allTags, onClose, onDone }: { caseIds:
       title={`Edit ${caseIds.length} ${caseIds.length === 1 ? "case" : "cases"}`}
       onClose={onClose}
       width={480}
-      footer={<button className="btn primary" disabled={changes === 0 || save.isPending} onClick={() => save.mutate()}>Apply to {caseIds.length}</button>}
+      footer={<Button variant="primary" disabled={changes === 0 || save.isPending} onClick={() => save.mutate()}>Apply to {caseIds.length}</Button>}
     >
       <div className="col" style={{ gap: 12 }}>
         <div className="field">
