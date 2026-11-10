@@ -5,6 +5,7 @@ import { Bug, FileText, Loader2, MonitorPlay } from "lucide-react";
 import { api, formatDateTime, formatDuration, type AutomatedResultDetail, type EvidenceFile, type Status } from "../api";
 import { StatusIcon } from "../components/ui";
 import { AutomatedBugReportModal, jiraLabel, jiraUrl } from "./BugReport";
+import { Button, buttonClass } from "../components/Button";
 
 const fileUrl = (f: EvidenceFile) => `/uploads/${f.stored_name}`;
 /** Playwright's trace viewer is served by this app, so the trace never leaves the machine. */
@@ -60,7 +61,7 @@ export function AutomatedDetail({ resultId }: { resultId: number }) {
             <span className="chip accent">{jiraLabel(d.jira_key)}</span>
           ))}
         {canReport && (
-          <button className="btn sm" onClick={() => setBugOpen(true)}><Bug size={13} /> {d.jira_key ? "Edit bug report" : "Report bug"}</button>
+          <Button size="sm" onClick={() => setBugOpen(true)}><Bug size={13} /> {d.jira_key ? "Edit bug report" : "Report bug"}</Button>
         )}
       </div>
 
@@ -126,10 +127,10 @@ export function AutomatedDetail({ resultId }: { resultId: number }) {
           ))}
           <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
             {traces.map((f) => (
-              <a key={f.id} className="btn sm primary" href={traceUrl(f)} target="_blank" rel="noreferrer"><MonitorPlay size={13} /> Open trace</a>
+              <a key={f.id} className={buttonClass("primary", "sm")} href={traceUrl(f)} target="_blank" rel="noreferrer"><MonitorPlay size={13} /> Open trace</a>
             ))}
             {other.map((f) => (
-              <a key={f.id} className="btn ghost sm" href={fileUrl(f)} target="_blank" rel="noreferrer"><FileText size={13} /> {f.label === "error-context" ? "Error context" : f.filename}</a>
+              <a key={f.id} className={buttonClass("ghost", "sm")} href={fileUrl(f)} target="_blank" rel="noreferrer"><FileText size={13} /> {f.label === "error-context" ? "Error context" : f.filename}</a>
             ))}
           </div>
         </div>
