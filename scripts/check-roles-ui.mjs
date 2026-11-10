@@ -9,6 +9,7 @@
 // Then it runs the contrast and layout checks as a viewer and as an admin, which the other checks (on an instance without accounts) never see.
 //
 // Usage:  node scripts/check-roles-ui.mjs http://127.0.0.1:4100      (an EMPTY instance with no accounts, started on this computer)
+//         CHECK_CPU_THROTTLE=8 node scripts/check-roles-ui.mjs ...   (the same, with the browser 8 times slower)
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { baseUrlFromArgs, launchBrowser } from "./lib/pages.mjs";
@@ -22,6 +23,18 @@ const PASSWORD = "ui-check-passphrase-1"; // a test value for this throwaway ins
 const HDR = { "X-Testbench": "1", "Content-Type": "application/json" };
 const failures = [];
 const check = (name, ok, detail = "") => { if (!ok) failures.push(`${name}${detail ? `: ${detail}` : ""}`); };
+/**
+ * Waits for a page to show what it should. Reading the page straight after a click or a change of address races the page (the address changes before the page has been
+ * drawn, and a slow machine shows it). Checks right after a page load, which waits for the network, do not need this; checks after an interaction do.
+ */
+async function eventually(read, ms = 8000) {
+  const end = Date.now() + ms;
+  for (;;) {
+    try { if (await read()) return true; } catch { /* the page is still changing: try again */ }
+    if (Date.now() > end) return false;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
 
 async function call(method, path, body, cookie) {
   const res = await fetch(BASE + path, { method, headers: { ...HDR, ...(cookie ? { Cookie: `tb_sid=${cookie}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -51,6 +64,8 @@ async function open(who, path, width = 1440) {
   const ctx = await browser.newContext({ viewport: { width, height: 900 }, colorScheme: "light" });
   await ctx.addCookies([{ name: "tb_sid", value: cookies[who], url: BASE }]);
   const page = await ctx.newPage();
+  // CHECK_CPU_THROTTLE=8 makes the browser 8 times slower, like a busy machine; the checks must give the same answers (they wait for the page).
+  if (Number(process.env.CHECK_CPU_THROTTLE) > 1) await (await ctx.newCDPSession(page)).send("Emulation.setCPUThrottlingRate", { rate: Number(process.env.CHECK_CPU_THROTTLE) });
   await page.goto(BASE + path, { waitUntil: "networkidle" });
   return { page, close: () => ctx.close() };
 }
@@ -105,7 +120,7 @@ for (const who of Object.keys(TABS)) {
   const select = page.getByLabel("Role of Vera");
   await select.selectOption("tester");
   await page.getByText("Role changed").waitFor({ timeout: 10_000 });
-  check("admin: the role was changed", (await select.inputValue()) === "tester");
+  check("admin: the role was changed", await eventually(async () => (await select.inputValue()) === "tester"));
   await select.selectOption("viewer");
   await page.getByText("Role changed").first().waitFor({ timeout: 10_000 });
   await close();
@@ -114,9 +129,8 @@ for (const who of Object.keys(TABS)) {
 // Someone who is not in the project, and someone who is in none.
 {
   const { page, close } = await open("outsider", `/p/${A}/cases`);
-  check("outsider: sent away from a project that is not theirs", !new URL(page.url()).pathname.startsWith(`/p/${A}/`), page.url());
-  const tags = await texts(page, ".project-switch .role-tag");
-  check("outsider: their own project, with their role", tags[0] === "Tester", JSON.stringify(tags));
+  check("outsider: sent away from a project that is not theirs", await eventually(async () => !new URL(page.url()).pathname.startsWith(`/p/${A}/`)), page.url());
+  check("outsider: their own project, with their role", await eventually(async () => (await texts(page, ".project-switch .role-tag"))[0] === "Tester"), JSON.stringify(await texts(page, ".project-switch .role-tag")));
   await close();
 }
 {
@@ -128,10 +142,11 @@ for (const who of Object.keys(TABS)) {
 { // only the owner is offered a new project
   const o = await open("owner", `/p/${A}/cases`);
   await o.page.locator(".project-switch").click();
-  check("owner: can make a project", (await o.page.getByRole("button", { name: /New project/ }).count()) === 1);
+  check("owner: can make a project", await eventually(async () => (await o.page.getByRole("button", { name: /New project/ }).count()) === 1));
   await o.close();
   const v = await open("viewer", `/p/${A}/cases`);
   await v.page.locator(".project-switch").click();
+  await v.page.locator(".project-menu").waitFor({ timeout: 8000 }); // the menu is open: only then is "no New project" a real answer
   check("viewer: cannot make a project", (await v.page.getByRole("button", { name: /New project/ }).count()) === 0);
   await v.close();
 }
@@ -154,8 +169,8 @@ for (const who of Object.keys(TABS)) {
   // The email takes the current password: the field appears, Save waits for it, a wrong one is refused, the right one works.
   await profile.getByLabel("Email address").fill("carl.new@example.com");
   const pw = profile.getByLabel("Current password");
-  check("account: the password field appears when the email changes", (await pw.count()) === 1);
-  check("account: Save waits for it", await profile.getByRole("button", { name: "Save" }).isDisabled());
+  check("account: the password field appears when the email changes", await eventually(async () => (await pw.count()) === 1));
+  check("account: Save waits for it", await eventually(() => profile.getByRole("button", { name: "Save" }).isDisabled()));
   await pw.fill("not the password!!");
   await profile.getByRole("button", { name: "Save" }).click();
   await page.getByText("Changing the email address takes your current password").first().waitFor({ timeout: 10_000 });
@@ -177,7 +192,7 @@ for (const who of Object.keys(TABS)) {
   await sessions.getByRole("button", { name: /Sign out everywhere else/ }).click();
   await page.getByText(/Signed out of \d+ other session|There were no other sessions/).first().waitFor({ timeout: 10_000 });
   check("account: everywhere else was signed out", !(await alive(phone)) && !(await alive(laptop)) && (await alive(cookies.carl)));
-  check("account: only this session is left", (await sessions.locator("tbody tr").count()) === 1);
+  check("account: only this session is left", await eventually(async () => (await sessions.locator("tbody tr").count()) === 1));
 
   // Password: a mismatch is caught before sending, a wrong current one is refused, the right ones work and end the other sessions.
   const other = await login("carl.new@example.com", PASSWORD);
@@ -186,10 +201,10 @@ for (const who of Object.keys(TABS)) {
   const NEW = "a brand new ui passphrase";
   await fill(PASSWORD, NEW, NEW + "x");
   await password.getByRole("button", { name: "Change password" }).click();
-  check("account: two different new passwords are caught", (await password.getByRole("alert").innerText()) === "The two new passwords are not the same");
+  check("account: two different new passwords are caught", await eventually(async () => (await password.getByRole("alert").innerText()) === "The two new passwords are not the same"));
   await fill(PASSWORD, "short", "short");
   await password.getByRole("button", { name: "Change password" }).click();
-  check("account: a short password is caught", /at least 10 characters/.test(await password.getByRole("alert").innerText()));
+  check("account: a short password is caught", await eventually(async () => /at least 10 characters/.test(await password.getByRole("alert").innerText())));
   await fill("the wrong current one", NEW, NEW);
   await password.getByRole("button", { name: "Change password" }).click();
   await page.getByText("The current password is wrong").first().waitFor({ timeout: 10_000 });
@@ -205,12 +220,12 @@ for (const who of Object.keys(TABS)) {
 }
 { // the way there: from a project (the sidebar) and from having no project
   const a = await open("admin", `/p/${A}/cases`);
-  check("account: a link in the sidebar", (await a.page.locator('a[href="/account"]').count()) >= 1);
+  check("account: a link in the sidebar", await eventually(async () => (await a.page.locator('a[href="/account"]').count()) >= 1));
   await a.close();
   const n = await open("nobody", "/");
   await n.page.getByRole("link", { name: /Your account/ }).click();
   await n.page.waitForURL("**/account");
-  check("account: reachable with no project", (await n.page.getByRole("heading", { name: "Your account", level: 1 }).count()) === 1);
+  check("account: reachable with no project", await eventually(async () => (await n.page.getByRole("heading", { name: "Your account", level: 1 }).count()) === 1));
   await n.close();
 }
 await browser.close();
