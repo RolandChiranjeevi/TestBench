@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, Calendar, Check, ExternalLink, FileDown, FileJson, FileSpreadsheet, FileText, Loader2, Plus, Rocket, Trash2, Zap } from "lucide-react";
 import { api, type ChecklistItem, type Milestone } from "../api";
 import { Empty, Modal, useConfirm, useToast, ListSkeleton } from "../components/ui";
+import { Button, buttonClass } from "../components/Button";
 
 type MilestoneEdit = Partial<{ name: string; kind: string; startDate: string | null; endDate: string | null }>;
 
@@ -72,11 +73,11 @@ export function ReportsPage() {
         <span className="spacer" />
         {current && (
           <>
-            <a className="btn" href={`/api/milestones/${current.id}/report.html`} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Open</a>
-            <a className="btn" href={`/api/milestones/${current.id}/report.html?download=1`}><FileText size={14} /> HTML</a>
-            <button className="btn primary" onClick={downloadPdf} disabled={pdfBusy}>
+            <a className={buttonClass("secondary")} href={`/api/milestones/${current.id}/report.html`} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Open</a>
+            <a className={buttonClass("secondary")} href={`/api/milestones/${current.id}/report.html?download=1`}><FileText size={14} /> HTML</a>
+            <Button variant="primary" onClick={downloadPdf} disabled={pdfBusy}>
               {pdfBusy ? <Loader2 size={14} className="spin" /> : <FileDown size={14} />} Download PDF
-            </button>
+            </Button>
           </>
         )}
       </div>
@@ -85,7 +86,7 @@ export function ReportsPage() {
           <div className="toolbar" style={{ padding: "0 8px 0 16px" }}>
             <span className="muted" style={{ fontWeight: 500 }}>Sprints &amp; releases</span>
             <span className="spacer" />
-            <button className="btn ghost icon sm" onClick={() => setCreating(true)} title="New sprint or release" aria-label="New sprint or release"><Plus size={14} /></button>
+            <Button variant="ghost" size="sm" icon onClick={() => setCreating(true)} title="New sprint or release" aria-label="New sprint or release"><Plus size={14} /></Button>
           </div>
           <div className="reports-sprints">
             {milestones?.map((m) => (
@@ -106,18 +107,18 @@ export function ReportsPage() {
           <div style={{ borderTop: "1px solid var(--border)", padding: 12 }}>
             <div className="section-label"><Archive size={12} /> Export project data</div>
             <div className="col" style={{ gap: 4 }}>
-              <a className="btn sm" href={`/api/projects/${pid}/export.json`}><FileJson size={13} /> Everything (JSON backup)</a>
-              <a className="btn sm" href={`/api/projects/${pid}/export-markdown.zip`}><FileText size={13} /> Cases as Markdown (zip)</a>
-              <a className="btn sm" href={`/api/projects/${pid}/export-cases.csv`}><FileSpreadsheet size={13} /> Cases (CSV)</a>
-              <a className="btn sm" href={`/api/projects/${pid}/export-requirements.csv`}><FileSpreadsheet size={13} /> Requirements (CSV)</a>
-              <a className="btn sm" href={`/api/projects/${pid}/export-results.csv`}><FileSpreadsheet size={13} /> Results (CSV)</a>
+              <a className={buttonClass("secondary", "sm")} href={`/api/projects/${pid}/export.json`}><FileJson size={13} /> Everything (JSON backup)</a>
+              <a className={buttonClass("secondary", "sm")} href={`/api/projects/${pid}/export-markdown.zip`}><FileText size={13} /> Cases as Markdown (zip)</a>
+              <a className={buttonClass("secondary", "sm")} href={`/api/projects/${pid}/export-cases.csv`}><FileSpreadsheet size={13} /> Cases (CSV)</a>
+              <a className={buttonClass("secondary", "sm")} href={`/api/projects/${pid}/export-requirements.csv`}><FileSpreadsheet size={13} /> Requirements (CSV)</a>
+              <a className={buttonClass("secondary", "sm")} href={`/api/projects/${pid}/export-results.csv`}><FileSpreadsheet size={13} /> Results (CSV)</a>
             </div>
           </div>
         </div>
 
         <div className="pane grow" style={{ display: "flex", flexDirection: "column", background: "var(--bg-sidebar)" }}>
           {isLoading ? <ListSkeleton /> : !milestones?.length ? (
-            <Empty icon={<Calendar size={20} />} title="No sprints or releases yet" action={<button className="btn primary" onClick={() => setCreating(true)}><Plus size={14} /> New sprint</button>}>
+            <Empty icon={<Calendar size={20} />} title="No sprints or releases yet" action={<Button variant="primary" onClick={() => setCreating(true)}><Plus size={14} /> New sprint</Button>}>
               Give a run a sprint or release name when you create it or import results. Each one gets a report here, with a comparison to the one before.
             </Empty>
           ) : current ? (
@@ -166,9 +167,9 @@ function MilestoneBar({ m, onChange, onDelete }: { m: Milestone; onChange: (b: M
       </label>
       <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>Dates label the report and order sprints for comparison.</span>
       {m.run_count === 0 && (
-        <button className="btn ghost sm danger" style={{ marginLeft: "auto" }} onClick={onDelete}>
+        <Button variant="danger" size="sm" style={{ marginLeft: "auto" }} onClick={onDelete}>
           <Trash2 size={13} /> Delete empty {m.kind}
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -195,7 +196,7 @@ function NewMilestoneModal({ onClose }: { onClose: () => void }) {
       title="New sprint or release"
       onClose={onClose}
       width={440}
-      footer={<button className="btn primary" disabled={!name.trim() || create.isPending} onClick={() => create.mutate()}>Create</button>}
+      footer={<Button variant="primary" disabled={!name.trim() || create.isPending} onClick={() => create.mutate()}>Create</Button>}
     >
       <div className="field">
         <label htmlFor="mname">Name</label>
@@ -267,12 +268,12 @@ function ChecklistPanel({ milestone, others, onChanged }: { milestone: Milestone
                     onChange={(e) => { const v = e.target.value; if (v) run.mutate(() => api.patch<ChecklistItem[]>(`/api/checklist/${i.id}`, { doneAt: new Date(v).toISOString().slice(0, 16) })); }} />
                 </label>
               )}
-              <button className="btn ghost icon sm danger" aria-label={`Delete ${i.title}`} onClick={() => run.mutate(() => api.del<ChecklistItem[]>(`/api/checklist/${i.id}`))}><Trash2 size={12} /></button>
+              <Button variant="danger" size="sm" icon aria-label={`Delete ${i.title}`} onClick={() => run.mutate(() => api.del<ChecklistItem[]>(`/api/checklist/${i.id}`))}><Trash2 size={12} /></Button>
             </div>
           ))}
           <div className="row" style={{ padding: "8px 16px", borderTop: items.length ? "1px solid var(--border)" : undefined }}>
             <input className="input grow" placeholder="Add a task, e.g. Regression signed off by QA" value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} aria-label="New task" />
-            <button className="btn sm" onClick={add} disabled={!title.trim()}><Plus size={13} /> Add</button>
+            <Button size="sm" onClick={add} disabled={!title.trim()}><Plus size={13} /> Add</Button>
             {others.length > 0 && (
               <select className="select" style={{ width: 150, height: 28 }} value="" aria-label="Copy tasks from another sprint"
                 onChange={(e) => { const from = Number(e.target.value); if (from) run.mutate(() => api.post<ChecklistItem[]>(`${base}/copy`, { fromId: from })); }}>

@@ -6,6 +6,8 @@ import { api, formatDuration, passRate, timeAgo, type Dashboard, type TestStat }
 import { Empty, FrameworkBadge, PriorityIcon, ProgressBar, StatusIcon, ListSkeleton } from "../components/ui";
 import { CoverageBar, TrendChart } from "../components/charts";
 import { useObservationSummary } from "../observations";
+import { Button } from "../components/Button";
+import { Badge } from "../components/Badge";
 
 function Delta({ cur, prev }: { cur: number | null; prev: number | null }) {
   if (cur == null || prev == null) return null;
@@ -79,8 +81,8 @@ export function DashboardPage() {
       <div className="topbar">
         <h1>Dashboard</h1>
         <span className="spacer" />
-        <button className="btn" onClick={() => navigate(`/p/${pid}/import`)}><Download size={14} /> Import results</button>
-        <button className="btn primary" onClick={() => navigate(`/p/${pid}/reports`)}>Sprint reports</button>
+        <Button onClick={() => navigate(`/p/${pid}/import`)}><Download size={14} /> Import results</Button>
+        <Button variant="primary" onClick={() => navigate(`/p/${pid}/reports`)}>Sprint reports</Button>
       </div>
       <div className="content">
         {!hasRuns && s.cases === 0 ? (
@@ -150,7 +152,7 @@ export function DashboardPage() {
                       <div className="row">
                         <Play size={12} className="faint" />
                         <span className="truncate grow">{r.title}</span>
-                        {r.run_status === "in_progress" && <span className="chip accent">In progress</span>}
+                        {r.run_status === "in_progress" && <Badge tone="accent" icon="eye">In progress</Badge>}
                         <span className="tabular muted" style={{ fontSize: "var(--fs-sm)" }}>{passRate(r) == null ? "—" : `${passRate(r)}%`}</span>
                       </div>
                       <ProgressBar counts={r} />
