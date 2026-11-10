@@ -4,6 +4,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ChevronDown, ChevronRight, Gauge } from "lucide-react";
 import { api } from "../api";
 import { Empty, ListSkeleton, Modal, useConfirm, useToast } from "../components/ui";
+import { ObservationStatusBadge, SeverityBadge } from "../components/Badge";
+import { Button, buttonClass } from "../components/Button";
+import { FilterChip } from "../components/FilterChip";
 
 type Kind = "load_test" | "security_review";
 type Severity = "info" | "low" | "medium" | "high" | "critical";
@@ -26,7 +29,6 @@ const OPEN: Status[] = ["observed", "needs_review", "confirmed"];
 const isOpenStatus = (s: Status) => OPEN.includes(s);
 type Closing = "archive" | "resolve" | "reopen";
 const nameOf = (list: [string, string][], v: string) => list.find(([k]) => k === v)?.[1] ?? v;
-const tone = (s: Severity) => (s === "critical" || s === "high" ? "hi" : s === "medium" ? "mid" : "lo");
 const anchor = (label: string) => `obs-${label}`;
 const EVIDENCE_NOTE: Record<EvidenceFile["state"], string> = { ok: "found", problem: "problem", unresolved: "not found" };
 
@@ -38,9 +40,7 @@ function FilterGroup({ label, options, counts, value, onChange }: { label: strin
     <div className="obs-filter" role="group" aria-label={label}>
       <span className="faint">{label}</span>
       {[["", "All"] as [string, string], ...shown].map(([k, name]) => (
-        <button key={k || "all"} className={`chip${value === k ? " on" : ""}`} aria-pressed={value === k} onClick={() => onChange(k)}>
-          {name}{k ? <span className="faint"> {counts[k] ?? 0}</span> : null}
-        </button>
+        <FilterChip key={k || "all"} pressed={value === k} count={k ? counts[k] ?? 0 : null} onClick={() => onChange(k)}>{name}</FilterChip>
       ))}
     </div>
   );
@@ -61,9 +61,7 @@ function StatusFilter({ counts, value, onChange }: { counts: Record<Status, numb
     <div className="obs-filter" role="group" aria-label="Status">
       <span className="faint">Status</span>
       {options.map(([k, name, n]) => (
-        <button key={k || "active"} className={`chip${value === k ? " on" : ""}`} aria-pressed={value === k} onClick={() => onChange(k)}>
-          {name}{n !== null ? <span className="faint"> {n}</span> : null}
-        </button>
+        <FilterChip key={k || "active"} pressed={value === k} count={n} onClick={() => onChange(k)}>{name}</FilterChip>
       ))}
     </div>
   );
@@ -181,8 +179,8 @@ export function ObservationsPage() {
                       {o.status === "converted" && <span className="muted"> · tracked as a bug report</span>}
                     </span>
                     <span className="muted c-type">{nameOf(KINDS, o.kind)}</span>
-                    <span><span className={`plan-pri ${tone(o.severity)}`}>{nameOf(SEVERITIES, o.severity)}</span></span>
-                    <span className="c-auto">{nameOf(STATUSES, o.status)}</span>
+                    <span><SeverityBadge value={o.severity} /></span>
+                    <span className="c-auto"><ObservationStatusBadge value={o.status} /></span>
                   </button>
                   {isOpen && (
                     <div className="plan-detail" id={`${anchor(o.label)}-detail`}>
@@ -228,16 +226,16 @@ export function ObservationsPage() {
                         <span className="spacer" />
                         {isOpenStatus(o.status) && (
                           <>
-                            <button className="btn sm" disabled={closing.isPending} onClick={() => close(o, "archive")}>Archive</button>
-                            <button className="btn sm" disabled={closing.isPending} onClick={() => close(o, "resolve")}>Mark as resolved</button>
+                            <Button size="sm" disabled={closing.isPending} onClick={() => close(o, "archive")}>Archive</Button>
+                            <Button size="sm" disabled={closing.isPending} onClick={() => close(o, "resolve")}>Mark as resolved</Button>
                           </>
                         )}
                         {(o.status === "archived" || o.status === "resolved" || (o.status === "converted" && !o.convertedBugId)) && (
-                          <button className="btn sm" disabled={closing.isPending} onClick={() => close(o, "reopen")}>Reopen</button>
+                          <Button size="sm" disabled={closing.isPending} onClick={() => close(o, "reopen")}>Reopen</Button>
                         )}
                         {o.convertedBugId
-                          ? <Link className="btn sm" to={`/p/${pid}/bugs?bug=${o.convertedBugId}`}>Open the bug report</Link>
-                          : <button className="btn sm" onClick={() => setConverting(o)}>Convert to bug</button>}
+                          ? <Link className={buttonClass("secondary", "sm")} to={`/p/${pid}/bugs?bug=${o.convertedBugId}`}>Open the bug report</Link>
+                          : <Button size="sm" onClick={() => setConverting(o)}>Convert to bug</Button>}
                       </div>
                     </div>
                   )}
@@ -262,8 +260,8 @@ export function ObservationsPage() {
           width={480}
           footer={
             <>
-              <button className="btn ghost" onClick={() => setConverting(null)} disabled={convert.isPending}>Cancel</button>
-              <button className="btn primary" disabled={convert.isPending} onClick={() => convert.mutate(converting.id)}>{convert.isPending ? "Making…" : "Make a bug report"}</button>
+              <Button variant="ghost" onClick={() => setConverting(null)} disabled={convert.isPending}>Cancel</Button>
+              <Button variant="primary" disabled={convert.isPending} onClick={() => convert.mutate(converting.id)}>{convert.isPending ? "Making…" : "Make a bug report"}</Button>
             </>
           }
         >
