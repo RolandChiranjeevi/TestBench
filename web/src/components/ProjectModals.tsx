@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type BackupInfo, type Project } from "../api";
 import { ConfirmModal, Modal, useToast } from "./ui";
+import { Button } from "./Button";
 
 export function RenameProjectModal({ project, onClose }: { project: Project; onClose: () => void }) {
   const [name, setName] = useState(project.name);
@@ -22,7 +23,7 @@ export function RenameProjectModal({ project, onClose }: { project: Project; onC
       title="Rename project"
       onClose={onClose}
       width={440}
-      footer={<button className="btn primary" disabled={!valid || save.isPending} onClick={() => save.mutate()}>Save</button>}
+      footer={<Button variant="primary" disabled={!valid || save.isPending} onClick={() => save.mutate()}>Save</Button>}
     >
       <form className="col" style={{ gap: 12 }} onSubmit={(e) => { e.preventDefault(); if (valid) save.mutate(); }}>
         <div className="field">
