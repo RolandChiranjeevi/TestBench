@@ -69,7 +69,7 @@ export interface AuditEntry {
 /** Every action the server writes to the audit log (test/web-accounts.test.ts checks this list against the server's source, so a new action cannot be left without words). */
 export const AUDIT_ACTIONS = [
   "account.created", "account.disabled", "account.enabled", "account.setup", "invitation.created", "invitation.revoked", "invitation.used", "login.failed", "login.succeeded",
-  "member.added", "member.removed", "member.role_changed", "members.migrated", "password.changed", "password.reset", "password.reset_link_created", "profile.changed", "sessions.revoked_others",
+  "member.added", "member.removed", "member.role_changed", "members.migrated", "password.changed", "password.reset", "password.reset_link_created", "profile.changed", "requirements.bulk_approved", "sessions.revoked_others",
 ] as const;
 
 /** The filter choices on the audit log page: a label, and the start of the action it keeps (what `?action=` takes). */
@@ -82,6 +82,7 @@ export const AUDIT_FILTERS: readonly { label: string; prefix: string }[] = [
   { label: "Sessions", prefix: "sessions." },
   { label: "Invitations", prefix: "invitation." },
   { label: "Members and roles", prefix: "member" },
+  { label: "Requirements", prefix: "requirements." },
 ];
 
 /** How to turn the ids in an entry into names. A name that is not known (an account or a project that no longer exists) is said as such, never left as a bare number. */
@@ -112,6 +113,7 @@ export function describeAudit(e: Pick<AuditEntry, "action" | "actor" | "targetUs
     case "password.reset": return `${target} set a new password${d.via === "command line" ? " (set on the server)" : " with a reset link"}${d.sessionsEnded ? `, which ended ${plural(d.sessionsEnded, "session")}` : ""}`;
     case "password.reset_link_created": return `${who} made a password reset link for ${target}`;
     case "profile.changed": return `${who} changed their ${Array.isArray(d.fields) && d.fields.length ? d.fields.join(" and ") : "profile"}`;
+    case "requirements.bulk_approved": return `${who} approved ${plural(d.count, "imported requirement")} in ${project}`;
     case "sessions.revoked_others": return `${who} signed out of ${plural(d.sessionsEnded, "other session")}`;
     default: return `${who}: ${e.action}`;
   }

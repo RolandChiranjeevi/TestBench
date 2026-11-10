@@ -279,6 +279,7 @@ requirements that are failing or weren't run, and exports include them (JSON and
 
 **Requirements as a basis for a test agent.** A requirement also has a **kind** (functional, accessibility with WCAG criteria, responsive with
 viewports, security and privacy, business rule, usability) and an optional stable id. Import them from a JSON file with a preview (**Import**),
+**An import never approves anything:** new requirements land as **drafts** (whatever status the file gives them, except retired), with who ran the import, when, and the file's name; a requirement that already exists keeps its status and its approver (a file can retire it, not approve it). A banner on the Requirements page then offers **Review and approve N requirements**, where you read the list, untick any you do not want yet, and approve the rest: you are recorded as the approver (with your account), and the audit log notes how many. Drafts are not counted as requirements and are not given to an agent.
 and download the active ones for an agent (**For the agent**, or `GET /api/projects/<id>/agent/requirements`). The Requirements page also shows
 which requirements have no test, have open bugs, or were not named by the latest audit run, counting only what a person has accepted. An agent
 can use requirements to choose tests and to propose manual tests (they arrive in **Agent proposals**; accept one and **Create test case** to run it in Runs), but can never mark a requirement as met. See [docs/requirements.md](docs/requirements.md).

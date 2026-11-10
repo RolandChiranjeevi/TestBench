@@ -40,12 +40,12 @@ Create, edit, archive and delete them on the **Requirements** page. Attachments,
 A complete example is in [`examples/requirements/shop-requirements.json`](../examples/requirements/shop-requirements.json).
 
 - `format`, `version`, `project` and `id` and `title` of each requirement are required. `project` must be the key of the project you import into: **a file for another project is refused whole**, and requirements are only ever looked up in the project being imported into.
-- `status` is `draft`, `active` or `retired` (the existing `approved` and `deprecated` are accepted too). Omitted: `active`.
+- `status` is `draft`, `active` or `retired` (the existing `approved` and `deprecated` are accepted too). **An import never approves.** A new requirement becomes a **draft** whatever the file says, except `retired`, which is kept; a person then approves the drafts (**Review and approve N requirements** on the Requirements page). A requirement that already exists keeps its status and its approver; a file can retire it, never approve it. Each imported requirement records who imported it, when, and the file's name.
 - `wcag` only on `accessibility` requirements; `viewports` only on `responsive` and `accessibility` ones.
 - **Idempotent.** A requirement is identified by `id`. The same id is **updated** (its number, links and history are kept); a new id is **added**; the same file imported twice changes nothing and records no revision. `id` can also be the Testbench number of an existing requirement (`REQ-3`), which updates it; a number can never create one.
 - **No duplicates.** The same id twice in a file, or an id and the number it already has, refuse the file. A new requirement with the same **title** as an existing one is added but flagged in the preview, so that you can use the existing requirement's id instead.
 - **All or nothing.** One invalid requirement refuses the file, with the list of what is wrong. Requirements that are **not in the file are left alone**; nothing is deleted by an import.
-- The import writes what the file says, including `status`: re-importing a file after you archived a requirement in Testbench restores what the file says. The preview shows every field that would change.
+- The import writes what the file says, except `status` (see above): re-importing a file changes the text, priority and the other fields, and shows every field that would change in the preview, but it does not approve and does not bring back a requirement you archived.
 
 ## What is linked to a requirement
 

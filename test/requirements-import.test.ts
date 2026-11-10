@@ -7,9 +7,11 @@ import { bagFromFiles } from "../server/importers/bag.ts";
 import { importAuditPackage, reviewBugReport } from "../server/audits.ts";
 import { agentRequirements } from "../server/agentexport.ts";
 import { getRequirement, kindProblem, listRequirements, setRequirementCases } from "../server/requirements.ts";
-import { importRequirements, RequirementImportError } from "../server/reqimport.ts";
+import { approveImported, importRequirements, RequirementImportError } from "../server/reqimport.ts";
 import { requirementCoverage } from "../server/reqlinks.ts";
 import { reviewManualTest } from "../server/manualtests.ts";
+
+import { setDisplayName } from "../server/actor.ts";
 
 let n = 0;
 const proj = () => makeProject(`RQ${++n}`, `Requirements ${n}`);
@@ -19,6 +21,16 @@ const file = (p: { key: string }, requirements: unknown[], over: Record<string, 
   JSON.stringify({ format: "testbench-requirements", version: 1, project: p.key, requirements, ...over });
 const req = (over: Record<string, unknown> = {}) => ({ id: "CHK-001", title: "Customers can pay by card", description: "Card payment works", kind: "functional", priority: "high", status: "active", source: "https://example.test/spec#1", ...over });
 const byExternal = (p: { id: number }, id: string) => db.prepare("SELECT * FROM requirements WHERE project_id = ? AND external_id = ?").get(p.id, id) as Record<string, any>;
+/** The fixture most tests want: requirements that are approved, as they were before an import stopped approving. The file says which are active; those are approved by the explicit step. */
+const importApproved = (projectId: number, content: string) => {
+  const s = importRequirements(projectId, content);
+  const ids = (JSON.parse(content).requirements as { id: string; status?: string }[])
+    .filter((r) => !r.status || r.status === "active" || r.status === "approved")
+    .map((r) => (db.prepare("SELECT id FROM requirements WHERE project_id = ? AND external_id = ?").get(projectId, r.id) as { id: number } | undefined)?.id)
+    .filter((x): x is number => x !== undefined);
+  approveImported(projectId, ids);
+  return s;
+};
 const refused = (p: { id: number }, content: string) => assert.throws(() => importRequirements(p.id, content), RequirementImportError);
 
 describe("importing requirements", () => {
@@ -37,7 +49,8 @@ describe("importing requirements", () => {
     const a = byExternal(p, "A11Y-1");
     assert.deepEqual([a.kind, a.status, a.priority, JSON.parse(a.wcag), JSON.parse(a.viewports)], ["accessibility", "draft", "critical", ["1.3.2", "2.4.3"], [{ width: 320 }]]);
     assert.equal(byExternal(p, "RESP-1").status, "deprecated");
-    assert.equal(byExternal(p, "CHK-001").status, "approved");
+    assert.equal(byExternal(p, "CHK-001").status, "draft", "the file said active, but an import never approves");
+    assert.equal(s.asDrafts, 5, "everything new except the retired one");
     assert.deepEqual(JSON.parse(byExternal(p, "RESP-1").viewports), [{ device: "iPhone 13", width: 390, height: 844 }, { breakpoint: "md" }]);
     assert.deepEqual(listRequirements(p.id).map((r) => r.number), [1, 2, 3, 4, 5, 6], "numbered in the project as usual");
     assert.equal(listRequirements(p.id)[1].wcag.length, 2);
@@ -147,7 +160,7 @@ describe("importing requirements", () => {
 describe("the requirements an agent reads", () => {
   it("gives the active requirements with title, description, priority, status, kind, WCAG, viewports and sources, and nothing that says met", () => {
     const p = proj();
-    importRequirements(p.id, file(p, [
+    importApproved(p.id, file(p, [
       req(),
       req({ id: "A11Y-1", title: "Focus order", kind: "accessibility", wcag: ["2.4.3"], viewports: [{ width: 320 }], source: "WCAG 2.2" }),
       req({ id: "DRAFT-1", title: "Not decided", status: "draft" }),
@@ -171,21 +184,21 @@ describe("the requirements an agent reads", () => {
   it("only lists the project's own requirements", () => {
     const p = proj();
     const other = proj();
-    importRequirements(other.id, file(other, [req({ id: "THEIRS", title: "Theirs" })]));
-    importRequirements(p.id, file(p, [req()]));
+    importApproved(other.id, file(other, [req({ id: "THEIRS", title: "Theirs" })]));
+    importApproved(p.id, file(p, [req()]));
     assert.deepEqual(agentRequirements(p.id).requirements.map((r) => r.id), ["CHK-001"]);
   });
 
   it("an exported file can be imported again and changes nothing", () => {
     const p = proj();
-    importRequirements(p.id, file(p, [req(), req({ id: "A11Y-1", title: "Focus", kind: "accessibility", wcag: ["2.4.3"], viewports: [{ width: 320 }] }), req({ id: "OLD", title: "Old", status: "retired" })]));
+    importApproved(p.id, file(p, [req(), req({ id: "A11Y-1", title: "Focus", kind: "accessibility", wcag: ["2.4.3"], viewports: [{ width: 320 }] }), req({ id: "OLD", title: "Old", status: "retired" })]));
     const s = importRequirements(p.id, JSON.stringify(agentRequirements(p.id, { status: "all" })));
     assert.deepEqual(s.counts, { new: 0, unchanged: 3, updated: 0 });
   });
 
   it("is not changed by anything the agent sends: a proposal does not cover or break a requirement, a person's decision does", () => {
     const p = proj();
-    importRequirements(p.id, file(p, [req()]));
+    importApproved(p.id, file(p, [req()]));
     const f = new Map<string, Uint8Array>();
     f.set("manifest.json", Buffer.from(JSON.stringify({ format: "testbench-audit-package", version: 1, audit: { id: "a1", project: p.key }, files: [], parts: {} })));
     f.set("bugs.json", Buffer.from(JSON.stringify({ version: 1, bugs: [{ sourceId: "bug-1", title: "Card fails", refs: { requirements: ["CHK-001"] } }] })));
@@ -219,7 +232,7 @@ describe("coverage of requirements", () => {
 
   it("tells which requirements have no test, have open bugs, or were not referenced by the latest audit run", () => {
     const p = proj();
-    importRequirements(p.id, file(p, [req({ id: "R1", title: "One" }), req({ id: "R2", title: "Two" }), req({ id: "R3", title: "Three" }), req({ id: "OLD", title: "Retired", status: "retired" })]));
+    importApproved(p.id, file(p, [req({ id: "R1", title: "One" }), req({ id: "R2", title: "Two" }), req({ id: "R3", title: "Three" }), req({ id: "OLD", title: "Retired", status: "retired" })]));
     assert.deepEqual(requirementCoverage(p.id).summary, { active: 3, withoutTest: 3, withOpenBugs: 0, notInLatestRun: 0, auditKnown: false }, "no audit yet: nothing to say about a run");
     const c = makeCase(p.id, "Case for R3");
     setRequirementCases(byExternal(p, "R3").id, p.id, [c.id]);
@@ -243,7 +256,7 @@ describe("coverage of requirements", () => {
 
   it("a requirement the latest run no longer names is not referenced, while the earlier run did", () => {
     const p = proj();
-    importRequirements(p.id, file(p, [req({ id: "R1", title: "One" }), req({ id: "R2", title: "Two" })]));
+    importApproved(p.id, file(p, [req({ id: "R1", title: "One" }), req({ id: "R2", title: "Two" })]));
     audit(p, ["R1", "R2"]);
     audit(p, ["R1"]);
     const by = (id: string) => listRequirements(p.id).find((r) => r.external_id === id)!.links;
@@ -254,7 +267,7 @@ describe("coverage of requirements", () => {
 
   it("shows references to requirements that do not exist, with the reason", () => {
     const p = proj();
-    importRequirements(p.id, file(p, [req()]));
+    importApproved(p.id, file(p, [req()]));
     audit(p, ["CHK-001", "NOPE-9", "REQ-77"]);
     const u = requirementCoverage(p.id).unresolved as { kind: string; raw: string; reason: string }[];
     assert.deepEqual(u.map((x) => [x.kind, x.raw]).sort(), [["bug", "NOPE-9"], ["bug", "REQ-77"], ["manual_test", "NOPE-9"], ["manual_test", "REQ-77"]]);
@@ -265,11 +278,108 @@ describe("coverage of requirements", () => {
   it("links are project scoped: another project's items never count for this project's requirement", () => {
     const p = proj();
     const other = proj();
-    importRequirements(p.id, file(p, [req()]));
-    importRequirements(other.id, file(other, [req()]));
+    importApproved(p.id, file(p, [req()]));
+    importApproved(other.id, file(other, [req()]));
     audit(other, ["CHK-001"]);
     reviewManualTest((db.prepare("SELECT id FROM manual_tests WHERE project_id = ?").get(other.id) as { id: number }).id, "accepted");
     assert.deepEqual([listRequirements(p.id)[0].links.manualTests, listRequirements(p.id)[0].links.audit], [{ accepted: 0, proposed: 0 }, "no_audit"]);
     assert.equal(listRequirements(other.id)[0].links.manualTests.accepted, 1);
+  });
+});
+
+describe("an import never approves", () => {
+  it("a new requirement is a draft whatever the file says (a retired one stays retired), with who imported it, when, and from which file", () => {
+    setDisplayName("Ida Importer");
+    const p = proj();
+    const s = importRequirements(p.id, file(p, [
+      req({ id: "A", title: "Said active", status: "active" }),
+      req({ id: "B", title: "Said approved", status: "approved" }),
+      req({ id: "C", title: "Said draft", status: "draft" }),
+      req({ id: "D", title: "Said retired", status: "retired" }),
+    ]), { fileName: "shop-requirements.json" });
+    assert.deepEqual([s.counts.new, s.asDrafts], [4, 3]);
+    assert.deepEqual(["A", "B", "C", "D"].map((id) => byExternal(p, id).status), ["draft", "draft", "draft", "deprecated"]);
+    for (const id of ["A", "B", "C"]) {
+      const r = byExternal(p, id);
+      assert.deepEqual([r.approved_by, r.approved_at, r.origin], ["", null, "import"], `${id} has no approver`);
+      assert.deepEqual([r.imported_by, r.import_ref], ["Ida Importer", "shop-requirements.json"]);
+      assert.ok(r.imported_at, "when");
+    }
+    assert.equal(count("SELECT COUNT(*) AS n FROM requirements WHERE project_id = ? AND status = 'approved'", p.id), 0);
+  });
+
+  it("the preview says how many will be drafts and writes nothing", () => {
+    const p = proj();
+    const s = importRequirements(p.id, file(p, [req({ id: "A" }), req({ id: "B", title: "Two" })]), { dryRun: true });
+    assert.deepEqual([s.dryRun, s.asDrafts, s.counts.new], [true, 2, 2]);
+    assert.equal(count("SELECT COUNT(*) AS n FROM requirements WHERE project_id = ?", p.id), 0);
+  });
+
+  it("a requirement that is already approved keeps its status and its approver when a file says otherwise; its text still updates; a file can retire it", () => {
+    setDisplayName("Ida Importer");
+    const p = proj();
+    importRequirements(p.id, file(p, [req({ id: "A", title: "Original" }), req({ id: "B", title: "Keep me" })]));
+    setDisplayName("Anna Approver");
+    approveImported(p.id);
+    assert.equal(byExternal(p, "A").approved_by, "Anna Approver");
+    setDisplayName("Ida Importer");
+    const s = importRequirements(p.id, file(p, [req({ id: "A", title: "Reworded", status: "draft" }), req({ id: "B", title: "Keep me", status: "retired" })]));
+    assert.deepEqual([s.counts.updated, s.asDrafts], [2, 0]);
+    const a = byExternal(p, "A");
+    assert.deepEqual([a.title, a.status, a.approved_by], ["Reworded", "approved", "Anna Approver"], "the text changed; the approval did not");
+    assert.equal(byExternal(p, "B").status, "deprecated", "retiring is allowed");
+    assert.equal(byExternal(p, "A").imported_by, "Ida Importer", "who imported it is not rewritten by a later import");
+  });
+});
+
+describe("approving what was imported", () => {
+  const imported = (p: { id: number; key: string }, ids: string[]) => importRequirements(p.id, file(p, ids.map((id) => req({ id, title: `Requirement ${id}` }))), { fileName: "f.json" });
+  const status = (p: { id: number }, id: string) => byExternal(p, id).status;
+
+  it("approves all imported drafts, or only the ones picked, as the person signed in, and leaves everything else alone", () => {
+    const p = proj();
+    imported(p, ["A", "B", "C"]);
+    db.prepare("INSERT INTO requirements (project_id, number, title, status, origin) VALUES (?, 90, 'Written by hand', 'draft', 'human')").run(p.id);
+    setDisplayName("Anna Approver");
+    const first = approveImported(p.id, [byExternal(p, "A").id, byExternal(p, "B").id]);
+    assert.equal(first.approved, 2);
+    assert.deepEqual(["A", "B", "C"].map((id) => status(p, id)), ["approved", "approved", "draft"]);
+    const a = byExternal(p, "A");
+    assert.deepEqual([a.approved_by, !!a.approved_at], ["Anna Approver", true]);
+    const log = db.prepare("SELECT changes, changed_by FROM requirement_revisions WHERE requirement_id = ? ORDER BY id").all(a.id) as { changes: string; changed_by: string }[];
+    assert.equal(log.length, 2, "created by the import, then approved");
+    assert.deepEqual([JSON.parse(log[1].changes).map((c: { field: string }) => c.field), log[1].changed_by], [["status", "approved by"], "Anna Approver"], "the change log says who approved");
+    const rest = approveImported(p.id);
+    assert.equal(rest.approved, 1, "only the one that was left");
+    assert.equal(db.prepare("SELECT status FROM requirements WHERE project_id = ? AND number = 90").pluck().get(p.id), "draft", "a draft a person wrote is not an imported one");
+    assert.equal(approveImported(p.id).approved, 0, "nothing left: nothing happens, and it can be run again");
+  });
+
+  it("never touches another project, an id that is not a draft of an import, or anything for an empty pick", () => {
+    const p = proj();
+    const other = proj();
+    imported(p, ["A"]);
+    imported(other, ["A"]);
+    assert.equal(approveImported(p.id, [byExternal(other, "A").id]).approved, 0, "another project's id");
+    assert.equal(status(other, "A"), "draft");
+    assert.equal(approveImported(p.id, []).approved, 0, "an empty pick approves nothing");
+    assert.equal(status(p, "A"), "draft");
+    assert.equal(approveImported(p.id, [byExternal(p, "A").id, byExternal(p, "A").id]).approved, 1, "a repeated id is one requirement");
+  });
+
+  it("refuses a pick that is not a list of whole numbers", () => {
+    const p = proj();
+    for (const bad of ["1", { a: 1 }, [1.5], ["1"], [null], Array.from({ length: 1001 }, (_, i) => i + 1)]) assert.throws(() => approveImported(p.id, bad), RequirementImportError, JSON.stringify(bad).slice(0, 30));
+  });
+
+  it("writes one entry to the audit log with the project and the count", () => {
+    const p = proj();
+    imported(p, ["A", "B"]);
+    approveImported(p.id, undefined, "10.0.0.9");
+    const e = db.prepare("SELECT action, project_id, ip, detail FROM audit_log WHERE action = 'requirements.bulk_approved' AND project_id = ?").all(p.id) as { action: string; project_id: number; ip: string; detail: string }[];
+    assert.equal(e.length, 1);
+    assert.deepEqual([e[0].ip, JSON.parse(e[0].detail)], ["10.0.0.9", { count: 2 }]);
+    approveImported(p.id);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE action = 'requirements.bulk_approved' AND project_id = ?").pluck().get(p.id), 1, "nothing approved, nothing logged");
   });
 });

@@ -92,6 +92,7 @@ function RequirementsList({ tabStrip }: { tabStrip: ReactNode }) {
   const [scope, setScope] = useState<Scope>("");
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [approving, setApproving] = useState(false);
   const { data: cov } = useQuery({ queryKey: ["requirement-coverage", pid], queryFn: () => api.get<CoverageInfo>(`/api/projects/${pid}/requirements/coverage`) });
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -106,6 +107,7 @@ function RequirementsList({ tabStrip }: { tabStrip: ReactNode }) {
   useHotkeys({ c: (e) => { e.preventDefault(); if (canEdit) setCreating(true); }, "/": (e) => { e.preventDefault(); searchRef.current?.focus(); } }, !creating);
 
   const active = reqs.filter((r) => r.status !== "deprecated");
+  const importedDrafts = reqs.filter((r) => r.origin === "import" && r.status === "draft");
   const counts: Record<Filter, number> = {
     all: reqs.length,
     review: active.filter((r) => r.reviewCount > 0).length,
@@ -146,6 +148,13 @@ function RequirementsList({ tabStrip }: { tabStrip: ReactNode }) {
           <Button needs="tester" variant="primary" onClick={() => setCreating(true)}><Plus size={14} /> New requirement <Kbd>C</Kbd></Button>
         </div>
         {tabStrip}
+        {importedDrafts.length > 0 && (
+          <div className="toolbar" style={{ gap: 8 }} role="status">
+            <Upload size={14} aria-hidden="true" />
+            <span>{importedDrafts.length} imported requirement{importedDrafts.length === 1 ? " is a draft" : "s are drafts"}: not counted until you approve {importedDrafts.length === 1 ? "it" : "them"}.</span>
+            <Button needs="tester" variant="primary" size="sm" onClick={() => setApproving(true)}>Review and approve {importedDrafts.length} requirement{importedDrafts.length === 1 ? "" : "s"}</Button>
+          </div>
+        )}
         {cov && cov.summary.active > 0 && (
           <div className="toolbar" style={{ gap: 8 }} aria-label="Coverage of active requirements">
             <span className="faint" style={{ whiteSpace: "nowrap" }}>{cov.summary.active} active</span>
@@ -240,6 +249,7 @@ function RequirementsList({ tabStrip }: { tabStrip: ReactNode }) {
         </>
       )}
       {importing && <ImportRequirementsModal pid={pid!} onClose={() => setImporting(false)} />}
+      {approving && <ApproveImportedModal pid={pid!} drafts={importedDrafts} onClose={() => setApproving(false)} />}
       {creating && <NewRequirementModal projectId={projectId} onClose={() => setCreating(false)} onCreated={select} />}
     </div>
   );
@@ -670,6 +680,45 @@ export function LinkToRequirementModal({ caseIds, onClose, onDone }: { caseIds: 
   );
 }
 
+/** After an import: the drafts it made, to read through and approve, all or the ones ticked. Approving records the person (and their account) as the approver. */
+function ApproveImportedModal({ pid, drafts, onClose }: { pid: string; drafts: Requirement[]; onClose: () => void }) {
+  const toast = useToast();
+  const invalidate = useInvalidate();
+  const [picked, setPicked] = useState<Set<number>>(() => new Set(drafts.map((r) => r.id)));
+  const toggle = (id: number) => setPicked((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const approve = useMutation({
+    mutationFn: () => api.post<{ approved: number }>(`/api/projects/${pid}/requirements/approve-imported`, { ids: [...picked] }),
+    onSuccess: (r) => { invalidate(); toast("success", `Approved ${r.approved} requirement${r.approved === 1 ? "" : "s"}`); onClose(); },
+    onError: (e: Error) => toast("error", e.message),
+  });
+  return (
+    <Modal title="Review and approve imported requirements" onClose={onClose} width={720}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button needs="tester" variant="primary" disabled={!picked.size || approve.isPending} onClick={() => approve.mutate()}>{approve.isPending ? "Approving…" : `Approve ${picked.size} requirement${picked.size === 1 ? "" : "s"}`}</Button></>}>
+      <div className="col" style={{ gap: 12 }}>
+        <div className="muted">
+          These came from an import and are drafts. Approving makes them requirements: they count for coverage, and a test agent reads them. You are recorded as the approver.
+          Leave out any you do not want yet; they stay drafts, and you can edit them first.
+        </div>
+        <div className="row" style={{ gap: 8 }}>
+          <Button size="sm" onClick={() => setPicked(new Set(drafts.map((r) => r.id)))}>Select all</Button>
+          <Button size="sm" onClick={() => setPicked(new Set())}>Select none</Button>
+          <span className="faint">{picked.size} of {drafts.length} selected</span>
+        </div>
+        <div className="card" style={{ maxHeight: 340, overflow: "auto" }}>
+          {drafts.map((r) => (
+            <label key={r.id} className="list-row" style={{ height: 32, padding: "0 12px" }}>
+              <input type="checkbox" checked={picked.has(r.id)} onChange={() => toggle(r.id)} aria-label={`Approve REQ-${r.number} ${r.title}`} />
+              <PriorityIcon priority={r.priority} />
+              <span className="mono muted key-col">REQ-{r.number}</span>
+              <span className="title truncate" title={r.title}>{r.title}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 /** Import requirements from a JSON file: a preview first, nothing is written until it is confirmed. */
 function ImportRequirementsModal({ pid, onClose }: { pid: string; onClose: () => void }) {
   const toast = useToast();
@@ -679,8 +728,8 @@ function ImportRequirementsModal({ pid, onClose }: { pid: string; onClose: () =>
   const [name, setName] = useState("");
   const preview = useMutation({ mutationFn: (text: string) => api.post<ImportPreview>(`/api/projects/${pid}/requirements/import?dryRun=1`, { content: text }) });
   const doImport = useMutation({
-    mutationFn: () => api.post<ImportPreview>(`/api/projects/${pid}/requirements/import`, { content }),
-    onSuccess: (s) => { invalidate(); toast("success", `Imported: ${s.counts.new} new, ${s.counts.updated} updated, ${s.counts.unchanged} unchanged`); onClose(); },
+    mutationFn: () => api.post<ImportPreview>(`/api/projects/${pid}/requirements/import`, { content, fileName: name }),
+    onSuccess: (s) => { invalidate(); toast("success", `Imported: ${s.counts.new} new${s.asDrafts ? ` (${s.asDrafts} as drafts)` : ""}, ${s.counts.updated} updated, ${s.counts.unchanged} unchanged`); onClose(); },
     onError: (e: Error) => toast("error", e.message),
   });
   const choose = async (f: File | undefined) => {
@@ -713,6 +762,7 @@ function ImportRequirementsModal({ pid, onClose }: { pid: string; onClose: () =>
           <div className="col" style={{ gap: 8 }}>
             <div className="card" style={{ padding: 12 }}>
               {s.counts.new} new · {s.counts.updated} updated · {s.counts.unchanged} unchanged · {s.untouched} existing requirement{s.untouched === 1 ? "" : "s"} not in the file (left as they are)
+              {s.asDrafts > 0 && <div style={{ marginTop: 6 }}><strong>{s.asDrafts} new requirement{s.asDrafts === 1 ? " is" : "s are"} added as drafts.</strong> An import never approves: you review and approve them afterwards, on this page.</div>}
             </div>
             <div style={{ maxHeight: 280, overflow: "auto", border: "1px solid var(--border)", borderRadius: "var(--radius)" }}>
               {s.items.map((i) => (
@@ -734,7 +784,7 @@ function ImportRequirementsModal({ pid, onClose }: { pid: string; onClose: () =>
   );
 }
 interface ImportPreview {
-  counts: { new: number; unchanged: number; updated: number }; untouched: number;
+  counts: { new: number; unchanged: number; updated: number }; untouched: number; asDrafts: number;
   items: { id: string; title: string; action: string; matches: string | null; changes: { field: string; from: string; to: string }[]; warnings: string[] }[];
 }
 
