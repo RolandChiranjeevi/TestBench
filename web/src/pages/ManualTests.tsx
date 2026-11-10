@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Check, ClipboardCheck, EyeOff, Pencil, Trash2, Upload, UserCheck } from "lucide-react";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, ClipboardCheck, EyeOff, Pencil, Plus, Trash2, Undo2, Upload, UserCheck } from "lucide-react";
 import { api, formatDateTime, formatViewport, timeAgo, type Priority, type Viewport } from "../api";
 import { ConfirmModal, Empty, ListSkeleton, Modal, PriorityIcon, PRIORITY_LABEL, useToast } from "../components/ui";
 import { proposalCaseLink } from "../caseFilter";
-import { ImportModal, Severity, StatusChip, useRefresh, whenShort } from "./BugReports";
+import { ImportModal, Severity, useRefresh, whenShort } from "./BugReports";
 import { Button, buttonClass } from "../components/Button";
 import { Badge } from "../components/Badge";
 import { useCan } from "../components/Access";
@@ -17,7 +17,7 @@ const CATEGORY_LABEL: Record<Category, string> = { functional: "Functional", acc
 
 interface Item {
   id: number; sourceId: string; title: string; status: Status; category: Category; priority: Priority; wcag: string[]; viewports: string[];
-  importedAt: string; auditTitle: string; auditDeleted: boolean; unresolvedRefs: number; requirements: number; edited: boolean; pendingUpdate: boolean; presence: Presence; testCase: string | null; isNew: boolean;
+  importedAt: string; auditTitle: string; auditDeleted: boolean; unresolvedRefs: number; requirements: number; edited: boolean; pendingUpdate: boolean; presence: Presence; testCase: string | null; testCaseId: number | null; testCaseStatus: string | null; isNew: boolean;
 }
 interface LatestImport { importId: number; auditTitle: string; importedAt: string; newCount: number }
 interface List { items: Item[]; counts: Record<string, number>; presenceCounts: Record<Presence, number>; wcagCriteria: string[]; latest: LatestImport | null }
@@ -37,12 +37,15 @@ interface Detail {
 }
 
 type Tab = Status | "all";
-const TAB_LABEL: Record<Tab, string> = { proposed: "Proposed", accepted: "Accepted", rejected: "Rejected", all: "All" };
+const TAB_LABEL: Record<Tab, string> = { proposed: "Suggested", accepted: "Added", rejected: "Rejected", all: "All" };
+/** The words for a suggestion's state on this page. */
+const STATUS_WORD: Record<Status, string> = { proposed: "Suggested", accepted: "Added", rejected: "Rejected" };
 const DANGER = { color: "var(--failed-fg)" };
 const RUN_STATE: Record<string, string> = { linked: "Linked to the run", pending: "Waiting for the run to be imported", none: "No GitHub run named", deleted: "The run was deleted" };
 
 export function ManualTestsPage() {
   const { pid } = useParams();
+  const qc = useQueryClient();
   const [params, setParams] = useSearchParams();
   const [tab, setTab] = useState<Tab>("proposed");
   const [importing, setImporting] = useState(false);
@@ -60,6 +63,36 @@ export function ManualTestsPage() {
   const setOpen = (id: number | null) => setParams((p) => { if (id) p.set("test", String(id)); else p.delete("test"); return p; }, { replace: true });
   const filtered = !!(category || priority || wcag || presence || onlyNew || q.trim());
   const latest = data?.latest ?? null;
+  const canEdit = useCan("tester");
+  const refresh = useRefresh(pid!);
+  const toast = useToast();
+  // Several suggestions at once: the page asks the one-suggestion routes in turn, so a failure on one does not stop the others.
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [added, setAdded] = useState<{ id: number; key: string }[]>([]);
+  const items = data?.items ?? [];
+  const pickable = tab === "proposed" ? items : tab === "rejected" ? items : [];
+  const togglePick = (id: number) => setPicked((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const changeTab = (t: Tab) => { setTab(t); setPicked(new Set()); };
+  const act = async (ids: number[], kind: "add" | "dismiss" | "restore") => {
+    setBusy(true);
+    const made: { id: number; key: string }[] = [];
+    let done = 0, failed = 0, firstError = "";
+    for (const id of ids) {
+      try {
+        if (kind === "add") { const r = await api.post<{ case: { caseId: number; key: string } }>(`/api/manual-tests/${id}/add-to-project`, {}); made.push({ id: r.case.caseId, key: r.case.key }); }
+        else await api.post(`/api/manual-tests/${id}/review`, { status: kind === "dismiss" ? "rejected" : "proposed" });
+        done++;
+      } catch (e) { failed++; firstError ||= (e as Error).message; }
+    }
+    refresh();
+    for (const k of ["cases", "suites", "projects", "requirements", "dashboard"]) qc.invalidateQueries({ queryKey: [k] });
+    setPicked(new Set());
+    setBusy(false);
+    if (kind === "add") setAdded(made);
+    const what = kind === "add" ? `Added ${done} to the project as draft${done === 1 ? "" : "s"}` : kind === "dismiss" ? `Dismissed ${done}. They are under Rejected if you want them back` : `Restored ${done} to Suggested`;
+    toast(failed ? "error" : "success", failed ? `${what}. ${failed} could not be changed: ${firstError}` : what);
+  };
 
   return (
     <>
@@ -82,7 +115,7 @@ export function ManualTestsPage() {
       <div className="toolbar">
         <div className="tabs" role="tablist">
           {(["proposed", "accepted", "rejected", "all"] as const).map((t) => (
-            <button key={t} role="tab" aria-selected={tab === t} className={`tab${tab === t ? " active" : ""}`} onClick={() => setTab(t)}>
+            <button key={t} role="tab" aria-selected={tab === t} className={`tab${tab === t ? " active" : ""}`} onClick={() => changeTab(t)}>
               {TAB_LABEL[t]}<span className="count">{t === "all" ? total : (counts[t] ?? 0)}</span>
             </button>
           ))}
@@ -118,8 +151,32 @@ export function ManualTestsPage() {
       <div className="content">
         <div className="faint" style={{ padding: "8px 20px", fontSize: "var(--fs-md)", display: "flex", gap: 8, alignItems: "center" }}>
           <UserCheck size={14} />
-          <span>Manual test cases proposed by a test agent. <strong>Accept one, then create a test case from it</strong>: the test case is what you run in Runs and what counts as coverage. Testbench never runs a test or decides its result.</span>
+          <span>Manual test cases suggested by a test agent. Read one, change it if you like, and <strong>Add to project</strong>: it becomes a <strong>draft</strong> test case that you mark ready when you have looked at it, and only ready test cases count as coverage. Dismiss what you do not need right now; it stays under Rejected and can be restored. Testbench never runs a test or decides its result.</span>
         </div>
+        {added.length > 0 && (
+          <div className="toolbar" role="status" style={{ gap: 8 }}>
+            <ClipboardCheck size={14} aria-hidden="true" />
+            <span>{added.length === 1 ? <>Added as <Link to={`/p/${pid}/cases?case=${added[0].id}`}><strong>{added[0].key}</strong></Link> (draft)</> : <>Added {added.length} to the project as drafts: {added.map((a, i) => <span key={a.id}>{i > 0 && ", "}<Link to={`/p/${pid}/cases?case=${a.id}`}>{a.key}</Link></span>)}</>}</span>
+            <span className="faint">Mark them ready when you have looked at them.</span>
+            <span className="spacer" />
+            <Button variant="ghost" size="sm" onClick={() => setAdded([])}>Close</Button>
+          </div>
+        )}
+        {pickable.length > 0 && canEdit && (
+          <div className="toolbar" style={{ gap: 8 }}>
+            {picked.size === 0 ? (
+              pickable.length > 1 && <Button size="sm" variant="ghost" onClick={() => setPicked(new Set(pickable.map((i) => i.id)))}>Select all {pickable.length}</Button>
+            ) : (
+              <>
+                <span role="status">{picked.size} selected</span>
+                {tab === "proposed" && <Button needs="tester" variant="primary" size="sm" disabled={busy} onClick={() => act([...picked], "add")}>Add {picked.size} to project</Button>}
+                {tab === "proposed" && <Button needs="tester" size="sm" disabled={busy} title="Not needed right now. They go to Rejected, and you can restore them." onClick={() => act([...picked], "dismiss")}>Dismiss {picked.size}</Button>}
+                {tab === "rejected" && <Button needs="tester" size="sm" disabled={busy} onClick={() => act([...picked], "restore")}>Restore {picked.size}</Button>}
+                <Button variant="ghost" size="sm" onClick={() => setPicked(new Set())}>Clear</Button>
+              </>
+            )}
+          </div>
+        )}
         {isLoading ? (
           <ListSkeleton />
         ) : !data?.items.length ? (
@@ -128,11 +185,14 @@ export function ManualTestsPage() {
             An audit package can carry a manual-tests.json: checks an automatic run cannot decide, such as reading order with a screen reader.
           </Empty>
         ) : (
-          data.items.map((t) => (
-            <button key={t.id} className="list-row" style={{ width: "100%", textAlign: "left" }} onClick={() => setOpen(t.id)}>
+          items.map((t) => (
+            <div key={t.id} className="list-row suggestion-row">
+              {pickable.length > 0 && <input type="checkbox" className="checkbox" aria-label={`Select ${t.title}`} checked={picked.has(t.id)} disabled={!canEdit || busy} onChange={() => togglePick(t.id)} />}
+              <button className="row-main" onClick={() => setOpen(t.id)}>
               <span className="id mono truncate" style={{ width: 120 }} title={t.sourceId}>{t.sourceId}</span>
               <span className="title">{t.title}</span>
               <span className="meta">
+                <Badge tone="accent" title="Suggested by a test agent. Nothing changes in the project until you add it.">AI suggestion</Badge>
                 {t.isNew && <Badge tone="accent" title={`First proposed in the latest audit import${latest ? ` (${whenShort(latest.importedAt)} · ${latest.auditTitle})` : ""}. It stops being new when a newer import with proposals arrives.`}>New</Badge>}
                 {t.pendingUpdate && <Badge tone="accent" icon="eye" title="The agent sent a newer version. Review it.">Update waiting</Badge>}
                 {t.presence === "missing" && <Badge tone="warn" icon="eye-off" title="This test was not in the latest run of its audit. It is kept as it is.">Not in latest run</Badge>}
@@ -141,13 +201,20 @@ export function ManualTestsPage() {
                 {t.wcag.length > 0 && <span className="chip" title={`WCAG ${t.wcag.join(", ")}`}>WCAG {t.wcag.length > 2 ? `${t.wcag.slice(0, 2).join(", ")}…` : t.wcag.join(", ")}</span>}
                 {t.viewports.length > 0 && <span className="chip" title={t.viewports.join("; ")}>{t.viewports.length} viewport{t.viewports.length === 1 ? "" : "s"}</span>}
                 {t.testCase
-                  ? <span className="chip" title="The test case made from this proposal. Run it in Runs."><ClipboardCheck size={11} /> Test case {t.testCase}</span>
+                  ? <span className="chip" title="The test case made from this proposal. Run it in Runs."><ClipboardCheck size={11} /> Test case {t.testCase}{t.testCaseStatus === "draft" ? " · Draft" : ""}</span>
                   : <Badge tone={t.status === "proposed" ? "accent" : t.status === "accepted" ? "warn" : "neutral"} icon={t.status === "proposed" ? "eye" : t.status === "accepted" ? "circle-check" : "circle-x"} title="Testbench does not run this. A person has to.">{t.status === "proposed" ? "Needs your review" : t.status === "accepted" ? "Accepted: create a test case" : "Not used"}</Badge>}
                 <Severity value={t.priority} />
-                {tab === "all" && <StatusChip status={t.status} />}
+                {tab === "all" && <span className="chip">{STATUS_WORD[t.status]}</span>}
                 <span className="faint" title={t.auditTitle}>{timeAgo(t.importedAt)}</span>
               </span>
-            </button>
+              </button>
+              <span className="row-actions">
+                {(t.status === "proposed" || (t.status === "accepted" && !t.testCase)) && <Button needs="tester" variant="primary" size="sm" disabled={busy} onClick={() => act([t.id], "add")}><Plus size={13} /> Add to project</Button>}
+                {t.status === "proposed" && <Button needs="tester" size="sm" disabled={busy} title="Not needed right now. It goes to Rejected, and you can restore it." onClick={() => act([t.id], "dismiss")}>Dismiss</Button>}
+                {t.status === "rejected" && <Button needs="tester" size="sm" disabled={busy} onClick={() => act([t.id], "restore")}><Undo2 size={13} /> Restore to Suggested</Button>}
+                {t.status === "accepted" && t.testCase && t.testCaseId != null && (() => { const l = proposalCaseLink(pid!, t.testCaseId); return l ? <Link className={buttonClass("secondary", "sm")} to={l.to} state={l.state}>Open {t.testCase}</Link> : null; })()}
+              </span>
+            </div>
           ))
         )}
       </div>
@@ -190,13 +257,35 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
   const [reqs, setReqs] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [added, setAdded] = useState<{ id: number; key: string } | null>(null);
+  const qc = useQueryClient();
   const run = <T,>(fn: () => Promise<T>, ok?: string) => fn().then((r) => { refresh(); if (ok) toast("success", ok); return r; }).catch((e: Error) => { toast("error", e.message); });
   const post = (path: string, body?: unknown, ok?: string) => run(() => api.post(`/api/manual-tests/${id}/${path}`, body), ok);
 
-  if (!t) return <Modal title="Agent proposal" onClose={onClose} width={820}><ListSkeleton rows={4} /></Modal>;
+  if (!t) return <Modal title="AI suggestion" onClose={onClose} width={820}><ListSkeleton rows={4} /></Modal>;
   const startEdit = () => {
     setDraft({ title: t.title, description: t.description, preconditions: t.preconditions, steps: t.steps.join("\n"), expected: t.expected });
     setEditing(true);
+  };
+  const stepsOf = (text: string) => text.split("\n").map((x) => x.trim()).filter(Boolean);
+  const draftValid = !!draft.title.trim() && !!draft.expected.trim() && !!draft.steps.trim();
+  // Edit first, then add: what is typed but not saved yet is saved with it, then the suggestion is made into a draft test case in one step.
+  const addToProject = async () => {
+    setAdding(true);
+    try {
+      if (editing) await api.patch(`/api/manual-tests/${id}`, { ...draft, steps: stepsOf(draft.steps) });
+      const r = await api.post<{ case: { caseId: number; key: string } }>(`/api/manual-tests/${id}/add-to-project`, { note: note.trim() || undefined });
+      setEditing(false);
+      setAdded({ id: r.case.caseId, key: r.case.key });
+      refresh();
+      for (const k of ["cases", "suites", "projects", "requirements", "dashboard"]) qc.invalidateQueries({ queryKey: [k] });
+    } catch (e) {
+      refresh();
+      toast("error", (e as Error).message);
+    } finally {
+      setAdding(false);
+    }
   };
   const save = () => run(() => api.patch(`/api/manual-tests/${id}`, { ...draft, steps: draft.steps.split("\n").map((s) => s.trim()).filter(Boolean) }), "Saved").then(() => setEditing(false));
   const unresolved = t.refs.filter((r) => r.state !== "resolved");
@@ -207,17 +296,23 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
 
   return (
     <Modal
-      title={<span className="row" style={{ gap: 8 }}><span className="mono faint">{t.sourceId}</span><StatusChip status={t.status} /></span>}
+      title={<span className="row" style={{ gap: 8 }}><Badge tone="accent">AI suggestion</Badge><span className="mono faint">{t.sourceId}</span><span className="chip">{STATUS_WORD[t.status]}</span></span>}
       onClose={onClose}
       width={820}
       footer={<><Button needs="tester" variant="ghost" style={DANGER} onClick={() => setDeleting(true)}><Trash2 size={13} /> Delete</Button><span className="spacer" /><Button onClick={onClose}>Close</Button></>}
     >
       <div className="col" style={{ gap: 14 }}>
+        {added && (
+          <div className="card" role="status" style={{ padding: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", borderColor: "var(--passed)" }}>
+            <ClipboardCheck size={15} aria-hidden="true" />
+            <span>Added as <Link to={`/p/${pid}/cases?case=${added.id}`}><strong>{added.key}</strong></Link> (draft). It is a draft until you mark it ready.</span>
+          </div>
+        )}
         {t.testCase ? (
           <div className="card" style={{ padding: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <ClipboardCheck size={15} />
             <span style={{ fontSize: "var(--fs-md)" }}>
-              This is now the test case <Link to={caseLink!.to} state={caseLink!.state}><strong>{t.testCase.key}</strong></Link>. Run it in Runs; edit it there.
+              This is now the test case <Link to={caseLink!.to} state={caseLink!.state}><strong>{t.testCase.key}</strong></Link>{t.testCase.status === "draft" ? " (draft: mark it ready there when you have looked at it)" : ""}. Run it in Runs; edit it there.
               {t.testCase.lastStatus ? ` Latest result: ${t.testCase.lastStatus}.` : " It has not been run yet."}
             </span>
             <span className="spacer" />
@@ -227,9 +322,15 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
           <div className="card" style={{ padding: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <UserCheck size={15} />
             <span style={{ fontSize: "var(--fs-md)" }} className="grow">
-              {t.status === "proposed" ? "Proposed by a test agent. Review it first; a person has to run it." : t.status === "accepted" ? "Accepted. Create a test case from it to run it in Runs and have it count as coverage. Testbench does not run it or decide its result." : "Rejected. It is kept for reference and is not used."}
+              {t.status === "rejected"
+                ? "Dismissed: not needed right now. Restore it to Suggested if you want it back."
+                : editing
+                  ? "Change what you like below, then add it. Your unsaved changes are saved with it."
+                  : "An AI suggestion. Read it, change it if you like, then add it to the project as a draft test case. A person has to run it, and Testbench never does."}
             </span>
-            {t.status === "accepted" && <Button needs="tester" variant="primary" size="sm" onClick={() => run(() => api.post(`/api/manual-tests/${id}/create-case`), "Test case created. Run it in Runs.")}><ClipboardCheck size={13} /> Create test case</Button>}
+            {t.status === "rejected"
+              ? <Button needs="tester" size="sm" onClick={() => post("review", { status: "proposed" }, "Restored to Suggested")}><Undo2 size={13} /> Restore to Suggested</Button>
+              : <Button needs="tester" variant="primary" size="sm" disabled={adding || (editing && !draftValid)} onClick={addToProject}><Plus size={13} /> {adding ? "Adding…" : "Add to project"}</Button>}
           </div>
         )}
 
@@ -252,12 +353,12 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
           </div>
         )}
 
-        <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-          {t.status !== "accepted" && <Button needs="tester" variant="primary" onClick={() => post("review", { status: "accepted", note: note || undefined }, "Accepted. Nothing was run.")}><Check size={14} /> Accept</Button>}
-          {t.status !== "rejected" && <Button needs="tester" onClick={() => post("review", { status: "rejected", note: note || undefined }, "Rejected")}>Reject</Button>}
-          {t.status !== "proposed" && <Button needs="tester" variant="ghost" onClick={() => post("review", { status: "proposed" }, "Back to proposed")}>Reopen</Button>}
-          <input className="input grow" aria-label="Review note" placeholder="Note about your decision (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
-        </div>
+        {!t.testCase && t.status !== "accepted" && (
+          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+            {t.status === "proposed" && <Button needs="tester" title="Not needed right now. It goes to Rejected, and you can restore it." onClick={() => post("review", { status: "rejected", note: note || undefined }, "Dismissed. It is under Rejected if you want it back")}>Dismiss</Button>}
+            <input className="input grow" aria-label="Short reason (optional)" placeholder="A short note about your decision (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
+          </div>
+        )}
         {t.reviewNote && <div className="faint">Note: {t.reviewNote}{t.reviewedAt ? ` · ${timeAgo(t.reviewedAt)}` : ""}</div>}
         <Standing r={t.latestRun} />
 

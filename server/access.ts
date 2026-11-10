@@ -95,7 +95,7 @@ export const ACCESS: Record<string, Need> = {
   "POST /api/bug-publications/:id/check": t("bugpublication"), "POST /api/bug-publications/:id/retry-attachments": t("bugpublication"), "DELETE /api/bug-publications/:id": t("bugpublication"),
   // manual tests
   "GET /api/projects/:id/manual-tests": v(), "GET /api/manual-tests/:id": v("manualtest"), "PATCH /api/manual-tests/:id": t("manualtest"), "DELETE /api/manual-tests/:id": t("manualtest"),
-  "POST /api/manual-tests/:id/apply-update": t("manualtest"), "POST /api/manual-tests/:id/create-case": t("manualtest"), "POST /api/manual-tests/:id/ignore-update": t("manualtest"),
+  "POST /api/manual-tests/:id/apply-update": t("manualtest"), "POST /api/manual-tests/:id/create-case": t("manualtest"), "POST /api/manual-tests/:id/add-to-project": t("manualtest"), "POST /api/manual-tests/:id/ignore-update": t("manualtest"),
   "POST /api/manual-tests/:id/relink": t("manualtest"), "POST /api/manual-tests/:id/review": t("manualtest"),
   // audits
   "GET /api/projects/:id/audits": v(), "GET /api/projects/:id/audit-rejections": v(), "POST /api/projects/:id/audit-import": t(), "GET /api/projects/:id/coverage-gaps": v(),

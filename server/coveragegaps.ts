@@ -18,7 +18,7 @@ export function coverageGaps(projectId: number) {
   const requirements = db.prepare(`
     SELECT r.id, r.number, r.title, r.priority, r.kind, r.origin FROM requirements r
     WHERE r.project_id = ? AND r.status = 'approved'
-      AND NOT EXISTS (SELECT 1 FROM requirement_cases rc JOIN cases c ON c.id = rc.case_id WHERE rc.requirement_id = r.id AND c.status != 'deprecated')
+      AND NOT EXISTS (SELECT 1 FROM requirement_cases rc JOIN cases c ON c.id = rc.case_id WHERE rc.requirement_id = r.id AND c.status = 'ready')
     ORDER BY r.number`).all(projectId) as { id: number; number: number; title: string; priority: string; kind: string; origin: string }[];
   const cases = db.prepare(`
     SELECT c.id, c.number, c.title, c.priority, c.status FROM cases c

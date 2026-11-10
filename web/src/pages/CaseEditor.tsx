@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, BookOpenCheck, Bot, Copy, Link2, Check, ChevronsUpDown, CircleDot, Folder, Loader2, Plus, Trash2, X, TriangleAlert } from "lucide-react";
+import { ArrowDown, ArrowUp, BookOpenCheck, Bot, Copy, Link2, Check, ChevronsUpDown, CircleDot, Folder, Lightbulb, Loader2, Plus, Trash2, X, TriangleAlert } from "lucide-react";
 import { api, timeAgo, type CaseDetail, type Priority, type Requirement, type Suite } from "../api";
 import { ConfirmModal, FrameworkBadge, Modal, PriorityIcon, PRIORITY_LABEL, StatusIcon, useToast } from "../components/ui";
 import { Button } from "../components/Button";
@@ -241,6 +241,7 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
               <option value="deprecated">Deprecated</option>
             </select>
           </label>
+          {data.proposal && <span className="chip" title="Made from an AI suggestion by a test agent"><Lightbulb size={11} aria-hidden="true" /> AI suggestion{draft.status === "draft" ? " · Draft" : ""}</span>}
           <TagInput tags={draft.tags} onChange={(tags) => update({ tags }, true)} />
         </div>
 
@@ -317,9 +318,16 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
           </Button>
         </section>
 
+        {data.proposal && draft.status === "draft" && (
+          <div className="card" role="status" style={{ padding: "10px 12px", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", borderColor: "var(--accent)" }}>
+            <Lightbulb size={15} aria-hidden="true" />
+            <span className="grow">Made from an AI suggestion. It is a draft until you mark it ready.</span>
+            <Button needs="tester" variant="primary" size="sm" onClick={() => update({ status: "ready" }, true)}>Mark ready</Button>
+          </div>
+        )}
         {data.proposal && (
           <div className="card" style={{ padding: "8px 12px", fontSize: "var(--fs-md)" }}>
-            Made from a proposal by a test agent: <Link to={`/p/${pid}/manual-tests?test=${data.proposal.id}`}>{data.proposal.title}</Link>. A newer version from the agent waits there until you choose to use it; it never changes this case by itself.
+            Made from an AI suggestion by a test agent: <Link to={`/p/${pid}/manual-tests?test=${data.proposal.id}`}>{data.proposal.title}</Link>. A newer version from the agent waits there until you choose to use it; it never changes this case by itself.
           </div>
         )}
         <section>
