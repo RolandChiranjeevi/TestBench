@@ -235,7 +235,8 @@ describe("the browser guard covers every write route", () => {
 describe("turning an account off does not take project tokens with it (deliberate: they belong to the project)", () => {
   it("an agent token made by an account still reads after that account is switched off; its sessions do not", async () => {
     const project = (await call("POST", "/api/projects", { cookie: s.owner, body: { name: "Tokens", key: "TOK" } })).json();
-    const invite = createLink({ kind: "invite", createdBy: getUser(ownerId())! });
+    const invite = (await call("POST", "/api/invitations", { cookie: s.owner, body: { projectId: project.id, role: "admin" } })).json();
+    invite.token = invite.url.split("/").pop();
     const joined = await call("POST", `/api/join/${invite.token}`, { ip: "10.5.5.5", body: { name: "Tess", email: "tess@example.com", password: GOOD } });
     assert.equal(joined.statusCode, 200, joined.body);
     const tess = `tb_sid=${sid(joined)}`;

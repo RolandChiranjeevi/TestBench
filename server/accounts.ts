@@ -205,15 +205,16 @@ export function revokeSessionById(userId: number, sessionId: number) {
 
 // ---------- Invitation and reset links ----------
 
-export interface LinkInfo { id: number; kind: "invite" | "reset"; email: string; note: string; userId: number | null; createdBy: string; expiresAt: string }
+export interface LinkInfo { id: number; kind: "invite" | "reset"; email: string; note: string; userId: number | null; createdBy: string; expiresAt: string; projectId: number | null; role: string | null }
 
-export function createLink(input: { kind: "invite" | "reset"; createdBy: AccountUser; userId?: number; email?: string; note?: string }): { id: number; token: string; expiresAt: string } {
+/** An invitation may name a project and a role: whoever accepts it becomes a member of that project with that role. The caller has checked that the maker may grant it. */
+export function createLink(input: { kind: "invite" | "reset"; createdBy: AccountUser; userId?: number; email?: string; note?: string; projectId?: number | null; role?: string | null }): { id: number; token: string; expiresAt: string } {
   const email = input.email ? normalizeEmail(input.email) : "";
   if (email && emailProblem(email)) throw new AccountError(400, emailProblem(email)!);
   if ((input.note ?? "").length > 200) throw new AccountError(400, "The note can be at most 200 characters");
   const token = randomBytes(32).toString("base64url");
-  const row = db.prepare("INSERT INTO account_links (kind, token_hash, user_id, email, note, created_by, expires_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now', ?)) RETURNING id, expires_at")
-    .get(input.kind, sha256(token), input.userId ?? null, email, input.note ?? "", input.createdBy.id, `+${LINK_DAYS} days`) as { id: number; expires_at: string };
+  const row = db.prepare("INSERT INTO account_links (kind, token_hash, user_id, email, note, project_id, role, created_by, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now', ?)) RETURNING id, expires_at")
+    .get(input.kind, sha256(token), input.userId ?? null, email, input.note ?? "", input.projectId ?? null, input.projectId ? (input.role ?? "tester") : null, input.createdBy.id, `+${LINK_DAYS} days`) as { id: number; expires_at: string };
   return { id: row.id, token, expiresAt: row.expires_at };
 }
 
@@ -222,7 +223,7 @@ export function peekLink(token: string | undefined, kind: "invite" | "reset"): L
   if (!token || token.length > 200) return null;
   const r = db.prepare(`SELECT l.*, u.name AS creator FROM account_links l LEFT JOIN users u ON u.id = l.created_by
     WHERE l.token_hash = ? AND l.kind = ? AND l.used_at IS NULL AND l.revoked_at IS NULL AND l.expires_at > datetime('now')`).get(sha256(token), kind) as Record<string, any> | undefined;
-  return r ? { id: r.id, kind: r.kind, email: r.email, note: r.note, userId: r.user_id, createdBy: r.creator ?? "", expiresAt: r.expires_at } : null;
+  return r ? { id: r.id, kind: r.kind, email: r.email, note: r.note, userId: r.user_id, createdBy: r.creator ?? "", expiresAt: r.expires_at, projectId: r.project_id ?? null, role: r.role ?? null } : null;
 }
 
 const GONE = "This link has already been used, was revoked, or has expired. Ask for a new one.";
@@ -239,11 +240,19 @@ export function revokeOpenResetLinks(userId: number): number {
   return db.prepare("UPDATE account_links SET revoked_at = datetime('now') WHERE kind = 'reset' AND user_id = ? AND used_at IS NULL AND revoked_at IS NULL").run(userId).changes;
 }
 
-export function listLinks() {
-  return (db.prepare(`SELECT l.id, l.kind, l.email, l.note, l.created_at, l.expires_at, l.used_at, l.revoked_at, c.name AS creator, t.email AS target,
+export function listLinks(only?: { projectIds: number[] }) {
+  const rows = db.prepare(`SELECT l.id, l.kind, l.email, l.note, l.created_at, l.expires_at, l.used_at, l.revoked_at, l.project_id, l.role, p.name AS project_name, p.key AS project_key, c.name AS creator, t.email AS target,
       CASE WHEN l.used_at IS NOT NULL THEN 'used' WHEN l.revoked_at IS NOT NULL THEN 'revoked' WHEN l.expires_at <= datetime('now') THEN 'expired' ELSE 'open' END AS status
-    FROM account_links l LEFT JOIN users c ON c.id = l.created_by LEFT JOIN users t ON t.id = l.user_id ORDER BY l.id DESC LIMIT 200`).all() as Record<string, any>[])
-    .map((l) => ({ id: l.id, kind: l.kind as "invite" | "reset", email: l.email || l.target || "", note: l.note, createdBy: l.creator ?? "", createdAt: l.created_at, expiresAt: l.expires_at, status: l.status as "open" | "used" | "revoked" | "expired" }));
+    FROM account_links l LEFT JOIN users c ON c.id = l.created_by LEFT JOIN users t ON t.id = l.user_id LEFT JOIN projects p ON p.id = l.project_id ORDER BY l.id DESC LIMIT 500`).all() as Record<string, any>[];
+  const scope = only ? new Set(only.projectIds) : null;
+  return rows
+    .filter((l) => !scope || (l.kind === "invite" && l.project_id !== null && scope.has(l.project_id)))
+    .slice(0, 200)
+    .map((l) => ({ id: l.id, kind: l.kind as "invite" | "reset", email: l.email || l.target || "", note: l.note, createdBy: l.creator ?? "", createdAt: l.created_at, expiresAt: l.expires_at, status: l.status as "open" | "used" | "revoked" | "expired",
+      project: l.project_id !== null ? { id: l.project_id as number, name: l.project_name as string, key: l.project_key as string } : null, role: (l.role ?? null) as string | null }));
+}
+export function linkProjectId(id: number): number | null {
+  return (db.prepare("SELECT project_id FROM account_links WHERE id = ? AND kind = 'invite'").get(id) as { project_id: number | null } | undefined)?.project_id ?? null;
 }
 export function revokeLink(id: number) {
   const r = db.prepare("UPDATE account_links SET revoked_at = datetime('now') WHERE id = ? AND used_at IS NULL AND revoked_at IS NULL").run(id);
@@ -258,6 +267,11 @@ export function acceptInvite(token: string, input: { email: string; name: string
     if (info.email && normalizeEmail(input.email) !== info.email) throw new AccountError(400, "This invitation is for another email address");
     const user = insertUser({ email: input.email, name: input.name, password: input.password });
     consumeLink(token, "invite", user.id);
+    if (info.projectId && info.role) {
+      // The project may have been deleted since the invitation was made: then the account is made and has no project (the cascade removed the link's project, not the link).
+      db.prepare("INSERT OR IGNORE INTO project_members (project_id, user_id, role, added_by) SELECT p.id, ?, ?, l.created_by FROM projects p, account_links l WHERE p.id = ? AND l.id = ?").run(user.id, info.role, info.projectId, info.id);
+      audit({ userId: user.id, label: user.name, ip }, "member.added", { targetUserId: user.id, projectId: info.projectId, detail: { role: info.role, via: "invitation" } });
+    }
     audit({ userId: user.id, label: user.name, ip }, "account.created", { targetUserId: user.id, detail: { via: "invitation", invitedBy: info.createdBy } });
     audit({ userId: user.id, label: user.name, ip }, "invitation.used", { targetUserId: user.id, detail: { linkId: info.id } });
     return user;

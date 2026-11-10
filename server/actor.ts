@@ -27,3 +27,5 @@ export function setDisplayName(name: unknown): string {
 
 /** The name to record for a change a person makes now. Never empty, so "approved by" always says something. */
 export const actorName = (): string => currentUser()?.name || getDisplayName() || UNNAMED;
+/** The account behind actorName(), written next to the name (created_by_user_id and the like) so that "who" can be traced to an account and not only to a name. Null without accounts. */
+export const actorUserId = (): number | null => currentUser()?.id ?? null;

@@ -162,9 +162,10 @@ describe("invitations: the only way in after the first account, and there is no 
   });
 
   it("an ordinary account cannot make invitations, list or turn off accounts, or read the audit log", async () => {
-    for (const [m, url] of [["POST", "/api/invitations"], ["GET", "/api/invitations"], ["GET", "/api/users"], ["POST", "/api/users/1/disable"], ["POST", "/api/users/1/reset-link"], ["GET", "/api/audit-log"], ["POST", "/api/invitations/1/revoke"]] as const) {
+    for (const [m, url] of [["POST", "/api/invitations"], ["GET", "/api/invitations"], ["GET", "/api/users"], ["POST", "/api/users/1/disable"], ["POST", "/api/users/1/reset-link"], ["GET", "/api/audit-log"], ] as const) {
       assert.equal(await status(call(m, url, { cookie: state.pia, body: {} })), 403, `${m} ${url}`);
     }
+    assert.equal(await status(call("POST", "/api/invitations/1/revoke", { cookie: state.pia })), 404, "an invitation of no project of hers is not hers to see");
   });
 
   it("a link that is revoked cannot be used", async () => {
@@ -179,6 +180,8 @@ describe("who made a change: the signed-in person, for each request on its own",
   it("a requirement is recorded under the name of whoever made it, with the approval too", async () => {
     const project = (await call("POST", "/api/projects", { cookie: state.owner, body: { name: "Acme", key: "AC" } })).json();
     state.project = project.id;
+    assert.equal(await status(call("GET", `/api/projects/${project.id}/requirements`, { cookie: state.pia })), 404, "not a member yet: the project does not exist for her");
+    assert.equal(await status(call("POST", `/api/projects/${project.id}/members`, { cookie: state.owner, body: { email: state.piaEmail, role: "tester" } })), 200);
     const mine = (await call("POST", `/api/projects/${project.id}/requirements`, { cookie: state.owner, body: { title: "By Anna", status: "approved" } })).json();
     assert.deepEqual([mine.created_by, mine.approved_by, mine.history[0].by], ["Anna Owner", "Anna Owner", "Anna Owner"]);
     const hers = (await call("POST", `/api/projects/${project.id}/requirements`, { cookie: state.pia, body: { title: "By Pia", status: "approved" } })).json();

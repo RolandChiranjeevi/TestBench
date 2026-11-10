@@ -407,6 +407,46 @@ CREATE TRIGGER IF NOT EXISTS audit_log_no_update BEFORE UPDATE ON audit_log BEGI
 CREATE TRIGGER IF NOT EXISTS audit_log_no_delete BEFORE DELETE ON audit_log BEGIN SELECT RAISE(ABORT, 'The audit log is append-only'); END;`);
 }
 
+/**
+ * Who may do what in which project. Safe to run on every start.
+ *  - project_members: one row per (project, account) with a role: admin, tester or viewer. The owner of the installation needs no row: the owner is an admin everywhere.
+ *    A row goes with its project or its account (an account is switched off, never deleted, so in practice only with the project).
+ *  - Installations that had accounts before roles existed keep working: once, every account that is not the owner becomes a tester in every project that exists then,
+ *    which is what they could do before. The owner can take that back. It is written to the audit log, and not repeated (the setting below says it was done).
+ *  - *_user_id columns sit next to the names that are recorded on requirements, so that "who" can be traced to an account and not only to a name as it was then.
+ */
+export function migrateRoles(d: Database.Database) {
+  const hasColumn = (table: string, col: string) => (d.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === col);
+  d.exec(`
+CREATE TABLE IF NOT EXISTS project_members (
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK (role IN ('admin', 'tester', 'viewer')),
+  added_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  added_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (project_id, user_id)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS project_members_user ON project_members(user_id);`);
+  for (const [table, col] of [["requirements", "created_by_user_id"], ["requirements", "approved_by_user_id"], ["requirement_proposals", "decided_by_user_id"], ["requirement_revisions", "by_user_id"]] as const) {
+    if (!hasColumn(table, col)) d.exec(`ALTER TABLE ${table} ADD COLUMN ${col} INTEGER`);
+  }
+  // With accounts, an AI-suggested requirement is approved by an account: a name alone (which anyone can type, and an agent could send) is not enough.
+  d.exec(`
+CREATE TRIGGER IF NOT EXISTS requirements_ai_needs_account_insert BEFORE INSERT ON requirements
+WHEN NEW.origin = 'ai_suggestion' AND NEW.status = 'approved' AND NEW.approved_by_user_id IS NULL AND EXISTS (SELECT 1 FROM users)
+BEGIN SELECT RAISE(ABORT, 'An AI-suggested requirement can only be approved by a person with an account'); END;
+CREATE TRIGGER IF NOT EXISTS requirements_ai_needs_account_update BEFORE UPDATE OF status ON requirements
+WHEN NEW.origin = 'ai_suggestion' AND NEW.status = 'approved' AND OLD.status != 'approved' AND NEW.approved_by_user_id IS NULL AND EXISTS (SELECT 1 FROM users)
+BEGIN SELECT RAISE(ABORT, 'An AI-suggested requirement can only be approved by a person with an account'); END;`);
+  d.transaction(() => {
+    if (d.prepare("SELECT 1 FROM app_settings WHERE key = 'roles_migrated_at'").get()) return;
+    const added = d.prepare(`INSERT OR IGNORE INTO project_members (project_id, user_id, role)
+      SELECT p.id, u.id, 'tester' FROM projects p CROSS JOIN users u WHERE u.is_owner = 0`).run().changes;
+    if (added) d.prepare("INSERT INTO audit_log (actor_label, action, detail) VALUES ('migration', 'members.migrated', ?)").run(JSON.stringify({ role: "tester", memberships: added }));
+    d.prepare("INSERT INTO app_settings (key, value) VALUES ('roles_migrated_at', datetime('now'))").run();
+  })();
+}
+
 /** Creates missing tables and columns, and fills in data for features added later. Safe to run on every start. */
 export function migrate(d: Database.Database) {
   const hasColumn = (table: string, col: string) =>
@@ -945,6 +985,7 @@ CREATE INDEX IF NOT EXISTS bug_events_bug ON bug_events(bug_report_id);`);
   migrateObservations(d);
   migrateRequirementModel(d);
   migrateAccounts(d);
+  migrateRoles(d);
 
   // Make sure every sprint named on a run has a sprint record.
   const named = d.prepare("SELECT DISTINCT project_id, milestone FROM runs WHERE milestone != ''").all() as { project_id: number; milestone: string }[];

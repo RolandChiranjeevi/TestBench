@@ -1,17 +1,19 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   AccountError, acceptInvite, acceptReset, audit, changePassword, checkLogin, createFirstOwner, createLink, createSession, ctxOf, listAudit, listLinks, listSessions,
-  listUsers, normalizeEmail, peekLink, revokeLink, revokeSessionById, revokeSessionToken, SESSION_DAYS, setDisabled, updateProfile,
+  linkProjectId, listUsers, normalizeEmail, peekLink, revokeLink, revokeSessionById, revokeSessionToken, SESSION_DAYS, setDisabled, updateProfile,
 } from "./accounts.ts";
 import type { AccountUser } from "./accountcontext.ts";
+import { adminProjectIds, addMember, allows, listMembers, removeMember, roleOf, roleProblem, setMemberRole } from "./members.ts";
+import { projectOf } from "./resolve.ts";
 import { joinPage, PAGE_CSP, resetPage, setupPage } from "./accountpages.ts";
 
 /**
  * The routes of the accounts: signing in and out, the first account, invitations, password links, a person's own profile and sessions, and what the owner does.
  * Every handler turns an AccountError into an answer with its status; anything else is a bug and is left to the server's error handler.
  *
- * Who may do what here is simple while there are only accounts and no projects yet: anyone signed in looks after their own account, the owner looks after the rest.
- * (Roles per project come with project membership.)
+ * Anyone signed in looks after their own account; the owner looks after the accounts; the admin of a project looks after its members and the invitations for it
+ * (the project routes are guarded by server/accessguard.ts from the table in server/access.ts; the invitation routes check their own rule here).
  */
 
 export const ACCOUNT_COOKIE = "tb_sid";
@@ -198,20 +200,51 @@ export function registerAccountRoutes(app: FastifyInstance, deps: AccountRouteDe
     audit(ctxOf(owner, req.ip), "password.reset_link_created", { targetUserId: target.id, detail: { linkId: link.id } });
     return reply.header("Cache-Control", "no-store").send({ id: link.id, url: `${origin(req)}/reset/${link.token}`, expiresAt: link.expiresAt });
   }));
-  app.get("/api/invitations", wrap((req) => { needOwner(req); return listLinks(); }));
+  // Invitations: the owner makes any; the admin of a project makes (and sees, and revokes) the ones for that project. Only the owner makes an account that belongs to no project.
+  app.get("/api/invitations", wrap((req) => {
+    const u = needUser(req);
+    if (u.isOwner) return listLinks();
+    const mine = adminProjectIds(u);
+    if (!mine.length) throw new AccountError(403, "Only the owner or the admin of a project can do this");
+    return listLinks({ projectIds: mine });
+  }));
   app.post("/api/invitations", wrap((req, reply) => {
-    const owner = needOwner(req);
-    const link = createLink({ kind: "invite", createdBy: owner, email: str(body(req).email), note: str(body(req).note) });
-    audit(ctxOf(owner, req.ip), "invitation.created", { detail: { linkId: link.id, email: normalizeEmail(body(req).email) || undefined } });
+    const u = needUser(req);
+    const b = body(req);
+    const projectId = b.projectId === undefined || b.projectId === null || b.projectId === "" ? null : Number(b.projectId);
+    if (projectId === null) needOwner(req);
+    else {
+      if (!Number.isInteger(projectId) || projectOf("project", projectId) === null || !allows(roleOf(u, projectId), "admin")) throw new AccountError(404, "Not found");
+    }
+    const role = projectId === null ? null : roleProblem(b.role ?? "tester");
+    const link = createLink({ kind: "invite", createdBy: u, email: str(b.email), note: str(b.note), projectId, role });
+    audit(ctxOf(u, req.ip), "invitation.created", { projectId, detail: { linkId: link.id, email: normalizeEmail(b.email) || undefined, role: role ?? undefined } });
     return reply.header("Cache-Control", "no-store").send({ id: link.id, url: `${origin(req)}/join/${link.token}`, expiresAt: link.expiresAt });
   }));
   app.post("/api/invitations/:id/revoke", wrap((req) => {
-    const owner = needOwner(req);
+    const u = needUser(req);
     const id = idOf(req);
+    const projectId = linkProjectId(id);
+    if (!u.isOwner && (projectId === null || !allows(roleOf(u, projectId), "admin"))) throw new AccountError(404, "There is no open link with that id");
     revokeLink(id);
-    audit(ctxOf(owner, req.ip), "invitation.revoked", { detail: { linkId: id } });
+    audit(ctxOf(u, req.ip), "invitation.revoked", { projectId, detail: { linkId: id } });
     return { ok: true };
   }));
+
+  // ---------- Members of a project (an admin of it, or the owner) ----------
+
+  const projectIdOf = (req: FastifyRequest) => idOf(req);
+  app.get("/api/projects/:id/members", wrap((req) => {
+    const u = needUser(req);
+    const pid = projectIdOf(req);
+    const members = listMembers(pid);
+    // Everyone in the project sees who is in it and with which role; only an admin sees email addresses.
+    return roleOf(u, pid) === "admin" ? members : members.map(({ email: _email, ...rest }) => rest);
+  }));
+  app.get("/api/projects/:id/me", wrap((req) => { const u = needUser(req); return { role: roleOf(u, projectIdOf(req)), isOwner: u.isOwner }; }));
+  app.post("/api/projects/:id/members", wrap((req) => ({ member: addMember(needUser(req), projectIdOf(req), body(req).email, body(req).role ?? "tester", req.ip) })));
+  app.patch("/api/projects/:id/members/:userId", wrap((req) => ({ member: setMemberRole(needUser(req), projectIdOf(req), Number((req.params as { userId?: string }).userId), body(req).role, req.ip) })));
+  app.delete("/api/projects/:id/members/:userId", wrap((req) => { removeMember(needUser(req), projectIdOf(req), Number((req.params as { userId?: string }).userId), req.ip); return { ok: true }; }));
   app.get("/api/audit-log", wrap((req) => {
     needOwner(req);
     const q = req.query as { limit?: string; before?: string };
