@@ -327,7 +327,18 @@ CREATE TABLE IF NOT EXISTS propose_tokens (
   last_used_at TEXT,
   revoked_at TEXT
 );
-CREATE INDEX IF NOT EXISTS propose_tokens_project ON propose_tokens(project_id);`);
+CREATE INDEX IF NOT EXISTS propose_tokens_project ON propose_tokens(project_id);
+-- What a person has linked an observation to. An observation with neither is on the coverage gap list.
+CREATE TABLE IF NOT EXISTS observation_requirements (
+  observation_id INTEGER NOT NULL REFERENCES observations(id) ON DELETE CASCADE,
+  requirement_id INTEGER NOT NULL REFERENCES requirements(id) ON DELETE CASCADE,
+  PRIMARY KEY (observation_id, requirement_id)
+);
+CREATE TABLE IF NOT EXISTS observation_cases (
+  observation_id INTEGER NOT NULL REFERENCES observations(id) ON DELETE CASCADE,
+  case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+  PRIMARY KEY (observation_id, case_id)
+);`);
 }
 
 /** Creates missing tables and columns, and fills in data for features added later. Safe to run on every start. */

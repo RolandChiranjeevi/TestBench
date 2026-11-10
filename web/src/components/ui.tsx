@@ -233,8 +233,9 @@ export function Github({ size = 14, className, style }: { size?: number; classNa
  * A confirmation for something that cannot be undone. With `requireText` the button stays disabled until that text is typed
  * (used for deleting a whole project, so a slip of the mouse is not enough).
  */
-export function ConfirmModal({ title, children, confirmLabel = "Delete", requireText, busy, onConfirm, onClose }: {
-  title: ReactNode; children: ReactNode; confirmLabel?: string; requireText?: string; busy?: boolean; onConfirm: () => void; onClose: () => void;
+/** `tone: "primary"` is for a decision that is not destructive (approving something); the default is the red button of a delete. */
+export function ConfirmModal({ title, children, confirmLabel = "Delete", requireText, busy, tone = "danger", onConfirm, onClose }: {
+  title: ReactNode; children: ReactNode; confirmLabel?: string; requireText?: string; busy?: boolean; tone?: "danger" | "primary"; onConfirm: () => void; onClose: () => void;
 }) {
   const [typed, setTyped] = useState("");
   const ok = !requireText || typed === requireText;
@@ -246,7 +247,7 @@ export function ConfirmModal({ title, children, confirmLabel = "Delete", require
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button variant="danger-solid" disabled={!ok || busy} onClick={onConfirm}>{busy ? "Deleting…" : confirmLabel}</Button>
+          <Button variant={tone === "primary" ? "primary" : "danger-solid"} disabled={!ok || busy} onClick={onConfirm}>{busy ? (tone === "primary" ? "Working…" : "Deleting…") : confirmLabel}</Button>
         </>
       }
     >
@@ -282,7 +283,7 @@ export function rowActivation(onActivate: () => void, selected = false) {
   };
 }
 
-interface ConfirmOptions { title: ReactNode; body?: ReactNode; confirmLabel?: string; requireText?: string }
+interface ConfirmOptions { title: ReactNode; body?: ReactNode; confirmLabel?: string; requireText?: string; tone?: "danger" | "primary" }
 const ConfirmCtx = createContext<(o: ConfirmOptions) => Promise<boolean>>(() => Promise.resolve(false));
 
 /**
@@ -299,7 +300,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     <ConfirmCtx.Provider value={ask}>
       {children}
       {req && (
-        <ConfirmModal title={req.title} confirmLabel={req.confirmLabel} requireText={req.requireText} onConfirm={() => answer(true)} onClose={() => answer(false)}>
+        <ConfirmModal title={req.title} confirmLabel={req.confirmLabel} requireText={req.requireText} tone={req.tone} onConfirm={() => answer(true)} onClose={() => answer(false)}>
           {req.body}
         </ConfirmModal>
       )}

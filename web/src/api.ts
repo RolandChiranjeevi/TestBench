@@ -27,7 +27,8 @@ export type RequirementStatus = "draft" | "approved" | "deprecated";
 export interface RequirementRef { id: number; number: number; title: string; status: RequirementStatus; priority: Priority; review_needed: boolean }
 export interface RequirementAttachment { id: number; filename: string; stored_name: string; mime: string; size: number; created_at: string }
 export interface RevisionChange { field: string; from?: string; to?: string; added?: number[]; removed?: number[] }
-export interface RequirementRevision { id: number; at: string; material: boolean; changes: RevisionChange[] }
+/** `by` is the display name a person had set in Settings when they made the change: as typed, not verified. */
+export interface RequirementRevision { id: number; at: string; by: string; material: boolean; changes: RevisionChange[] }
 export type RequirementKind = "functional" | "accessibility" | "responsive" | "security_privacy" | "business_rule" | "usability";
 export interface Viewport { device?: string; width?: number; height?: number; breakpoint?: string }
 /** What is linked to a requirement besides test cases, and whether the latest audit run touched it. Only a person's decisions count as coverage. */
@@ -35,7 +36,10 @@ export interface RequirementLinks {
   manualTests: { accepted: number; proposed: number }; bugs: { open: number; proposed: number }; cases: number; withoutTest: boolean;
   audit: "referenced" | "not_referenced" | "no_audit";
 }
+/** Where a requirement came from. Only a person makes a human one; an AI suggestion exists only after a person approved the proposal. */
+export type RequirementOrigin = "human" | "import" | "ai_suggestion";
 export interface Requirement {
+  origin: RequirementOrigin; acceptance_criteria: string; created_by: string; approved_by: string; approved_at: string | null;
   id: number; project_id: number; number: number; title: string; description: string; priority: Priority; status: RequirementStatus;
   source: string; kind: RequirementKind; external_id: string | null; wcag: string[]; viewports: Viewport[]; links: RequirementLinks;
   created_at: string; updated_at: string; caseIds: number[]; activeCaseIds: number[]; coverage: Coverage; reviewCount: number; attachmentCount: number;
@@ -248,3 +252,23 @@ export function parseViewports(text: string): Viewport[] {
     return out;
   });
 }
+
+// ---------- Requirement proposals, coverage gaps, who is recorded ----------
+
+export type ProposalStatus = "proposed" | "approved" | "rejected";
+/** What a test agent suggested. It is not a requirement until a person approves it; rejected ones are kept with their reason. */
+export interface RequirementProposal {
+  id: number; title: string; description: string; acceptanceCriteria: string; rationale: string; kind: RequirementKind; suggestedPriority: Priority;
+  basis: "observation" | "coverage_gap" | "prompt" | "other"; status: ProposalStatus; rejectReason: string; proposedBy: string; decidedBy: string; decidedAt: string | null;
+  requirementId: number | null; requirementLabel: string | null; edited: boolean; original: Record<string, unknown>; createdAt: string;
+  observations: { id: number; label: string; title: string }[]; cases: { id: number; number: number; title: string }[];
+}
+export interface ProposalList { counts: Record<ProposalStatus, number>; items: RequirementProposal[] }
+export interface CoverageGaps {
+  counts: { requirementsWithoutCases: number; casesWithoutRequirement: number; observationsWithoutLink: number };
+  requirementsWithoutCases: { id: number; number: number; title: string; priority: Priority; kind: RequirementKind; origin: RequirementOrigin }[];
+  casesWithoutRequirement: { id: number; number: number; title: string; priority: Priority; status: CaseSummary["status"] }[];
+  observationsWithoutLink: { id: number; label: string; title: string; kind: string; severity: string; status: string }[];
+}
+/** The name recorded on what a person does. `verified` is always false: there are no accounts yet. */
+export interface DisplayName { name: string; recordedAs: string; verified: boolean }

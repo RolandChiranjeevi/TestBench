@@ -9,6 +9,11 @@ import { Badge, CoverageBadge } from "../components/Badge";
 import { Button, buttonClass } from "../components/Button";
 import { FilterChip } from "../components/FilterChip";
 import { COVERAGE_LOOK } from "../statuses";
+import { OriginBadge, ORIGIN_LABEL, RecordedAs, whenText } from "../components/RequirementBits";
+import { RequirementProposalsTab } from "./RequirementProposals";
+import { CoverageGapsTab } from "./CoverageGaps";
+import type { CoverageGaps, ProposalList, RequirementOrigin } from "../api";
+import type { ReactNode } from "react";
 import { jiraLabel, jiraUrl } from "./BugReport";
 import { NewRunModal } from "./Runs";
 
@@ -30,7 +35,45 @@ interface CoverageInfo {
 }
 const WCAG_PATTERN = /^[1-4]\.\d{1,2}\.\d{1,2}$/;
 
+type Tab = "requirements" | "proposals" | "gaps";
+
+/**
+ * Requirements, what a test agent proposes for new ones, and what is not covered yet. Proposals are not requirements until a person approves them, so they have
+ * a tab of their own and never appear in the list.
+ */
 export function RequirementsPage() {
+  const { pid } = useParams();
+  const [params, setParams] = useSearchParams();
+  const raw = params.get("tab");
+  const tab: Tab = raw === "proposals" || raw === "gaps" ? raw : "requirements";
+  const { data: proposals } = useQuery({ queryKey: ["requirement-proposals", pid, "badge"], queryFn: () => api.get<ProposalList>(`/api/projects/${pid}/requirement-proposals?status=proposed`) });
+  const { data: gaps } = useQuery({ queryKey: ["coverage-gaps", pid], queryFn: () => api.get<CoverageGaps>(`/api/projects/${pid}/coverage-gaps`) });
+  const go = (t: Tab) => setParams((p) => { const n = new URLSearchParams(p); n.delete("req"); if (t === "requirements") n.delete("tab"); else n.set("tab", t); return n; }, { replace: true });
+  const gapTotal = gaps ? gaps.counts.requirementsWithoutCases + gaps.counts.casesWithoutRequirement + gaps.counts.observationsWithoutLink : null;
+  const strip = (
+    <div className="toolbar">
+      <div className="tabs" role="tablist" aria-label="Requirements sections">
+        {([["requirements", "Requirements", null], ["proposals", "Proposals", proposals?.counts.proposed ?? null], ["gaps", "Coverage gaps", gapTotal]] as const).map(([t, label, n]) => (
+          <button key={t} role="tab" aria-selected={tab === t} className={`tab${tab === t ? " active" : ""}`} onClick={() => go(t)}>
+            {label}{n != null && <span className="count">{n}</span>}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+  if (tab === "requirements") return <RequirementsList tabStrip={strip} />;
+  return (
+    <div className="split">
+      <div className="pane grow" style={{ display: "flex", flexDirection: "column" }}>
+        <div className="topbar"><h1>Requirements</h1></div>
+        {strip}
+        <div className="content">{tab === "proposals" ? <RequirementProposalsTab /> : <CoverageGapsTab />}</div>
+      </div>
+    </div>
+  );
+}
+
+function RequirementsList({ tabStrip }: { tabStrip: ReactNode }) {
   const { pid } = useParams();
   const projectId = Number(pid);
   const [params, setParams] = useSearchParams();
@@ -41,6 +84,9 @@ export function RequirementsPage() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [kind, setKind] = useState<"" | RequirementKind>("");
+  const [statusF, setStatusF] = useState<"" | RequirementStatus>("");
+  const [originF, setOriginF] = useState<"" | RequirementOrigin>("");
+  const [priorityF, setPriorityF] = useState<"" | Priority>("");
   const [scope, setScope] = useState<Scope>("");
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -71,13 +117,17 @@ export function RequirementsPage() {
     const q = search.trim().toLowerCase();
     return reqs.filter((r) => {
       if (kind && r.kind !== kind) return false;
+      if (statusF && r.status !== statusF) return false;
+      if (originF && r.origin !== originF) return false;
+      if (priorityF && r.priority !== priorityF) return false;
       if (scope && (r.status !== "approved" || (scope === "no_test" ? !r.links.withoutTest : scope === "open_bugs" ? r.links.bugs.open === 0 : r.links.audit !== "not_referenced"))) return false;
       if (filter === "review" ? r.status === "deprecated" || r.reviewCount === 0 : filter !== "all" && (r.status === "deprecated" || r.coverage.state !== filter)) return false;
       return !q || `REQ-${r.number} ${r.title} ${r.source} ${r.description}`.toLowerCase().includes(q);
     });
-  }, [reqs, search, filter, kind, scope]);
+  }, [reqs, search, filter, kind, scope, statusF, originF, priorityF]);
   const compact = selectedId != null;
-  const tabs: Filter[] = ["all", "uncovered", "failing", "passing", "review"];
+  const anyFilter = !!(statusF || originF || priorityF || filter !== "all" || kind || scope);
+  const clearFilters = () => { setStatusF(""); setOriginF(""); setPriorityF(""); setFilter("all"); setKind(""); setScope(""); };
 
   return (
     <div className="split">
@@ -93,6 +143,7 @@ export function RequirementsPage() {
           <Button onClick={() => setImporting(true)}><Upload size={14} /> Import</Button>
           <Button variant="primary" onClick={() => setCreating(true)}><Plus size={14} /> New requirement <Kbd>C</Kbd></Button>
         </div>
+        {tabStrip}
         {cov && cov.summary.active > 0 && (
           <div className="toolbar" style={{ gap: 8 }} aria-label="Coverage of active requirements">
             <span className="faint" style={{ whiteSpace: "nowrap" }}>{cov.summary.active} active</span>
@@ -116,15 +167,31 @@ export function RequirementsPage() {
             </div>
           </details>
         )}
-        <div className="toolbar">
-          <div className="tabs" role="tablist">
-            {tabs.map((f) => (
-              <button key={f} role="tab" aria-selected={filter === f} className={`tab${filter === f ? " active" : ""}`} onClick={() => setFilter(f)}>
-                {f === "all" ? "All" : f === "uncovered" ? "No test cases" : f === "review" ? "Needs review" : COVERAGE_LOOK[f].label}
-                <span className="count">{counts[f]}</span>
-              </button>
-            ))}
-          </div>
+        <div className="toolbar" style={{ gap: 8, flexWrap: "wrap", height: "auto", minHeight: 42, padding: "6px 16px 6px 20px" }} role="group" aria-label="Filter requirements">
+          <select className="select" style={{ width: "auto" }} aria-label="Status" value={statusF} onChange={(e) => setStatusF(e.target.value as "" | RequirementStatus)}>
+            <option value="">Status: any</option>
+            {(Object.keys(STATUS_LABEL) as RequirementStatus[]).map((v) => <option key={v} value={v}>{STATUS_LABEL[v]}</option>)}
+          </select>
+          <select className="select" style={{ width: "auto" }} aria-label="Origin" value={originF} onChange={(e) => setOriginF(e.target.value as "" | RequirementOrigin)}>
+            <option value="">Origin: any</option>
+            {(Object.keys(ORIGIN_LABEL) as RequirementOrigin[]).map((v) => <option key={v} value={v}>{ORIGIN_LABEL[v]}</option>)}
+          </select>
+          <select className="select" style={{ width: "auto" }} aria-label="Priority" value={priorityF} onChange={(e) => setPriorityF(e.target.value as "" | Priority)}>
+            <option value="">Priority: any</option>
+            {(["critical", "high", "medium", "low"] as const).map((v) => <option key={v} value={v}>{PRIORITY_LABEL[v]}</option>)}
+          </select>
+          <select className="select" style={{ width: "auto" }} aria-label="Coverage" value={filter} onChange={(e) => setFilter(e.target.value as Filter)}>
+            <option value="all">Coverage: any</option>
+            <option value="uncovered">No test cases ({counts.uncovered})</option>
+            <option value="failing">Failing ({counts.failing})</option>
+            <option value="partial">Partly passing ({counts.partial})</option>
+            <option value="untested">Not run ({counts.untested})</option>
+            <option value="passing">Passing ({counts.passing})</option>
+            <option value="review">Needs review ({counts.review})</option>
+          </select>
+          <span className="spacer" />
+          {anyFilter && <Button variant="ghost" size="sm" onClick={clearFilters}>Clear filters</Button>}
+          <span className="faint" style={{ whiteSpace: "nowrap" }} aria-live="polite">{visible.length} of {reqs.length}</span>
         </div>
         <div className="content">
           {isLoading ? <ListSkeleton /> : visible.length === 0 ? (
@@ -144,6 +211,7 @@ export function RequirementsPage() {
                 <span className="meta">
                   {!compact && r.source && <span className="faint mono" style={{ fontSize: "var(--fs-sm)" }}>{jiraLabel(r.source)}</span>}
                   {r.status === "draft" && <span className="chip">Draft</span>}
+                  {(!compact || r.origin !== "human") && <OriginBadge origin={r.origin} />}
                   {!compact && r.kind !== "functional" && <span className="chip" title={r.wcag.length ? `WCAG ${r.wcag.join(", ")}` : undefined}>{KIND_LABEL[r.kind]}{r.wcag.length ? ` · WCAG ${r.wcag.length > 2 ? `${r.wcag.slice(0, 2).join(", ")}…` : r.wcag.join(", ")}` : ""}</span>}
                   {r.status === "approved" && r.links.bugs.open > 0 && <Badge tone="fail" icon="bug" title="Accepted bug reports name this requirement">{r.links.bugs.open} open</Badge>}
                   {!compact && r.status === "approved" && r.links.manualTests.accepted + r.links.manualTests.proposed > 0 && <span className="chip" title={`${r.links.manualTests.accepted} accepted and ${r.links.manualTests.proposed} not yet reviewed agent proposal(s)`}><ClipboardCheck size={11} /> {r.links.manualTests.accepted}{r.links.manualTests.proposed ? ` +${r.links.manualTests.proposed}` : ""}</span>}
@@ -182,6 +250,7 @@ function useInvalidate() {
     qc.invalidateQueries({ queryKey: ["requirements", pid] });
     qc.invalidateQueries({ queryKey: ["requirement"] });
     qc.invalidateQueries({ queryKey: ["requirement-coverage", pid] });
+    qc.invalidateQueries({ queryKey: ["coverage-gaps", pid] });
     qc.invalidateQueries({ queryKey: ["cases", pid] });
     qc.invalidateQueries({ queryKey: ["case"] });
     qc.invalidateQueries({ queryKey: ["dashboard", pid] });
@@ -190,10 +259,14 @@ function useInvalidate() {
 
 function NewRequirementModal({ projectId, onClose, onCreated }: { projectId: number; onClose: () => void; onCreated: (id: number) => void }) {
   const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [criteria, setCriteria] = useState("");
+  const [priority, setPriority] = useState<Priority>("medium");
+  const [startAs, setStartAs] = useState<"approved" | "draft">("approved");
   const toast = useToast();
   const invalidate = useInvalidate();
   const create = useMutation({
-    mutationFn: () => api.post<RequirementDetail>(`/api/projects/${projectId}/requirements`, { title }),
+    mutationFn: () => api.post<RequirementDetail>(`/api/projects/${projectId}/requirements`, { title, description, acceptanceCriteria: criteria, priority, status: startAs }),
     onSuccess: (r) => { invalidate(); toast("success", `Created REQ-${r.number}`); onClose(); onCreated(r.id); },
     onError: (e: Error) => toast("error", e.message),
   });
@@ -202,10 +275,36 @@ function NewRequirementModal({ projectId, onClose, onCreated }: { projectId: num
     <Modal
       title={<span className="chip">New requirement</span>}
       onClose={onClose}
-      footer={<Button variant="primary" disabled={!title.trim() || create.isPending} onClick={submit}>Create requirement <Kbd>↵</Kbd></Button>}
+      footer={<Button variant="primary" disabled={!title.trim() || create.isPending} onClick={submit}>Create requirement</Button>}
     >
-      <input className="bare title-input" autoFocus placeholder="e.g. A customer can pay with a saved card" value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} aria-label="Requirement title" />
-      <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>Add the description, priority and linked test cases after creating.</span>
+      <div className="col" style={{ gap: 12 }}>
+        <input className="bare title-input" autoFocus placeholder="e.g. A customer can pay with a saved card" aria-label="Title" value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} />
+        <div className="field">
+          <label htmlFor="nr-desc">Description</label>
+          <textarea id="nr-desc" className="textarea" rows={3} value={description} placeholder="What should the system do?" onChange={(e) => setDescription(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="nr-crit">Acceptance criteria</label>
+          <textarea id="nr-crit" className="textarea" rows={3} value={criteria} placeholder="One per line. How do we know it is met?" onChange={(e) => setCriteria(e.target.value)} />
+        </div>
+        <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+          <div className="field">
+            <label htmlFor="nr-pri">Priority</label>
+            <select id="nr-pri" className="select" value={priority} onChange={(e) => setPriority(e.target.value as Priority)}>
+              {(["critical", "high", "medium", "low"] as const).map((p) => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="nr-start">Start as</label>
+            <select id="nr-start" className="select" value={startAs} onChange={(e) => setStartAs(e.target.value as "approved" | "draft")}>
+              <option value="approved">Approved: I approve it now</option>
+              <option value="draft">Draft: not approved yet</option>
+            </select>
+          </div>
+        </div>
+        <RecordedAs what={startAs === "approved" ? "Created and approved as" : "Created as"} />
+        <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>Link test cases after creating.</span>
+      </div>
     </Modal>
   );
 }
@@ -218,7 +317,7 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
   const { data } = useQuery({ queryKey: ["requirement", id], queryFn: () => api.get<RequirementDetail>(`/api/requirements/${id}`) });
   const [linking, setLinking] = useState(false);
   const [running, setRunning] = useState(false);
-  const [edits, setEdits] = useState<Partial<Pick<RequirementDetail, "title" | "description" | "source">>>({});
+  const [edits, setEdits] = useState<Partial<Pick<RequirementDetail, "title" | "description" | "source" | "acceptance_criteria">>>({});
   const [more, setMore] = useState<{ externalId?: string; wcag?: string; viewports?: string }>({});
 
   const save = useMutation({
@@ -229,6 +328,11 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
   const review = useMutation({
     mutationFn: (caseIds?: number[]) => api.post<RequirementDetail>(`/api/requirements/${id}/review`, caseIds ? { caseIds } : {}),
     onSuccess: invalidate,
+    onError: (e: Error) => toast("error", e.message),
+  });
+  const deprecate = useMutation({
+    mutationFn: () => api.post<RequirementDetail>(`/api/requirements/${id}/deprecate`, {}),
+    onSuccess: () => { invalidate(); toast("success", "Deprecated. It stays, with its links and history."); },
     onError: (e: Error) => toast("error", e.message),
   });
   const remove = useMutation({
@@ -262,6 +366,13 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
     setMore({});
     if (Object.keys(body).length) save.mutate(body);
   };
+  const criteria = edits.acceptance_criteria ?? data.acceptance_criteria;
+  const commitCriteria = () => {
+    const v = edits.acceptance_criteria;
+    if (v === undefined || v === data.acceptance_criteria) return;
+    save.mutate({ acceptanceCriteria: v });
+    setEdits((e) => ({ ...e, acceptance_criteria: undefined }));
+  };
   const archived = data.status === "deprecated";
 
   return (
@@ -270,9 +381,14 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
         <span className="mono muted">REQ-{data.number}</span>
         <CoverageChip coverage={data.coverage} />
         <span className="spacer" />
-        <Button variant="ghost" size="sm" title={archived ? "Make it active again" : "Retire it: it stays, but is no longer an active requirement"} onClick={() => save.mutate({ status: archived ? "approved" : "deprecated" })}>
-          {archived ? <><ArchiveRestore size={13} /> Restore</> : <><Archive size={13} /> Archive</>}
-        </Button>
+        {archived ? (
+          <Button variant="ghost" size="sm" title="Make it an approved requirement again. You become the approver." onClick={() => save.mutate({ status: "approved" })}><ArchiveRestore size={13} /> Restore</Button>
+        ) : (
+          <Button variant="ghost" size="sm" title="Retire it: it stays, with its links and history, but is no longer an active requirement"
+            onClick={async () => (await confirm({ title: `Deprecate REQ-${data.number}?`, body: <p style={{ margin: 0 }}>It stays, with its test case links and history, but stops counting as an active requirement: it leaves coverage and what a test agent reads. You can restore it later.</p>, confirmLabel: "Deprecate" })) && deprecate.mutate()}>
+            <Archive size={13} /> Deprecate
+          </Button>
+        )}
         <Button variant="danger" size="sm" icon title="Delete requirement" aria-label="Delete requirement" onClick={async () => (await confirm({ title: `Delete REQ-${data.number}?`, body: <p style={{ margin: 0 }}>The test cases stay, only the links are removed.</p>, confirmLabel: "Delete requirement" })) && remove.mutate()}><Trash2 size={14} /></Button>
         <Button variant="ghost" size="sm" icon onClick={onClose} title="Close" aria-label="Close"><X size={14} /></Button>
       </div>
@@ -301,9 +417,23 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
           </label>
         </div>
         <section>
+          <div className="section-label">Origin</div>
+          <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
+            <OriginBadge origin={data.origin} />
+            <span className="muted">Created by <b>{data.created_by || "unknown"}</b> {whenText(data.created_at)}</span>
+            {data.approved_by ? <span className="muted">Approved by <b>{data.approved_by}</b>{data.approved_at ? ` ${whenText(data.approved_at)}` : ""}</span> : <span className="faint">{data.status === "draft" ? "Not approved yet" : "No approver recorded"}</span>}
+          </div>
+          <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>Names are the display names set in Settings, as typed. They are not verified.</span>
+        </section>
+        <section>
           <div className="section-label">Description</div>
-          <textarea className="bare" style={{ minHeight: 60, fieldSizing: "content" } as React.CSSProperties} value={text("description")} placeholder="What should the system do? Add acceptance criteria here."
+          <textarea className="bare" style={{ minHeight: 60, fieldSizing: "content" } as React.CSSProperties} value={text("description")} placeholder="What should the system do?"
             aria-label="Description" onChange={(e) => setEdits((s) => ({ ...s, description: e.target.value }))} onBlur={() => commit("description")} />
+        </section>
+        <section>
+          <div className="section-label">Acceptance criteria</div>
+          <textarea className="bare" style={{ minHeight: 48, fieldSizing: "content" } as React.CSSProperties} value={criteria} placeholder="One per line. How do we know it is met?"
+            aria-label="Acceptance criteria" onChange={(e) => setEdits((s) => ({ ...s, acceptance_criteria: e.target.value }))} onBlur={commitCriteria} />
         </section>
         {(data.kind === "accessibility" || data.kind === "responsive") && (
           <section>
@@ -465,10 +595,10 @@ function RevisionRow({ rev, caseKey }: { rev: RequirementRevision; caseKey: stri
   const keys = (nums: number[]) => nums.map((n) => `${caseKey}-${n}`).join(", ");
   return (
     <div style={{ fontSize: "var(--fs-md)" }}>
-      <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>{timeAgo(rev.at.replace(" ", "T") + "Z")}{rev.material && " · wording changed"}</div>
+      <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>{rev.by || "unknown"} · {timeAgo(rev.at.replace(" ", "T") + "Z")}{rev.material && " · wording changed"}</div>
       {rev.changes.map((c, i) => (
         <div key={i}>
-          {c.field === "created" && "Created"}
+          {c.field === "created" && <>Created{c.to ? <span className="muted"> ({c.to})</span> : null}</>}
           {c.field === "cases" && (
             <>
               {!!c.added?.length && <>Linked {keys(c.added)}. </>}
@@ -482,6 +612,16 @@ function RevisionRow({ rev, caseKey }: { rev: RequirementRevision; caseKey: stri
               <div className="muted" style={{ whiteSpace: "pre-wrap" }}>Before: {c.from || "(empty)"}</div>
               <div style={{ whiteSpace: "pre-wrap" }}>After: {c.to || "(empty)"}</div>
             </details>
+          )}
+          {c.field === "acceptance criteria" && (
+            <details>
+              <summary style={{ cursor: "pointer" }}>Acceptance criteria edited</summary>
+              <div className="muted" style={{ whiteSpace: "pre-wrap" }}>Before: {c.from || "(empty)"}</div>
+              <div style={{ whiteSpace: "pre-wrap" }}>After: {c.to || "(empty)"}</div>
+            </details>
+          )}
+          {!(c.field in FIELD_LABEL) && !["created", "cases", "attachments", "description", "acceptance criteria"].includes(c.field) && (
+            <>{c.field}: {c.from ? <><span className="muted">{c.from}</span> → </> : null}{c.to || "(empty)"}</>
           )}
           {c.field in FIELD_LABEL && c.field !== "description" && (
             <>{FIELD_LABEL[c.field]}: <span className="muted">{c.from || "(empty)"}</span> → {c.to || "(empty)"}</>

@@ -187,6 +187,9 @@ function ProjectLayout() {
   // Proposals (manual test cases) from the agent that wait for a decision.
   const { data: proposedManual } = useQuery({ queryKey: ["manual-tests", pid, "proposed"], queryFn: () => api.get<{ counts: Record<string, number> }>(`/api/projects/${pid}/manual-tests?status=proposed`), staleTime: 30_000, enabled: !!pid });
 
+  // Requirement proposals from the agent that wait for a person (the same query the Requirements page uses for its Proposals tab).
+  const { data: proposedReqs } = useQuery({ queryKey: ["requirement-proposals", pid, "badge"], queryFn: () => api.get<{ counts: Record<string, number> }>(`/api/projects/${pid}/requirement-proposals?status=proposed`), staleTime: 30_000, enabled: !!pid });
+
   // Active observations (load tests, security reviews that are still being looked at: observed, needs review, confirmed). Archived, resolved and converted are not counted.
   const { data: obsSummary } = useObservationSummary(pid);
 
@@ -196,6 +199,7 @@ function ProjectLayout() {
   // The numbers beside some pages: what waits for a decision, and what is still active.
   const navCounts = {
     "manual-tests": { n: proposedManual?.counts.proposed ?? 0, meaning: "waiting for review" },
+    requirements: { n: proposedReqs?.counts.proposed ?? 0, meaning: "proposals waiting for review" },
     observations: { n: obsSummary?.active ?? 0, meaning: "active" },
     bugs: { n: proposedBugs?.counts.proposed ?? 0, meaning: "waiting for review" },
   };
