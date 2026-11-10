@@ -434,6 +434,18 @@ CREATE INDEX IF NOT EXISTS project_members_user ON project_members(user_id);`);
   for (const [table, col] of [["requirements", "created_by_user_id"], ["requirements", "approved_by_user_id"], ["requirement_proposals", "decided_by_user_id"], ["requirement_revisions", "by_user_id"]] as const) {
     if (!hasColumn(table, col)) d.exec(`ALTER TABLE ${table} ADD COLUMN ${col} INTEGER`);
   }
+  // Who decided on a bug report (confirm, dismiss, restore, duplicate). Only a person decides; see reviewBugReport.
+  if (!hasColumn("bug_reports", "reviewed_by")) d.exec("ALTER TABLE bug_reports ADD COLUMN reviewed_by TEXT NOT NULL DEFAULT ''");
+  if (!hasColumn("bug_reports", "reviewed_by_user_id")) d.exec("ALTER TABLE bug_reports ADD COLUMN reviewed_by_user_id INTEGER");
+  // With accounts, a human decision on a bug report is made by an account: a name alone is not enough. Fires only when the decision changes, so bugs
+  // that were decided before accounts existed stay as they are.
+  d.exec(`
+CREATE TRIGGER IF NOT EXISTS bug_reports_decision_needs_account_insert BEFORE INSERT ON bug_reports
+WHEN NEW.review_status != 'proposed' AND NEW.reviewed_by_user_id IS NULL AND EXISTS (SELECT 1 FROM users)
+BEGIN SELECT RAISE(ABORT, 'A decision on a bug report needs a person with an account'); END;
+CREATE TRIGGER IF NOT EXISTS bug_reports_decision_needs_account_update BEFORE UPDATE OF review_status ON bug_reports
+WHEN NEW.review_status != OLD.review_status AND NEW.reviewed_by_user_id IS NULL AND EXISTS (SELECT 1 FROM users)
+BEGIN SELECT RAISE(ABORT, 'A decision on a bug report needs a person with an account'); END;`);
   // With accounts, an AI-suggested requirement is approved by an account: a name alone (which anyone can type, and an agent could send) is not enough.
   d.exec(`
 CREATE TRIGGER IF NOT EXISTS requirements_ai_needs_account_insert BEFORE INSERT ON requirements
