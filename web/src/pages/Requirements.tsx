@@ -5,29 +5,18 @@ import { AlertTriangle, Archive, ArchiveRestore, BookOpenCheck, Bug, Check, Clip
 import { api, formatViewport, KIND_LABEL, parseViewports, timeAgo, type CoverageState, type Priority, type Project, type Requirement, type RequirementKind, type RequirementAttachment, type RequirementDetail, type RequirementRevision, type RequirementStatus } from "../api";
 import { Empty, Kbd, Modal, PriorityIcon, PRIORITY_LABEL, StatusIcon, rowActivation, useConfirm, useHotkeys, useToast, ListSkeleton } from "../components/ui";
 import { CasePicker } from "../components/CasePicker";
+import { Badge, CoverageBadge } from "../components/Badge";
+import { Button, buttonClass } from "../components/Button";
+import { FilterChip } from "../components/FilterChip";
+import { COVERAGE_LOOK } from "../statuses";
 import { jiraLabel, jiraUrl } from "./BugReport";
 import { NewRunModal } from "./Runs";
 
-export const COVERAGE_LABEL: Record<CoverageState, string> = {
-  uncovered: "No test cases", failing: "Failing", passing: "Passing", partial: "Partly tested", untested: "Not run yet",
-};
-const COVERAGE_COLOR: Record<CoverageState, string> = {
-  uncovered: "var(--text-3)", failing: "var(--failed)", passing: "var(--passed)", partial: "var(--blocked)", untested: "var(--text-3)",
-};
-
-/** Text colours with AA contrast; the dot uses the brighter fill colour. */
-const COVERAGE_FG: Record<CoverageState, string> = {
-  uncovered: "var(--text-3)", failing: "var(--failed-fg)", passing: "var(--passed-fg)", partial: "var(--blocked-fg)", untested: "var(--text-3)",
-};
-
 export function CoverageChip({ coverage }: { coverage: Requirement["coverage"] }) {
-  const label = COVERAGE_LABEL[coverage.state];
   const detail = coverage.cases ? ` · ${coverage.passing}/${coverage.cases}` : "";
   return (
-    <span className="chip status" style={{ color: COVERAGE_FG[coverage.state] }} title={`${coverage.cases} test case(s): ${coverage.passing} passing, ${coverage.failing} failing, ${coverage.notRun} not run`}>
-      <span className="dot" style={{ background: COVERAGE_COLOR[coverage.state] }} />
-      {label}{detail}
-    </span>
+    <CoverageBadge value={coverage.state} label={`${COVERAGE_LOOK[coverage.state].label}${detail}`}
+      title={`${coverage.cases} test case(s): ${coverage.passing} passing, ${coverage.failing} failing, ${coverage.notRun} not run`} />
   );
 }
 
@@ -100,16 +89,16 @@ export function RequirementsPage() {
             <Search size={13} />
             <input ref={searchRef} className="input" placeholder="Search requirements" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search requirements" />
           </div>
-          <a className="btn icon" href={`/api/projects/${pid}/agent/requirements?download=1`} title="Download the active requirements as a file for a test agent (read-only)" aria-label="Download requirements for the agent"><Download size={14} /></a>
-          <button className="btn" onClick={() => setImporting(true)}><Upload size={14} /> Import</button>
-          <button className="btn primary" onClick={() => setCreating(true)}><Plus size={14} /> New requirement <Kbd>C</Kbd></button>
+          <a className={buttonClass("secondary", undefined, true)} href={`/api/projects/${pid}/agent/requirements?download=1`} title="Download the active requirements as a file for a test agent (read-only)" aria-label="Download requirements for the agent"><Download size={14} /></a>
+          <Button onClick={() => setImporting(true)}><Upload size={14} /> Import</Button>
+          <Button variant="primary" onClick={() => setCreating(true)}><Plus size={14} /> New requirement <Kbd>C</Kbd></Button>
         </div>
         {cov && cov.summary.active > 0 && (
           <div className="toolbar" style={{ gap: 8 }} aria-label="Coverage of active requirements">
             <span className="faint" style={{ whiteSpace: "nowrap" }}>{cov.summary.active} active</span>
-            <button className={`chip${scope === "no_test" ? " accent" : ""}`} aria-pressed={scope === "no_test"} onClick={() => setScope(scope === "no_test" ? "" : "no_test")} title="No test case is linked, and no accepted agent proposal">{cov.summary.withoutTest} without a test</button>
-            <button className={`chip${scope === "open_bugs" ? " accent" : ""}`} aria-pressed={scope === "open_bugs"} onClick={() => setScope(scope === "open_bugs" ? "" : "open_bugs")} title="An accepted bug report names the requirement"><Bug size={11} /> {cov.summary.withOpenBugs} with open bugs</button>
-            {cov.summary.auditKnown && <button className={`chip${scope === "not_in_run" ? " accent" : ""}`} aria-pressed={scope === "not_in_run"} onClick={() => setScope(scope === "not_in_run" ? "" : "not_in_run")} title="No bug report or agent proposal of the latest run of an audit names the requirement"><ClipboardCheck size={11} /> {cov.summary.notInLatestRun} not in latest audit run</button>}
+            <FilterChip pressed={scope === "no_test"} onClick={() => setScope(scope === "no_test" ? "" : "no_test")} title="No test case is linked, and no accepted agent proposal">{cov.summary.withoutTest} without a test</FilterChip>
+            <FilterChip pressed={scope === "open_bugs"} onClick={() => setScope(scope === "open_bugs" ? "" : "open_bugs")} title="An accepted bug report names the requirement"><Bug size={11} /> {cov.summary.withOpenBugs} with open bugs</FilterChip>
+            {cov.summary.auditKnown && <FilterChip pressed={scope === "not_in_run"} onClick={() => setScope(scope === "not_in_run" ? "" : "not_in_run")} title="No bug report or agent proposal of the latest run of an audit names the requirement"><ClipboardCheck size={11} /> {cov.summary.notInLatestRun} not in latest audit run</FilterChip>}
             <span className="spacer" />
             <select className="select" style={{ width: "auto" }} aria-label="Kind" value={kind} onChange={(e) => setKind(e.target.value as "" | RequirementKind)}>
               <option value="">Kind: any</option>
@@ -131,7 +120,7 @@ export function RequirementsPage() {
           <div className="tabs" role="tablist">
             {tabs.map((f) => (
               <button key={f} role="tab" aria-selected={filter === f} className={`tab${filter === f ? " active" : ""}`} onClick={() => setFilter(f)}>
-                {f === "all" ? "All" : f === "uncovered" ? "No test cases" : f === "review" ? "Needs review" : COVERAGE_LABEL[f]}
+                {f === "all" ? "All" : f === "uncovered" ? "No test cases" : f === "review" ? "Needs review" : COVERAGE_LOOK[f].label}
                 <span className="count">{counts[f]}</span>
               </button>
             ))}
@@ -142,7 +131,7 @@ export function RequirementsPage() {
             reqs.length ? (
               <Empty icon={<Search size={20} />} title="No matching requirements">Try a different search or filter.</Empty>
             ) : (
-              <Empty icon={<BookOpenCheck size={20} />} title="No requirements yet" action={<button className="btn primary" onClick={() => setCreating(true)}><Plus size={14} /> New requirement</button>}>
+              <Empty icon={<BookOpenCheck size={20} />} title="No requirements yet" action={<Button variant="primary" onClick={() => setCreating(true)}><Plus size={14} /> New requirement</Button>}>
                 Write down what the system should do, then link the test cases that prove it. Reports show which requirements are covered and which are failing.
               </Empty>
             )
@@ -156,17 +145,15 @@ export function RequirementsPage() {
                   {!compact && r.source && <span className="faint mono" style={{ fontSize: "var(--fs-sm)" }}>{jiraLabel(r.source)}</span>}
                   {r.status === "draft" && <span className="chip">Draft</span>}
                   {!compact && r.kind !== "functional" && <span className="chip" title={r.wcag.length ? `WCAG ${r.wcag.join(", ")}` : undefined}>{KIND_LABEL[r.kind]}{r.wcag.length ? ` · WCAG ${r.wcag.length > 2 ? `${r.wcag.slice(0, 2).join(", ")}…` : r.wcag.join(", ")}` : ""}</span>}
-                  {r.status === "approved" && r.links.bugs.open > 0 && <span className="chip" style={{ color: "var(--failed-fg)" }} title="Accepted bug reports name this requirement"><Bug size={11} /> {r.links.bugs.open} open</span>}
+                  {r.status === "approved" && r.links.bugs.open > 0 && <Badge tone="fail" icon="bug" title="Accepted bug reports name this requirement">{r.links.bugs.open} open</Badge>}
                   {!compact && r.status === "approved" && r.links.manualTests.accepted + r.links.manualTests.proposed > 0 && <span className="chip" title={`${r.links.manualTests.accepted} accepted and ${r.links.manualTests.proposed} not yet reviewed agent proposal(s)`}><ClipboardCheck size={11} /> {r.links.manualTests.accepted}{r.links.manualTests.proposed ? ` +${r.links.manualTests.proposed}` : ""}</span>}
                   {!compact && r.status === "approved" && r.links.audit === "not_referenced" && <span className="chip" title="Not named by the latest run of any audit">Not in latest run</span>}
                   {r.attachmentCount > 0 && <span className="chip" title={`${r.attachmentCount} attachment(s)`}><Paperclip size={11} /> {r.attachmentCount}</span>}
                   {r.status !== "deprecated" && r.reviewCount > 0 && (
-                    <span className="chip" style={{ borderColor: "var(--blocked)" }} title={`${r.reviewCount} linked case(s) to check after the wording changed`}>
-                      <span className="dot" style={{ background: "var(--blocked)" }} />{r.reviewCount} to review
-                    </span>
+                    <Badge tone="accent" icon="eye" title={`${r.reviewCount} linked case(s) to check after the wording changed`}>{r.reviewCount} to review</Badge>
                   )}
                   {r.status !== "deprecated" && (r.coverage.state === "uncovered" && r.links.manualTests.accepted > 0
-                    ? <span className="chip status" title="No test case is linked yet. An agent proposal is accepted: create a test case from it to run it"><span className="dot" style={{ background: "var(--blocked)" }} />Proposal accepted</span>
+                    ? <Badge tone="warn" icon="circle-check" title="No test case is linked yet. An agent proposal is accepted: create a test case from it to run it">Proposal accepted</Badge>
                     : <CoverageChip coverage={r.coverage} />)}
                 </span>
               </div>
@@ -215,7 +202,7 @@ function NewRequirementModal({ projectId, onClose, onCreated }: { projectId: num
     <Modal
       title={<span className="chip">New requirement</span>}
       onClose={onClose}
-      footer={<button className="btn primary" disabled={!title.trim() || create.isPending} onClick={submit}>Create requirement <Kbd>↵</Kbd></button>}
+      footer={<Button variant="primary" disabled={!title.trim() || create.isPending} onClick={submit}>Create requirement <Kbd>↵</Kbd></Button>}
     >
       <input className="bare title-input" autoFocus placeholder="e.g. A customer can pay with a saved card" value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} aria-label="Requirement title" />
       <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>Add the description, priority and linked test cases after creating.</span>
@@ -283,11 +270,11 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
         <span className="mono muted">REQ-{data.number}</span>
         <CoverageChip coverage={data.coverage} />
         <span className="spacer" />
-        <button className="btn ghost sm" title={archived ? "Make it active again" : "Retire it: it stays, but is no longer an active requirement"} onClick={() => save.mutate({ status: archived ? "approved" : "deprecated" })}>
+        <Button variant="ghost" size="sm" title={archived ? "Make it active again" : "Retire it: it stays, but is no longer an active requirement"} onClick={() => save.mutate({ status: archived ? "approved" : "deprecated" })}>
           {archived ? <><ArchiveRestore size={13} /> Restore</> : <><Archive size={13} /> Archive</>}
-        </button>
-        <button className="btn ghost icon sm danger" title="Delete requirement" aria-label="Delete requirement" onClick={async () => (await confirm({ title: `Delete REQ-${data.number}?`, body: <p style={{ margin: 0 }}>The test cases stay, only the links are removed.</p>, confirmLabel: "Delete requirement" })) && remove.mutate()}><Trash2 size={14} /></button>
-        <button className="btn ghost icon sm" onClick={onClose} title="Close" aria-label="Close"><X size={14} /></button>
+        </Button>
+        <Button variant="danger" size="sm" icon title="Delete requirement" aria-label="Delete requirement" onClick={async () => (await confirm({ title: `Delete REQ-${data.number}?`, body: <p style={{ margin: 0 }}>The test cases stay, only the links are removed.</p>, confirmLabel: "Delete requirement" })) && remove.mutate()}><Trash2 size={14} /></Button>
+        <Button variant="ghost" size="sm" icon onClick={onClose} title="Close" aria-label="Close"><X size={14} /></Button>
       </div>
       <div style={{ padding: "20px 28px 40px", display: "flex", flexDirection: "column", gap: 18 }}>
         <textarea className="bare title-input" rows={1} value={text("title")} placeholder="Requirement title" aria-label="Title"
@@ -334,7 +321,7 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
           <div className="row">
             <input className="input grow" value={text("source")} placeholder="Jira story key or link, e.g. SHOP-123" aria-label="Source"
               onChange={(e) => setEdits((s) => ({ ...s, source: e.target.value }))} onBlur={() => commit("source")} />
-            {link && <a className="btn sm" href={link} target="_blank" rel="noreferrer"><ExternalLink size={12} /> {jiraLabel(data.source)}</a>}
+            {link && <a className={buttonClass("secondary", "sm")} href={link} target="_blank" rel="noreferrer"><ExternalLink size={12} /> {jiraLabel(data.source)}</a>}
           </div>
         </section>
         <section>
@@ -346,7 +333,7 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
             <span className="grow" style={{ fontSize: "var(--fs-md)" }}>
               The wording changed after {data.cases.filter((c) => c.review_needed).length} linked {data.cases.filter((c) => c.review_needed).length === 1 ? "case was" : "cases were"} written or last checked. Make sure they still test the right thing.
             </span>
-            <button className="btn sm" onClick={() => review.mutate(undefined)} disabled={review.isPending}><Check size={12} /> All still correct</button>
+            <Button size="sm" onClick={() => review.mutate(undefined)} disabled={review.isPending}><Check size={12} /> All still correct</Button>
           </div>
         )}
         <section>
@@ -423,17 +410,17 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
                   <span className="truncate grow">{c.title}</span>
                   {c.status === "deprecated" && <span className="chip">Deprecated</span>}
                   {c.review_needed && (
-                    <button className="btn sm" title="Mark as still matching the requirement" onClick={(e) => { e.preventDefault(); e.stopPropagation(); review.mutate([c.id]); }}>Review</button>
+                    <Button size="sm" title="Mark as still matching the requirement" onClick={(e) => { e.preventDefault(); e.stopPropagation(); review.mutate([c.id]); }}>Review</Button>
                   )}
                 </Link>
               ))}
             </div>
           )}
           <div className="row" style={{ marginTop: 8 }}>
-            <button className="btn sm" onClick={() => setLinking(true)}><Link2 size={13} /> Link test cases</button>
-            <Link className="btn ghost sm" to={`/p/${pid}/cases?newFor=${data.id}`}>Write a new case</Link>
+            <Button size="sm" onClick={() => setLinking(true)}><Link2 size={13} /> Link test cases</Button>
+            <Link className={buttonClass("ghost", "sm")} to={`/p/${pid}/cases?newFor=${data.id}`}>Write a new case</Link>
             <span className="spacer" />
-            <button className="btn sm" disabled={!data.cases.some((c) => c.status !== "deprecated")} onClick={() => setRunning(true)}><Play size={12} /> Start run</button>
+            <Button size="sm" disabled={!data.cases.some((c) => c.status !== "deprecated")} onClick={() => setRunning(true)}><Play size={12} /> Start run</Button>
           </div>
         </section>
         <section>
@@ -466,7 +453,7 @@ function LinkCasesModal({ initial, onClose, onSave, saving }: { initial: number[
   const [selected, setSelected] = useState(new Set(initial));
   return (
     <Modal title="Link test cases" onClose={onClose} width={560}
-      footer={<button className="btn primary" disabled={saving} onClick={() => onSave([...selected])}>Save {selected.size} linked</button>}>
+      footer={<Button variant="primary" disabled={saving} onClick={() => onSave([...selected])}>Save {selected.size} linked</Button>}>
       <CasePicker selected={selected} onChange={setSelected} />
     </Modal>
   );
@@ -520,7 +507,7 @@ export function LinkToRequirementModal({ caseIds, onClose, onDone }: { caseIds: 
   const open = reqs.filter((r) => r.status !== "deprecated");
   return (
     <Modal title={`Link ${caseIds.length} ${caseIds.length === 1 ? "case" : "cases"} to a requirement`} onClose={onClose} width={520}
-      footer={<button className="btn primary" disabled={picked == null || link.isPending} onClick={() => link.mutate()}>Link</button>}>
+      footer={<Button variant="primary" disabled={picked == null || link.isPending} onClick={() => link.mutate()}>Link</Button>}>
       {open.length === 0 ? (
         <div className="muted">No requirements yet. Add some on the Requirements page first.</div>
       ) : (
@@ -563,12 +550,12 @@ function ImportRequirementsModal({ pid, onClose }: { pid: string; onClose: () =>
   const problems = ((preview.error as (Error & { problems?: string[] }) | null)?.problems) ?? [];
   return (
     <Modal title="Import requirements" onClose={onClose} width={720}
-      footer={<><button className="btn ghost" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!s || doImport.isPending || (s.counts.new + s.counts.updated === 0)} onClick={() => doImport.mutate()}>{doImport.isPending ? "Importing…" : "Import"}</button></>}>
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" disabled={!s || doImport.isPending || (s.counts.new + s.counts.updated === 0)} onClick={() => doImport.mutate()}>{doImport.isPending ? "Importing…" : "Import"}</Button></>}>
       <div className="col" style={{ gap: 12 }}>
         <div className="faint">A JSON file with <code className="inline">"format": "testbench-requirements"</code>, <code className="inline">"project"</code> (this project's key) and <code className="inline">"requirements"</code>. Each has a stable <code className="inline">id</code>: the same id is updated, a new id is added, and requirements that are not in the file are left alone.</div>
         <div className="row">
           <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={(e) => { choose(e.target.files?.[0]); e.target.value = ""; }} />
-          <button className="btn" onClick={() => fileRef.current?.click()}><Upload size={13} /> Choose a file</button>
+          <Button onClick={() => fileRef.current?.click()}><Upload size={13} /> Choose a file</Button>
           {name && <span className="faint">{name}</span>}
         </div>
         {preview.isPending && <ListSkeleton rows={2} />}
@@ -660,14 +647,14 @@ function AttachmentsSection({ requirementId, attachments }: { requirementId: num
                 {a.mime.startsWith("image/") ? <img src={url} alt="" style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4 }} /> : <FileText size={16} className="faint" />}
                 <a className="truncate grow" href={url} target="_blank" rel="noreferrer" download={a.filename} title={`Open ${a.filename}`}>{a.filename}</a>
                 <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>{fmtSize(a.size)}</span>
-                <button
-                  className="btn ghost icon sm danger"
+                <Button
+                  variant="danger" size="sm" icon
                   aria-label={`Remove ${a.filename}`}
                   onClick={async () => {
                     if (!(await confirm({ title: `Remove ${a.filename}?`, confirmLabel: "Remove" }))) return;
                     try { await api.del(`/api/requirement-attachments/${a.id}`); invalidate(); } catch (e) { toast("error", (e as Error).message); }
                   }}
-                ><Trash2 size={12} /></button>
+                ><Trash2 size={12} /></Button>
               </div>
             );
           })}
