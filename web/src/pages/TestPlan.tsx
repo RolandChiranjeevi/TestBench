@@ -4,6 +4,9 @@ import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Check, ChevronDown, ChevronRight, ClipboardList, Copy, Download } from "lucide-react";
 import { api } from "../api";
 import { Empty, ListSkeleton, useToast } from "../components/ui";
+import { PriorityBadge } from "../components/Badge";
+import { Button } from "../components/Button";
+import { FilterChip } from "../components/FilterChip";
 
 interface PlanLink { raw: string; state: string; label: string; requirementId: number | null; reason: string }
 interface PlanItem {
@@ -46,7 +49,6 @@ export function planToMarkdown(d: PlanView): string {
   return L.join("\n").replace(/\n+$/, "\n");
 }
 
-const tone = (priority: string) => /^(p0|p1|critical|high)$/i.test(priority) ? "hi" : /^(p2|medium)$/i.test(priority) ? "mid" : "lo";
 const byPriority = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true });
 const isAutomated = (x: PlanItem) => /^yes/i.test(x.automation);
 
@@ -124,8 +126,8 @@ export function TestPlanPage() {
             {withPlan.map((a) => <option key={a.id} value={a.id}>{a.title || a.agentAuditId}</option>)}
           </select>
         )}
-        <button className="btn sm" onClick={copy} disabled={!data}><Copy size={13} /> Copy as Markdown</button>
-        <button className="btn sm" onClick={download} disabled={!data}><Download size={13} /> Download .md</button>
+        <Button variant="primary" size="sm" onClick={copy} disabled={!data}><Copy size={13} /> Copy as Markdown</Button>
+        <Button size="sm" onClick={download} disabled={!data}><Download size={13} /> Download .md</Button>
       </div>
       <div className="content">
         {planLoading || !data ? <ListSkeleton rows={4} /> : (
@@ -150,15 +152,15 @@ export function TestPlanPage() {
               <div className="plan-filters" role="group" aria-label="Filter plan items">
                 {priorities.length > 1 && <>
                   <span className="faint">Priority</span>
-                  {["", ...priorities].map((v) => <button key={v || "all"} className={`chip${priority === v ? " on" : ""}`} aria-pressed={priority === v} onClick={() => setPriority(v)}>{v || "All"}</button>)}
+                  {["", ...priorities].map((v) => <FilterChip key={v || "all"} pressed={priority === v} onClick={() => setPriority(v)}>{v || "All"}</FilterChip>)}
                 </>}
                 {types.length > 1 && <>
                   <span className="faint" style={{ marginLeft: 8 }}>Type</span>
-                  {["", ...types].map((v) => <button key={v || "all"} className={`chip${type === v ? " on" : ""}`} aria-pressed={type === v} onClick={() => setType(v)}>{v || "All"}</button>)}
+                  {["", ...types].map((v) => <FilterChip key={v || "all"} pressed={type === v} onClick={() => setType(v)}>{v || "All"}</FilterChip>)}
                 </>}
-                <button className={`chip${unclear ? " on" : ""}`} style={{ marginLeft: 8 }} aria-pressed={unclear} onClick={() => setUnclear(!unclear)}>Needs clarification</button>
+                <span style={{ marginLeft: 8 }}><FilterChip pressed={unclear} onClick={() => setUnclear(!unclear)}>Needs clarification</FilterChip></span>
                 <span className="spacer" />
-                <button className="btn ghost sm" onClick={() => setOpen(open.size ? new Set() : new Set(shown.map((x) => x.sourceId)))}>{open.size ? "Collapse all" : "Expand all"}</button>
+                <Button variant="ghost" size="sm" onClick={() => setOpen(open.size ? new Set() : new Set(shown.map((x) => x.sourceId)))}>{open.size ? "Collapse all" : "Expand all"}</Button>
               </div>
             )}
             {items.length === 0 ? <p className="faint">No plan items.</p> : (
@@ -173,7 +175,7 @@ export function TestPlanPage() {
                         <span className="mono muted key-col">{x.sourceId}</span>
                         <span className="plan-title">{x.title}{x.readiness === "needs-clarification" && <span className="plan-unclear"> · needs clarification</span>}</span>
                         <span className="muted c-type">{x.type}</span>
-                        <span>{x.priority && <span className={`plan-pri ${tone(x.priority)}`}>{x.priority}</span>}</span>
+                        <span>{x.priority && <PriorityBadge value={x.priority} />}</span>
                         <span className="c-auto">{isAutomated(x) ? <span className="plan-auto"><Check size={12} /> Scripted</span> : <span className="muted">{x.automation ? "Manual" : ""}</span>}</span>
                       </button>
                       {isOpen && (
