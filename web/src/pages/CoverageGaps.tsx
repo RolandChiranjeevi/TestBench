@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Link2 } from "lucide-react";
-import { api, type CoverageGaps, type Project, type Requirement } from "../api";
-import { Empty, ListSkeleton, Modal, PriorityIcon, useToast } from "../components/ui";
+import { CheckCircle2, Link2, Sparkles } from "lucide-react";
+import { api, type CoverageGaps, type GenerateResult, type Project, type Requirement } from "../api";
+import { Empty, ListSkeleton, Modal, PriorityIcon, useConfirm, useToast } from "../components/ui";
 import { Button } from "../components/Button";
 import { CasePicker } from "../components/CasePicker";
 import { OriginBadge } from "../components/RequirementBits";
@@ -25,6 +25,52 @@ export function CoverageGapsTab() {
   const [linkCase, setLinkCase] = useState<number | null>(null);
   const [linkReq, setLinkReq] = useState<number | null>(null);
   const [linkObs, setLinkObs] = useState<CoverageGaps["observationsWithoutLink"][number] | null>(null);
+  const toast = useToast();
+  const confirm = useConfirm();
+  const [generating, setGenerating] = useState(false);
+  /**
+   * "Generate proposals": fixed rules turn the gaps into requirement proposals (no AI model, no network). It asks first, with a dry run that says what would be made;
+   * what it makes only starts as proposals under Proposals, and nothing becomes a requirement until a person approves it.
+   */
+  const generate = async () => {
+    setGenerating(true);
+    try {
+      const url = `/api/projects/${pid}/generate-proposals`;
+      const dry = await api.post<GenerateResult>(`${url}?dryRun=1`);
+      const c = dry.counts;
+      if (c.created === 0) {
+        toast("success", c.skipped ? `Nothing new to propose: ${c.skipped} gap${c.skipped === 1 ? " is" : "s are"} skipped (already proposed, or only informational).` : "Nothing to propose: no test case or observation is waiting for a requirement.");
+        return;
+      }
+      const fromCases = dry.created.filter((x) => x.gap.startsWith("case:")).length;
+      const ok = await confirm({
+        title: `Create ${c.created} proposal${c.created === 1 ? "" : "s"}?`,
+        tone: "primary",
+        confirmLabel: `Create ${c.created}`,
+        body: (
+          <div className="col" style={{ gap: 8 }}>
+            <p style={{ margin: 0 }}>Fixed rules, not an AI model, turn the gaps into proposals for new requirements: {fromCases} from test cases without a requirement and {c.created - fromCases} from observations without a link.</p>
+            <ul style={{ margin: 0, paddingLeft: 20 }}>
+              {dry.created.slice(0, 6).map((x) => <li key={x.gap}>{x.title}</li>)}
+              {dry.created.length > 6 && <li className="faint">…and {dry.created.length - 6} more</li>}
+            </ul>
+            <p className="muted" style={{ margin: 0 }}>They start as proposals under Proposals. Nothing becomes a requirement until you approve it.</p>
+            {c.skipped > 0 && <p className="faint" style={{ margin: 0 }}>{c.skipped} gap{c.skipped === 1 ? " is" : "s are"} skipped: already proposed, or only informational (severity info).</p>}
+            {c.notGenerated > 0 && <p className="faint" style={{ margin: 0 }}>{c.notGenerated} requirement{c.notGenerated === 1 ? " needs" : "s need"} a test case (not generated): link an existing one, or write one.</p>}
+            {c.more > 0 && <p className="faint" style={{ margin: 0 }}>Only the first {c.created} are made now; {c.more} more can be made by running it again.</p>}
+          </div>
+        ),
+      });
+      if (!ok) return;
+      const made = await api.post<GenerateResult>(url);
+      for (const k of [["requirement-proposals", pid], ["coverage-gaps", pid]]) qc.invalidateQueries({ queryKey: k });
+      toast("success", `${made.counts.created} proposal${made.counts.created === 1 ? "" : "s"} created. Review them under Proposals.`);
+    } catch (e) {
+      toast("error", (e as Error).message);
+    } finally {
+      setGenerating(false);
+    }
+  };
   const refresh = () => {
     for (const k of [["coverage-gaps", pid], ["requirements", pid], ["requirement-coverage", pid], ["cases", pid], ["requirement"], ["dashboard", pid], ["observations", pid]]) qc.invalidateQueries({ queryKey: k });
   };
@@ -33,7 +79,12 @@ export function CoverageGapsTab() {
   const none = data.counts.requirementsWithoutCases + data.counts.casesWithoutRequirement + data.counts.observationsWithoutLink === 0;
   return (
     <div className="col" style={{ gap: 20, padding: "16px 20px", maxWidth: 960 }}>
-      <p className="muted" style={{ margin: 0 }}>What is not covered yet. These lists are groundwork for proposals; nothing here creates or changes a requirement. Link what already exists, or write the missing requirement.</p>
+      <div className="row" style={{ gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+        <p className="muted" style={{ margin: 0, flex: "1 1 360px" }}>What is not covered yet. These lists are groundwork for proposals; nothing here creates or changes a requirement. Link what already exists, or write the missing requirement.</p>
+        <Button disabled={generating || data.counts.casesWithoutRequirement + data.counts.observationsWithoutLink === 0}
+          title="Fixed rules turn test cases without a requirement and observations without a link into proposals for new requirements. They start as proposals: you approve, edit or reject them."
+          onClick={generate}><Sparkles size={14} /> Generate proposals</Button>
+      </div>
       {none && <Empty icon={<CheckCircle2 size={20} />} title="No gaps">Every approved requirement has a test case, every test case has a requirement, and every open observation is linked.</Empty>}
 
       <section aria-labelledby="gap-req">

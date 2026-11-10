@@ -155,4 +155,38 @@ describe("requirement and proposal routes", () => {
     }
     assert.equal((await call("/api/observations/1/links", "PUT", { requirementIds: [] }, {})).status, 403, "no X-Testbench header");
   });
+
+  it("generate-proposals: a dry run changes nothing, a run makes proposed proposals from the gaps, a second run makes none, and no agent token can start it", async () => {
+    const url = `/api/projects/${projectId}/generate-proposals`;
+    const made = await json(await call(`/api/projects/${projectId}/cases`, "POST", { title: "Search by name" }));
+    assert.ok(made.id, output);
+    const before = (await json(await call(`/api/projects/${projectId}/requirement-proposals`))).items.length;
+
+    const dry = await json(await call(`${url}?dryRun=1`, "POST", {}));
+    assert.deepEqual([dry.dryRun, dry.counts.created >= 1, dry.created.every((c: { id: number | null }) => c.id === null)], [true, true, true]);
+    assert.equal((await json(await call(`/api/projects/${projectId}/requirement-proposals`))).items.length, before, "a dry run writes nothing");
+
+    const run = await json(await call(url, "POST", {}));
+    assert.equal(run.dryRun, false);
+    assert.ok(run.counts.created >= 1 && run.created.every((c: { id: number | null; gap: string }) => typeof c.id === "number" && /^(case|obs):\d+$/.test(c.gap)), JSON.stringify(run.counts));
+    assert.ok(run.notGenerated.every((g: { gap: string; reason: string }) => /^req:\d+$/.test(g.gap) && /not generated/.test(g.reason)), "requirements without a test are reported, not turned into proposals");
+    const proposals = await json(await call(`/api/projects/${projectId}/requirement-proposals?status=proposed`));
+    const mine = proposals.items.filter((p: { proposedBy: string }) => p.proposedBy.startsWith("rule:"));
+    assert.equal(mine.length, run.counts.created);
+    assert.ok(mine.every((p: { status: string; basis: string }) => p.status === "proposed" && p.basis === "coverage_gap"));
+    assert.equal((await json(await call(`/api/projects/${projectId}/requirements`))).some((r: { created_by: string }) => r.created_by.startsWith("rule:")), false, "a proposal is not a requirement");
+
+    const again = await json(await call(url, "POST", {}));
+    assert.deepEqual([again.counts.created, again.counts.skipped >= 1], [0, true]);
+
+    // only a person starts it: no X-Testbench header, and no kind of agent token
+    assert.equal((await call(url, "POST", {}, {})).status, 403);
+    for (const token of ["tbag_x", "tbpr_x", "tbci_x"]) assert.equal((await call(url, "POST", {}, { ...HUMAN, Authorization: `Bearer ${token}` })).status, 403, token);
+    assert.equal((await call(`/api/projects/999999/generate-proposals`, "POST", {})).status, 404);
+
+    // a person approves one, and it becomes an AI-suggested requirement approved by that person
+    const approved = await json(await call(`/api/requirement-proposals/${mine[0].id}/approve`, "POST", {}));
+    const req = await json(await call(`/api/requirements/${approved.requirementId}`));
+    assert.deepEqual([req.origin, req.status, req.created_by.startsWith("rule:"), req.approved_by], ["ai_suggestion", "approved", true, "Anna Berg"]);
+  });
 });
