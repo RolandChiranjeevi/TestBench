@@ -256,6 +256,80 @@ CREATE TABLE IF NOT EXISTS observation_evidence (
 CREATE INDEX IF NOT EXISTS observation_evidence_obs ON observation_evidence(observation_id);`);
 }
 
+/**
+ * Where a requirement came from and who stood behind it, and the proposals an agent can make for new ones. Safe to run on every start.
+ *  - origin: human | import | ai_suggestion. (`source` stays what it was: free text such as a Jira key.) Requirements that were imported have an external id.
+ *  - created_by / approved_by are the display name a person entered in Settings, as typed, not verified (there are no accounts yet); for an AI suggestion
+ *    created_by is the agent. approved_by is empty for a draft.
+ *  - A proposal lives in its own table until a person approves it. Approving makes an ordinary requirement with origin ai_suggestion. The two triggers
+ *    make the database itself refuse an ai_suggestion requirement without an approver, whatever the code does.
+ */
+export function migrateRequirementModel(d: Database.Database) {
+  const hasColumn = (table: string, col: string) => (d.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === col);
+  if (!hasColumn("requirements", "origin")) {
+    d.exec("ALTER TABLE requirements ADD COLUMN origin TEXT NOT NULL DEFAULT 'human' CHECK (origin IN ('human', 'import', 'ai_suggestion'))");
+    d.exec("UPDATE requirements SET origin = 'import' WHERE external_id IS NOT NULL");
+  }
+  if (!hasColumn("requirements", "acceptance_criteria")) d.exec("ALTER TABLE requirements ADD COLUMN acceptance_criteria TEXT NOT NULL DEFAULT ''");
+  if (!hasColumn("requirements", "created_by")) d.exec("ALTER TABLE requirements ADD COLUMN created_by TEXT NOT NULL DEFAULT ''");
+  if (!hasColumn("requirements", "approved_by")) d.exec("ALTER TABLE requirements ADD COLUMN approved_by TEXT NOT NULL DEFAULT ''");
+  if (!hasColumn("requirements", "approved_at")) d.exec("ALTER TABLE requirements ADD COLUMN approved_at TEXT");
+  if (!hasColumn("requirement_revisions", "changed_by")) d.exec("ALTER TABLE requirement_revisions ADD COLUMN changed_by TEXT NOT NULL DEFAULT ''");
+  d.exec(`
+CREATE TRIGGER IF NOT EXISTS requirements_ai_needs_human_insert BEFORE INSERT ON requirements
+WHEN NEW.origin = 'ai_suggestion' AND trim(NEW.approved_by) = ''
+BEGIN SELECT RAISE(ABORT, 'An AI-suggested requirement exists only after a person has approved it'); END;
+CREATE TRIGGER IF NOT EXISTS requirements_ai_needs_human_update BEFORE UPDATE ON requirements
+WHEN NEW.origin = 'ai_suggestion' AND NEW.status = 'approved' AND trim(NEW.approved_by) = ''
+BEGIN SELECT RAISE(ABORT, 'An AI-suggested requirement can only be approved by a person'); END;
+CREATE TABLE IF NOT EXISTS requirement_proposals (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  acceptance_criteria TEXT NOT NULL DEFAULT '',
+  rationale TEXT NOT NULL DEFAULT '',                -- why the agent suggests it
+  kind TEXT NOT NULL DEFAULT 'functional',
+  suggested_priority TEXT NOT NULL DEFAULT 'medium' CHECK (suggested_priority IN ('low', 'medium', 'high', 'critical')),
+  basis TEXT NOT NULL DEFAULT 'other' CHECK (basis IN ('observation', 'coverage_gap', 'prompt', 'other')),
+  status TEXT NOT NULL DEFAULT 'proposed' CHECK (status IN ('proposed', 'approved', 'rejected')),
+  reject_reason TEXT NOT NULL DEFAULT '',
+  proposed_by TEXT NOT NULL DEFAULT '',              -- the agent token's name
+  decided_by TEXT NOT NULL DEFAULT '', decided_at TEXT,
+  resulting_requirement_id INTEGER REFERENCES requirements(id) ON DELETE SET NULL,
+  original TEXT NOT NULL DEFAULT '{}',               -- the proposal as the agent made it, kept when a person edits it
+  edited INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  CHECK (status != 'rejected' OR trim(reject_reason) != ''),
+  CHECK (status = 'proposed' OR trim(decided_by) != '')
+);
+CREATE INDEX IF NOT EXISTS requirement_proposals_project ON requirement_proposals(project_id, status);
+CREATE TABLE IF NOT EXISTS proposal_observations (
+  proposal_id INTEGER NOT NULL REFERENCES requirement_proposals(id) ON DELETE CASCADE,
+  observation_id INTEGER NOT NULL REFERENCES observations(id) ON DELETE CASCADE,
+  PRIMARY KEY (proposal_id, observation_id)
+);
+CREATE TABLE IF NOT EXISTS proposal_cases (
+  proposal_id INTEGER NOT NULL REFERENCES requirement_proposals(id) ON DELETE CASCADE,
+  case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+  PRIMARY KEY (proposal_id, case_id)
+);
+-- Tokens that let a test agent make proposals (tbpr_). A separate table and prefix from the read token (tbag_) and the CI token (tbci_): none of them can stand in
+-- for another. A proposal token can create proposals and do nothing else. Only a hash is stored.
+CREATE TABLE IF NOT EXISTS propose_tokens (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  prefix TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_used_at TEXT,
+  revoked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS propose_tokens_project ON propose_tokens(project_id);`);
+}
+
 /** Creates missing tables and columns, and fills in data for features added later. Safe to run on every start. */
 export function migrate(d: Database.Database) {
   const hasColumn = (table: string, col: string) =>
@@ -792,6 +866,7 @@ CREATE TABLE IF NOT EXISTS bug_events (
 CREATE INDEX IF NOT EXISTS bug_events_bug ON bug_events(bug_report_id);`);
 
   migrateObservations(d);
+  migrateRequirementModel(d);
 
   // Make sure every sprint named on a run has a sprint record.
   const named = d.prepare("SELECT DISTINCT project_id, milestone FROM runs WHERE milestone != ''").all() as { project_id: number; milestone: string }[];

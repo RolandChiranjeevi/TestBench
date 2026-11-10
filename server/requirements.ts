@@ -1,11 +1,21 @@
 import { db, parseJson } from "./db.ts";
+import { actorName } from "./actor.ts";
 import type { Viewport } from "./shapes.ts";
 import { requirementLinks, requirementOverviews } from "./reqlinks.ts";
+
+export class RequirementError extends Error {
+  constructor(public status: 400 | 403 | 404 | 409, message: string, public problems: string[] = []) {
+    super(message);
+  }
+}
 
 /** What a requirement is about. Accessibility requirements may name WCAG criteria; accessibility and responsive ones may name viewports. */
 export const REQUIREMENT_KINDS = ["functional", "accessibility", "responsive", "security_privacy", "business_rule", "usability"] as const;
 export type RequirementKind = (typeof REQUIREMENT_KINDS)[number];
 export const REQUIREMENT_STATUSES = ["draft", "approved", "deprecated"] as const;
+/** Where a requirement came from. Only a person makes `human` ones; `import` comes from an import a person ran; `ai_suggestion` only from approving a proposal. */
+export const REQUIREMENT_ORIGINS = ["human", "import", "ai_suggestion"] as const;
+export type RequirementOrigin = (typeof REQUIREMENT_ORIGINS)[number];
 
 /** Why this combination of kind, WCAG criteria and viewports is not allowed, or null. */
 export function kindProblem(kind: string, wcag: string[], viewports: Viewport[]): string | null {
@@ -45,6 +55,11 @@ export interface RequirementRow {
   external_id: string | null;
   wcag: string;
   viewports: string;
+  origin: RequirementOrigin;
+  acceptance_criteria: string;
+  created_by: string;
+  approved_by: string;
+  approved_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -126,8 +141,8 @@ export function getRequirement(id: number) {
         WHERE rc.requirement_id = ? ORDER BY c.number`)
       .all(id) as { id: number; number: number; title: string; priority: string; status: string; suite_name: string | null; review_needed: number }[]
   ).map((c) => ({ ...c, review_needed: !!c.review_needed, last_status: latest.get(c.id) ?? null }));
-  const history = (db.prepare("SELECT id, changed_at, material, changes FROM requirement_revisions WHERE requirement_id = ? ORDER BY id DESC LIMIT 100").all(id) as { id: number; changed_at: string; material: number; changes: string }[]).map(
-    (h) => ({ id: h.id, at: h.changed_at, material: !!h.material, changes: parseJson<RevisionChange[]>(h.changes, []) }),
+  const history = (db.prepare("SELECT id, changed_at, changed_by, material, changes FROM requirement_revisions WHERE requirement_id = ? ORDER BY id DESC LIMIT 100").all(id) as { id: number; changed_at: string; changed_by: string; material: number; changes: string }[]).map(
+    (h) => ({ id: h.id, at: h.changed_at, by: h.changed_by, material: !!h.material, changes: parseJson<RevisionChange[]>(h.changes, []) }),
   );
   const attachments = db.prepare("SELECT id, filename, stored_name, mime, size, created_at FROM requirement_attachments WHERE requirement_id = ? ORDER BY id").all(id);
   return { ...shape(row), links: requirementOverviews(row.project_id).get(row.id)!, linked: requirementLinks(id), cases, history, attachments, coverage: classify(cases.filter((c) => c.status !== "deprecated").map((c) => c.last_status ?? undefined)) };
@@ -155,6 +170,13 @@ export interface RequirementInput {
   externalId?: string | null;
   wcag?: string[];
   viewports?: Viewport[];
+  acceptanceCriteria?: string;
+  /** Set by the server, never by a request body: a person (default), an import a person ran, or the approval of an AI proposal. */
+  origin?: RequirementOrigin;
+  /** For origin ai_suggestion: the agent that proposed it. Otherwise the person's name is used. */
+  createdBy?: string;
+  /** Needed for origin ai_suggestion. For the others it is the current person when the requirement starts out approved. */
+  approvedBy?: string;
 }
 
 export function createRequirement(projectId: number, input: RequirementInput): number {
@@ -163,13 +185,19 @@ export function createRequirement(projectId: number, input: RequirementInput): n
       .prepare("UPDATE projects SET next_requirement_number = next_requirement_number + 1 WHERE id = ? RETURNING next_requirement_number - 1 AS n")
       .get(projectId) as { n: number } | undefined;
     if (!n) throw new Error("Project not found");
+    const status = input.status ?? "approved";
+    const origin = input.origin ?? "human";
+    const me = actorName();
+    // Whoever approves is a person: the one who creates it as approved, or the one who approved the proposal.
+    const approvedBy = status === "approved" ? (input.approvedBy ?? me) : "";
     const row = db
       .prepare(`
-        INSERT INTO requirements (project_id, number, title, description, priority, status, source, kind, external_id, wcag, viewports)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`)
-      .get(projectId, n.n, input.title, input.description ?? "", input.priority ?? "medium", input.status ?? "approved", input.source ?? "",
-        input.kind ?? "functional", input.externalId ?? null, JSON.stringify(input.wcag ?? []), JSON.stringify(input.viewports ?? [])) as { id: number };
-    recordRevision(row.id, [{ field: "created" }], false);
+        INSERT INTO requirements (project_id, number, title, description, priority, status, source, kind, external_id, wcag, viewports, origin, acceptance_criteria, created_by, approved_by, approved_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`)
+      .get(projectId, n.n, input.title, input.description ?? "", input.priority ?? "medium", status, input.source ?? "",
+        input.kind ?? "functional", input.externalId ?? null, JSON.stringify(input.wcag ?? []), JSON.stringify(input.viewports ?? []),
+        origin, input.acceptanceCriteria ?? "", input.createdBy ?? me, approvedBy, approvedBy ? new Date().toISOString().slice(0, 19).replace("T", " ") : null) as { id: number };
+    recordRevision(row.id, [{ field: "created", to: origin === "ai_suggestion" ? "from an AI proposal, approved by a person" : origin === "import" ? "by import" : "" }], false);
     return row.id;
   })();
 }
@@ -200,10 +228,26 @@ export const requirementAttachmentFiles = (requirementId: number) =>
 
 export interface RevisionChange { field: string; from?: string; to?: string; added?: number[]; removed?: number[] }
 
-export function recordRevision(requirementId: number, changes: RevisionChange[], material: boolean) {
+/** The change log of a requirement: what changed, when, and by whom (the display name as typed in Settings, not verified). */
+export function recordRevision(requirementId: number, changes: RevisionChange[], material: boolean, by: string = actorName()) {
   if (!changes.length) return;
-  db.prepare("INSERT INTO requirement_revisions (requirement_id, material, changes) VALUES (?, ?, ?)").run(requirementId, material ? 1 : 0, JSON.stringify(changes));
+  db.prepare("INSERT INTO requirement_revisions (requirement_id, material, changes, changed_by) VALUES (?, ?, ?, ?)").run(requirementId, material ? 1 : 0, JSON.stringify(changes), by);
 }
+
+/**
+ * Moves a requirement out of use without deleting it (it keeps its links and history). Only a person can: this is the route behind the Deprecate button.
+ * Deprecated requirements are left out of coverage and of what an agent reads.
+ */
+export function deprecateRequirement(id: number, reason = ""): void {
+  const cur = db.prepare("SELECT status FROM requirements WHERE id = ?").get(id) as { status: string } | undefined;
+  if (!cur) throw new RequirementError(404, "Requirement not found");
+  if (cur.status === "deprecated") throw new RequirementError(409, "Requirement is already deprecated");
+  db.transaction(() => {
+    db.prepare("UPDATE requirements SET status = 'deprecated', updated_at = datetime('now') WHERE id = ?").run(id);
+    recordRevision(id, [{ field: "status", from: cur.status, to: "deprecated" }, ...(reason.trim() ? [{ field: "reason", to: reason.trim() }] : [])], false);
+  })();
+}
+
 
 const currentRev = (requirementId: number) =>
   (db.prepare("SELECT COALESCE(MAX(id), 0) AS m FROM requirement_revisions WHERE requirement_id = ? AND material = 1").get(requirementId) as { m: number }).m;

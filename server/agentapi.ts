@@ -1,6 +1,6 @@
 import { db } from "./db.ts";
 import { AuditError } from "./auditcommon.ts";
-import { parseAcceptance, type Readiness } from "./acceptance.ts";
+import { criteriaFromField, parseAcceptance, type Readiness } from "./acceptance.ts";
 import { REQUIREMENT_KINDS } from "./requirements.ts";
 
 /**
@@ -33,8 +33,8 @@ export function agentRequirementsForToken(projectId: number, opts: { kind?: stri
   const where = ["project_id = ?", "status = 'approved'"];
   const args: (string | number)[] = [projectId];
   if (opts.kind) { where.push("kind = ?"); args.push(opts.kind); }
-  const rows = db.prepare(`SELECT number, external_id, title, description, source FROM requirements WHERE ${where.join(" AND ")} ORDER BY number`).all(...args) as
-    { number: number; external_id: string | null; title: string; description: string; source: string }[];
+  const rows = db.prepare(`SELECT number, external_id, title, description, acceptance_criteria, source FROM requirements WHERE ${where.join(" AND ")} ORDER BY number`).all(...args) as
+    { number: number; external_id: string | null; title: string; description: string; acceptance_criteria: string; source: string }[];
   return {
     format: "testbench-agent-requirements" as const,
     version: 1 as const,
@@ -43,7 +43,7 @@ export function agentRequirementsForToken(projectId: number, opts: { kind?: stri
     filter: { status: "active" as const, ...(opts.kind ? { kind: opts.kind } : {}) },
     note: AGENT_REQUIREMENTS_NOTE,
     requirements: rows.map((r): AgentRequirement => {
-      const { criteria, readiness } = parseAcceptance(r.description);
+      const { criteria, readiness } = r.acceptance_criteria.trim() ? criteriaFromField(r.acceptance_criteria) : parseAcceptance(r.description);
       return { requirement_id: r.external_id ?? `REQ-${r.number}`, title: r.title, source: r.source ?? "", readiness, acceptance_criteria: criteria };
     }),
   };

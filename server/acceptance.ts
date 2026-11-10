@@ -70,3 +70,12 @@ export function parseAcceptance(description: string): Acceptance {
   const capped = criteria.slice(0, ACCEPTANCE_LIMITS.criteria);
   return { criteria: capped, readiness: capped.length > 0 ? "ready" : "needs-clarification" };
 }
+
+/**
+ * Criteria written in the requirement's own field: one per line, a leading list marker or number is dropped. Used when the field is filled in; older requirements
+ * (and imports) keep theirs in the description, where `parseAcceptance` finds them.
+ */
+export function criteriaFromField(text: string): Acceptance {
+  const criteria = (text ?? "").split(/\r?\n/).map((l) => clean(l.replace(/^\s*(?:[-*+•]|\d+[.)])\s+/, ""))).filter(Boolean).slice(0, ACCEPTANCE_LIMITS.criteria);
+  return { criteria, readiness: criteria.length > 0 ? "ready" : "needs-clarification" };
+}
