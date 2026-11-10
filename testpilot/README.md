@@ -62,7 +62,8 @@ Example for project key `TS`:
   "requirementsSource": "black_box",
   "requirementsPath": "/api/agent/projects/5/requirements",
   "tokenEnvVar": "TESTBENCH_API_TOKEN_TS",
-  "deliveryEnabled": false
+  "deliveryEnabled": false,
+  "permissionMode": "observe_only"
 }
 ```
 
@@ -75,12 +76,17 @@ Example for project key `TS`:
 | `requirementsPath` | API path for requirements, built from project ID |
 | `tokenEnvVar` | Name of the env variable with the agent token (reading requirements only) |
 | `deliveryEnabled` | Must be `true` for `deliver` to run |
+| `permissionMode` | `observe_only` (default, also when missing): the audit only reads the target. `full`: state-changing checks allowed within each confirmed scope. Set by `init` only after your explicit confirmation |
 
 Rules:
 
 - `activeProject` in the global config must match an existing profile file.
 - Project-specific fields live only in the profile, not in the global config.
 - `deliveryEnabled` in the profile is authoritative.
+- `permissionMode` in the profile wins over the audit scope: in `observe_only`
+  the agent stops and asks rather than run a state-changing check. Production
+  targets need two separate confirmations in `discover`. The agent's working
+  rules are in `.claude/references/agent-rules.md`.
 - Do not store token values, passwords, cookies or target URLs in configuration.
 
 ## 3. Environment variables

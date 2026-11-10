@@ -6,7 +6,8 @@
   "requirementsSource": "black_box",
   "requirementsPath": "/api/agent/projects/5/requirements",
   "tokenEnvVar": "TESTBENCH_API_TOKEN_TS",
-  "deliveryEnabled": false
+  "deliveryEnabled": true,
+  "permissionMode": "observe_only"
 
   
 }

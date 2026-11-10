@@ -17,6 +17,7 @@ Paths in this file are relative to this file. The contract is
 Before starting, read:
 - `../testpilot/SKILL.md`
 - `../../references/audit-contract.md`
+- `../../references/agent-rules.md`
 
 Apply the shared boundaries, secret-handling rules and stop conditions.
 Execute only this discovery workflow. Do not start the full audit.
@@ -99,6 +100,23 @@ Confirm before creating anything.
 
 If environment creation is not supported, say so clearly and do not claim success.
 
+### Permission mode
+
+Read `permissionMode` from the project profile. A missing field means
+`observe_only`.
+
+- `observe_only` (default): the audit may only read the target. The scope you
+  propose in step 5 must say `state_changes.allowed: false` with no allowed
+  actions, and checks that would need a state change are listed as coverage
+  gaps instead.
+- `full`: state-changing checks may be proposed, each with an explicit limit.
+
+Tell the user which mode applies before inspecting the target. If the user
+wants state-changing checks but the profile says `observe_only`, do not change
+the profile here: explain that `full` needs their explicit confirmation and is
+set by `/testpilot-init` (or by editing the profile), and continue in
+`observe_only` until then. Never infer `full` from the request itself.
+
 ## 3. Validate the target URL
 
 Validate the target URL before fetching anything.
@@ -106,7 +124,10 @@ Validate the target URL before fetching anything.
 Rules:
 - Must be a valid HTTP or HTTPS URL
 - Must not contain credentials in the URL
-- Must not be a production URL unless explicitly confirmed
+- Must not be a production URL unless confirmed twice, in two separate
+  messages from the user: first that the target is production, then that the
+  audit may run against it in the profile's permission mode. Record both
+  confirmations in the discovery context. One confirmation is not enough.
 - Must be reachable before inspection
 
 If the URL is missing, ask for it.

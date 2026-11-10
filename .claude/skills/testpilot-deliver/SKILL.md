@@ -17,6 +17,7 @@ Paths in this file are relative to this file. The contract is
 Before starting, read:
 - `../testpilot/SKILL.md`
 - `../../references/audit-contract.md`
+- `../../references/agent-rules.md`
 
 Apply the shared boundaries, secret-handling rules and stop conditions.
 Execute only this delivery workflow. Do not start the full audit.
