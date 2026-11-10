@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Download, FileUp, FolderOpen, GitBranch, Loader2, Paperclip, Plus, RefreshCw, Trash2, Upload, XCircle } from "lucide-react";
 import { api, formatDateTime, timeAgo, type CheckResult, type GithubSource, type ImportResult, type Milestone, type Project, type WorkflowRun } from "../api";
 import { Github, Modal, useConfirm, useToast } from "../components/ui";
+import { Button, buttonClass } from "../components/Button";
 
 export function ImportPage() {
   return (
@@ -119,7 +120,7 @@ function UploadCard() {
           <input ref={input} type="file" multiple hidden accept=".xml,.json,.zip" onChange={(e) => { add(e.target.files); e.target.value = ""; }} />
         </div>
         <div className="row" style={{ gap: 8 }}>
-          <button className="btn sm" onClick={() => folderInput.current?.click()}><FolderOpen size={13} /> Choose a test-results folder</button>
+          <Button size="sm" onClick={() => folderInput.current?.click()}><FolderOpen size={13} /> Choose a test-results folder</Button>
           <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>Include the folder with your screenshots, videos and traces next to results.json.</span>
           {/* webkitdirectory is not in React's input typings. */}
           <input
@@ -137,13 +138,13 @@ function UploadCard() {
                 <FileUp size={13} className="faint" />
                 <span className="mono truncate grow">{p.path}</span>
                 <span className="faint">{Math.max(1, Math.round(p.file.size / 1024))} KB</span>
-                <button className="btn ghost icon sm" onClick={() => setFiles(files.filter((x) => x !== p))} aria-label={`Remove ${p.path}`}><Trash2 size={12} /></button>
+                <Button variant="ghost" size="sm" icon onClick={() => setFiles(files.filter((x) => x !== p))} aria-label={`Remove ${p.path}`}><Trash2 size={12} /></Button>
               </div>
             ))}
             {evidenceCount > 0 && (
               <div className="row faint" style={{ fontSize: "var(--fs-md)" }}>
                 <Paperclip size={13} /> + {evidenceCount} evidence {evidenceCount === 1 ? "file" : "files"} (screenshots, videos, traces)
-                <button className="btn ghost sm" onClick={() => setFiles(reports)}>Clear</button>
+                <Button variant="ghost" size="sm" onClick={() => setFiles(reports)}>Clear</Button>
               </div>
             )}
           </div>
@@ -178,9 +179,9 @@ function UploadCard() {
         </div>
         <div className="row">
           <span className="spacer" />
-          <button className="btn primary" disabled={!files.length || upload.isPending} onClick={() => upload.mutate()}>
+          <Button variant="primary" disabled={!files.length || upload.isPending} onClick={() => upload.mutate()}>
             {upload.isPending ? <Loader2 size={14} className="spin" /> : <Download size={14} />} Import{files.length > 1 ? ` ${files.length} files` : ""}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -228,7 +229,7 @@ function GithubCard() {
               <Github size={12} /> {s.owner}/{s.repo}{s.workflow && <span className="count">{s.workflow}</span>}
             </button>
           ))}
-          <button className="btn ghost sm" onClick={() => setAdding(true)}><Plus size={13} /> Connect repository</button>
+          <Button variant="ghost" size="sm" onClick={() => setAdding(true)}><Plus size={13} /> Connect repository</Button>
         </div>
         {current ? (
           <>
@@ -239,9 +240,9 @@ function GithubCard() {
                 {current.artifact_pattern ? <>Artifacts matching <code className="inline">{current.artifact_pattern}</code></> : "All artifacts"} are scanned for .xml and .json reports.
               </span>
               <span className="spacer" />
-              <button className="btn ghost sm danger" onClick={async () => (await confirm({ title: `Disconnect ${current.owner}/${current.repo}?`, body: <p style={{ margin: 0 }}>Imported runs are kept.</p>, confirmLabel: "Disconnect" })) && remove.mutate(current.id)}>
+              <Button variant="danger" size="sm" onClick={async () => (await confirm({ title: `Disconnect ${current.owner}/${current.repo}?`, body: <p style={{ margin: 0 }}>Imported runs are kept.</p>, confirmLabel: "Disconnect" })) && remove.mutate(current.id)}>
                 <Trash2 size={12} /> Disconnect
-              </button>
+              </Button>
             </div>
           </>
         ) : (
@@ -332,9 +333,9 @@ function AutoImport({ source }: { source: GithubSource }) {
               imported automatically; older runs need Import below.
             </span>
             <span className="spacer" />
-            <button className="btn sm" disabled={check.isPending} onClick={() => check.mutate()}>
+            <Button size="sm" disabled={check.isPending} onClick={() => check.mutate()}>
               {check.isPending ? <Loader2 size={12} className="spin" /> : <RefreshCw size={12} />} Check now
-            </button>
+            </Button>
           </div>
           {source.last_error && <div style={{ color: "var(--failed-fg)", fontSize: "var(--fs-md)" }}>{source.last_error}</div>}
           <div className="faint" style={{ fontSize: "var(--fs-sm)" }} title={source.last_skip_note || undefined}>
@@ -378,7 +379,7 @@ function WorkflowRuns({ source }: { source: GithubSource }) {
       <div className="group-header" style={{ padding: "0 12px" }}>
         Workflow runs on GitHub <span className="count">{runs.length}</span>
         <span className="spacer" />
-        <button className="btn ghost icon sm" onClick={() => refetch()} aria-label="Refresh"><RefreshCw size={12} className={isFetching ? "spin" : ""} /></button>
+        <Button variant="ghost" size="sm" icon onClick={() => refetch()} aria-label="Refresh"><RefreshCw size={12} className={isFetching ? "spin" : ""} /></Button>
       </div>
       {runs.map((r) => (
         <div key={r.id} className="list-row" style={{ height: 50, padding: "0 12px", cursor: "default" }}>
@@ -392,16 +393,15 @@ function WorkflowRuns({ source }: { source: GithubSource }) {
             </span>
           </div>
           {r.imported_run_id ? (
-            <Link to={`/p/${pid}/runs/${r.imported_run_id}`} className="btn sm">View run</Link>
+            <Link to={`/p/${pid}/runs/${r.imported_run_id}`} className={buttonClass("secondary", "sm")}>View run</Link>
           ) : (
-            <button
-              className="btn sm"
+            <Button size="sm"
               disabled={r.status !== "completed" || importing != null || r.artifact_count === 0}
               onClick={() => importRun(r.id)}
               title={r.status !== "completed" ? "Still running" : r.artifact_count === 0 ? "No test artifacts on this run. Add an upload-artifact step to the workflow (see Setup below)." : undefined}
             >
               {importing === r.id ? <Loader2 size={12} className="spin" /> : <Download size={12} />} Import
-            </button>
+            </Button>
           )}
         </div>
       ))}
@@ -445,7 +445,7 @@ function AddSourceModal({ onClose, onAdded }: { onClose: () => void; onAdded: (i
       title="Connect a GitHub repository"
       onClose={onClose}
       width={480}
-      footer={<button className="btn primary" disabled={!repo.trim() || add.isPending} onClick={() => add.mutate()}>Connect</button>}
+      footer={<Button variant="primary" disabled={!repo.trim() || add.isPending} onClick={() => add.mutate()}>Connect</Button>}
     >
       <div className="field">
         <label htmlFor="repo">Repository</label>

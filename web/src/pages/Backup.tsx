@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, Download, History, Loader2, RotateCcw, ShieldAlert } from "lucide-react";
 import { api, timeAgo, type BackupInfo, type RestoreSummary } from "../api";
 import { useConfirm, useToast } from "../components/ui";
+import { Button, buttonClass } from "../components/Button";
 
 const formatBytes = (n: number) => (n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${(n / 1024).toFixed(0)} KB` : n < 1024 ** 3 ? `${(n / 1024 ** 2).toFixed(1)} MB` : `${(n / 1024 ** 3).toFixed(2)} GB`);
 
@@ -82,7 +83,7 @@ export function BackupPage({ embedded = false }: { embedded?: boolean }) {
                 </div>
               )}
               <div className="row">
-                <a className="btn primary" href="/api/backup" onClick={() => setTimeout(() => qc.invalidateQueries({ queryKey: ["backup-info"] }), 4000)}>
+                <a className={buttonClass("primary")} href="/api/backup" onClick={() => setTimeout(() => qc.invalidateQueries({ queryKey: ["backup-info"] }), 4000)}>
                   <Download size={14} /> Download backup
                 </a>
                 <span className="faint" style={{ fontSize: "var(--fs-md)" }}>{info?.lastBackupAt ? `Last backup ${timeAgo(info.lastBackupAt)}` : "No backup made yet"}</span>
@@ -128,9 +129,9 @@ export function BackupPage({ embedded = false }: { embedded?: boolean }) {
                 </span>
               </div>
               <div className="row">
-                <button className="btn" disabled={restoring} onClick={() => input.current?.click()}>
+                <Button disabled={restoring} onClick={() => input.current?.click()}>
                   {restoring ? <Loader2 size={14} className="spin" /> : <RotateCcw size={14} />} {restoring ? "Restoring…" : "Choose backup .zip…"}
-                </button>
+                </Button>
                 <input ref={input} type="file" accept=".zip" hidden onChange={(e) => e.target.files?.[0] && restore(e.target.files[0])} />
               </div>
               {restored && (
@@ -140,7 +141,7 @@ export function BackupPage({ embedded = false }: { embedded?: boolean }) {
                     {restored.projects} {restored.projects === 1 ? "project" : "projects"}, {restored.cases} cases, {restored.runs} runs and {restored.uploadFiles} files.
                     The data that was replaced is in <code className="inline">data/{restored.previous}</code>.
                   </div>
-                  <button className="btn sm" style={{ marginTop: 8 }} onClick={() => navigate("/")}>Open TestBench</button>
+                  <Button size="sm" style={{ marginTop: 8 }} onClick={() => navigate("/")}>Open TestBench</Button>
                 </div>
               )}
             </div>
