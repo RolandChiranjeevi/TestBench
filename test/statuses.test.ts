@@ -2,7 +2,8 @@ import "./env.ts";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { SEVERITIES, STATUSES } from "../server/observations.ts";
-import { OBSERVATION_STATUS_LOOK, priorityLook, SEVERITY_LOOK, type BadgeLook } from "../web/src/statuses.ts";
+import { WORKFLOW_STATUSES } from "../server/ci.ts";
+import { BUG_WORKFLOW_LOOK, CI_STATUS_LOOK, OBSERVATION_STATUS_LOOK, priorityLook, REVIEW_STATUS_LOOK, SEVERITY_LOOK, type BadgeLook } from "../web/src/statuses.ts";
 
 // How a priority, a severity and an observation status look is decided in one place (web/src/statuses.ts). The server owns the lists of allowed values,
 // so these tests fail when a value is added there and nobody says what it looks like.
@@ -31,6 +32,31 @@ describe("what a status looks like", () => {
     const by = (tone: string) => Object.entries(OBSERVATION_STATUS_LOOK).filter(([, l]) => l.tone === tone).map(([k]) => k);
     assert.deepEqual(by("ok"), ["resolved"]);
     assert.deepEqual(by("accent"), ["needs_review"]);
+  });
+});
+
+describe("bug reports", () => {
+  it("the decision on a report has a look for each of the four values", () => {
+    assert.deepEqual(Object.keys(REVIEW_STATUS_LOOK).sort(), ["accepted", "duplicate", "proposed", "rejected"]);
+    for (const l of Object.values(REVIEW_STATUS_LOOK)) assert.ok(complete(l), JSON.stringify(l));
+  });
+
+  it("proposed is the accent (it waits for a person), accepted is green, rejected and duplicate are neutral and differ without colour", () => {
+    assert.equal(REVIEW_STATUS_LOOK.proposed.tone, "accent");
+    assert.equal(REVIEW_STATUS_LOOK.accepted.tone, "ok");
+    assert.equal(REVIEW_STATUS_LOOK.rejected.tone, "neutral");
+    assert.equal(REVIEW_STATUS_LOOK.duplicate.tone, "neutral");
+    assert.notEqual(REVIEW_STATUS_LOOK.rejected.icon, REVIEW_STATUS_LOOK.duplicate.icon);
+  });
+
+  it("every workflow status the server allows has a look, and the look has none the server does not know", () => {
+    assert.deepEqual(Object.keys(BUG_WORKFLOW_LOOK).sort(), [...WORKFLOW_STATUSES].sort());
+    for (const l of Object.values(BUG_WORKFLOW_LOOK)) assert.ok(complete(l), JSON.stringify(l));
+  });
+
+  it("a test in CI is green when it passed, red when it failed and yellow when it is flaky, each with its own icon", () => {
+    assert.deepEqual(["passed", "failed", "flaky"].map((s) => CI_STATUS_LOOK[s as keyof typeof CI_STATUS_LOOK].tone), ["ok", "fail", "warn"]);
+    assert.equal(new Set(Object.values(CI_STATUS_LOOK).map((l) => l.icon)).size, 3);
   });
 });
 

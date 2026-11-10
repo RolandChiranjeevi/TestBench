@@ -3,7 +3,9 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Bug, Check, ClipboardList, EyeOff, ExternalLink, FileText, FolderOpen, KeyRound, Link2, Paperclip, Pencil, Send, Settings, Trash2, Upload } from "lucide-react";
 import { api, formatDateTime, parseDate, timeAgo, type Priority } from "../api";
-import { ConfirmModal, Empty, ListSkeleton, Modal, PriorityIcon, PRIORITY_LABEL, useToast } from "../components/ui";
+import { ConfirmModal, Empty, ListSkeleton, Modal, PRIORITY_LABEL, useToast } from "../components/ui";
+import { Badge, BugWorkflowBadge, CiStatusBadge, ReviewStatusBadge, SeverityBadge } from "../components/Badge";
+import { Button, buttonClass } from "../components/Button";
 
 type Status = "proposed" | "accepted" | "rejected" | "duplicate";
 interface Item {
@@ -34,7 +36,6 @@ interface CiDetail {
 const SOURCE_LABEL: Record<Source, string> = { ci: "CI", agent_audit: "Agent audit", manual: "Manual" };
 const WORKFLOW_LABEL: Record<Workflow, string> = { open: "Open", resolved_suspected: "May be resolved", closed: "Closed" };
 const CI_STATUS_LABEL: Record<CiStatus, string> = { passed: "Passed", failed: "Failed", flaky: "Flaky" };
-const CI_STATUS_COLOR: Record<CiStatus, string> = { passed: "var(--passed-fg)", failed: "var(--failed-fg)", flaky: "var(--blocked-fg)" };
 const shortSha = (s: string) => s.slice(0, 7);
 const safeLink = (u: string) => /^https?:\/\//i.test(u);
 /** Where a report stands against the latest run of its audit. */
@@ -88,24 +89,17 @@ interface Summary {
 
 type Tab = Status | "all" | "audits";
 const TAB_LABEL: Record<Tab, string> = { proposed: "Proposed", accepted: "Accepted", rejected: "Rejected", duplicate: "Duplicates", all: "All", audits: "Audits" };
-const STATUS_LABEL: Record<Status, string> = { proposed: "Proposed", accepted: "Accepted", rejected: "Rejected", duplicate: "Duplicate" };
-const STATUS_COLOR: Record<Status, string> = { proposed: "var(--blocked)", accepted: "var(--passed)", rejected: "var(--text-3)", duplicate: "var(--text-3)" };
-const STATUS_FG: Record<Status, string> = { proposed: "var(--blocked-fg)", accepted: "var(--passed-fg)", rejected: "var(--text-3)", duplicate: "var(--text-3)" };
 const RUN_STATE: Record<string, string> = { linked: "Linked to the run", pending: "Waiting for the run to be imported", none: "No GitHub run named", deleted: "The run was deleted" };
 const DANGER = { color: "var(--failed-fg)" };
 
+/** The decision on a report, as a badge with an icon and a word. Also used for the proposed manual tests. */
 export function StatusChip({ status }: { status: Status }) {
-  return (
-    <span className="chip status" style={{ color: STATUS_FG[status] }}>
-      <span className="dot" style={{ background: STATUS_COLOR[status] }} />
-      {STATUS_LABEL[status]}
-    </span>
-  );
+  return <ReviewStatusBadge value={status} />;
 }
 
 export function Severity({ value }: { value: Priority | null }) {
   if (!value) return <span className="faint">—</span>;
-  return <span className="row" style={{ gap: 4 }}><PriorityIcon priority={value} size={13} /> {PRIORITY_LABEL[value]}</span>;
+  return <SeverityBadge value={value} />;
 }
 
 export function BugReportsPage() {
@@ -137,11 +131,11 @@ export function BugReportsPage() {
       <div className="topbar">
         <h1>Bug reports</h1>
         <span className="spacer" />
-        <button className="btn" onClick={() => setDestinationOpen(true)} title="Where accepted reports are published">
+        <Button onClick={() => setDestinationOpen(true)} title="Where accepted reports are published">
           <Settings size={14} /> {dest?.destination ? `Linear · ${dest.destination.team.key}` : "Set up publishing"}
-        </button>
-        <button className="btn" onClick={() => setTokensOpen(true)} title="API tokens that let your CI send test results here"><KeyRound size={14} /> CI</button>
-        <button className="btn primary" onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</button>
+        </Button>
+        <Button onClick={() => setTokensOpen(true)} title="API tokens that let your CI send test results here"><KeyRound size={14} /> CI</Button>
+        <Button variant="primary" onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</Button>
       </div>
       {tab !== "audits" && data && <LatestRunsStrip r={data.latestRuns} onShowNew={showNew} />}
       <div className="toolbar">
@@ -188,7 +182,7 @@ export function BugReportsPage() {
             <option value="audit">New in latest audit</option>
             <option value="any">New in latest run or import</option>
           </select>
-          {filtered && <button className="btn ghost sm" onClick={() => setFilter(NO_FILTER)}>Clear filters</button>}
+          {filtered && <Button variant="ghost" size="sm" onClick={() => setFilter(NO_FILTER)}>Clear filters</Button>}
         </div>
       )}
       <div className="content">
@@ -200,7 +194,7 @@ export function BugReportsPage() {
           <Empty
             icon={<Bug size={20} />}
             title={presence || filtered ? "No reports match these filters" : tab === "proposed" ? "Nothing waiting for review" : "No bug reports here"}
-            action={<button className="btn" onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</button>}
+            action={<Button onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</Button>}
           >
             Reports from a test agent arrive as proposals. Nothing is accepted or sent anywhere until you decide.
           </Empty>
@@ -210,29 +204,26 @@ export function BugReportsPage() {
               <span className="id mono truncate" style={{ width: 88 }} title={b.testKey ?? b.sourceId}>{b.source === "ci" ? `#${b.id}` : b.sourceId}</span>
               <span className="title">{b.title}</span>
               <span className="meta">
-                {b.newIn && <span className="chip accent" title={newWhy(b.newIn, data?.latestRuns)}>New</span>}
+                {b.newIn && <Badge tone="accent" title={newWhy(b.newIn, data?.latestRuns)}>New</Badge>}
                 {b.source === "ci" && <span className="chip" title={`Reported by CI. Test key: ${b.testKey}`}>CI</span>}
                 {b.ci?.lastStatus && (
-                  <span className="chip" style={{ color: CI_STATUS_COLOR[b.ci.lastStatus] }} title="The latest CI result of this test">
-                    {CI_STATUS_LABEL[b.ci.lastStatus]}{b.ci.failedRuns > 0 && ` · ${b.ci.failedRuns} failed run${b.ci.failedRuns === 1 ? "" : "s"}`}
-                  </span>
+                  <CiStatusBadge value={b.ci.lastStatus} title="The latest CI result of this test"
+                    label={`${CI_STATUS_LABEL[b.ci.lastStatus]}${b.ci.failedRuns > 0 ? ` · ${b.ci.failedRuns} failed run${b.ci.failedRuns === 1 ? "" : "s"}` : ""}`} />
                 )}
-                {b.ci?.flaky && b.ci.lastStatus !== "flaky" && <span className="chip" style={{ color: "var(--blocked-fg)" }} title="The test passed on retry, so it is unstable. It starts at low severity.">Flaky</span>}
+                {b.ci?.flaky && b.ci.lastStatus !== "flaky" && <Badge tone="warn" icon="triangle-alert" title="The test passed on retry, so it is unstable. It starts at low severity.">Flaky</Badge>}
                 {b.ci?.branch && <span className="chip mono" title={`Latest failure: ${b.ci.branch} at ${b.ci.commit}`}>{b.ci.branch}{b.ci.commit && ` · ${shortSha(b.ci.commit)}`}</span>}
                 {b.workflowStatus !== "open" && (
-                  <span className="chip" style={b.workflowStatus === "resolved_suspected" ? { color: "var(--passed-fg)" } : undefined} title={b.workflowStatus === "resolved_suspected" ? "The test is green again. Check it and close the bug if it is fixed." : "Closed"}>
-                    {WORKFLOW_LABEL[b.workflowStatus]}
-                  </span>
+                  <BugWorkflowBadge value={b.workflowStatus} title={b.workflowStatus === "resolved_suspected" ? "The test is green again. Check it and close the bug if it is fixed." : "Closed"} />
                 )}
                 {b.assignee && <span className="chip" title="Assigned to">{b.assignee}</span>}
-                {b.pendingUpdate && <span className="chip accent" title="The agent sent a newer version. Review it.">Update waiting</span>}
+                {b.pendingUpdate && <Badge tone="accent" title="The agent sent a newer version. Review it.">Update waiting</Badge>}
                 {b.unresolvedRefs > 0 && <span className="chip" title="References that match no requirement or test case in this project"><AlertTriangle size={11} /> {b.unresolvedRefs} unresolved</span>}
                 {(b.attachments > 0 || b.attachmentProblems > 0) && (
                   <span className="chip" title={b.attachmentProblems ? `${b.attachmentProblems} attachment(s) not imported` : "Evidence files"}>
                     <Paperclip size={11} /> {b.attachments}{b.attachmentProblems > 0 && <span style={DANGER}> +{b.attachmentProblems} problem</span>}
                   </span>
                 )}
-                {b.presence === "missing" && <span className="chip" style={{ color: "var(--blocked-fg)" }} title="This report was not in the latest run of its audit. It is kept as it is."><EyeOff size={11} /> Not in latest run</span>}
+                {b.presence === "missing" && <Badge tone="warn" icon="eye-off" title="This report was not in the latest run of its audit. It is kept as it is.">Not in latest run</Badge>}
                 {b.published && <span className="chip"><Link2 size={11} /> linked</span>}
                 <Severity value={b.severity} />
                 {tab === "all" && <StatusChip status={b.status} />}
@@ -292,9 +283,9 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
       width={820}
       footer={
         <>
-          <button className="btn ghost" style={DANGER} onClick={() => setDeleting(true)}><Trash2 size={13} /> Delete</button>
+          <Button variant="ghost" style={DANGER} onClick={() => setDeleting(true)}><Trash2 size={13} /> Delete</Button>
           <span className="spacer" />
-          <button className="btn" onClick={onClose}>Close</button>
+          <Button onClick={onClose}>Close</Button>
         </>
       }
     >
@@ -304,8 +295,8 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
             <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
               <strong>The agent sent a newer version (revision {b.pendingUpdate.rev})</strong>
               <span className="spacer" />
-              <button className="btn sm" onClick={() => post("ignore-update", undefined, "Kept your version")}>Keep mine</button>
-              <button className="btn primary sm" onClick={() => post("apply-update", undefined, "Applied the agent's version")}>Use the agent's version</button>
+              <Button size="sm" onClick={() => post("ignore-update", undefined, "Kept your version")}>Keep mine</Button>
+              <Button variant="primary" size="sm" onClick={() => post("apply-update", undefined, "Applied the agent's version")}>Use the agent's version</Button>
             </div>
             <div className="faint" style={{ fontSize: "var(--fs-sm)", margin: "6px 0" }}>Your edits, review and links are not changed until you choose. Applying replaces the text below with the agent's.</div>
             {b.pendingUpdate.changes.map((c) => (
@@ -322,17 +313,17 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
         )}
 
         <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-          {b.status !== "accepted" && <button className="btn primary" onClick={() => post("review", { status: "accepted", note: note || undefined }, "Accepted. Nothing was sent to Jira or Linear.")}><Check size={14} /> Accept</button>}
-          {b.status !== "rejected" && <button className="btn" onClick={() => post("review", { status: "rejected", note: note || undefined }, "Rejected")}>Reject</button>}
-          {b.status !== "proposed" && <button className="btn ghost" onClick={() => post("review", { status: "proposed" }, "Back to proposed")}>Reopen</button>}
+          {b.status !== "accepted" && <Button variant="primary" onClick={() => post("review", { status: "accepted", note: note || undefined }, "Accepted. Nothing was sent to Jira or Linear.")}><Check size={14} /> Accept</Button>}
+          {b.status !== "rejected" && <Button onClick={() => post("review", { status: "rejected", note: note || undefined }, "Rejected")}>Reject</Button>}
+          {b.status !== "proposed" && <Button variant="ghost" onClick={() => post("review", { status: "proposed" }, "Back to proposed")}>Reopen</Button>}
           <input className="input grow" aria-label="Review note" placeholder="Note about your decision (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
           {b.status === "accepted" && !b.publications.some((p) => p.destination === "linear" && (p.mode === "linked_existing" || p.state === "sent")) && (
-            <button className="btn" onClick={() => setPublishing(true)}><Send size={14} /> Publish to Linear…</button>
+            <Button onClick={() => setPublishing(true)}><Send size={14} /> Publish to Linear…</Button>
           )}
         </div>
         {b.source === "agent_audit" && <RunStanding r={b.latestRun} />}
         {b.reviewNote && <div className="faint">Note: {b.reviewNote}{b.reviewedAt ? ` · ${timeAgo(b.reviewedAt)}` : ""}</div>}
-        {b.duplicateOf && <div>Duplicate of <button className="btn ghost sm" onClick={() => onOpen(b.duplicateOf!.id)}>{b.duplicateOf.title}</button></div>}
+        {b.duplicateOf && <div>Duplicate of <Button variant="ghost" size="sm" onClick={() => onOpen(b.duplicateOf!.id)}>{b.duplicateOf.title}</Button></div>}
         <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>Accepting is only your decision in Testbench. Publishing to Linear is a separate step: you get a preview of exactly what is sent and approve it first.</div>
 
         <TriageCard b={b} onChange={(body) => post("triage", body)} />
@@ -359,11 +350,11 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
             <textarea className="textarea" aria-label="Expected result" rows={2} value={draft.expected} onChange={(e) => setDraft({ ...draft, expected: e.target.value })} placeholder="Expected result" />
             <textarea className="textarea" aria-label="Actual result" rows={2} value={draft.actual} onChange={(e) => setDraft({ ...draft, actual: e.target.value })} placeholder="Actual result" />
             <div className="row"><input className="input grow" aria-label="Environment" value={draft.environment} onChange={(e) => setDraft({ ...draft, environment: e.target.value })} placeholder="Environment" /><input className="input grow" aria-label="URL" value={draft.url} onChange={(e) => setDraft({ ...draft, url: e.target.value })} placeholder="URL" /></div>
-            <div className="row"><button className="btn primary" disabled={!draft.title.trim()} onClick={save}>Save</button><button className="btn ghost" onClick={() => setEditing(false)}>Cancel</button></div>
+            <div className="row"><Button variant="primary" disabled={!draft.title.trim()} onClick={save}>Save</Button><Button variant="ghost" onClick={() => setEditing(false)}>Cancel</Button></div>
           </div>
         ) : (
           <div className="col" style={{ gap: 10 }}>
-            <div className="row"><h2 style={{ margin: 0, fontSize: "var(--fs-lg)", overflowWrap: "anywhere" }}>{b.title}</h2><span className="spacer" /><button className="btn sm" onClick={startEdit}><Pencil size={12} /> Edit</button></div>
+            <div className="row"><h2 style={{ margin: 0, fontSize: "var(--fs-lg)", overflowWrap: "anywhere" }}>{b.title}</h2><span className="spacer" /><Button size="sm" onClick={startEdit}><Pencil size={12} /> Edit</Button></div>
             {b.editedAt && <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>You edited this {timeAgo(b.editedAt)}. A later import will not overwrite it without asking.</div>}
             {field("Description", b.description)}
             {b.steps.length > 0 && <div className="field"><div className="section-label">Steps</div><ol style={{ margin: 0, paddingLeft: 20 }}>{b.steps.map((s, i) => <li key={i} style={{ overflowWrap: "anywhere" }}>{s}</li>)}</ol></div>}
@@ -375,10 +366,10 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
         )}
 
         <div className="field">
-          <div className="section-label">Linked to {unresolved.length > 0 && <button className="btn ghost sm" onClick={() => post("relink", undefined, "Checked again")}>Check again</button>}</div>
+          <div className="section-label">Linked to {unresolved.length > 0 && <Button variant="ghost" size="sm" onClick={() => post("relink", undefined, "Checked again")}>Check again</Button>}</div>
           {b.refs.length === 0 ? <span className="faint">No requirements or test cases named.</span> : b.refs.map((r) => (
             <div key={r.id} className="row" style={{ gap: 8, padding: "2px 0", flexWrap: "wrap" }}>
-              <span className="chip" style={r.state === "resolved" ? undefined : { color: "var(--blocked-fg)" }}>{r.state === "resolved" ? "linked" : r.state.replace("_", " ")}</span>
+              {r.state === "resolved" ? <span className="chip">linked</span> : <Badge tone="warn" icon="triangle-alert">{r.state.replace("_", " ")}</Badge>}
               {r.target?.kind === "case" ? <Link to={`/p/${pid}/cases?case=${r.target.id}`}>{r.label}</Link> : <span>{r.label}</span>}
               {r.reason && <span className="faint">{r.reason}</span>}
             </div>
@@ -412,7 +403,7 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
               <option value="jira">Jira</option><option value="linear">Linear</option><option value="other">Other</option>
             </select>
             <input className="input grow" aria-label="Issue link" placeholder="https://… link to an issue that already covers this" value={link.url} onChange={(e) => setLink({ ...link, url: e.target.value })} />
-            <button className="btn" disabled={!link.url.trim()} onClick={() => post("external-link", { destination: link.destination, url: link.url.trim() }, "Linked. Nothing was sent to that system.").then(() => setLink({ ...link, url: "" }))}>Link</button>
+            <Button disabled={!link.url.trim()} onClick={() => post("external-link", { destination: link.destination, url: link.url.trim() }, "Linked. Nothing was sent to that system.").then(() => setLink({ ...link, url: "" }))}>Link</Button>
           </div>
         </div>
 
@@ -421,9 +412,9 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
             <div className="section-label">Similar reports (same fingerprint)</div>
             {b.similar.map((s) => (
               <div key={s.id} className="row" style={{ gap: 8 }}>
-                <button className="btn ghost sm" onClick={() => onOpen(s.id)}>{s.title}</button><span className="faint">{s.status}</span>
+                <Button variant="ghost" size="sm" onClick={() => onOpen(s.id)}>{s.title}</Button><span className="faint">{s.status}</span>
                 <span className="spacer" />
-                <button className="btn sm" onClick={() => post("duplicate", { ofId: s.id }, "Marked as a duplicate")}>This is a duplicate of it</button>
+                <Button size="sm" onClick={() => post("duplicate", { ofId: s.id }, "Marked as a duplicate")}>This is a duplicate of it</Button>
               </div>
             ))}
           </div>
@@ -510,7 +501,7 @@ function LatestRunsStrip({ r, onShowNew }: { r: LatestRuns; onShowNew: (kind: "c
   if (!r.ci && !r.audit && !r.manual) return null;
   const newCount = (n: number, kind: "ci" | "audit", what: string) =>
     n > 0
-      ? <button className="btn sm" onClick={() => onShowNew(kind)} aria-label={`${n} new ${n === 1 ? "bug" : "bugs"} from the latest ${what}: show ${n === 1 ? "it" : "them"}`} title={`Show the bugs that came with this ${what}`}>{n} new</button>
+      ? <Button size="sm" onClick={() => onShowNew(kind)} aria-label={`${n} new ${n === 1 ? "bug" : "bugs"} from the latest ${what}: show ${n === 1 ? "it" : "them"}`} title={`Show the bugs that came with this ${what}`}>{n} new</Button>
       : <span className="faint">0 new</span>;
   const sep = <span className="faint" aria-hidden="true">·</span>;
   const row = { gap: 8, flexWrap: "wrap" as const, minHeight: 24 };
@@ -573,8 +564,8 @@ function TriageCard({ b, onChange }: { b: Detail; onChange: (body: { assignee?: 
           <span style={{ flex: 1, minWidth: 220 }}>
             The test is green again{b.resolvedSuspectedAt ? ` (${timeAgo(b.resolvedSuspectedAt)})` : ""}. CI never closes a bug: check it and decide.
           </span>
-          <button className="btn primary sm" onClick={() => onChange({ workflowStatus: "closed" })}>Close bug</button>
-          <button className="btn sm" onClick={() => onChange({ workflowStatus: "open" })}>Still a problem</button>
+          <Button variant="primary" size="sm" onClick={() => onChange({ workflowStatus: "closed" })}>Close bug</Button>
+          <Button size="sm" onClick={() => onChange({ workflowStatus: "open" })}>Still a problem</Button>
         </div>
       )}
     </div>
@@ -595,9 +586,9 @@ function CiSection({ ci, workflow }: { ci: CiDetail; workflow: Workflow }) {
       <div className="section-label">CI</div>
       <div className="col" style={{ gap: 10 }}>
         <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-          {ci.lastStatus && <span className="chip" style={{ color: CI_STATUS_COLOR[ci.lastStatus] }}>Latest: {CI_STATUS_LABEL[ci.lastStatus]}</span>}
+          {ci.lastStatus && <CiStatusBadge value={ci.lastStatus} label={`Latest: ${CI_STATUS_LABEL[ci.lastStatus]}`} />}
           <span className="chip">{ci.failedRuns} failed run{ci.failedRuns === 1 ? "" : "s"}</span>
-          {ci.flakyRuns > 0 && <span className="chip" style={{ color: "var(--blocked-fg)" }}>{ci.flakyRuns} flaky</span>}
+          {ci.flakyRuns > 0 && <Badge tone="warn" icon="triangle-alert">{ci.flakyRuns} flaky</Badge>}
           {ci.flaky && <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>Flaky tests start at low severity and are never raised by CI.</span>}
           {workflow === "closed" && <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>Closed. A new failure will open it again.</span>}
         </div>
@@ -624,7 +615,7 @@ function CiSection({ ci, workflow }: { ci: CiDetail; workflow: Workflow }) {
             <div style={{ display: "grid", gap: 2, fontSize: "var(--fs-md)" }}>
               {ci.branches.map((x) => (
                 <div key={x.branch} className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-                  <span className="chip" style={{ color: CI_STATUS_COLOR[x.status], minWidth: 64 }}>{CI_STATUS_LABEL[x.status]}</span>
+                  <CiStatusBadge value={x.status} />
                   <span className="mono">{x.branch || "unknown branch"}{x.commit && ` · ${shortSha(x.commit)}`}</span>
                   <span className="faint">{timeAgo(x.at)}</span>
                   {x.pipelineUrl && <CiLink url={x.pipelineUrl}>CI run</CiLink>}
@@ -639,7 +630,7 @@ function CiSection({ ci, workflow }: { ci: CiDetail; workflow: Workflow }) {
             <div style={{ display: "grid", gap: 2, fontSize: "var(--fs-md)" }}>
               {history.map((h) => (
                 <div key={h.id} className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-                  <span className="chip" style={{ color: CI_STATUS_COLOR[h.status], minWidth: 64 }}>{CI_STATUS_LABEL[h.status]}</span>
+                  <CiStatusBadge value={h.status} />
                   <span className="mono">{h.branch || "unknown branch"}{h.commit && ` · ${shortSha(h.commit)}`}</span>
                   <span className="faint" title={formatDateTime(h.at)}>{timeAgo(h.at)}</span>
                   {h.pipelineUrl && <CiLink url={h.pipelineUrl}>CI run</CiLink>}
@@ -647,7 +638,7 @@ function CiSection({ ci, workflow }: { ci: CiDetail; workflow: Workflow }) {
                 </div>
               ))}
             </div>
-            {ci.history.length > 8 && <button className="btn ghost sm" style={{ marginTop: 4 }} onClick={() => setAll(!all)}>{all ? "Show fewer" : `Show all ${ci.history.length}`}</button>}
+            {ci.history.length > 8 && <Button variant="ghost" size="sm" style={{ marginTop: 4 }} onClick={() => setAll(!all)}>{all ? "Show fewer" : `Show all ${ci.history.length}`}</Button>}
           </div>
         )}
       </div>
@@ -670,7 +661,7 @@ function CiTokensModal({ pid, onClose }: { pid: string; onClose: () => void }) {
   const copy = (text: string) => { try { void navigator.clipboard.writeText(text).then(() => toast("success", "Copied"), () => toast("error", "Could not copy")); } catch { toast("error", "Could not copy"); } };
   const active = (tokens ?? []).filter((t) => !t.revokedAt);
   return (
-    <Modal title="CI: send test results here" onClose={onClose} width={640} footer={<><span className="spacer" /><button className="btn" onClick={onClose}>Close</button></>}>
+    <Modal title="CI: send test results here" onClose={onClose} width={640} footer={<><span className="spacer" /><Button onClick={onClose}>Close</Button></>}>
       <div className="col" style={{ gap: 14 }}>
         <div className="faint" style={{ fontSize: "var(--fs-md)" }}>
           Your CI posts test results to <span className="mono">/api/projects/{pid}/ci/test-results</span> with <span className="mono">Authorization: Bearer &lt;token&gt;</span>.
@@ -681,14 +672,14 @@ function CiTokensModal({ pid, onClose }: { pid: string; onClose: () => void }) {
             <strong>Copy the token now. It is not shown again.</strong>
             <div className="row" style={{ gap: 8 }}>
               <input className="input grow mono" readOnly aria-label="New token" value={made} onFocus={(e) => e.currentTarget.select()} />
-              <button className="btn" onClick={() => copy(made)}>Copy</button>
+              <Button onClick={() => copy(made)}>Copy</Button>
             </div>
             <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>Store it as a secret in your CI (for GitHub Actions: <span className="mono">TESTBENCH_API_TOKEN</span>, with the address in <span className="mono">TESTBENCH_URL</span>), never in the code. Project number for <span className="mono">TESTBENCH_PROJECT_ID</span>: <span className="mono">{pid}</span>.</div>
           </div>
         )}
         <div className="row" style={{ gap: 8 }}>
           <input className="input grow" aria-label="Token name" maxLength={80} value={name} onChange={(e) => setName(e.target.value)} placeholder="Name, for example GitHub Actions" />
-          <button className="btn primary" disabled={!name.trim()} onClick={create}><KeyRound size={14} /> Create token</button>
+          <Button variant="primary" disabled={!name.trim()} onClick={create}><KeyRound size={14} /> Create token</Button>
         </div>
         <div className="field">
           <div className="section-label">Tokens</div>
@@ -700,7 +691,7 @@ function CiTokensModal({ pid, onClose }: { pid: string; onClose: () => void }) {
               <span className="faint">created {timeAgo(t.createdAt)}</span>
               <span className="faint">{t.lastUsedAt ? `last used ${timeAgo(t.lastUsedAt)}` : "never used"}</span>
               <span className="spacer" />
-              {t.revokedAt ? <span className="chip">Revoked</span> : <button className="btn sm" onClick={() => setRevoking(t)}>Revoke</button>}
+              {t.revokedAt ? <span className="chip">Revoked</span> : <Button size="sm" onClick={() => setRevoking(t)}>Revoke</Button>}
             </div>
           ))}
           {tokens && active.length === 0 && tokens.length > 0 && <div className="faint">No active tokens: CI cannot send results.</div>}
@@ -762,11 +753,11 @@ function PublicationRow({ p, run }: { p: Publication; run: <T>(fn: () => Promise
     <div className="col" style={{ gap: 4, padding: "4px 0" }}>
       <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
         <span className="chip">{p.destination}</span>
-        {created && <span className="chip" style={state === "sent" ? { color: "var(--passed-fg)" } : { color: "var(--blocked-fg)" }}>{state === "sent" ? "published" : state === "failed" ? "not created" : "unclear"}</span>}
+        {created && <Badge tone={state === "sent" ? "ok" : "warn"} icon={state === "sent" ? "circle-check" : "triangle-alert"}>{state === "sent" ? "published" : state === "failed" ? "not created" : "unclear"}</Badge>}
         {p.external_url ? <a href={p.external_url} target="_blank" rel="noreferrer noopener" style={{ overflowWrap: "anywhere" }}>{p.external_id || p.external_url} <ExternalLink size={11} /></a> : p.external_id}
         {p.completed_at && created && <span className="faint">{timeAgo(p.completed_at)}</span>}
-        {p.mode === "linked_existing" && <button className="btn ghost sm" aria-label="Remove link" onClick={() => run(() => api.del(`/api/bug-publications/${p.id}`), "Link removed")}>Remove</button>}
-        {created && state !== "sent" && <button className="btn sm" onClick={() => run(() => api.post(`/api/bug-publications/${p.id}/check`), "Checked with Linear")}>Check status</button>}
+        {p.mode === "linked_existing" && <Button variant="ghost" size="sm" aria-label="Remove link" onClick={() => run(() => api.del(`/api/bug-publications/${p.id}`), "Link removed")}>Remove</Button>}
+        {created && state !== "sent" && <Button size="sm" onClick={() => run(() => api.post(`/api/bug-publications/${p.id}/check`), "Checked with Linear")}>Check status</Button>}
       </div>
       {created && state !== "sent" && (
         <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>
@@ -776,7 +767,7 @@ function PublicationRow({ p, run }: { p: Publication; run: <T>(fn: () => Promise
       {failedFiles.length > 0 && (
         <div className="row" style={{ gap: 8, color: "var(--failed-fg)", fontSize: "var(--fs-md)" }}>
           <AlertTriangle size={13} /> {failedFiles.length} of {files.length} file{files.length === 1 ? "" : "s"} did not get attached to the issue.
-          <button className="btn sm" onClick={() => run(() => api.post(`/api/bug-publications/${p.id}/retry-attachments`), "Tried the files again")}>Retry files</button>
+          <Button size="sm" onClick={() => run(() => api.post(`/api/bug-publications/${p.id}/retry-attachments`), "Tried the files again")}>Retry files</Button>
         </div>
       )}
       {created && sent && (
@@ -814,8 +805,8 @@ function PublishModal({ id, pid, onClose }: { id: number; pid: string; onClose: 
       footer={
         <>
           <span className="spacer" />
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" disabled={!ready || publish.isPending} onClick={() => publish.mutate()}><Send size={14} /> {publish.isPending ? "Creating…" : "Create the issue in Linear"}</button>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="primary" disabled={!ready || publish.isPending} onClick={() => publish.mutate()}><Send size={14} /> {publish.isPending ? "Creating…" : "Create the issue in Linear"}</Button>
         </>
       }
     >
@@ -890,7 +881,7 @@ function DestinationModal({ pid, onClose }: { pid: string; onClose: () => void }
   });
   const source = dest?.tokenSource;
   return (
-    <Modal title="Publishing destination" onClose={onClose} width={560} footer={<><span className="spacer" /><button className="btn" onClick={onClose}>Close</button></>}>
+    <Modal title="Publishing destination" onClose={onClose} width={560} footer={<><span className="spacer" /><Button onClick={onClose}>Close</Button></>}>
       <div className="col" style={{ gap: 12 }}>
         <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>
           Accepted bug reports of this project can be published to Linear, one at a time, after a preview. Nothing is sent when you save this or when you accept a report.
@@ -909,7 +900,7 @@ function DestinationModal({ pid, onClose }: { pid: string; onClose: () => void }
           <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>Personal key from Linear: Settings, Account, Security &amp; access. It is stored encrypted on the server, never shown again, and is not part of backups.</span>
         </div>
         <div className="row" style={{ gap: 8 }}>
-          <button className="btn" disabled={load.isPending || (!token.trim() && !dest && !data?.serverKey)} onClick={() => load.mutate()}>{load.isPending ? "Checking…" : "Check key and load teams"}</button>
+          <Button disabled={load.isPending || (!token.trim() && !dest && !data?.serverKey)} onClick={() => load.mutate()}>{load.isPending ? "Checking…" : "Check key and load teams"}</Button>
           {teams && (
             <select className="select" aria-label="Team" value={team} onChange={(e) => setTeam(e.target.value)}>
               {teams.map((t) => <option key={t.id} value={t.key}>{t.name} ({t.key})</option>)}
@@ -917,8 +908,8 @@ function DestinationModal({ pid, onClose }: { pid: string; onClose: () => void }
           )}
         </div>
         <div className="row" style={{ gap: 8 }}>
-          <button className="btn primary" disabled={!teams || !team || save.isPending} onClick={() => save.mutate()}>Save destination</button>
-          {dest && <button className="btn ghost" style={DANGER} disabled={remove.isPending} onClick={() => remove.mutate()}>Remove</button>}
+          <Button variant="primary" disabled={!teams || !team || save.isPending} onClick={() => save.mutate()}>Save destination</Button>
+          {dest && <Button variant="ghost" style={DANGER} disabled={remove.isPending} onClick={() => remove.mutate()}>Remove</Button>}
         </div>
       </div>
     </Modal>
@@ -950,9 +941,9 @@ function AuditsPanel({ pid }: { pid: string }) {
             <strong style={{ overflowWrap: "anywhere" }}>{a.title || a.agentAuditId}</strong>
             <span className="chip">{a.source === "github" ? "GitHub" : "Upload"}</span>
             <span className="spacer" />
-            {a.planItems + a.coverageGaps > 0 && <Link className="btn sm" to={`/p/${pid}/test-plan?audit=${a.id}`}><ClipboardList size={12} /> Test plan</Link>}
-            {a.hasReport && <button className="btn sm" onClick={() => setReport(a)}><FileText size={12} /> Audit report</button>}
-            <button className="btn ghost sm" style={DANGER} onClick={() => setDel(a)}><Trash2 size={12} /> Delete</button>
+            {a.planItems + a.coverageGaps > 0 && <Link className={buttonClass("secondary", "sm")} to={`/p/${pid}/test-plan?audit=${a.id}`}><ClipboardList size={12} /> Test plan</Link>}
+            {a.hasReport && <Button size="sm" onClick={() => setReport(a)}><FileText size={12} /> Audit report</Button>}
+            <Button variant="ghost" size="sm" style={DANGER} onClick={() => setDel(a)}><Trash2 size={12} /> Delete</Button>
           </div>
           <div className="faint" style={{ fontSize: "var(--fs-md)", marginTop: 4, display: "grid", gap: 2 }}>
             <div><span className="mono">{a.agentAuditId}</span> · {a.agent || "agent unknown"} · last imported {timeAgo(a.lastImportedAt)} ({a.imports} import{a.imports === 1 ? "" : "s"})</div>
@@ -972,7 +963,7 @@ function AuditsPanel({ pid }: { pid: string }) {
         GitHub import looks at the repository's 100 most recent artifacts named <code className="inline">testbench-audit-*</code> on each check. After a long pause, older packages are not found: import them by hand.
       </div>
       {report && (
-        <Modal title={`Audit report · ${report.title || report.agentAuditId}`} onClose={() => setReport(null)} width={760} footer={<button className="btn" onClick={() => setReport(null)}>Close</button>}>
+        <Modal title={`Audit report · ${report.title || report.agentAuditId}`} onClose={() => setReport(null)} width={760} footer={<Button onClick={() => setReport(null)}>Close</Button>}>
           <pre className="snippet" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: "60vh" }}>{text ?? "Loading…"}</pre>
         </Modal>
       )}
@@ -1038,8 +1029,8 @@ export function ImportModal({ pid, onClose }: { pid: string; onClose: () => void
       width={720}
       footer={
         <>
-          <button className="btn ghost" onClick={onClose}>Cancel</button>
-          <button className="btn primary" disabled={!s || preview.isPending || doImport.isPending} onClick={() => doImport.mutate()}>{doImport.isPending ? "Importing…" : "Import as proposals"}</button>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" disabled={!s || preview.isPending || doImport.isPending} onClick={() => doImport.mutate()}>{doImport.isPending ? "Importing…" : "Import as proposals"}</Button>
         </>
       }
     >
@@ -1048,8 +1039,8 @@ export function ImportModal({ pid, onClose }: { pid: string; onClose: () => void
         <div className="row">
           <input ref={zipInput} type="file" accept=".zip" hidden onChange={(e) => { choose(e.target.files, false); e.target.value = ""; }} />
           <input ref={folderInput} type="file" multiple hidden {...({ webkitdirectory: "", directory: "" } as Record<string, string>)} onChange={(e) => { choose(e.target.files, true); e.target.value = ""; }} />
-          <button className="btn" onClick={() => zipInput.current?.click()}><Upload size={13} /> Choose a zip</button>
-          <button className="btn" onClick={() => folderInput.current?.click()}><FolderOpen size={13} /> Choose a folder</button>
+          <Button onClick={() => zipInput.current?.click()}><Upload size={13} /> Choose a zip</Button>
+          <Button onClick={() => folderInput.current?.click()}><FolderOpen size={13} /> Choose a folder</Button>
           {picked.length > 0 && <span className="faint">{picked.length} file{picked.length === 1 ? "" : "s"} chosen</span>}
         </div>
         {preview.isPending && <ListSkeleton rows={2} />}

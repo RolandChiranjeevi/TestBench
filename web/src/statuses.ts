@@ -4,11 +4,37 @@
  * Plain TypeScript, no React, so a test can check it against the server's lists.
  */
 export type Tone = "ok" | "fail" | "warn" | "info" | "accent" | "crit" | "neutral";
-export type IconName = "chevrons-up" | "chevron-up" | "diamond" | "chevron-down" | "shield-alert" | "info" | "circle" | "eye" | "circle-check" | "archive" | "bug";
+export type IconName = "chevrons-up" | "chevron-up" | "diamond" | "chevron-down" | "shield-alert" | "info" | "circle" | "eye" | "circle-check" | "archive" | "bug"
+  | "circle-x" | "copy" | "triangle-alert" | "eye-off";
 export interface BadgeLook { tone: Tone; icon: IconName; label: string }
 
 export type Severity = "info" | "low" | "medium" | "high" | "critical";
 export type ObservationStatus = "observed" | "needs_review" | "confirmed" | "resolved" | "archived" | "converted";
+
+/** The decision on a bug report (or on a proposed manual test): proposed waits for a person, so it is the accent; accepted is a decision made, so it is green. */
+export type ReviewStatus = "proposed" | "accepted" | "rejected" | "duplicate";
+export const REVIEW_STATUS_LOOK: Record<ReviewStatus, BadgeLook> = {
+  proposed: { tone: "accent", icon: "eye", label: "Proposed" },
+  accepted: { tone: "ok", icon: "circle-check", label: "Accepted" },
+  rejected: { tone: "neutral", icon: "circle-x", label: "Rejected" },
+  duplicate: { tone: "neutral", icon: "copy", label: "Duplicate" },
+};
+
+/** The latest result of a test in CI. Flaky is yellow, like blocked: it passed on retry, so it is not to be trusted. */
+export type CiStatus = "passed" | "failed" | "flaky";
+export const CI_STATUS_LOOK: Record<CiStatus, BadgeLook> = {
+  passed: { tone: "ok", icon: "circle-check", label: "Passed" },
+  failed: { tone: "fail", icon: "circle-x", label: "Failed" },
+  flaky: { tone: "warn", icon: "triangle-alert", label: "Flaky" },
+};
+
+/** Where a bug is in its life after it was accepted. "May be resolved" is green because the test is green again; the person still has to check and close it. */
+export type BugWorkflow = "open" | "resolved_suspected" | "closed";
+export const BUG_WORKFLOW_LOOK: Record<BugWorkflow, BadgeLook> = {
+  open: { tone: "neutral", icon: "circle", label: "Open" },
+  resolved_suspected: { tone: "ok", icon: "circle-check", label: "May be resolved" },
+  closed: { tone: "neutral", icon: "archive", label: "Closed" },
+};
 
 /**
  * Priorities in a test plan are free text from the agent (P0, High, critical ...). P0 and critical are solid red, P1 and high soft red,
