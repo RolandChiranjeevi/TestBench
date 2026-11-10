@@ -47,9 +47,12 @@ import { LOGGER_OPTIONS } from "./logging.ts";
 import { authenticateAgentToken, createAgentToken, isAgentRead, listAgentTokens, revokeAgentToken } from "./agenttokens.ts";
 import { agentCredentialKind, agentProposalsEnabled, authenticateProposeToken, createProposeToken, isAgentPropose, listProposeTokens, revokeProposeToken, setAgentProposalsEnabled } from "./proposetokens.ts";
 import { approveProposal, createProposals, editProposal, getProposal, listProposals, rejectProposal } from "./reqproposals.ts";
-import { actorName, getDisplayName, setDisplayName } from "./actor.ts";
+import { actorName, actorUserId, getDisplayName, setDisplayName } from "./actor.ts";
 import { accountsState, AccountError, revokeAllSessions, updateProfile } from "./accounts.ts";
 import { currentUser } from "./accountcontext.ts";
+import { checkAccessTable, trackRoutes } from "./access.ts";
+import { registerAccessGuard } from "./accessguard.ts";
+import { roleOf } from "./members.ts";
 import { coverageGaps, getObservationLinks, setObservationLinks } from "./coveragegaps.ts";
 import { generateProposals } from "./gapproposals.ts";
 import { agentRequirementsForToken, parseAgentQuery } from "./agentapi.ts";
@@ -76,6 +79,7 @@ const ALLOWED_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", ...(process.en
 
 // The Authorization header (an API token) and the cookie (a login) are never written to the log: see server/logging.ts.
 const app = Fastify({ logger: LOGGER_OPTIONS, trustProxy: process.env.TESTBENCH_TRUST_PROXY === "1" });
+trackRoutes(app); // first, before any route: the access table must know every route (see access.ts)
 
 // Any web page can send "simple" cross-site requests to localhost. Reject foreign Host headers
 // (DNS rebinding) and require a custom header on writes, which forces a CORS preflight we never approve.
@@ -96,6 +100,8 @@ app.addHook("onRequest", async (req, reply) => {
     return reply.code(403).send({ error: "An agent token opens only its own route. Requirements are decided by a person." });
   }
 });
+// Who may do what in which project (server/access.ts), once accounts are on. After the login check and the agent-token check, before every route and file.
+registerAccessGuard(app);
 // A CI request that is too large is answered 413 only after its body has been read and thrown away. Answering and closing at once makes the
 // operating system reset the connection while the client is still writing, so the client sees ECONNRESET or EPIPE and never the 413.
 // Reading is bounded: above drainBytes, or if the client is too slow, the connection is dropped instead.
@@ -180,14 +186,20 @@ const projectBody = z.object({
   key: z.string().trim().toUpperCase().regex(/^[A-Z][A-Z0-9]{0,9}$/, "1-10 letters/digits, starting with a letter"),
 });
 
-app.get("/api/projects", () =>
-  db.prepare(`
+app.get("/api/projects", () => {
+  // With accounts a person sees the projects they are a member of (the owner sees all); without accounts, all.
+  const u = currentUser();
+  const rows = db.prepare(`
     SELECT p.*, (SELECT COUNT(*) FROM cases c WHERE c.project_id = p.id) AS case_count,
            (SELECT COUNT(*) FROM runs r WHERE r.project_id = p.id) AS run_count
-    FROM projects p ORDER BY p.created_at`).all(),
-);
+    FROM projects p ORDER BY p.created_at`).all() as { id: number }[];
+  // `role` is the person's role in each project (the owner is an admin everywhere; without accounts there are no roles and everything is allowed).
+  if (!u) return rows.map((p) => ({ ...p, role: "admin" }));
+  return rows.flatMap((p) => { const role = roleOf(u, p.id); return role ? [{ ...p, role }] : []; });
+});
 
 app.post("/api/projects", (req) => {
+  ownerOnly(); // also enforced by the access table; the person who makes a project is the owner, an admin of it by being the owner
   const body = projectBody.parse(req.body);
   if (db.prepare("SELECT 1 FROM projects WHERE key = ?").get(body.key)) throw new HttpError(409, `Key ${body.key} is already used`);
   return db.prepare("INSERT INTO projects (name, key) VALUES (?, ?) RETURNING *").get(body.name, body.key);
@@ -1430,9 +1442,10 @@ app.patch("/api/requirements/:id", (req) => {
     const becomesApproved = next.status === "approved" && cur.status !== "approved";
     const backToDraft = next.status === "draft" && cur.status !== "draft";
     const approvedBy: string = becomesApproved ? actorName() : backToDraft ? "" : cur.approved_by;
+    const approvedUid: number | null = becomesApproved ? actorUserId() : backToDraft ? null : (cur.approved_by_user_id ?? null);
     const approvedAt: string | null = becomesApproved ? new Date().toISOString().slice(0, 19).replace("T", " ") : backToDraft ? null : cur.approved_at;
-    db.prepare("UPDATE requirements SET title = ?, description = ?, acceptance_criteria = ?, priority = ?, status = ?, source = ?, kind = ?, external_id = ?, wcag = ?, viewports = ?, approved_by = ?, approved_at = ?, updated_at = datetime('now') WHERE id = ?").run(
-      next.title, next.description, next.acceptance_criteria, next.priority, next.status, next.source, next.kind, next.external_id, next.wcag, next.viewports, approvedBy, approvedAt, id,
+    db.prepare("UPDATE requirements SET title = ?, description = ?, acceptance_criteria = ?, priority = ?, status = ?, source = ?, kind = ?, external_id = ?, wcag = ?, viewports = ?, approved_by = ?, approved_by_user_id = ?, approved_at = ?, updated_at = datetime('now') WHERE id = ?").run(
+      next.title, next.description, next.acceptance_criteria, next.priority, next.status, next.source, next.kind, next.external_id, next.wcag, next.viewports, approvedBy, approvedUid, approvedAt, id,
     );
     // Wording changes ask for a second look at the linked cases; the rest is just recorded.
     const changes: RevisionChange[] = (["title", "description", "acceptance_criteria", "priority", "status", "source", "kind", "external_id", "wcag", "viewports"] as const)
@@ -1839,6 +1852,9 @@ app.post("/api/github-sources/:id/check", async (req) => {
   const result = await checkSource(src);
   return { ...result, source: getSource(src.id) };
 });
+
+// Every route must have a line in server/access.ts saying who may use it; a route without one stops the server from starting.
+app.addHook("onReady", async () => checkAccessTable());
 
 // Tests load this file to call the real app with app.inject; TESTBENCH_NO_LISTEN=1 then skips the timers and the port.
 export { app };

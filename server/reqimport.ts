@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { db, parseJson } from "./db.ts";
-import { actorName } from "./actor.ts";
+import { actorName, actorUserId } from "./actor.ts";
 import { createRequirement, kindProblem, recordRevision, REQUIREMENT_KINDS, type RevisionChange } from "./requirements.ts";
 import { idText, normViewports, normWcag, PRIORITIES, str, viewportSchema, wcagCriterion, type Viewport } from "./shapes.ts";
 
@@ -172,9 +172,10 @@ export function importRequirements(projectId: number, content: string, opts: { d
         const n = p.next;
         // A requirement that the import makes approved is approved by the person who ran the import.
         db.prepare(`UPDATE requirements SET title = ?, description = ?, kind = ?, priority = ?, status = ?, source = ?, wcag = ?, viewports = ?, updated_at = datetime('now'),
+            approved_by_user_id = CASE WHEN ? = 'approved' AND approved_by = '' THEN ? ELSE approved_by_user_id END,
             approved_by = CASE WHEN ? = 'approved' AND approved_by = '' THEN ? ELSE approved_by END,
             approved_at = CASE WHEN ? = 'approved' AND approved_by = '' THEN datetime('now') ELSE approved_at END WHERE id = ?`)
-          .run(n.title, n.description, n.kind, n.priority, n.status, n.source, JSON.stringify(n.wcag), JSON.stringify(n.viewports), n.status, actorName(), n.status, p.existing.id);
+          .run(n.title, n.description, n.kind, n.priority, n.status, n.source, JSON.stringify(n.wcag), JSON.stringify(n.viewports), n.status, actorUserId(), n.status, actorName(), n.status, p.existing.id);
         const changes: RevisionChange[] = p.changes.map((c) => ({ field: c.field, from: c.from, to: c.to }));
         // A changed title or description asks for a second look at the linked test cases, like an edit in the editor does.
         recordRevision(p.existing.id, changes, p.changes.some((c) => c.field === "title" || c.field === "description"));

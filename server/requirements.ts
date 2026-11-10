@@ -1,5 +1,5 @@
 import { db, parseJson } from "./db.ts";
-import { actorName } from "./actor.ts";
+import { actorName, actorUserId } from "./actor.ts";
 import type { Viewport } from "./shapes.ts";
 import { requirementLinks, requirementOverviews } from "./reqlinks.ts";
 
@@ -192,11 +192,12 @@ export function createRequirement(projectId: number, input: RequirementInput): n
     const approvedBy = status === "approved" ? (input.approvedBy ?? me) : "";
     const row = db
       .prepare(`
-        INSERT INTO requirements (project_id, number, title, description, priority, status, source, kind, external_id, wcag, viewports, origin, acceptance_criteria, created_by, approved_by, approved_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`)
+        INSERT INTO requirements (project_id, number, title, description, priority, status, source, kind, external_id, wcag, viewports, origin, acceptance_criteria, created_by, approved_by, approved_at, created_by_user_id, approved_by_user_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`)
       .get(projectId, n.n, input.title, input.description ?? "", input.priority ?? "medium", status, input.source ?? "",
         input.kind ?? "functional", input.externalId ?? null, JSON.stringify(input.wcag ?? []), JSON.stringify(input.viewports ?? []),
-        origin, input.acceptanceCriteria ?? "", input.createdBy ?? me, approvedBy, approvedBy ? new Date().toISOString().slice(0, 19).replace("T", " ") : null) as { id: number };
+        origin, input.acceptanceCriteria ?? "", input.createdBy ?? me, approvedBy, approvedBy ? new Date().toISOString().slice(0, 19).replace("T", " ") : null,
+        input.createdBy ? null : actorUserId(), approvedBy ? actorUserId() : null) as { id: number }; // a name that was given (the agent's) has no account behind it; whoever approves is the person signed in
     recordRevision(row.id, [{ field: "created", to: origin === "ai_suggestion" ? "from an AI proposal, approved by a person" : origin === "import" ? "by import" : "" }], false);
     return row.id;
   })();
@@ -229,9 +230,10 @@ export const requirementAttachmentFiles = (requirementId: number) =>
 export interface RevisionChange { field: string; from?: string; to?: string; added?: number[]; removed?: number[] }
 
 /** The change log of a requirement: what changed, when, and by whom (the display name as typed in Settings, not verified). */
-export function recordRevision(requirementId: number, changes: RevisionChange[], material: boolean, by: string = actorName()) {
+export function recordRevision(requirementId: number, changes: RevisionChange[], material: boolean, by?: string) {
   if (!changes.length) return;
-  db.prepare("INSERT INTO requirement_revisions (requirement_id, material, changes, changed_by) VALUES (?, ?, ?, ?)").run(requirementId, material ? 1 : 0, JSON.stringify(changes), by);
+  // Without a name given it is the person signed in; a name that was given (the agent proposing) has no account behind it.
+  db.prepare("INSERT INTO requirement_revisions (requirement_id, material, changes, changed_by, by_user_id) VALUES (?, ?, ?, ?, ?)").run(requirementId, material ? 1 : 0, JSON.stringify(changes), by ?? actorName(), by === undefined ? actorUserId() : null);
 }
 
 /**

@@ -113,10 +113,23 @@ backup was restored over the database). Everything is refused until the owner is
   proposals on or off are for the owner only. Restoring a backup ends every session, and the audit log goes back to what the backup had.
 - **Turning an account off** ends its sessions at once. Machine tokens made earlier (CI, agent, propose tokens) belong to a project, not to the person, and **stay valid**:
   that is deliberate, since a CI job must not stop when someone leaves. Revoke them under the project's settings if they should go too.
-> **Interim: this is not project isolation.** Until project membership and roles arrive (the next step), every signed-in account can read and change every project and
-> every upload, create and delete projects, and make or revoke CI, agent and propose tokens. Only the owner can manage accounts, read the audit log, download or restore
-> a backup, load the demo and switch agent proposals. What accounts give you today is a sign-in, a name on what is recorded, and the audit log, not separation between
-> people. Do not give an account to someone who must not see all projects.
+#### Projects and roles
+
+With accounts, a person sees only the projects they are a member of, and each membership has a role:
+
+| Role | Can |
+| --- | --- |
+| **Viewer** | read everything in the project: cases, runs, results, requirements, reports, exports, files |
+| **Tester** | everything a viewer can, plus change test data: cases, runs, results, observations, bug reports, requirements, **generate proposals**, and approve or reject proposals; delete cases, runs and results |
+| **Admin** | everything a tester can, plus the project's members and invitations, tokens (CI, agent, propose), integrations (GitHub sources, Jira, Linear), deleting suites, audits, milestones, templates and requirements, and the project itself |
+| **Owner** (of the installation) | an admin of every project, and alone can: make projects, manage accounts, read the audit log, download or restore a backup, load the demo, switch agent proposals |
+
+- A project you are not a member of does not exist for you: every route answers `404 Not found`, the same as for something that was never there. Files under `/uploads` follow the project they belong to.
+- **Members.** An admin adds an existing account by email (the answer says if no account has that address) or makes an invitation link for the project with a role; whoever accepts becomes a member. Only the owner makes accounts that belong to no project. A project must keep one admin among its members (the owner can always step in).
+- A role is checked on every request: changing or removing it, or switching the account off, takes effect on the next request, also for a session that is already open.
+- **Installations from before roles** keep working: once, every account that is not the owner became a tester in every project that existed then (written to the audit log as `members.migrated`). The owner can take that back under each project's members.
+- **An agent can never approve.** Agent, CI and proposal tokens open only their own route; approving, rejecting and generating proposals need a signed-in person with the tester or admin role, and the database refuses an AI-suggested requirement that is not approved by an account.
+- What is recorded (created by, approved by, who decided a proposal) is the account that is signed in, as a name and an account id. It is the account, not a checked identity: the name is whatever the account was given and one account can be shared.
 
 ### Access at a glance
 
@@ -128,7 +141,7 @@ Five things stand between a request and your data. Each answers the same way eve
 | Login | accounts, or `TESTBENCH_PASSWORD` | Without a valid cookie every page, API route, upload and report gets `401 {"error":"Sign in required"}` (pages go to `/login`). A wrong or missing password gets `401` (`"Wrong password"`, or with accounts `"Wrong email or password"`, the same for an unknown email); five wrong ones from one address get `429` for 15 minutes. |
 | Browser guard | built in | A change (any request that is not GET or HEAD) without the `X-Testbench` header gets `403`. |
 | CI token | **Bug reports → CI** | Only `POST /api/projects/<id>/ci/test-results`, with `Authorization: Bearer <token>`. It needs neither the login nor the header, works for one project and that route only, and an invalid or missing token gets `401`. |
-| Agent token | `docs/requirements.md` | Only `GET /api/agent/projects/<id>/requirements`, with `Authorization: Bearer tbag_…`: the active requirements of that project, read-only. It needs neither the login nor the header, opens nothing else, and a missing, wrong or revoked token gets `401`, a token of another project `403`. Made and revoked by whoever is signed in (there are no roles), at most five per project. |
+| Agent token | `docs/requirements.md` | Only `GET /api/agent/projects/<id>/requirements`, with `Authorization: Bearer tbag_…`: the active requirements of that project, read-only. It needs neither the login nor the header, opens nothing else, and a missing, wrong or revoked token gets `401`, a token of another project `403`. Made and revoked by an admin of the project, at most five per project. |
 
 Through a Tailscale Funnel the same rules apply to whatever you publish. With only the CI paths mounted (one mount per project, each pointing at its own `/api/projects/<id>/ci/test-results`), every other path on the public address answers `404` from Funnel and never reaches Testbench, and the CI paths still need the token. The Funnel name (for example `my-machine.tailnet.ts.net`) has to be in `TESTBENCH_ALLOWED_HOSTS`, or CI gets `403`.
 
@@ -158,7 +171,7 @@ open internet, put it behind a VPN or your own single sign-on proxy as well. To 
 
 Testbench is young. These are the limits to expect today:
 
-- **No roles per project yet.** With accounts, every account can use every project and only the owner manages accounts. With only the shared password there are no users at all: nothing records who changed what, and there is no password reset.
+- **Roles come with accounts.** With only the shared password there are no users at all: no roles, nothing records who changed what, and there is no password reset.
 - **No email.** Invitations and password resets are links the owner hands over, or the command line on the server.
 - **One instance per team.** The data is a single SQLite file: no clustering, no several servers writing at once.
 - **It only works while it runs.** Automatic GitHub imports and the daily backup happen only while the process is up.

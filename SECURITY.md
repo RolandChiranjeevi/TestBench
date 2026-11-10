@@ -32,7 +32,7 @@ Only the latest commit on `main` is supported. There are no long-lived release b
 
 - Running without a password on a network you do not control. Testbench refuses to do this unless you set `TESTBENCH_ALLOW_NO_AUTH=1`
   yourself, and that setting is only meant for a port published on this computer.
-- Limits that are described in the README: the shared-password model (no individual users, no audit trail, no password reset), and that accounts have no roles per project yet
+- Limits that are described in the README: the shared-password model (no individual users, no audit trail, no password reset), and that the owner of an installation can see every project (an admin of all of them)
 - Slowing a server down by sending very large files or many requests to an instance you are allowed to use
 - Known issues in a dependency that already has an upstream advisory and no available fix
 

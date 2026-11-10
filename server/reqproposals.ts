@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { db, parseJson } from "./db.ts";
-import { actorName } from "./actor.ts";
+import { actorName, actorUserId } from "./actor.ts";
 import { createRequirement, recordRevision, REQUIREMENT_KINDS, RequirementError, setRequirementCases } from "./requirements.ts";
 
 /**
@@ -164,7 +164,7 @@ export function approveProposal(id: number) {
       db.prepare("INSERT OR IGNORE INTO observation_requirements (observation_id, requirement_id) VALUES (?, ?)").run(o.observation_id, requirementId);
     }
     if (row.rationale.trim()) recordRevision(requirementId, [{ field: "why it was proposed", to: row.rationale }], false, row.proposed_by || "agent");
-    db.prepare("UPDATE requirement_proposals SET status = 'approved', decided_by = ?, decided_at = datetime('now'), resulting_requirement_id = ?, updated_at = datetime('now') WHERE id = ?").run(me, requirementId, id);
+    db.prepare("UPDATE requirement_proposals SET status = 'approved', decided_by = ?, decided_by_user_id = ?, decided_at = datetime('now'), resulting_requirement_id = ?, updated_at = datetime('now') WHERE id = ?").run(me, actorUserId(), requirementId, id);
     return { proposal: getProposal(id)!, requirementId };
   })();
 }
@@ -175,6 +175,6 @@ export function rejectProposal(id: number, reason: unknown) {
   if (text.length < 3) throw new RequirementError(400, "A reason is needed to reject a proposal (at least 3 characters)");
   if (text.length > PROPOSAL_LIMITS.reason) throw new RequirementError(400, `The reason can be at most ${PROPOSAL_LIMITS.reason} characters`);
   openProposal(id);
-  db.prepare("UPDATE requirement_proposals SET status = 'rejected', reject_reason = ?, decided_by = ?, decided_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(text, actorName(), id);
+  db.prepare("UPDATE requirement_proposals SET status = 'rejected', reject_reason = ?, decided_by = ?, decided_by_user_id = ?, decided_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(text, actorName(), actorUserId(), id);
   return getProposal(id)!;
 }
