@@ -5,6 +5,7 @@ import { Bot, Download, Link2, Search, Sparkles } from "lucide-react";
 import { api, formatDuration, timeAgo, type AutomatedTest, type CaseSummary, type Project } from "../api";
 import { Empty, FrameworkBadge, StatusIcon, useToast, ListSkeleton } from "../components/ui";
 import { InsightsPage, ViewTabs } from "./Insights";
+import { Button } from "../components/Button";
 
 type Filter = "all" | "unlinked" | "failing" | "flaky";
 
@@ -69,11 +70,11 @@ export function AutomatedPage() {
           <input className="input" placeholder="Search tests" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search tests" />
         </div>
         {tests?.some((t) => !t.case_id) && (
-          <button className="btn" onClick={() => relink.mutate()} disabled={relink.isPending} title={`Link tests whose name contains a case ID like ${key}-12`}>
+          <Button onClick={() => relink.mutate()} disabled={relink.isPending} title={`Link tests whose name contains a case ID like ${key}-12`}>
             <Link2 size={14} /> Re-link by name
-          </button>
+          </Button>
         )}
-        <button className="btn" onClick={() => navigate(`/p/${pid}/import`)}><Download size={14} /> Import results</button>
+        <Button onClick={() => navigate(`/p/${pid}/import`)}><Download size={14} /> Import results</Button>
       </div>
       <div className="toolbar">
         <div className="tabs" role="tablist">
@@ -103,7 +104,7 @@ export function AutomatedPage() {
           <Empty
             icon={<Bot size={20} />}
             title="No automated tests yet"
-            action={<button className="btn primary" onClick={() => navigate(`/p/${pid}/import`)}><Download size={14} /> Import results</button>}
+            action={<Button variant="primary" onClick={() => navigate(`/p/${pid}/import`)}><Download size={14} /> Import results</Button>}
           >
             Tests appear here once you import a Playwright, TestCafe or Selenium report. Put <code className="inline">@{key}-12</code> in a test title to link it to a case automatically.
           </Empty>
@@ -216,9 +217,9 @@ function SuggestionsPanel() {
           Judged by TypeSafe from the test and case text. Titles and steps are sent to their API. Review each one.
         </span>
         <span className="spacer" />
-        <button className="btn sm" onClick={() => check.mutate(!unjudged)} disabled={check.isPending}>
+        <Button size="sm" onClick={() => check.mutate(!unjudged)} disabled={check.isPending}>
           {check.isPending ? "Checking…" : unjudged ? `Check ${Math.min(unjudged, 20)} of ${unjudged} unlinked tests` : "Check again"}
-        </button>
+        </Button>
       </div>
       {data && data.suggestions.length === 0 && (
         <div className="muted" style={{ padding: 16, fontSize: "var(--fs-md)" }}>
@@ -234,8 +235,8 @@ function SuggestionsPanel() {
               <span className="mono muted key-col">{key}-{c.number}</span>
               <span className="truncate grow">{c.title}</span>
               <span className="chip" title="Probability that the test checks this case">{Math.round(c.probability * 100)}%</span>
-              <button className="btn sm primary" onClick={() => accept.mutate({ testId: s.testId, caseId: c.caseId })} disabled={accept.isPending}>Link</button>
-              <button className="btn ghost sm" onClick={() => dismiss.mutate({ testId: s.testId, caseId: c.caseId })}>Dismiss</button>
+              <Button variant="primary" size="sm" onClick={() => accept.mutate({ testId: s.testId, caseId: c.caseId })} disabled={accept.isPending}>Link</Button>
+              <Button variant="ghost" size="sm" onClick={() => dismiss.mutate({ testId: s.testId, caseId: c.caseId })}>Dismiss</Button>
             </div>
           ))}
         </div>
