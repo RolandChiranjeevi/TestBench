@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, Download, ExternalLink, Link2, Paperclip, Send } from "lucide-react";
 import { api, type AutomatedResultDetail, type ResultDetail } from "../api";
 import { Modal, useToast } from "../components/ui";
+import { Button, buttonClass } from "../components/Button";
 
 /** Show a linked Jira issue as its key, whether a key or a full URL was saved. */
 export const jiraLabel = (v: string) => v.match(/[A-Za-z][A-Za-z0-9_]*-\d+/g)?.at(-1)?.toUpperCase() ?? v;
@@ -237,7 +238,7 @@ function BugReportDialog({ draft, resultId, jiraKey, attachmentCount, attachment
   });
 
   return (
-    <Modal title="Report bug" onClose={onClose} width={760} footer={<button className="btn" onClick={onClose}>Done</button>}>
+    <Modal title="Report bug" onClose={onClose} width={760} footer={<Button onClick={onClose}>Done</Button>}>
       <div className="muted" style={{ fontSize: "var(--fs-md)", marginTop: -4 }}>
         Edit the draft, then {trackers.length ? `create the issue in ${trackers.map((t) => (t === "linear" ? "Linear" : "Jira")).join(" or ")}, or ` : ""}copy it into a new issue and paste the issue key or link back here.
       </div>
@@ -246,7 +247,7 @@ function BugReportDialog({ draft, resultId, jiraKey, attachmentCount, attachment
         <label htmlFor="bug-summary">Summary</label>
         <div className="row">
           <input id="bug-summary" className="input" value={fields.summary} onChange={set("summary")} />
-          <button className="btn" onClick={() => doCopy("summary")}>{copied === "summary" ? <Check size={13} /> : <Copy size={13} />} Copy</button>
+          <Button onClick={() => doCopy("summary")}>{copied === "summary" ? <Check size={13} /> : <Copy size={13} />} Copy</Button>
         </div>
       </div>
 
@@ -269,9 +270,9 @@ function BugReportDialog({ draft, resultId, jiraKey, attachmentCount, attachment
         <div className="row">
           <label style={{ fontSize: "var(--fs-sm)", color: "var(--text-3)", fontWeight: 500 }}>Description preview</label>
           <span className="spacer" />
-          <button className="btn primary sm" onClick={() => doCopy("description")}>
+          <Button variant="primary" size="sm" onClick={() => doCopy("description")}>
             {copied === "description" ? <Check size={13} /> : <Copy size={13} />} Copy description
-          </button>
+          </Button>
         </div>
         {/* The HTML is built from escaped text above, so it is safe to render. */}
         <div
@@ -292,7 +293,7 @@ function BugReportDialog({ draft, resultId, jiraKey, attachmentCount, attachment
           </div>
         </div>
         {attachmentCount > 0 && (
-          <a className="btn" href={`/api/results/${resultId}/attachments.zip`}><Download size={13} /> Download .zip</a>
+          <a className={buttonClass("secondary")} href={`/api/results/${resultId}/attachments.zip`}><Download size={13} /> Download .zip</a>
         )}
       </div>
 
@@ -333,9 +334,9 @@ function BugReportDialog({ draft, resultId, jiraKey, attachmentCount, attachment
                 {linear!.teams.map((t) => <option key={t.id} value={t.id}>{t.key} · {t.name}</option>)}
               </select>
             )}
-            <button className="btn primary" disabled={!!saved || !fields.summary.trim() || createIssue.isPending || !!err || needsTeam} onClick={() => createIssue.mutate(tracker)}>
+            <Button variant="primary" disabled={!!saved || !fields.summary.trim() || createIssue.isPending || !!err || needsTeam} onClick={() => createIssue.mutate(tracker)}>
               {createIssue.isPending ? "Creating…" : "Create issue"}
-            </button>
+            </Button>
           </div>
         );
       })()}
@@ -351,8 +352,8 @@ function BugReportDialog({ draft, resultId, jiraKey, attachmentCount, attachment
             onChange={(e) => setIssue(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && issue.trim() !== saved && saveIssue.mutate()}
           />
-          <button className="btn" disabled={issue.trim() === saved || saveIssue.isPending} onClick={() => saveIssue.mutate()}>Save</button>
-          {link && <a className="btn ghost icon" href={link} target="_blank" rel="noreferrer" aria-label="Open issue"><ExternalLink size={14} /></a>}
+          <Button disabled={issue.trim() === saved || saveIssue.isPending} onClick={() => saveIssue.mutate()}>Save</Button>
+          {link && <a className={buttonClass("ghost", undefined, true)} href={link} target="_blank" rel="noreferrer" aria-label="Open issue"><ExternalLink size={14} /></a>}
         </div>
       </div>
     </Modal>
