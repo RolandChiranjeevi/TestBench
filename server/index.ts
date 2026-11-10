@@ -48,6 +48,8 @@ import { authenticateAgentToken, createAgentToken, isAgentRead, listAgentTokens,
 import { agentCredentialKind, agentProposalsEnabled, authenticateProposeToken, createProposeToken, isAgentPropose, listProposeTokens, revokeProposeToken, setAgentProposalsEnabled } from "./proposetokens.ts";
 import { approveProposal, createProposals, editProposal, getProposal, listProposals, rejectProposal } from "./reqproposals.ts";
 import { actorName, getDisplayName, setDisplayName } from "./actor.ts";
+import { accountsState, AccountError, revokeAllSessions, updateProfile } from "./accounts.ts";
+import { currentUser } from "./accountcontext.ts";
 import { coverageGaps, getObservationLinks, setObservationLinks } from "./coveragegaps.ts";
 import { generateProposals } from "./gapproposals.ts";
 import { agentRequirementsForToken, parseAgentQuery } from "./agentapi.ts";
@@ -61,10 +63,10 @@ const HOST = process.env.TESTBENCH_HOST?.trim() || "127.0.0.1";
 const auth = authConfigFromEnv();
 
 // Safe by default: listening beyond this computer without a password would put everyone's test data on the network.
-if (!["127.0.0.1", "::1", "localhost"].includes(HOST) && !auth && process.env.TESTBENCH_ALLOW_NO_AUTH !== "1") {
+if (!["127.0.0.1", "::1", "localhost"].includes(HOST) && !auth && accountsState() === "open" && process.env.TESTBENCH_ALLOW_NO_AUTH !== "1") {
   console.error(
-    `Refusing to listen on ${HOST} without a password.\n` +
-      "Set TESTBENCH_PASSWORD (at least 8 characters) to require a login, or keep the default host (127.0.0.1).\n" +
+    `Refusing to listen on ${HOST} without a login.\n` +
+      "Make the first account on this server (npm run accounts -- create-owner), or set TESTBENCH_PASSWORD (at least 8 characters), or keep the default host (127.0.0.1).\n" +
       "If the port is only published on this computer (for example Docker with 127.0.0.1:4100:4100), TESTBENCH_ALLOW_NO_AUTH=1 skips this check.",
   );
   process.exit(1);
@@ -136,6 +138,14 @@ class HttpError extends Error {
     super(message);
   }
 }
+
+/**
+ * With accounts on, some things reach every project and every account (backup, restore, the demo, the agent switch): only the owner may do them. Without accounts nobody
+ * is signed in and the installation is as open as before.
+ */
+function ownerOnly(): void {
+  if (accountsState() === "accounts" && !currentUser()?.isOwner) throw new HttpError(403, "Only the owner can do this");
+}
 app.setErrorHandler((err, _req, reply) => {
   if (err instanceof z.ZodError) return reply.code(400).send({ error: err.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ") });
   if (err instanceof HttpError) return reply.code(err.status).send({ error: err.message, ...(err.problems?.length ? { problems: err.problems } : {}) });
@@ -189,7 +199,7 @@ app.patch("/api/projects/:id", (req) => {
   return must(db.prepare("UPDATE projects SET name = ? WHERE id = ? RETURNING *").get(body.name, id), "Project");
 });
 
-app.post("/api/demo", () => seedDemo());
+app.post("/api/demo", () => { ownerOnly(); return seedDemo(); });
 
 // ---------------- Suites ----------------
 
@@ -1515,16 +1525,27 @@ app.post("/api/requirements/:id/deprecate", (req) => requirementsApi(() => {
   return getRequirement(id);
 }));
 
-// The display name recorded on what a person does (created by, approved by, the change log). As typed, not verified: there are no accounts yet.
-app.get("/api/settings/display-name", () => ({ name: getDisplayName(), recordedAs: actorName(), verified: false }));
-app.put("/api/settings/display-name", (req) => requirementsApi(() => {
-  setDisplayName((req.body as { name?: unknown } | null)?.name);
-  return { name: getDisplayName(), recordedAs: actorName(), verified: false };
-}));
+// The name recorded on what a person does (created by, approved by, the change log). `source` says where it comes from: "account" is the name of the account that is
+// signed in, "typed" is the display name entered in Settings. Neither is checked against a real person (the email address of an account is not verified either).
+const nameInfo = () => { const u = currentUser(); return { name: u ? u.name : getDisplayName(), recordedAs: actorName(), source: u ? "account" as const : "typed" as const }; };
+app.get("/api/settings/display-name", () => nameInfo());
+app.put("/api/settings/display-name", (req, reply) => {
+  try {
+    const name = (req.body as { name?: unknown } | null)?.name;
+    const u = currentUser();
+    if (u) updateProfile(u, { name }, req.ip);
+    else requirementsApi(() => setDisplayName(name));
+    return { ...nameInfo(), ...(u ? { name: String(name).trim(), recordedAs: String(name).trim() } : {}) };
+  } catch (e) {
+    if (e instanceof AccountError) return reply.code(e.status).send({ error: e.message });
+    throw e;
+  }
+});
 
 // Whether a test agent may make proposals at all. Off until a person switches it on.
 app.get("/api/settings/agent-proposals", () => ({ enabled: agentProposalsEnabled() }));
 app.put("/api/settings/agent-proposals", (req) => {
+  ownerOnly();
   const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
   setAgentProposalsEnabled(enabled);
   return { enabled: agentProposalsEnabled() };
@@ -1587,6 +1608,7 @@ app.get("/api/backup/info", () => {
 });
 
 app.get("/api/backup", async (_req, reply) => {
+  ownerOnly(); // the zip holds every account's password hash and every project
   const stamp = new Date().toISOString().slice(0, 16).replace("T", "-").replace(":", "");
   reply.hijack(); // the zip is streamed straight to the socket
   reply.raw.writeHead(200, {
@@ -1604,13 +1626,17 @@ app.get("/api/backup", async (_req, reply) => {
 
 // Replaces ALL data with a backup. The current data is moved to data/previous/<time>, never deleted.
 app.post("/api/restore", async (req) => {
+  ownerOnly(); // replaces the accounts too, so anyone allowed to restore could make themselves the owner
   const part = await req.file({ limits: { fileSize: 2 * 1024 ** 3 } });
   if (!part) throw new HttpError(400, "Choose a backup .zip file");
   const tmp = join(DATA_DIR, `.upload-${Date.now()}.zip`);
   try {
     await pipeline(part.file, createWriteStream(tmp));
     if (part.file.truncated) throw new HttpError(400, "That file is too large to restore from the app");
-    return await restoreFromZip(tmp);
+    const restored = await restoreFromZip(tmp);
+    // Sessions that came with the backup may be older than what was revoked since: nobody stays signed in on them. (The person restoring signs in again.)
+    try { revokeAllSessions(); } catch { /* a backup from before accounts has no sessions table until the next start migrates it */ }
+    return restored;
   } catch (e) {
     throw e instanceof HttpError ? e : new HttpError(400, (e as Error).message);
   } finally {
@@ -1814,8 +1840,12 @@ app.post("/api/github-sources/:id/check", async (req) => {
   return { ...result, source: getSource(src.id) };
 });
 
-startAutoImport();
-startAutoBackup();
-
-await app.listen({ port: PORT, host: HOST });
-console.log(`Testbench API on http://${HOST}:${PORT}${auth ? " (password login on)" : ""}`);
+// Tests load this file to call the real app with app.inject; TESTBENCH_NO_LISTEN=1 then skips the timers and the port.
+export { app };
+if (process.env.TESTBENCH_NO_LISTEN !== "1") {
+  startAutoImport();
+  startAutoBackup();
+  await app.listen({ port: PORT, host: HOST });
+  const state = accountsState();
+  console.log(`Testbench API on http://${HOST}:${PORT}${state === "accounts" ? " (accounts: sign in required)" : state === "locked" ? " (LOCKED: accounts are on but none exists; run npm run accounts -- create-owner)" : auth ? " (password login on)" : " (no login: anyone who reaches this port has full access)"}`);
+}

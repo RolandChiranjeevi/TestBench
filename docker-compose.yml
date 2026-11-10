@@ -1,7 +1,8 @@
 # Start Testbench:  docker compose up -d     then open http://localhost:4100
 #
-# As shipped it is reachable only from this computer (the port is published on 127.0.0.1) and has no login.
-# To let other people reach it, see "Running it for a team" in the README: set TESTBENCH_PASSWORD, publish the port
+# As shipped it is reachable only from this computer (the port is published on 127.0.0.1) and has no login until the first account is made:
+# run  docker compose exec testbench npm run accounts -- create-owner --email you@example.com   (/setup is not offered in Docker: the container does not see the request as local)
+# To let other people reach it, see "Running it for a team" in the README: make the owner account, publish the port
 # without the 127.0.0.1 prefix (or put it behind an HTTPS reverse proxy) and list your domain in TESTBENCH_ALLOWED_HOSTS.
 services:
   testbench:

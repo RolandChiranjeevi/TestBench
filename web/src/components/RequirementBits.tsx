@@ -20,8 +20,8 @@ export const ProposalBadge = () => <Badge tone="accent" icon="eye" title="Sugges
 export const whenText = (s: string | null | undefined) => (s ? timeAgo(s.replace(" ", "T") + "Z") : "");
 
 /**
- * "Rejected as Anna Berg (as typed, not verified)." Testbench has no accounts, so what is recorded on created by, approved by and in the change log is the display
- * name set in Settings, as typed. Without a name it says so and points to where to set it.
+ * "Rejected as Anna Berg (your account)." or "(as typed)". What is recorded on created by, approved by and in the change log is the name of the account that is signed in, or
+ * without accounts the display name set in Settings, as typed. Neither is checked against a real person. Without a name it says so and points to where to set it.
  */
 export function RecordedAs({ what = "Recorded as" }: { what?: string }) {
   const { pid } = useParams();
@@ -30,7 +30,7 @@ export function RecordedAs({ what = "Recorded as" }: { what?: string }) {
   return (
     <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>
       {data.name
-        ? <>{what} <b>{data.name}</b> (as typed, not verified).</>
+        ? <>{what} <b>{data.name}</b> ({data.source === "account" ? "your account" : "as typed"}).</>
         : <>{what} “{data.recordedAs}”: no name is set. <Link to={`/p/${pid}/settings/account`}>Set your name</Link></>}
     </span>
   );

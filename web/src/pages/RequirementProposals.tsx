@@ -45,7 +45,7 @@ export function RequirementProposalsTab() {
       body: (
         <div className="col" style={{ gap: 8 }}>
           <p style={{ margin: 0 }}>“{p.title}” becomes an approved requirement, marked as AI-suggested, and it counts in coverage from now on.</p>
-          <p className="muted" style={{ margin: 0 }}>It is recorded as approved by <b>{me?.recordedAs ?? "you"}</b>{me?.name ? "" : " (no name is set in Settings)"}, as typed and not verified. Test cases linked to the proposal are linked to the requirement.</p>
+          <p className="muted" style={{ margin: 0 }}>It is recorded as approved by <b>{me?.recordedAs ?? "you"}</b>{me?.source === "account" ? " (your account)" : me?.name ? ", as typed" : " (no name is set in Settings)"}. Test cases linked to the proposal are linked to the requirement.</p>
         </div>
       ),
       confirmLabel: "Approve",

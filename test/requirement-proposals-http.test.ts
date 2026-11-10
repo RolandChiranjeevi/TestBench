@@ -40,8 +40,8 @@ describe("requirement and proposal routes", () => {
   });
   after(() => server?.kill());
 
-  it("records the display name on what a person does, and says it is not verified", async () => {
-    assert.deepEqual(await json(await call("/api/settings/display-name")), { name: "", recordedAs: "unnamed user", verified: false });
+  it("records the display name on what a person does, as typed (source: typed)", async () => {
+    assert.deepEqual(await json(await call("/api/settings/display-name")), { name: "", recordedAs: "unnamed user", source: "typed" });
     assert.equal((await call("/api/settings/display-name", "PUT", { name: "x".repeat(81) })).status, 400);
     assert.equal((await json(await call("/api/settings/display-name", "PUT", { name: "Anna Berg" }))).recordedAs, "Anna Berg");
     const r = await json(await call(`/api/projects/${projectId}/requirements`, "POST", { title: "Login", acceptanceCriteria: "- works", status: "approved" }));
