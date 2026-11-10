@@ -100,6 +100,12 @@ and record `Retry-After`. It needs the user's explicit approval in the scope.
 
 Follow `../testpilot-run/SKILL.md`; the runner replaces Playwright.
 
+- Whether an item changes state is derived from its request, not from the
+  plan's `state_changing` flag: every method except GET, HEAD and OPTIONS
+  does, and a GraphQL body does unless it is a plain query (mutations,
+  subscriptions and text that cannot be parsed count as writes). The flag can
+  only add to this, never remove it. The login call that obtains a token is
+  the one explicit exemption.
 - `runner.py` refuses to start when: the effective permission mode is
   `observe_only` and any item is state-changing; a state-changing item has no
   matching allowed action in the scope, or its limit would be exceeded; the
@@ -107,6 +113,11 @@ Follow `../testpilot-run/SKILL.md`; the runner replaces Playwright.
   recorded confirmations. It then prints the reason and changes nothing.
 - Per call: timeout from the profile, at most 30 s; at most 3 attempts, only
   on a connection failure or timeout; never a retry after a 401, 403 or 429.
+  A state-changing request is retried only when it failed before anything was
+  sent (connection refused, name not resolved). After a timeout or reset it may
+  already have been performed, so it is not retried: the execution is
+  `inconclusive` (`insufficient-evidence`), no action is recorded, and the
+  summary says to check the target.
 - Each item becomes one execution with `mode: saved-test` (the plan file is
   the saved test), `viewport: null`, and one `network-trace` evidence file
   with the redacted request and response. Statuses follow contract 2.1: a
@@ -147,7 +158,10 @@ does not know.
   host.
 - No request bodies, headers or URLs with secrets are ever written unredacted;
   `redact.py` runs on everything before it is stored, and evidence objects
-  have `redacted: true`.
+  have `redacted: true`. Masking works by key name, by token pattern, and by
+  value: every environment variable the profile or plan refers to, and every
+  token the login returns, is masked wherever it appears, including in URL
+  paths and queries, deviation texts, summaries and observations.
 - No load, fuzzing, injection or enumeration: one request per planned check,
   within the limits above. Those belong to `testpilot-loadtest` and
   `testpilot-security-review`, with their own approvals.

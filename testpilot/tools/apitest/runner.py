@@ -8,6 +8,7 @@ a state-changing item has no allowed action or would exceed its limit, the profi
 secret, or the profile is production without two recorded confirmations.
 """
 import argparse
+import base64
 import datetime
 import json
 import os
@@ -23,9 +24,9 @@ if __package__ in (None, ""):
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from apitest import contract as contract_mod
-from apitest.redact import find_literal_secrets, redact_headers, redact_json, redact_text, redact_url
-from apitest.request import RequestError, auth_headers, build_request
-from apitest.validate import get_path, validate_response
+from apitest.redact import MASK, find_literal_secrets, is_secret_key, mask_secrets, redact_headers, redact_json, redact_text, redact_url
+from apitest.request import RequestError, auth_headers, build_request, is_state_changing
+from apitest.validate import Deviation, get_path, validate_response
 
 MAX_TIMEOUT = 30.0
 MAX_ATTEMPTS = 3
@@ -39,7 +40,19 @@ class RunError(Exception):
 
 
 class ConnError(Exception):
-    """No HTTP response at all: refused, unreachable, timed out."""
+    """No HTTP response at all: refused, unreachable, timed out.
+
+    before_send is True only when the failure happened before any request bytes could have left (connection
+    refused, name not resolved); a timeout or reset is not, because the server may have acted on the request.
+    """
+
+    def __init__(self, message, before_send=False):
+        super().__init__(message)
+        self.before_send = before_send
+
+
+class WriteUncertain(ConnError):
+    """A state-changing request got no response after it may have been sent: it is never retried."""
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -93,7 +106,8 @@ def http_call(prepared, timeout):
     except urllib.error.HTTPError as error:
         status, raw_headers, raw = error.code, error.headers, error.read(BODY_LIMIT + 1)
     except (urllib.error.URLError, socket.timeout, TimeoutError, OSError) as error:
-        raise ConnError(redact_text(str(getattr(error, "reason", error)))) from None
+        reason = getattr(error, "reason", error)
+        raise ConnError(redact_text(str(reason)), before_send=isinstance(reason, (ConnectionRefusedError, socket.gaierror))) from None
     elapsed = round((time.monotonic() - started) * 1000, 1)
     headers = {}
     for name, value in raw_headers.items():
@@ -140,11 +154,62 @@ class Runner:
         self.tokens = {}
         self.captures = {"run_id": uuid.uuid4().hex[:8]}
         self.requests_made = 0
+        self.secrets = self.known_secrets()
         self.contract = None
         self.observations = []
         self.results = []
         for key in ("executions", "actions", "evidence"):
             self.manifest.setdefault(key, [])
+
+    # ---------- secrets ----------
+
+    def known_secrets(self):
+        """Values of every environment variable the profile or plan refers to; masked wherever they appear."""
+        names, found = set(), set()
+
+        def walk(node):
+            if isinstance(node, str):
+                names.update(re.findall(r"\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}", node))
+            elif isinstance(node, dict):
+                for key, value in node.items():
+                    if isinstance(value, str) and key.lower().endswith("envvar"):
+                        names.add(value)
+                    walk(value)
+            elif isinstance(node, list):
+                for value in node:
+                    walk(value)
+
+        walk(self.profile)
+        walk(self.plan)
+        for name in names:
+            value = self.env.get(name)
+            if value:
+                found.add(value)
+        return found
+
+    def text(self, value):
+        return mask_secrets(redact_text(value), self.secrets)
+
+    def url(self, value):
+        return redact_url(value, self.secrets)
+
+    def scrub(self, value):
+        if isinstance(value, (dict, list)):
+            return mask_secrets(redact_json(value), self.secrets)
+        if isinstance(value, str):
+            return self.text(value)
+        return value
+
+    def safe(self, deviation):
+        """A deviation whose values are masked: by key (a secret-looking path), by pattern and by known secret value."""
+        hidden = is_secret_key(deviation.where)
+        return Deviation(self.text(deviation.where), deviation.rule, MASK if hidden else self.scrub(deviation.expected),
+                         MASK if hidden else self.scrub(deviation.actual))
+
+    @staticmethod
+    def changes_state(item):
+        """A plan item changes state if it says so or if its request does. The request wins over a missing or false flag."""
+        return bool(item.get("state_changing")) or is_state_changing(item.get("request"))
 
     # ---------- checks before anything is sent ----------
 
@@ -164,14 +229,14 @@ class Runner:
         items = self.selected_items()
         if not items:
             raise RunError("no plan items selected")
-        changing = [i["test_plan_item_id"] for i in items if i.get("state_changing")]
+        changing = [i["test_plan_item_id"] for i in items if self.changes_state(i)]
         if mode == "observe_only" and changing:
             raise RunError("permission mode is observe_only but these items change state: " + ", ".join(changing))
         scope = (self.manifest.get("scope") or {}).get("state_changes") or {}
         allowed = {a.get("action"): a for a in scope.get("allowed_actions", [])}
         planned = {}
         for item in items:
-            if not item.get("state_changing"):
+            if not self.changes_state(item):
                 continue
             if not scope.get("allowed"):
                 raise RunError(f"{item['test_plan_item_id']} changes state but the confirmed scope allows no state change")
@@ -205,6 +270,7 @@ class Runner:
             if not user or not password:
                 raise RequestError(f"basic auth credentials for mode {mode} are not set in the environment")
             self.tokens[mode] = f"{user}:{password}"
+            self.secrets.update({password, base64.b64encode(self.tokens[mode].encode()).decode()})
             return self.tokens[mode]
         login = auth.get("login")
         if not login:
@@ -231,6 +297,7 @@ class Runner:
             if not value:
                 raise RequestError(f"the login response has no value at {login.get('tokenPath', '$.token')}")
         self.tokens[mode] = str(value)
+        self.secrets.add(self.tokens[mode])
         return self.tokens[mode]
 
     def auth_for(self, mode):
@@ -242,14 +309,21 @@ class Runner:
     # ---------- calls ----------
 
     def call_with_attempts(self, prepared):
-        """At most max_attempts tries, and only when no HTTP response arrived. Any status ends the attempts."""
+        """At most max_attempts tries, and only when no HTTP response arrived. Any status ends the attempts.
+
+        A state-changing request is retried only when the failure came before anything was sent; after a timeout or
+        reset it may already have been performed, so it raises WriteUncertain instead of trying again.
+        """
         last = None
+        writes = prepared.changes_state()
         for attempt in range(1, self.max_attempts + 1):
             try:
                 response = http_call(prepared, self.timeout)
                 response["attempt"] = attempt
                 return response
             except ConnError as error:
+                if writes and not error.before_send:
+                    raise WriteUncertain(f"{error}; not retried because the write may have been performed on the target, check it there before rerunning") from None
                 last = error
                 if attempt < self.max_attempts:
                     self.sleep(min(2 ** (attempt - 1), 4))
@@ -263,6 +337,7 @@ class Runner:
         execution_id = next_id(self.manifest["executions"], "EX")
         prepared, responses, deviations, contract_devs = None, [], [], []
         status, reason, notes, performed = "pass", None, [], 0
+        changing = self.changes_state(item)
         expect = item.get("expect") or {}
         try:
             request_spec = item.get("request") or {}
@@ -273,16 +348,16 @@ class Runner:
                 self.requests_made += 1
                 response = self.call_with_attempts(prepared)
                 responses.append(response)
-                if item.get("state_changing") and 200 <= response["status"] < 300:
+                if changing and 200 <= response["status"] < 300:
                     performed += 1
                 if response["status"] == 429:
                     notes.append(f"429 after {i + 1} request(s), Retry-After={response['headers'].get('retry-after')!r}; not retried")
                     break
             last = responses[-1]
             root_doc = self.contract["doc"] if self.contract and self.contract["kind"] == "openapi" else None
-            deviations = validate_response(last, expect, root=root_doc)
+            deviations = [self.safe(d) for d in validate_response(last, expect, root=root_doc)]
             if self.contract and expect.get("contract", "report") != "skip":
-                found = contract_mod.check(self.contract, prepared, request_spec, last)
+                found = [self.safe(d) for d in contract_mod.check(self.contract, prepared, request_spec, last)]
                 if expect.get("contract") == "fail":
                     deviations.extend(found)
                 else:
@@ -293,6 +368,9 @@ class Runner:
                     self.captures[name] = value
             if deviations:
                 status = "fail"
+        except WriteUncertain as error:
+            status, reason = "inconclusive", "insufficient-evidence"
+            notes.append(f"no response to a state-changing request: {error}")
         except ConnError as error:
             status, reason = "blocked", "environment"
             notes.append(f"no response: {error}")
@@ -304,14 +382,15 @@ class Runner:
             notes.append(str(error))
         except Exception as error:  # a runner fault is never a product result
             status, reason = "inconclusive", "tooling"
-            notes.append(f"runner error: {type(error).__name__}: {redact_text(str(error))}")
+            notes.append(f"runner error: {type(error).__name__}: {error}")
         finished = utc_now()
+        notes = [self.text(note) for note in notes]
         evidence_ids = []
         if prepared is not None or responses:
             evidence_ids.append(self.write_evidence(item, execution_id, prepared, responses, deviations, contract_devs, started))
         if status == "pass":
             checked = ", ".join(k for k in ("status", "headers", "body", "schema", "graphqlErrors") if k in expect) or "no expectations"
-            summary = f"Verified: {prepared.method} {redact_url(prepared.url)} answered {responses[-1]['status']} in {responses[-1]['elapsed_ms']} ms and met {checked}."
+            summary = f"Verified: {prepared.method} {self.url(prepared.url)} answered {responses[-1]['status']} in {responses[-1]['elapsed_ms']} ms and met {checked}."
             if len(responses) > 1:
                 summary += f" {len(responses)} requests sent; statuses {[r['status'] for r in responses]}."
             if contract_devs:
@@ -322,10 +401,11 @@ class Runner:
             summary = "; ".join(notes) or status
         if notes and status in ("pass", "fail"):
             summary += " " + " ".join(notes)
+        summary = mask_secrets(summary, self.secrets)  # urls, deviations and notes were masked piece by piece above
         self.manifest["executions"].append({
             "execution_id": execution_id, "test_plan_item_id": tpi, "requirement_id": item.get("requirement_id"),
             "status": status, "reason": reason, "started_at": started, "finished_at": finished,
-            "url": redact_url(prepared.url) if prepared else None, "viewport": None, "mode": MODE,
+            "url": self.url(prepared.url) if prepared else None, "viewport": None, "mode": MODE,
             "evidence_ids": evidence_ids, "summary": summary})
         action = item.get("action") or {}
         for _ in range(performed):
@@ -336,8 +416,8 @@ class Runner:
         if contract_devs:
             self.observations.append({
                 "id": f"OBS-API-{len(self.observations) + 1 + self.existing_observations}", "auditId": self.audit_id, "kind": "api_test",
-                "title": f"Contract deviation: {prepared.method} {redact_url(prepared.url)}"[:300], "severity": "low", "status": "observed",
-                "evidence": "; ".join(d.text() for d in contract_devs[:8]), "evidenceIds": list(evidence_ids),
+                "title": f"Contract deviation: {prepared.method} {self.url(prepared.url)}"[:300], "severity": "low", "status": "observed",
+                "evidence": self.text("; ".join(d.text() for d in contract_devs[:8])), "evidenceIds": list(evidence_ids),
                 "recommendation": "Align the API or its schema so the documented paths, statuses and bodies match what the API does.",
                 "source": SOURCE, "execution_id": execution_id})
         self.results.append({"test_plan_item_id": tpi, "execution_id": execution_id, "status": status, "reason": reason})
@@ -348,11 +428,12 @@ class Runner:
         location = f"evidence/api-{item['test_plan_item_id'].lower()}-{execution_id.lower()}-{captured_at[:10]}.json"
         record = {
             "captured_at": captured_at, "test_plan_item_id": item["test_plan_item_id"], "execution_id": execution_id,
-            "request": prepared.redacted() if prepared else None,
+            "request": prepared.redacted(self.secrets) if prepared else None,
             "responses": [self.redact_response(r) for r in responses],
-            "deviations": [redact_json(d.to_dict()) for d in deviations],
-            "contract_deviations": [redact_json(d.to_dict()) for d in contract_devs],
+            "deviations": [d.to_dict() for d in deviations],
+            "contract_deviations": [d.to_dict() for d in contract_devs],
         }
+        record = mask_secrets(record, self.secrets)  # last pass: no known secret value survives anywhere in the file
         save_json(os.path.join(self.pkg, location), record)
         evidence_id = next_id(self.manifest["evidence"], "EV")
         self.manifest["evidence"].append({
