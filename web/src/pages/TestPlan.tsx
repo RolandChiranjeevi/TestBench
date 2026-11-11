@@ -7,6 +7,7 @@ import { Empty, ListSkeleton, Modal, useToast } from "../components/ui";
 import { Badge, PriorityBadge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { FilterChip } from "../components/FilterChip";
+import { planToMarkdown } from "../planMarkdown";
 
 interface PlanLink { raw: string; state: string; label: string; requirementId: number | null; reason: string }
 type PlanStatus = "proposed" | "draft" | "approved" | "rejected";
@@ -47,34 +48,7 @@ interface PlanView {
 }
 interface AuditRow { id: number; agentAuditId: string; title: string; planItems: number; coverageGaps: number }
 
-const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
-const refName = (r: PlanLink) => (r.requirementId ? r.label : r.raw);
 const anchor = (id: string) => `plan-${id.replace(/[^A-Za-z0-9_-]/g, "-")}`;
-
-/** The same plan as plain Markdown, for pasting into a pull request, a wiki or a ticket. Mirrors what the page shows, heading for heading. */
-export function planToMarkdown(d: PlanView): string {
-  const L: string[] = [`# Test plan: ${d.audit.title || d.audit.agentAuditId}`, ""];
-  L.push(`${plural(d.planItems.length, "plan item")}, ${plural(d.coverageGaps.length, "coverage gap")}.`, "");
-  L.push("## Plan items", "");
-  if (!d.planItems.length) L.push("No plan items.", "");
-  for (const x of d.planItems) {
-    L.push(`### ${x.sourceId}: ${x.title}`, "");
-    const meta = [x.type && `type: ${x.type}`, x.priority && `priority: ${x.priority}`, x.risk && `risk: ${x.risk}`, x.readiness && `readiness: ${x.readiness}`, x.result && `result: ${x.result}`].filter(Boolean);
-    if (meta.length) L.push(meta.join(" · "), "");
-    if (x.requirements.length) L.push(`**Requirements:** ${x.requirements.map(refName).join(", ")}`, "");
-    if (x.preconditions) L.push("**Preconditions**", "", x.preconditions, "");
-    if (x.testData) L.push("**Test data**", "", x.testData, "");
-    if (x.steps.length) L.push("**Steps**", "", ...x.steps.map((s, i) => `${i + 1}. ${s}`), "");
-    if (x.acceptanceCriteria) L.push("**Acceptance criteria**", "", x.acceptanceCriteria, "");
-    if (x.automation) L.push(`**Automation:** ${x.automation}`, "");
-  }
-  L.push("## Coverage gaps", "");
-  if (!d.coverageGaps.length) L.push("No coverage gaps.", "");
-  for (const g of d.coverageGaps) {
-    L.push(`- **${g.sourceId}**${g.requirements.length ? ` (${g.requirements.map(refName).join(", ")})` : ""}: ${g.description.replace(/\n+/g, " ")}`);
-  }
-  return L.join("\n").replace(/\n+$/, "\n");
-}
 
 const byPriority = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true });
 const isAutomated = (x: PlanItem) => /^yes/i.test(x.automation);

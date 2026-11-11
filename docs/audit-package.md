@@ -138,7 +138,7 @@ package** and nothing is stored, bug reports included, with a message that names
 
 ### test-plan.json
 
-The plan of the audit, optional: what the audit planned to check, and what it did not verify. It is shown in the **Audits** tab (**Test plan**) and on each requirement it names.
+The plan of the audit, optional: what the audit planned to check, and what it did not verify. It is shown in the **Audits** tab (**Test plan**) and on each requirement it names. Once imported, plan items and coverage gaps are a workspace: a person can edit, approve, reject, save as a draft and add their own, and every change is kept in a history.
 
 ```json
 { "version": 1,
@@ -175,8 +175,14 @@ At most 500 plan items and 500 coverage gaps, and 10 MB. A file that breaks a ru
 
 - **A name the import does not know gets a warning.** An unknown name in `test-plan.json` (in the file, a plan item, a coverage gap or a `refs`) is ignored, and the preview and the import result say which one, with the likely intended name: `test_data` gives `did you mean "testData"?`. The rest of the item is imported.
 - **It is a plan, not a test.** Plan items are kept apart from test cases, runs and results, and never count towards a requirement having a test.
-- **The latest import of the same audit wins.** A package with a `test-plan.json` replaces that audit's plan (an empty file empties it); a package without one says nothing about the plan and leaves it as it is. The preview counts new, unchanged, updated and removed items.
-- **Deleting the audit deletes its plan.**
+- **An import never overwrites what a person owns.** A plan item or coverage gap starts as the agent's proposal. It becomes a person's when they edit, approve, reject or save it as a draft, or add it themselves.
+  - One nobody owns follows the package: it is added, updated or, when the package leaves it out, removed.
+  - One a person owns is kept as it is. If the package has a different version of it, that version waits (an **Agent sent a newer version** banner with the difference) until a person applies it, which makes it a draft to approve again, or ignores it. The same version is not offered again after it was ignored. If the package leaves it out, it is kept with a **removal waiting** until a person decides.
+  - One a person added themselves (given the id `H-1`, `G-1` and so on) is never changed or removed by an import. A package that uses the same id puts its version in waiting; a package with a similar item but another id adds it as a separate proposal.
+  - An empty `test-plan.json` removes only what nobody owns. A package without one says nothing about the plan and leaves it as it is.
+  - The preview counts new, unchanged, updated and removed items and gaps, and says how many are **kept, with the agent's version waiting**. Nothing is written by a preview.
+  - Nothing the agent sends is ever approved: only a person with an account approves or rejects (with accounts, the database refuses a decision without one).
+- **Deleting the audit deletes its plan,** including what people edited or added and the history. The confirmation says how many.
 - **Reserved:** `inconclusive` is reserved as a status of its own (with `pass`, `fail`, `blocked` and `skipped`) for the executions of a later version. Plan items carry no result yet.
 
 ## What the import does
