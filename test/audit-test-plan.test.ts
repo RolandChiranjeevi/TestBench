@@ -47,7 +47,7 @@ describe("test-plan.json in an audit package", () => {
     assert.equal(r.dryRun, true);
     assert.equal(r.testPlan.listed, true);
     assert.deepEqual(r.testPlan.planItems.counts, { new: 2, unchanged: 0, updated: 0, removed: 0, pending: 0 });
-    assert.deepEqual(r.testPlan.coverageGaps.counts, { new: 1, unchanged: 0, updated: 0, removed: 0 });
+    assert.deepEqual(r.testPlan.coverageGaps.counts, { new: 1, unchanged: 0, updated: 0, removed: 0, pending: 0 });
     assert.equal(r.testPlan.unresolvedRefs, 3, "REQ-1 twice and REQ-LOCAL-002 once, and the project has no requirements yet");
     assert.equal(r.warnings.some((w) => /not listed in the manifest/.test(w)), false, "test-plan.json is not an unlisted file");
     assert.deepEqual(totals(), before, "the dry run wrote nothing");
@@ -99,7 +99,7 @@ describe("test-plan.json in an audit package", () => {
     const before = totals();
     const dry = run(p, second, {}, true);
     assert.deepEqual(dry.testPlan.planItems.counts, { new: 1, unchanged: 1, updated: 1, removed: 0, pending: 0 });
-    assert.deepEqual(dry.testPlan.coverageGaps.counts, { new: 0, unchanged: 0, updated: 0, removed: 1 });
+    assert.deepEqual(dry.testPlan.coverageGaps.counts, { new: 0, unchanged: 0, updated: 0, removed: 1, pending: 0 });
     assert.deepEqual(dry.testPlan.coverageGaps.removed, ["CG-001"]);
     assert.deepEqual(totals(), before, "the dry run changed nothing");
     run(p, second);

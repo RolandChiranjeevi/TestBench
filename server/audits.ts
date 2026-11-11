@@ -10,8 +10,8 @@ import { AuditError, hashOf, resolveOne, resolveRefs, toSqlDate, type ResolvedRe
 export { AuditError } from "./auditcommon.ts";
 import { manualTestsOfAudit, planManualTests, writeManualTests, type PlannedManual } from "./manualtests.ts";
 import { inspectEvidence, PackageError, parsePackage, readEvidence, safeRelPath, type BugItem, type EvidenceCheck, type ParsedPackage } from "./importers/auditpackage.ts";
-import { addPlanItem, auditPlan, decidePlanItem, editPlanItem, planCounts, planHistory, planTestPlan, resolvePending, storeTestPlan } from "./auditplan.ts";
-export { addPlanItem, decidePlanItem, editPlanItem, planHistory, resolvePending };
+import { addGap, addPlanItem, auditPlan, decideGap, decidePlanItem, editGap, editPlanItem, gapHistory, planCounts, planHistory, planTestPlan, resolveGapPending, resolvePending, storeTestPlan } from "./auditplan.ts";
+export { addGap, addPlanItem, decideGap, decidePlanItem, editGap, editPlanItem, gapHistory, planHistory, resolveGapPending, resolvePending };
 import type { PlannedTestPlan } from "./auditplan.ts";
 
 /**

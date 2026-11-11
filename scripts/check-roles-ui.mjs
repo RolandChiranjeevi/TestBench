@@ -549,6 +549,79 @@ for (const who of Object.keys(TABS)) {
   check("test plan: nothing was decided by a viewer or the import", (await planNow()).filter((x) => x.decidedBy).every((x) => x.decidedBy === "Tess"));
 }
 
+// Coverage gaps work like plan items: marked as the agent's proposal, edited and decided by a person, never overwritten or removed by an import, with one shared history.
+{
+  const key = (await call("GET", "/api/projects", undefined, owner)).json.find((x) => x.id === A).key;
+  const gapOf = (n, over = {}) => ({ sourceId: `UIG-${n}`, description: `UI gap ${n} is not verified`, refs: { requirements: [] }, ...over });
+  const sendGaps = async (gaps, dryRun = false) => {
+    const files = { "manifest.json": { format: "testbench-audit-package", version: 1, audit: { id: "ui-gap-audit", title: "UI gap audit", project: key, agent: { name: "ui-check-agent" } }, files: [], parts: {} },
+      "bugs.json": { version: 1, bugs: [] }, "test-plan.json": { version: 1, planItems: [{ sourceId: "UIGP-1", title: "UI gap plan item" }], coverageGaps: gaps } };
+    const form = new FormData();
+    for (const [name, content] of Object.entries(files)) { form.append("relpath", name); form.append("file", new Blob([JSON.stringify(content)], { type: "application/json" }), name); }
+    return fetch(`${BASE}/api/projects/${A}/audit-import${dryRun ? "?dryRun=1" : ""}`, { method: "POST", headers: { "X-Testbench": "1", Cookie: `tb_sid=${owner}` }, body: form });
+  };
+  const seeded = await sendGaps([gapOf(1), gapOf(2), gapOf(3)]);
+  check("gaps: seeded", seeded.ok, `${seeded.status}`);
+  const auditId = (await call("GET", `/api/projects/${A}/audits`, undefined, owner)).json.find((a) => a.agentAuditId === "ui-gap-audit").id;
+  const gapsNow = async () => (await call("GET", `/api/audits/${auditId}/plan`, undefined, owner)).json.coverageGaps;
+  const gapNow = async (id) => (await gapsNow()).find((g) => g.sourceId === id);
+
+  const { page, close } = await open("tester", `/p/${A}/test-plan?audit=${auditId}`);
+  const li = (id) => page.locator(`li[data-gap="${id}"]`);
+  check("gaps: what the agent sent is marked AI proposal", await eventually(async () => (await li("UIG-1").innerText()).includes("AI proposal")));
+
+  // Edit and approve.
+  await li("UIG-1").getByRole("button", { name: "Edit", exact: true }).click();
+  await li("UIG-1").locator("textarea").fill("UI gap 1, my wording");
+  await li("UIG-1").getByRole("button", { name: "Approve", exact: true }).click();
+  check("gaps: edited and approved by Tess", await eventually(async () => { const g = await gapNow("UIG-1"); return g.description === "UI gap 1, my wording" && g.status === "approved" && g.editedBy === "Tess" && g.decidedBy === "Tess"; }));
+  check("gaps: the row says Approved and Edited by Tess, not AI proposal", await eventually(async () => { const t = await li("UIG-1").innerText(); return t.includes("Approved") && t.includes("Edited by Tess") && !t.includes("AI proposal"); }));
+  await li("UIG-2").getByRole("button", { name: "Reject", exact: true }).click();
+  check("gaps: rejected", await eventually(async () => (await gapNow("UIG-2")).status === "rejected"));
+  await li("UIG-3").getByRole("button", { name: "Save as draft" }).click();
+  check("gaps: saved as a draft", await eventually(async () => (await gapNow("UIG-3")).status === "draft"));
+
+  // A newer plan changes nothing a person owns.
+  const dry = await (await sendGaps([gapOf(1, { description: "UI gap 1, agent's wording" }), gapOf(3, { description: "UI gap 3, agent's wording" }), gapOf(4)], true)).json();
+  check("gaps: the import preview says gaps are kept with the agent's version waiting", dry.testPlan.coverageGaps.counts.pending >= 3, JSON.stringify(dry.testPlan.coverageGaps.counts));
+  const again = await sendGaps([gapOf(1, { description: "UI gap 1, agent's wording" }), gapOf(3, { description: "UI gap 3, agent's wording" }), gapOf(4)]);
+  check("gaps: the newer plan was imported", again.ok, `${again.status}`);
+  check("gaps: nothing a person owns was overwritten or removed", (await gapNow("UIG-1")).description === "UI gap 1, my wording" && (await gapNow("UIG-2")).status === "rejected" && (await gapNow("UIG-3")).description === "UI gap 3 is not verified");
+  check("gaps: and the new gap arrived as a proposal", (await gapNow("UIG-4")).status === "proposed");
+  await page.reload();
+  check("gaps: the rows say an agent update or removal is waiting", await eventually(async () => (await li("UIG-1").innerText()).includes("Agent update waiting") && (await li("UIG-2").innerText()).includes("Agent removal waiting")));
+  const banner = (id) => li(id).getByRole("region", { name: "Agent sent a newer version" });
+  check("gaps: the banner shows the diff", await eventually(async () => (await banner("UIG-1").count()) === 1 && (await banner("UIG-1").innerText()).includes("UI gap 1, agent's wording")));
+  await banner("UIG-1").getByRole("button", { name: "Ignore" }).click();
+  check("gaps: Ignore keeps the person's text and clears the waiting version", await eventually(async () => { const g = await gapNow("UIG-1"); return g.pending === null && g.description === "UI gap 1, my wording"; }));
+  await banner("UIG-3").getByRole("button", { name: "Apply" }).click();
+  check("gaps: Apply takes the agent's text as a draft", await eventually(async () => { const g = await gapNow("UIG-3"); return g.description === "UI gap 3, agent's wording" && g.status === "draft" && g.pending === null; }));
+  await li("UIG-2").getByRole("region", { name: "Agent sent a newer version" }).getByRole("button", { name: "Keep the gap" }).click();
+  check("gaps: Keep the gap keeps a gap the agent left out", await eventually(async () => { const g = await gapNow("UIG-2"); return g && g.pending === null; }));
+
+  // One history for plan items and gaps.
+  await page.getByRole("button", { name: "History" }).click();
+  const hist = page.getByRole("region", { name: "Plan history" });
+  check("gaps: the history has gaps and plan items, each marked", await eventually(async () => { const t = await hist.innerText(); return t.includes("Gap") && t.includes("Plan item") && t.includes("Approved") && t.includes("by Tess") && t.includes("Agent sent a newer version") && t.includes("Applied the agent's version"); }));
+  await page.getByRole("button", { name: "History" }).click();
+
+  // A person's own gap.
+  await page.getByRole("button", { name: "Add gap" }).click();
+  await page.getByRole("dialog").locator("textarea").fill("UI gap my own");
+  await page.getByRole("dialog").getByRole("button", { name: "Add as draft" }).click();
+  check("gaps: the person's own gap is a human draft", await eventually(async () => { const g = (await gapsNow()).find((x) => x.description === "UI gap my own"); return g && g.origin === "human" && g.status === "draft" && g.editedBy === "Tess"; }));
+  await sendGaps([gapOf(1, { description: "UI gap 1, agent's wording" })]);
+  check("gaps: an import that leaves it out does not remove it", (await gapsNow()).some((g) => g.description === "UI gap my own"));
+  await close();
+
+  // A viewer reads but cannot change.
+  const v = await open("viewer", `/p/${A}/test-plan?audit=${auditId}`);
+  const vli = v.page.locator('li[data-gap="UIG-1"]');
+  check("gaps: a viewer's Edit, Reject, Save as draft and Add gap are off", await eventually(async () => (await vli.getByRole("button", { name: "Edit", exact: true }).isDisabled()) && (await vli.getByRole("button", { name: "Reject", exact: true }).isDisabled()) && (await vli.getByRole("button", { name: "Save as draft" }).isDisabled()) && (await v.page.getByRole("button", { name: "Add gap" }).isDisabled())));
+  await v.close();
+  check("gaps: nothing was decided by a viewer or the import", (await gapsNow()).filter((g) => g.decidedBy).every((g) => g.decidedBy === "Tess"));
+}
+
 // /admin: the owner looks after the accounts and reads the audit log; nobody else is offered it.
 {
   const { page, close } = await open("owner", "/admin/accounts");

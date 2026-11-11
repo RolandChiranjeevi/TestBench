@@ -641,6 +641,69 @@ describe("the test plan is a workspace a person owns", () => {
   });
 });
 
+describe("coverage gaps are a workspace a person owns, like plan items", () => {
+  const seed = (audit: number | string) => db.prepare("INSERT INTO audit_coverage_gaps (audit_id, source_id, position, description) VALUES (?, 'CG-1', 0, 'Validation is not verified') RETURNING id").get(audit) as { id: number };
+  const row = (audit: number | string, src = "CG-1") => db.prepare("SELECT description AS t, review_status AS s, decided_by_user_id AS d, edited_by_user_id AS e, origin FROM audit_coverage_gaps WHERE audit_id = ? AND source_id = ?").get(audit, src) as { t: string; s: string; d: number | null; e: number | null; origin: string } | undefined;
+  const base = (audit: number | string) => `/api/audits/${audit}/gaps`;
+
+  it("a tester edits, saves a draft, approves and rejects, with their account; an admin too; a viewer gets 403 and a stranger 404, and nothing changes", async () => {
+    const audit = fixture("audit", projects.A).id; seed(audit);
+    for (const [who, deny] of [["vie", denied403], ["bob", denied404]] as const) {
+      assert.ok(deny(await call("PATCH", `${base(audit)}/CG-1`, { cookie: people[who].cookie, body: { description: "Changed" } })), `${who} cannot edit`);
+      assert.ok(deny(await call("POST", `${base(audit)}/CG-1/decision`, { cookie: people[who].cookie, body: { status: "approved" } })), `${who} cannot decide`);
+      assert.ok(deny(await call("POST", `${base(audit)}/CG-1/pending`, { cookie: people[who].cookie, body: { action: "apply" } })), `${who} cannot resolve`);
+      assert.ok(deny(await call("POST", base(audit), { cookie: people[who].cookie, body: { description: "Mine" } })), `${who} cannot add`);
+    }
+    assert.deepEqual(row(audit), { t: "Validation is not verified", s: "proposed", d: null, e: null, origin: "agent" }, "nothing changed");
+    const edit = await call("PATCH", `${base(audit)}/CG-1`, { cookie: people.tes.cookie, body: { description: "Validation is not verified for dates", requirements: ["REQ-1"] } });
+    assert.equal(edit.statusCode, 200, edit.body);
+    assert.deepEqual(row(audit), { t: "Validation is not verified for dates", s: "draft", d: null, e: people.tes.id, origin: "agent" });
+    assert.equal(edit.json().coverageGaps[0].editedBy, "tes", "the answer is the plan, with who edited");
+    const approve = await call("POST", `${base(audit)}/CG-1/decision`, { cookie: people.tes.cookie, body: { status: "approved" } });
+    assert.equal(approve.statusCode, 200, approve.body);
+    assert.deepEqual([row(audit)!.s, row(audit)!.d], ["approved", people.tes.id]);
+    assert.equal((await call("POST", `${base(audit)}/CG-1/decision`, { cookie: people.adm.cookie, body: { status: "rejected" } })).statusCode, 200);
+    assert.deepEqual([row(audit)!.s, row(audit)!.d], ["rejected", people.adm.id]);
+    assert.equal((await call("POST", `${base(audit)}/CG-1/decision`, { cookie: people.tes.cookie, body: { status: "proposed" } })).statusCode, 400, "a person cannot make it the agent's proposal again");
+    assert.equal((await call("PATCH", `${base(audit)}/CG-1`, { cookie: people.tes.cookie, body: { description: "" } })).statusCode, 400);
+    assert.equal((await call("PATCH", `${base(audit)}/CG-1`, { cookie: people.tes.cookie, body: { origin: "human" } })).statusCode, 400, "only the gap's own fields");
+    assert.equal((await call("PATCH", `${base(audit)}/NOPE`, { cookie: people.tes.cookie, body: { description: "x" } })).statusCode, 404);
+    assert.equal((await call("POST", `${base(audit)}/CG-1/pending`, { cookie: people.tes.cookie, body: { action: "apply" } })).statusCode, 409, "nothing waits");
+    const added = await call("POST", base(audit), { cookie: people.tes.cookie, body: { description: "Mine" } });
+    assert.equal(added.statusCode, 200, added.body);
+    assert.deepEqual([row(audit, "G-1")?.origin, row(audit, "G-1")?.s, row(audit, "G-1")?.e], ["human", "draft", people.tes.id]);
+    const history = await call("GET", `${base(audit)}/history`, { cookie: people.vie.cookie });
+    assert.equal(history.statusCode, 200, "a viewer reads the history");
+    assert.ok(history.json().length >= 4);
+    const noRole = await call("GET", `${base(audit)}/history`, { cookie: people.bob.cookie });
+    assert.ok(denied404(noRole), "and someone from another project does not");
+  });
+
+  it("an agent, CI or proposal token cannot edit, decide, add or apply anything in the gaps, with or without a login", async () => {
+    const audit = fixture("audit", projects.A).id; seed(audit);
+    assert.equal((await call("PUT", "/api/settings/agent-proposals", { cookie: ownerCookie, body: { enabled: true } })).statusCode, 200);
+    const fresh = (await call("POST", "/api/projects", { cookie: ownerCookie, body: { name: "Gap tokens", key: "GTK" } })).json().id as number;
+    const tokens = [
+      (await call("POST", `/api/projects/${fresh}/agent/tokens`, { cookie: ownerCookie, body: { name: "r" } })).json().token,
+      (await call("POST", `/api/projects/${fresh}/ci/tokens`, { cookie: ownerCookie, body: { name: "c" } })).json().token,
+      (await call("POST", `/api/projects/${fresh}/propose-tokens`, { cookie: ownerCookie, body: { name: "p" } })).json().token,
+    ] as string[];
+    assert.ok(tokens.every((t) => typeof t === "string" && t.length > 20));
+    for (const token of tokens) {
+      for (const cookie of [undefined, people.tes.cookie, ownerCookie]) {
+        for (const [method, url, body] of [
+          ["PATCH", `${base(audit)}/CG-1`, { description: "Agent" }], ["POST", `${base(audit)}/CG-1/decision`, { status: "approved" }],
+          ["POST", `${base(audit)}/CG-1/pending`, { action: "apply" }], ["POST", base(audit), { description: "Agent" }],
+        ] as const) {
+          const r = await call(method, url, { cookie, headers: { authorization: `Bearer ${token}` }, body });
+          assert.ok([401, 403].includes(r.statusCode), `${method} ${url} answered ${r.statusCode}`);
+        }
+      }
+    }
+    assert.deepEqual(row(audit), { t: "Validation is not verified", s: "proposed", d: null, e: null, origin: "agent" }, "nothing changed");
+  });
+});
+
 describe("nothing left this process", () => {
   it("the routes that were let through asked for outside addresses, and every one was refused by the stub", () => {
     assert.ok(outbound.every((u) => /^https?:\/\//.test(u)), outbound.join(", "));
