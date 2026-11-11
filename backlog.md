@@ -49,6 +49,14 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 ### Indikator för dolda avvisade
 - Tydligare indikering i kravvyn.
 
+### Lokal app (desktop)
+Separat fas, inte en del av D.
+- Gör om TestBench till en lokal skrivbordsapp.
+- Behåll webb-tekniken (samma React-gränssnitt och Fastify-server). Paketera med Electron eller Tauri; valet är öppet.
+- Data lagras lokalt och ingen hosting krävs.
+- Databasen är redan SQLite (`better-sqlite3`) i en lokal fil (`TESTBENCH_DATA`). För appen gäller att lägga filen i användarens datamapp, med backup och migrering.
+- Bygg installatör för macOS och Windows.
+
 ## Säkerhet och AI
 
 ### Prompt injection
