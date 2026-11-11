@@ -6,7 +6,7 @@
 //  - the notice for a viewer, and the buttons that are off (with their reason) for a viewer but not for a tester,
 //  - which settings tabs each role gets, and what the members page shows (email addresses and the forms only for an admin),
 //  - that someone who is not in a project is sent away from it, and that someone in no project is told so.
-// Then it runs the contrast and layout checks as a viewer and as the owner, which the other checks (on an instance without accounts) never see.
+// Then it runs the contrast and layout checks as a viewer and as the owner, which the other checks (on an instance without accounts) never see (unless ROLES_SKIP_VISUAL=1).
 //
 // Usage:  node scripts/check-roles-ui.mjs http://127.0.0.1:4100      (an EMPTY instance with no accounts, started on this computer)
 //         CHECK_CPU_THROTTLE=8 node scripts/check-roles-ui.mjs ...   (the same, with the browser 8 times slower)
@@ -804,6 +804,11 @@ console.log("Roles UI OK: labels, notices, off buttons with their reason, settin
 // ---------- contrast and layout, as people with accounts see the app ----------
 const here = (f) => fileURLToPath(new URL(f, import.meta.url));
 let bad = 0;
+// Contrast and layout are opt-in (see scripts/changed-areas.mjs): ROLES_SKIP_VISUAL=1 leaves this part out when nothing visual changed.
+if (process.env.ROLES_SKIP_VISUAL === "1") {
+  console.log("\nContrast and layout as a viewer and as the owner: skipped (ROLES_SKIP_VISUAL=1, nothing visual changed).");
+  process.exit(0);
+}
 // The owner sees everything an admin sees and the /admin pages with their tables; a viewer sees the read-only app and the explanation on /admin.
 for (const [who, script] of [["viewer", "check-contrast.mjs"], ["viewer", "check-layout.mjs"], ["owner", "check-contrast.mjs"], ["owner", "check-layout.mjs"]]) {
   console.log(`\n${script} as ${who}:`);
