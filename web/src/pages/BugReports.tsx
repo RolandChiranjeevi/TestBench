@@ -87,6 +87,7 @@ interface Summary {
     listed: boolean; counts: { new: number; unchanged: number; updated: number; pending: number }; unresolvedRefs: number;
     items: { sourceId: string; title: string; action: string; category: string; priority: string; unresolvedRefs: number }[];
   };
+  testPlan?: { listed: boolean; planItems: { counts: { new: number; unchanged: number; updated: number; removed: number; pending: number }; waiting: string[] } };
 }
 
 type SeveritySource = "human" | "ai" | "ci_default";
@@ -1207,6 +1208,20 @@ export function ImportModal({ pid, onClose }: { pid: string; onClose: () => void
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+            {s.testPlan?.listed && (
+              <div className="card" style={{ padding: 12 }}>
+                <strong>Test plan</strong>
+                <div style={{ marginTop: 4 }}>
+                  {s.testPlan.planItems.counts.new} new · {s.testPlan.planItems.counts.unchanged} unchanged · {s.testPlan.planItems.counts.updated} updated · {s.testPlan.planItems.counts.removed} removed
+                </div>
+                {s.testPlan.planItems.counts.pending > 0 && (
+                  <div style={{ marginTop: 2 }}>
+                    <strong>{s.testPlan.planItems.counts.pending} post{s.testPlan.planItems.counts.pending === 1 ? "" : "s"} kept, agent version waiting.</strong>{" "}
+                    <span className="faint">Items you edited, decided or added are never changed by an import. Review the agent's version on Test plan.</span>
+                  </div>
+                )}
               </div>
             )}
             {s.warnings.map((w, i) => <div key={i} className="row" style={{ gap: 6, color: "var(--blocked-fg)", fontSize: "var(--fs-md)" }}><AlertTriangle size={13} /> {w}</div>)}

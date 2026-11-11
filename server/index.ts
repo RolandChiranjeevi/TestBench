@@ -34,7 +34,7 @@ import { createJiraIssue, JiraError, jiraEnabled, jiraStatus } from "./jira.ts";
 import { buildPreview, checkPublication, getDestination, lookupTeams, publishBug, PublishError, removeDestination, retryAttachments, saveDestination } from "./publish.ts";
 import {
   applyPendingUpdate, AuditError, auditReportText, deleteAudit, deleteBugReport, getBugReport, ignorePendingUpdate, importAuditPackage, linkExternalIssue,
-  getAuditPlan, listAudits, listBugReports, listRejectedPackages, markDuplicate, previewAuditDeletion, relinkBugRefs, reviewBugReport, unlinkExternalIssue, updateBugReport,
+  addPlanItem, decidePlanItem, editPlanItem, getAuditPlan, listAudits, planHistory, resolvePending, listBugReports, listRejectedPackages, markDuplicate, previewAuditDeletion, relinkBugRefs, reviewBugReport, unlinkExternalIssue, updateBugReport,
 } from "./audits.ts";
 import { agentRequirements } from "./agentexport.ts";
 import { approveImported, importRequirements, RequirementImportError } from "./reqimport.ts";
@@ -1155,6 +1155,38 @@ app.post("/api/bug-reports/:id/relink", (req) => {
 app.delete("/api/bug-reports/:id", (req) => audited(() => (deleteBugReport(idParam(req), (req.query as { force?: string }).force === "1"), { ok: true })));
 
 app.get("/api/audits/:id/plan", (req) => audited(() => getAuditPlan(idParam(req))));
+// The plan is a workspace a person owns. Only a signed-in person with the tester role reaches these; an agent, CI or propose token never does (see access.ts).
+const planFields = z.object({
+  title: z.string().trim().min(1).max(300), type: z.string().trim().max(100), risk: z.string().trim().max(100), priority: z.string().trim().max(100),
+  readiness: z.enum(["", "ready", "needs-clarification"]), preconditions: z.string().max(5000), testData: z.string().max(5000),
+  steps: z.array(z.string().max(2000)).max(100), acceptanceCriteria: z.string().max(5000), automation: z.string().max(1000), requirements: z.array(z.string().trim().max(200)).max(50),
+});
+const sourceParam = (req: { params: unknown }) => z.object({ sourceId: z.string().min(1).max(200) }).parse(req.params).sourceId;
+app.post("/api/audits/:id/plan/items", (req) => {
+  const id = idParam(req);
+  const body = planFields.partial().required({ title: true }).strict().parse(req.body);
+  audited(() => addPlanItem(id, body));
+  return getAuditPlan(id);
+});
+app.patch("/api/audits/:id/plan/items/:sourceId", (req) => {
+  const id = idParam(req);
+  const body = planFields.partial().strict().parse(req.body);
+  audited(() => editPlanItem(id, sourceParam(req), body));
+  return getAuditPlan(id);
+});
+app.post("/api/audits/:id/plan/items/:sourceId/decision", (req) => {
+  const id = idParam(req);
+  const body = z.object({ status: z.enum(["draft", "approved", "rejected"]), note: z.string().max(500).optional() }).strict().parse(req.body);
+  audited(() => decidePlanItem(id, sourceParam(req), body.status, body.note));
+  return getAuditPlan(id);
+});
+app.post("/api/audits/:id/plan/items/:sourceId/pending", (req) => {
+  const id = idParam(req);
+  const body = z.object({ action: z.enum(["apply", "ignore"]) }).strict().parse(req.body);
+  audited(() => resolvePending(id, sourceParam(req), body.action));
+  return getAuditPlan(id);
+});
+app.get("/api/audits/:id/history", (req) => audited(() => planHistory(idParam(req))));
 app.get("/api/audits/:id/deletion-preview", (req) => {
   const { removable: _ids, manualRemovable: _mids, ...preview } = audited(() => previewAuditDeletion(idParam(req)));
   return preview;

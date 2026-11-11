@@ -46,7 +46,7 @@ describe("test-plan.json in an audit package", () => {
     const r = run(p, file([item(), item({ sourceId: "TPI-002", title: "Complete it" })], [gap()]), {}, true);
     assert.equal(r.dryRun, true);
     assert.equal(r.testPlan.listed, true);
-    assert.deepEqual(r.testPlan.planItems.counts, { new: 2, unchanged: 0, updated: 0, removed: 0 });
+    assert.deepEqual(r.testPlan.planItems.counts, { new: 2, unchanged: 0, updated: 0, removed: 0, pending: 0 });
     assert.deepEqual(r.testPlan.coverageGaps.counts, { new: 1, unchanged: 0, updated: 0, removed: 0 });
     assert.equal(r.testPlan.unresolvedRefs, 3, "REQ-1 twice and REQ-LOCAL-002 once, and the project has no requirements yet");
     assert.equal(r.warnings.some((w) => /not listed in the manifest/.test(w)), false, "test-plan.json is not an unlisted file");
@@ -63,6 +63,7 @@ describe("test-plan.json in an audit package", () => {
     assert.deepEqual({ ...plan.planItems[0], requirements: undefined }, {
       sourceId: "TPI-001", title: "Add a todo", type: "Functional", risk: "High", priority: "High", readiness: "ready", preconditions: "An empty list", testData: "QA-AUDIT-1",
       steps: ["Type the text", "Press Enter"], acceptanceCriteria: "The text is shown in the list", automation: "Yes, exploration", result: null, requirements: undefined,
+      origin: "agent", status: "proposed", editedBy: null, editedAt: null, decidedBy: null, decidedAt: null, pending: null,
     });
     assert.deepEqual(plan.planItems[0].requirements.map((r) => [r.raw, r.state, r.label]), [["REQ-1", "resolved", "REQ-1 · Todo can be added"]]);
     assert.deepEqual(plan.coverageGaps.map((g) => [g.sourceId, g.description, g.requirements.map((r) => [r.raw, r.state, r.label])]), [["CG-001", "Validation is not verified", [["REQ-LOCAL-002", "resolved", "REQ-2 · A user can register a result"]]]]);
@@ -97,7 +98,7 @@ describe("test-plan.json in an audit package", () => {
     const second = file([item(), item({ sourceId: "TPI-002", title: "Complete it, and the counter follows" }), item({ sourceId: "TPI-003", title: "Filter" })], []);
     const before = totals();
     const dry = run(p, second, {}, true);
-    assert.deepEqual(dry.testPlan.planItems.counts, { new: 1, unchanged: 1, updated: 1, removed: 0 });
+    assert.deepEqual(dry.testPlan.planItems.counts, { new: 1, unchanged: 1, updated: 1, removed: 0, pending: 0 });
     assert.deepEqual(dry.testPlan.coverageGaps.counts, { new: 0, unchanged: 0, updated: 0, removed: 1 });
     assert.deepEqual(dry.testPlan.coverageGaps.removed, ["CG-001"]);
     assert.deepEqual(totals(), before, "the dry run changed nothing");
