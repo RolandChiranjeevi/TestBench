@@ -13,7 +13,7 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 - Ingen modell, inget nätverk, ingen extern integration.
 
 ### D2: Automatiseringsförslag för krav
-**Status: nästa**
+**Status: pågår**
 - Samma mekanism som D1, men för godkända krav.
 - Återanvänder D1:s mönster.
 
