@@ -16,10 +16,10 @@ import type { CoverageGapItem, ParsedPackage, PlanItem } from "./importers/audit
  *    shown, so a requirement that is created later is found without another import.
  */
 
-export type PlanAction = "new" | "unchanged" | "updated";
+type PlanAction = "new" | "unchanged" | "updated";
 /** `pending` counts what a person owns where the agent sent a newer version or left it out: it is kept, and the agent's version waits. */
 export interface PlanCounts { new: number; unchanged: number; updated: number; removed: number; pending: number }
-export type PlanItemAction = PlanAction | "pending";
+type PlanItemAction = PlanAction | "pending";
 export interface PlanFields {
   title: string; type: string; risk: string; priority: string; readiness: string; preconditions: string; testData: string; steps: string[];
   acceptanceCriteria: string; automation: string; requirements: string[];
@@ -121,7 +121,6 @@ function changesOf(s: Subject, from: any, to: any): { field: string; from: strin
   const show = (v: unknown) => (Array.isArray(v) ? v.join("\n") : String(v ?? ""));
   return Object.keys(s.labels).filter((k) => JSON.stringify(from[k]) !== JSON.stringify(to[k])).map((k) => ({ field: s.labels[k], from: show(from[k]), to: show(to[k]) }));
 }
-export const planChanges = (from: PlanFields, to: PlanFields) => changesOf(ITEM, from, to);
 
 // ---- what an import would do, and what it does ----
 
@@ -220,6 +219,17 @@ export const planCounts = (auditId: number) => ({
   planItems: (db.prepare("SELECT COUNT(*) AS n FROM audit_plan_items WHERE audit_id = ?").get(auditId) as { n: number }).n,
   coverageGaps: (db.prepare("SELECT COUNT(*) AS n FROM audit_coverage_gaps WHERE audit_id = ?").get(auditId) as { n: number }).n,
 });
+
+/** How much of the audit's plan a person made their own (edited, decided or added), and how many history entries it has: what deleting the audit takes with it. */
+export function ownedPlanCounts(auditId: number) {
+  const n = (sql: string) => (db.prepare(sql).get(auditId) as { n: number }).n;
+  const own = "audit_id = ? AND (origin = 'human' OR review_status != 'proposed' OR edited_at IS NOT NULL)";
+  return {
+    planItems: n(`SELECT COUNT(*) AS n FROM audit_plan_items WHERE ${own}`),
+    coverageGaps: n(`SELECT COUNT(*) AS n FROM audit_coverage_gaps WHERE ${own}`),
+    history: n("SELECT COUNT(*) AS n FROM audit_plan_revisions WHERE audit_id = ?") + n("SELECT COUNT(*) AS n FROM audit_gap_revisions WHERE audit_id = ?"),
+  };
+}
 
 // ---- the views ----
 

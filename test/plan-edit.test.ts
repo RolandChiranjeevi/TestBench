@@ -6,7 +6,7 @@ import { before, describe, it } from "node:test";
 import { runAs, type AccountUser } from "../server/accountcontext.ts";
 import { db } from "../server/db.ts";
 import { bagFromFiles } from "../server/importers/bag.ts";
-import { addPlanItem, decidePlanItem, editPlanItem, getAuditPlan, importAuditPackage, planHistory, resolvePending } from "../server/audits.ts";
+import { addGap, addPlanItem, decidePlanItem, editGap, editPlanItem, deleteAudit, getAuditPlan, importAuditPackage, planHistory, previewAuditDeletion, resolvePending } from "../server/audits.ts";
 import { planForRequirement } from "../server/auditplan.ts";
 import { makeProject } from "./helpers.ts";
 
@@ -256,5 +256,43 @@ describe("with accounts, a decision needs an account in the database itself", ()
     for (const f of ["audits.ts", "index.ts", "manualtests.ts", "ci.ts", "observations.ts"]) {
       assert.doesNotMatch(readFileSync(join(dir, f), "utf8"), /audit_plan_items SET[^;`]*review_status/, f);
     }
+  });
+});
+
+describe("deleting an audit says what people made their own in its plan", () => {
+  let dora!: AccountUser;
+  before(() => { dora = user("Dora Delete"); });
+
+  it("the preview counts what people edited, decided or added, and their history; an untouched plan counts none", () => {
+    const { a } = seeded(item(), item({ sourceId: "TPI-002", title: "Second" }), item({ sourceId: "TPI-003", title: "Third" }));
+    assert.deepEqual(previewAuditDeletion(a).planOwned, { planItems: 0, coverageGaps: 0, history: 3 + 0 }, "only the agent's own entries so far");
+    runAs(dora, () => { editPlanItem(a, "TPI-001", { title: "Mine" }); decidePlanItem(a, "TPI-002", "rejected"); addPlanItem(a, { title: "Added by hand" }); });
+    const p = previewAuditDeletion(a);
+    assert.equal(p.plan.planItems, 4, "all four items are in the plan");
+    assert.deepEqual(p.planOwned.planItems, 3, "edited, rejected and added: three are people's");
+    assert.equal(p.planOwned.history, 3 + 3, "the three agent entries and the three a person made");
+  });
+
+  it("gaps count too", () => {
+    const p = proj();
+    importAuditPackage(bagFromFiles(new Map<string, Uint8Array>([
+      ["manifest.json", Buffer.from(JSON.stringify({ format: "testbench-audit-package", version: 1, audit: { id: "a1", title: "Audit", project: p.key }, files: [], parts: {} }))],
+      ["bugs.json", Buffer.from(JSON.stringify({ version: 1, bugs: [] }))],
+      ["test-plan.json", Buffer.from(JSON.stringify({ version: 1, planItems: [], coverageGaps: [{ sourceId: "CG-1", description: "One", refs: { requirements: [] } }, { sourceId: "CG-2", description: "Two", refs: { requirements: [] } }] }))],
+    ])), { projectId: p.id, source: "upload" }, { dryRun: false });
+    const a = audit(p);
+    assert.equal(previewAuditDeletion(a).planOwned.coverageGaps, 0);
+    runAs(dora, () => { editGap(a, "CG-1", { description: "Mine" }); addGap(a, { description: "Added by hand" }); });
+    const preview = previewAuditDeletion(a);
+    assert.deepEqual([preview.plan.coverageGaps, preview.planOwned.coverageGaps], [3, 2]);
+  });
+
+  it("deleting the audit takes the owned items, the gaps and the history with it, as the preview said", () => {
+    const { a } = seeded();
+    runAs(dora, () => { editPlanItem(a, "TPI-001", { title: "Mine" }); addPlanItem(a, { title: "Added by hand" }); });
+    assert.equal(previewAuditDeletion(a).planOwned.planItems, 2);
+    deleteAudit(a);
+    const left = (t: string) => (db.prepare(`SELECT COUNT(*) AS n FROM ${t} WHERE audit_id = ?`).get(a) as { n: number }).n;
+    assert.deepEqual([left("audit_plan_items"), left("audit_coverage_gaps"), left("audit_plan_revisions"), left("audit_gap_revisions")], [0, 0, 0, 0]);
   });
 });

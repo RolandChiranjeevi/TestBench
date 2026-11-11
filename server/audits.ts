@@ -10,7 +10,7 @@ import { AuditError, hashOf, resolveOne, resolveRefs, toSqlDate, type ResolvedRe
 export { AuditError } from "./auditcommon.ts";
 import { manualTestsOfAudit, planManualTests, writeManualTests, type PlannedManual } from "./manualtests.ts";
 import { inspectEvidence, PackageError, parsePackage, readEvidence, safeRelPath, type BugItem, type EvidenceCheck, type ParsedPackage } from "./importers/auditpackage.ts";
-import { addGap, addPlanItem, auditPlan, decideGap, decidePlanItem, editGap, editPlanItem, gapHistory, planCounts, planHistory, planTestPlan, resolveGapPending, resolvePending, storeTestPlan } from "./auditplan.ts";
+import { addGap, addPlanItem, auditPlan, decideGap, decidePlanItem, editGap, editPlanItem, gapHistory, ownedPlanCounts, planCounts, planHistory, planTestPlan, resolveGapPending, resolvePending, storeTestPlan } from "./auditplan.ts";
 export { addGap, addPlanItem, decideGap, decidePlanItem, editGap, editPlanItem, gapHistory, planHistory, resolveGapPending, resolvePending };
 import type { PlannedTestPlan } from "./auditplan.ts";
 
@@ -744,6 +744,8 @@ export function previewAuditDeletion(auditId: number) {
     title: a.title, removable: removable.map((b) => b.id), deleted: removable.length, kept: bugs.length - removable.length,
     manualRemovable: manual.removable, manualDeleted: manual.deleted, manualKept: manual.kept,
     plan: planCounts(auditId),
+    /** What people made their own in the plan: it goes with the audit. */
+    planOwned: ownedPlanCounts(auditId),
   };
 }
 
