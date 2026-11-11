@@ -222,14 +222,19 @@ tests, the build and a Docker smoke test (`scripts/docker-smoke.sh`, which you c
 
 **Layout check.** `npm run check:layout -- <url>` opens every page at 1440, 1100, 1024, 820, 600 and 390px and fails when a page scrolls sideways,
 the case or requirement list is squeezed below 300px, top-bar items overlap, a control is pushed off screen, or a phone has no way to open the
-menu. CI runs it on every push, and it takes about two minutes. Same rule as below: point it at a throwaway instance (`CHECK_SEED=1` fills an
+menu. CI runs it when something visual changed (see "When the browser checks run" below), and it takes about two minutes. Same rule as below: point it at a throwaway instance (`CHECK_SEED=1` fills an
 empty one with the demo project).
 
 **Contrast check.** `npm run check:contrast -- <url>` opens every page in Chrome, in dark and light, and measures the real contrast of
-all text against its background (WCAG AA: 4.5:1, or 3:1 for large text). CI runs it on every push. Point it at a throwaway instance, not your
+all text against its background (WCAG AA: 4.5:1, or 3:1 for large text). CI runs it when something visual changed. Point it at a throwaway instance, not your
 own data (`CONTRAST_SEED=1` creates the demo project in an empty one; `CONTRAST_ONLY=/login` checks just the sign-in page). When it fails, use
 the colour tokens in `web/src/styles.css`: `--text-3`/`--text-4` for secondary text, `--accent-text` for links, and the `--passed-fg`,
 `--failed-fg`, `--blocked-fg`, `--flaky-fg` tokens for status colours used as text (the plain status colours are for dots, icons and bars).
+
+**When the browser checks run.** Contrast and layout are opt-in: they run when a change touches what the pages look like (`web/`, the check scripts, `vite.config.ts`, `package.json` and its lockfile, the CI workflow), and are skipped when it does not (docs, tests, server-only changes). The roles script
+(`npm run check:roles -- <url>`, which drives the real screens as each role) runs when the screens or the server behind them change, and then without its contrast and layout part unless something visual changed too
+(`ROLES_SKIP_VISUAL=1` leaves that part out). `node scripts/changed-areas.mjs origin/main` tells you what your change needs; CI asks the same script, and when it cannot tell what changed it runs everything.
+The CI job "UI checks (contrast and layout)" always runs and finishes in seconds when it has nothing to do, so it can stay a required check.
 
 ## Editing many cases at once
 
