@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { db, UPLOAD_DIR } from "./db.ts";
-import { getBugReport } from "./audits.ts";
+import { getBugReport, SEVERITY_WORD } from "./audits.ts";
 import { attachFile, createIssueWithId, findIssue, LinearError, linearPriority, listTeams, resolveTeam, type LinearCreated, type LinearTeam } from "./linear.ts";
 import { seal, tokenHint, unseal } from "./secrets.ts";
 
@@ -240,6 +240,9 @@ export function buildPreview(bugId: number, opts: PreviewOptions = {}, env: Node
     else if (["pending", "unknown", "failed"].includes(p.state) && p.destination_ref === dest?.team_id) {
       warnings.push("An earlier attempt may already have created the issue. Testbench asks Linear for it first, and reuses the same id, so no second issue is made.");
     }
+  }
+  if (d.severity.effective && d.severity.source !== "human") {
+    warnings.push(`The severity (${SEVERITY_WORD[d.severity.effective] ?? d.severity.effective}) is only ${d.severity.source === "ci_default" ? "a default from CI" : "an AI suggestion"}. Nobody has decided it yet. It is still what is sent.`);
   }
   if (d.pendingUpdate) warnings.push("A newer version from the agent is waiting. This publishes the current working copy.");
   const unsent = refs.filter((r) => !r.sendable).length;

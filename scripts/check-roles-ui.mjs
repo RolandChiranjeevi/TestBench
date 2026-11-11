@@ -353,7 +353,7 @@ for (const who of Object.keys(TABS)) {
   const row = (title) => page.locator(".suggestion-row", { hasText: title });
   check("bug suggestions: the tabs are Suggested, Confirmed, Dismissed", await eventually(async () => JSON.stringify((await texts(page, '[role="tab"]')).map((t) => t.replace(/\d+$/, "").trim()).slice(0, 3)) === JSON.stringify(["Suggested", "Confirmed", "Dismissed"])));
   check("bug suggestions: an agent's bug is marked AI, with Confirm bug and Dismiss", await eventually(async () => (await row("UI bug 1").getByText("AI suggestion").count()) === 1 && (await row("UI bug 1").getByRole("button", { name: /Confirm bug/ }).count()) === 1 && (await row("UI bug 1").getByRole("button", { name: "Dismiss" }).count()) === 1));
-  check("bug suggestions: a CI bug says From CI and is not marked AI", await eventually(async () => (await row("UI CI failure").getByText("From CI").count()) === 1 && (await row("UI CI failure").getByText("AI suggestion").count()) === 0));
+  check("bug suggestions: a CI bug says From CI and is not marked AI", await eventually(async () => (await row("UI CI failure").getByText("From CI", { exact: true }).count()) === 1 && (await row("UI CI failure").getByText("AI suggestion").count()) === 0));
 
   // From the row.
   await row("UI bug 1").getByRole("button", { name: /Confirm bug/ }).click();
@@ -405,6 +405,67 @@ for (const who of Object.keys(TABS)) {
   check("bug suggestions: and so are they in the modal", await eventually(async () => (await v.page.getByRole("dialog").getByRole("button", { name: /Confirm bug/ }).isDisabled()) && (await v.page.getByRole("dialog").getByRole("button", { name: "Dismiss", exact: true }).isDisabled())));
   await v.close();
   check("bug suggestions: nothing was confirmed by the viewer, the import or CI", (await bugRows()).filter((b) => b.status === "accepted").every((b) => b.reviewedBy === "Tess"));
+}
+
+// Severity: the AI suggests, a person decides. A suggestion is marked as one, Confirm bug in the modal saves what is shown as the person's decision, and every change is logged.
+{
+  const key = (await call("GET", "/api/projects", undefined, owner)).json.find((x) => x.id === A).key;
+  const files = { "manifest.json": { format: "testbench-audit-package", version: 1, audit: { id: "ui-sev-audit", title: "UI severity audit", project: key, agent: { name: "ui-check-agent" } }, files: [], parts: {} },
+    "bugs.json": { version: 1, bugs: [["1", "high"], ["2", "medium"], ["3", "low"], ["4", "high"]].map(([n, sev]) => ({ sourceId: `ui-sev-${n}`, title: `UI sev ${n}`, description: "Found by the UI check", agentSeverity: sev })) } };
+  const form = new FormData();
+  for (const [name, content] of Object.entries(files)) { form.append("relpath", name); form.append("file", new Blob([JSON.stringify(content)], { type: "application/json" }), name); }
+  const seeded = await fetch(`${BASE}/api/projects/${A}/audit-import`, { method: "POST", headers: { "X-Testbench": "1", Cookie: `tb_sid=${owner}` }, body: form });
+  check("severity: seeded", seeded.ok, `${seeded.status}`);
+  const sevRows = async () => (await call("GET", `/api/projects/${A}/bug-reports?status=all`, undefined, owner)).json.items;
+  const sevOf = async (title) => (await sevRows()).find((b) => b.title === title);
+  const detailOf = async (title) => (await call("GET", `/api/bug-reports/${(await sevOf(title)).id}`, undefined, owner)).json;
+
+  const { page, close } = await open("tester", `/p/${A}/bugs`);
+  const row = (title) => page.locator(".suggestion-row", { hasText: title });
+  check("severity: an AI suggestion is marked as one, with the word Major", await eventually(async () => (await row("UI sev 1").innerText()).includes("Major · AI suggestion")));
+  check("severity: a CI default says so and is not called AI", await eventually(async () => { const t = await row("UI CI failure").innerText(); return t.includes("Default from CI") && !t.includes("AI suggestion"); }));
+
+  // Decide it in the modal: change, give a reason, save.
+  await row("UI sev 1").locator(".row-main").click();
+  const dlg = page.getByRole("dialog");
+  check("severity: the modal says nobody has decided", await eventually(async () => (await dlg.getByText("Not decided").count()) === 1));
+  await dlg.locator("#human-sev").selectOption("critical");
+  await dlg.getByLabel("Reason for the severity").fill("checkout is down");
+  await dlg.getByRole("button", { name: "Set severity" }).click();
+  check("severity: saved as Tess's decision, with the reason", await eventually(async () => { const b = await sevOf("UI sev 1"); const d = await detailOf("UI sev 1"); return b.severity === "critical" && b.severitySource === "human" && b.severityBy === "Tess" && d.severity.reason === "checkout is down"; }));
+  check("severity: the modal says Severity set by Tess", await eventually(async () => (await dlg.getByText(/Severity set by Tess: checkout is down/).count()) === 1));
+  check("severity: and the change is in the history", await eventually(async () => (await dlg.getByText("Severity Major → Critical, Tess: checkout is down").count()) === 1));
+  // Taking the decision back falls back to the suggestion and is logged.
+  await dlg.locator("#human-sev").selectOption("");
+  await dlg.getByRole("button", { name: "Remove decision" }).click();
+  check("severity: 'Not set' removes the decision", await eventually(async () => { const b = await sevOf("UI sev 1"); return b.severity === "high" && b.severitySource === "ai"; }));
+  check("severity: and that is logged", await eventually(async () => (await dlg.getByText(/Severity decision removed \(back to the suggestion Major\), Tess/).count()) === 1));
+  await dlg.locator(".modal-footer").getByRole("button", { name: "Close", exact: true }).click();
+
+  // Confirm bug in the modal saves what is shown as the decision.
+  await row("UI sev 2").locator(".row-main").click();
+  check("severity: Confirm bug says what it will save", await eventually(async () => (await dlg.getByText("Confirm bug saves Medium as your decision.").count()) === 1));
+  await dlg.getByRole("button", { name: /Confirm bug/ }).click();
+  check("severity: confirmed with the severity as Tess's decision", await eventually(async () => { const b = await sevOf("UI sev 2"); return b.status === "accepted" && b.severity === "medium" && b.severitySource === "human" && b.severityBy === "Tess"; }));
+  check("severity: and the history says it was an AI suggestion that was confirmed", await eventually(async () => (await dlg.getByText("Severity Medium (AI suggestion) confirmed, Tess").count()) === 1));
+  // After confirming it can still be changed, and that is logged.
+  await dlg.locator("#human-sev").selectOption("low");
+  await dlg.getByRole("button", { name: "Change severity" }).click();
+  check("severity: changed after the bug was confirmed", await eventually(async () => (await sevOf("UI sev 2"))?.severity === "low"));
+  check("severity: and logged", await eventually(async () => (await dlg.getByText("Severity Medium → Low, Tess").count()) === 1));
+  await dlg.locator(".modal-footer").getByRole("button", { name: "Close", exact: true }).click();
+
+  // Confirm bug from the row confirms the bug only.
+  await row("UI sev 3").getByRole("button", { name: /Confirm bug/ }).click();
+  check("severity: from the row, the bug is confirmed and the severity stays a suggestion", await eventually(async () => { const b = await sevOf("UI sev 3"); return b.status === "accepted" && b.severitySource === "ai" && b.severityBy === null; }));
+  await close();
+
+  // A viewer sees it but cannot change it.
+  const v = await open("viewer", `/p/${A}/bugs?bug=${(await sevOf("UI sev 4")).id}`);
+  const vd = v.page.getByRole("dialog");
+  check("severity: a viewer's severity controls are off", await eventually(async () => (await vd.locator("#human-sev").isDisabled()) && (await vd.getByLabel("Reason for the severity").isDisabled()) && (await vd.getByRole("button", { name: "Set severity" }).isDisabled())));
+  await v.close();
+  check("severity: nothing was decided by a viewer, the import or CI", (await sevRows()).filter((b) => b.severitySource === "human").every((b) => b.severityBy === "Tess"));
 }
 
 // /admin: the owner looks after the accounts and reads the audit log; nobody else is offered it.

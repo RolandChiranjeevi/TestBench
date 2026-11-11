@@ -437,6 +437,17 @@ CREATE INDEX IF NOT EXISTS project_members_user ON project_members(user_id);`);
   // Who decided on a bug report (confirm, dismiss, restore, duplicate). Only a person decides; see reviewBugReport.
   if (!hasColumn("bug_reports", "reviewed_by")) d.exec("ALTER TABLE bug_reports ADD COLUMN reviewed_by TEXT NOT NULL DEFAULT ''");
   if (!hasColumn("bug_reports", "reviewed_by_user_id")) d.exec("ALTER TABLE bug_reports ADD COLUMN reviewed_by_user_id INTEGER");
+  // Who decided a bug's severity (human_severity) and why. The AI's or CI's value (agent_severity) is only a suggestion; this is the person's decision.
+  for (const [col, ddl] of [["severity_by", "TEXT NOT NULL DEFAULT ''"], ["severity_by_user_id", "INTEGER"], ["severity_at", "TEXT"], ["severity_reason", "TEXT NOT NULL DEFAULT ''"]] as const) {
+    if (!hasColumn("bug_reports", col)) d.exec(`ALTER TABLE bug_reports ADD COLUMN ${col} ${ddl}`);
+  }
+  d.exec(`
+CREATE TRIGGER IF NOT EXISTS bug_reports_severity_needs_account_insert BEFORE INSERT ON bug_reports
+WHEN NEW.human_severity IS NOT NULL AND NEW.severity_by_user_id IS NULL AND EXISTS (SELECT 1 FROM users)
+BEGIN SELECT RAISE(ABORT, 'A severity decision on a bug report needs a person with an account'); END;
+CREATE TRIGGER IF NOT EXISTS bug_reports_severity_needs_account_update BEFORE UPDATE OF human_severity ON bug_reports
+WHEN NEW.human_severity IS NOT OLD.human_severity AND NEW.severity_by_user_id IS NULL AND EXISTS (SELECT 1 FROM users)
+BEGIN SELECT RAISE(ABORT, 'A severity decision on a bug report needs a person with an account'); END;`);
   // With accounts, a human decision on a bug report is made by an account: a name alone is not enough. Fires only when the decision changes, so bugs
   // that were decided before accounts existed stay as they are.
   d.exec(`

@@ -150,7 +150,7 @@ export interface IngestSummary {
 const union = (a: string[], b: string[]) => [...new Set([...a, ...b])].slice(0, 50);
 const shortSha = (s: string) => s.slice(0, 8);
 
-function addEvent(bugId: number, actor: "ci" | "user", kind: string, detail: string) {
+export function addEvent(bugId: number, actor: "ci" | "user", kind: string, detail: string) {
   db.prepare("INSERT INTO bug_events (bug_report_id, actor, kind, detail) VALUES (?, ?, ?, ?)").run(bugId, actor, kind, detail);
 }
 

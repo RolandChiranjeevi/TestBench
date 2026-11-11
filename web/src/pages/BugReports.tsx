@@ -5,12 +5,13 @@ import { AlertTriangle, Bug, Check, ClipboardList, EyeOff, ExternalLink, FileTex
 import { api, formatDateTime, parseDate, timeAgo, type Priority } from "../api";
 import { ConfirmModal, Empty, ListSkeleton, Modal, PRIORITY_LABEL, useToast } from "../components/ui";
 import { Badge, BugWorkflowBadge, CiStatusBadge, ReviewStatusBadge, SeverityBadge } from "../components/Badge";
+import { SEVERITY_LOOK } from "../statuses";
 import { Button, buttonClass } from "../components/Button";
 import { useCan } from "../components/Access";
 
 type Status = "proposed" | "accepted" | "rejected" | "duplicate";
 interface Item {
-  id: number; sourceId: string; title: string; status: Status; reviewedBy: string | null; reviewedAt: string | null; severity: Priority | null; foundAt: string | null; importedAt: string;
+  id: number; sourceId: string; title: string; status: Status; reviewedBy: string | null; reviewedAt: string | null; severity: Priority | null; severitySource: SeveritySource | null; severityBy: string | null; foundAt: string | null; importedAt: string;
   auditTitle: string; auditDeleted: boolean; unresolvedRefs: number; attachments: number; attachmentProblems: number; pendingUpdate: boolean; published: boolean; presence: Presence;
   source: Source; testKey: string | null; tags: string[]; workflowStatus: Workflow; assignee: string;
   ci: { lastStatus: CiStatus | null; lastAt: string | null; flaky: boolean; failedRuns: number; branch: string; commit: string; pipelineUrl: string } | null;
@@ -49,7 +50,7 @@ interface Attachment { id: number; declared_path: string; filename: string; mime
 interface Detail {
   id: number; projectId: number; sourceId: string; status: Status; reviewedAt: string | null; reviewedBy: string | null; reviewNote: string; editedAt: string | null;
   title: string; description: string; steps: string[]; expected: string; actual: string; environment: string; url: string;
-  severity: { tool: { tool: string; value: string; ruleId?: string } | null; agent: Priority | null; human: Priority | null; effective: Priority | null };
+  severity: { tool: { tool: string; value: string; ruleId?: string } | null; agent: Priority | null; human: Priority | null; effective: Priority | null; source: SeveritySource | null; decidedBy: string | null; decidedAt: string | null; reason: string };
   confidence: number | null; agentReview: { status: string; method: string; notes: string } | null; foundAt: string | null; importedAt: string; fingerprint: string;
   origin: { repository?: string; title?: string; agent?: { name?: string; version?: string; model?: string }; review?: { status: string; method: string; reviewer: string } | null; source?: string; github?: { repo: string; runId: number } | null };
   originAuditId: string; audit: { id: number; title: string; run_state: string; has_report: number } | null; runId: number | null;
@@ -86,6 +87,30 @@ interface Summary {
     listed: boolean; counts: { new: number; unchanged: number; updated: number; pending: number }; unresolvedRefs: number;
     items: { sourceId: string; title: string; action: string; category: string; priority: string; unresolvedRefs: number }[];
   };
+}
+
+type SeveritySource = "human" | "ai" | "ci_default";
+/** What a bug's severity is called. The stored value for Major stays "high" (the agent package, CI, Linear and the requirements use it). */
+const SEV_WORD: Record<"low" | "medium" | "high" | "critical", string> = { low: "Low", medium: "Medium", high: "Major", critical: "Critical" };
+const SEV_ORDER = ["critical", "high", "medium", "low"] as const;
+const SUGGESTION_WORD: Record<"ai" | "ci_default", string> = { ai: "AI suggestion", ci_default: "Default from CI" };
+
+/**
+ * A bug's severity, and whose it is. A person's decision is a plain badge. A suggestion has a dashed edge and says what it is in words (AI suggestion, or a default
+ * from CI: a rule, not AI): the colour of a suggestion is never the only thing that tells it apart from a decision.
+ */
+export function BugSeverity({ value, source, by }: { value: Priority | null; source: SeveritySource | null; by?: string | null }) {
+  if (!value) return <span className="faint" title="No severity yet">—</span>;
+  const look = SEVERITY_LOOK[value];
+  const word = SEV_WORD[value as keyof typeof SEV_WORD] ?? look.label;
+  if (source === "human" || !source) return <Badge tone={look.tone} icon={look.icon} title={by ? `Severity set by ${by}` : "Severity set by a person"}>{word}</Badge>;
+  return (
+    <span className="sev-suggested">
+      <Badge tone={look.tone} icon={look.icon} title={source === "ci_default" ? "A default from CI, by rule. It is not AI and nobody has decided it." : "Suggested by an AI. Nobody has decided it."}>
+        {word} · {SUGGESTION_WORD[source]}
+      </Badge>
+    </span>
+  );
 }
 
 type Tab = Status | "all" | "audits";
@@ -199,7 +224,7 @@ export function BugReportsPage() {
           </select>
           <select className="select" style={{ width: "auto" }} aria-label="Severity" value={filter.severity} onChange={(e) => setFilter({ ...filter, severity: e.target.value })}>
             <option value="">Severity: any</option>
-            {(["critical", "high", "medium", "low"] as const).map((s) => <option key={s} value={s}>{PRIORITY_LABEL[s]}</option>)}
+            {SEV_ORDER.map((s) => <option key={s} value={s}>{SEV_WORD[s]}</option>)}
             <option value="none">Not set</option>
           </select>
           <input className="input" style={{ width: 130 }} aria-label="Tag" placeholder="Tag" value={filter.tag} onChange={(e) => setFilter({ ...filter, tag: e.target.value })} />
@@ -254,7 +279,7 @@ export function BugReportsPage() {
                 )}
                 {b.presence === "missing" && <Badge tone="warn" icon="eye-off" title="This report was not in the latest run of its audit. It is kept as it is.">Not in latest run</Badge>}
                 {b.published && <span className="chip"><Link2 size={11} /> linked</span>}
-                <Severity value={b.severity} />
+                <BugSeverity value={b.severity} source={b.severitySource} by={b.severityBy} />
                 {tab === "all" && <span className="chip">{DECISION_WORD[b.status]}</span>}
                 {b.status !== "proposed" && b.reviewedBy && <span className="faint" title={b.reviewedAt ? formatDateTime(b.reviewedAt) : undefined}>{DECIDED_BY[b.status]} {b.reviewedBy}</span>}
                 <span className="faint" title={b.auditTitle}>{timeAgo(b.importedAt)}</span>
@@ -298,6 +323,8 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
   const [deleting, setDeleting] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [justConfirmed, setJustConfirmed] = useState(false);
+  const [sevDraft, setSevDraft] = useState<string | null>(null); // null: show what the server has
+  const [sevReason, setSevReason] = useState("");
   const run = <T,>(fn: () => Promise<T>, ok?: string) => fn().then((r) => { refresh(); if (ok) toast("success", ok); return r; }).catch((e: Error) => { toast("error", e.message); });
   const post = (path: string, body?: unknown, ok?: string) => run(() => api.post(`/api/bug-reports/${id}/${path}`, body), ok);
 
@@ -316,7 +343,10 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
         await api.patch(`/api/bug-reports/${id}`, { ...draft, steps: draft.steps.split("\n").map((s) => s.trim()).filter(Boolean) });
         setEditing(false);
       }
-      await api.post(`/api/bug-reports/${id}/review`, { status: "accepted", note: note || undefined });
+      // What the severity section shows is saved as the person's decision with the confirmation (both or neither). Nothing shown: nothing saved.
+      const shown = sevDraft ?? b.severity.human ?? b.severity.agent ?? "";
+      await api.post(`/api/bug-reports/${id}/review`, { status: "accepted", note: note || undefined, ...(shown ? { severity: shown, severityReason: sevReason.trim() || undefined } : {}) });
+      setSevDraft(null); setSevReason("");
       refresh(); setJustConfirmed(true); toast("success", `Confirmed as bug #${id}. Not published anywhere.`);
     } catch (e) { toast("error", (e as Error).message); }
   };
@@ -401,17 +431,46 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
         </div>
         {b.ci && <CiSection ci={b.ci} workflow={b.workflowStatus} />}
 
-        {/* Three separate judgements */}
-        <div className="card" style={{ padding: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
-          <div><div className="section-label">Tool impact</div>{b.severity.tool ? <div>{b.severity.tool.value} <span className="faint">({b.severity.tool.tool}{b.severity.tool.ruleId ? `, ${b.severity.tool.ruleId}` : ""})</span></div> : <span className="faint">—</span>}</div>
-          <div><div className="section-label">Agent's severity</div><Severity value={b.severity.agent} /></div>
-          <div>
-            <label className="section-label" htmlFor="human-sev">Your severity</label>
-            <select id="human-sev" className="select" disabled={!canEdit} value={b.severity.human ?? ""} onChange={(e) => run(() => api.patch(`/api/bug-reports/${id}`, { humanSeverity: e.target.value || null }))}>
-              <option value="">Not set</option>
-              {(["low", "medium", "high", "critical"] as const).map((s) => <option key={s} value={s}>{PRIORITY_LABEL[s]}</option>)}
-            </select>
+        {/* The tool's impact, and the severity: what is suggested and what a person decided are kept apart */}
+        <div className="card" style={{ padding: 12, display: "grid", gap: 12 }}>
+          <div className="row" style={{ gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
+            <div><div className="section-label">Tool impact</div>{b.severity.tool ? <div>{b.severity.tool.value} <span className="faint">({b.severity.tool.tool}{b.severity.tool.ruleId ? `, ${b.severity.tool.ruleId}` : ""})</span></div> : <span className="faint">—</span>}</div>
+            <div>
+              <div className="section-label">{b.source === "ci" ? "Default from CI" : "AI suggestion"}</div>
+              {b.severity.agent ? <BugSeverity value={b.severity.agent} source={b.source === "ci" ? "ci_default" : "ai"} /> : <span className="faint">None</span>}
+            </div>
+            <div>
+              <div className="section-label">Severity set by a person</div>
+              {b.severity.human ? <BugSeverity value={b.severity.human} source="human" by={b.severity.decidedBy} /> : <span className="faint">Not decided</span>}
+            </div>
           </div>
+          {(() => {
+            const shown = sevDraft ?? b.severity.human ?? b.severity.agent ?? "";
+            const changed = shown !== (b.severity.human ?? "");
+            return (
+              <div className="col" style={{ gap: 8 }}>
+                <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                  <label className="section-label" htmlFor="human-sev" style={{ margin: 0 }}>Severity</label>
+                  <select id="human-sev" className="select" style={{ width: "auto" }} disabled={!canEdit} value={shown} onChange={(e) => setSevDraft(e.target.value)}>
+                    <option value="">Not set</option>
+                    {SEV_ORDER.map((v) => <option key={v} value={v}>{SEV_WORD[v]}</option>)}
+                  </select>
+                  <input className="input grow" aria-label="Reason for the severity" placeholder="Reason (optional)" maxLength={200} disabled={!canEdit} value={sevReason} onChange={(e) => setSevReason(e.target.value)} />
+                  <Button needs="tester" disabled={!changed} onClick={() => run(() => api.patch(`/api/bug-reports/${id}`, { humanSeverity: shown || null, severityReason: sevReason.trim() || undefined }), shown ? "Severity saved" : "Severity decision removed").then(() => { setSevDraft(null); setSevReason(""); })}>
+                    {shown ? (b.severity.human ? "Change severity" : "Set severity") : "Remove decision"}
+                  </Button>
+                </div>
+                <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>
+                  {b.severity.human
+                    ? <span title={b.severity.decidedAt ? formatDateTime(b.severity.decidedAt) : undefined}>Severity set by {b.severity.decidedBy || "a person"}{b.severity.reason ? `: ${b.severity.reason}` : ""}. You can change it at any time; each change is logged.</span>
+                    : b.severity.agent
+                      ? `${b.source === "ci" ? "A default from CI, by rule" : "Suggested by an AI"}. It becomes your decision when you set it here${b.status === "proposed" ? " or confirm the bug" : ""}.`
+                      : "Nobody has set a severity."}
+                  {b.status === "proposed" && canEdit && shown && !b.severity.human ? ` Confirm bug saves ${SEV_WORD[shown as keyof typeof SEV_WORD]} as your decision.` : ""}
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {editing ? (

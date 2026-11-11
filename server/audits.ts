@@ -3,7 +3,7 @@ import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { db, parseJson, UPLOAD_DIR } from "./db.ts";
 import { actorName, actorUserId } from "./actor.ts";
-import { BUG_SOURCES, bugEvents, ciDetail, WORKFLOW_STATUSES, type WorkflowStatus } from "./ci.ts";
+import { addEvent, BUG_SOURCES, bugEvents, ciDetail, WORKFLOW_STATUSES, type WorkflowStatus } from "./ci.ts";
 import { latestRuns, newBugIds } from "./latestruns.ts";
 import type { FileBag } from "./importers/bag.ts";
 import { AuditError, hashOf, resolveOne, resolveRefs, toSqlDate, type ResolvedRef } from "./auditcommon.ts";
@@ -360,6 +360,15 @@ function removeFiles(names: string[]) {
 
 const json = <T>(s: string | null, fallback: T): T => parseJson<T>(s, fallback);
 const effective = (r: Record<string, any>): string | null => r.human_severity ?? r.agent_severity ?? null;
+/**
+ * Where the severity that counts comes from. A person's decision (human_severity) is the only one that is decided; agent_severity is a suggestion: from an AI
+ * (an audit agent, or an observation's severity) or, for a test that failed in CI, a default by rule that is not AI and not a decision.
+ */
+export type SeveritySource = "human" | "ai" | "ci_default";
+const severitySource = (r: Record<string, any>): SeveritySource | null => (r.human_severity ? "human" : r.agent_severity ? (r.source === "ci" ? "ci_default" : "ai") : null);
+/** What a severity is called in the screens and the log. The stored value stays "high": it is part of the agent package, CI, Linear and the requirements' priority. */
+export const SEVERITY_WORD: Record<string, string> = { low: "Low", medium: "Medium", high: "Major", critical: "Critical" };
+const sevWord = (v: string | null) => (v ? SEVERITY_WORD[v] ?? v : "Not set");
 
 export type Presence = "present" | "missing" | "no_later_run";
 export const PRESENCE_VALUES: Presence[] = ["present", "missing", "no_later_run"];
@@ -406,7 +415,7 @@ export function listBugReports(projectId: number, opts: BugListFilter = {}) {
   if (opts.presence) { where.push(`${PRESENCE_EXPR} = ?`); args.push(opts.presence); }
   const rows = db.prepare(`
     WITH ${PRESENCE_CTE}
-    SELECT b.id, b.source_id, b.title, b.review_status, b.reviewed_by, b.reviewed_at, b.agent_severity, b.human_severity, b.found_at, b.imported_at, b.audit_id, b.origin, b.latest_rev, b.applied_rev, b.ignored_rev,
+    SELECT b.id, b.source_id, b.title, b.review_status, b.reviewed_by, b.reviewed_at, b.agent_severity, b.human_severity, b.severity_by, b.source, b.found_at, b.imported_at, b.audit_id, b.origin, b.latest_rev, b.applied_rev, b.ignored_rev,
       b.source, b.test_key, b.tags, b.workflow_status, b.assignee, b.last_ci_status, b.last_ci_at, b.ci_flaky,
       (SELECT COUNT(*) FROM bug_occurrences o JOIN ci_results x ON x.id = o.ci_result_id WHERE o.bug_report_id = b.id AND x.status = 'failed') AS failed_runs,
       (SELECT r.branch || char(31) || r.commit_sha || char(31) || r.pipeline_url FROM bug_occurrences o JOIN ci_results x ON x.id = o.ci_result_id JOIN ci_runs r ON r.id = x.ci_run_id
@@ -423,7 +432,7 @@ export function listBugReports(projectId: number, opts: BugListFilter = {}) {
   for (const r of db.prepare(`WITH ${PRESENCE_CTE} SELECT ${PRESENCE_EXPR} AS p, COUNT(*) AS n FROM bug_reports b LEFT JOIN cur c ON c.audit_id = b.audit_id WHERE ${baseWhere.join(" AND ")} GROUP BY p`).all(...base) as { p: Presence; n: number }[]) presenceCounts[r.p] = r.n;
   return {
     items: rows.map((r) => ({
-      id: r.id, sourceId: r.source_id, title: r.title, status: r.review_status as ReviewStatus, reviewedBy: (r.reviewed_by as string) || null, reviewedAt: r.reviewed_at as string | null, severity: effective(r), foundAt: r.found_at, importedAt: r.imported_at,
+      id: r.id, sourceId: r.source_id, title: r.title, status: r.review_status as ReviewStatus, reviewedBy: (r.reviewed_by as string) || null, reviewedAt: r.reviewed_at as string | null, severity: effective(r), severitySource: severitySource(r), severityBy: r.human_severity ? ((r.severity_by as string) || null) : null, foundAt: r.found_at, importedAt: r.imported_at,
       auditTitle: json<{ title?: string }>(r.origin, {}).title ?? "", auditDeleted: r.audit_id == null && r.source === "agent_audit",
       source: r.source as string, testKey: r.test_key as string | null, tags: json<string[]>(r.tags, []), workflowStatus: r.workflow_status as WorkflowStatus, assignee: r.assignee as string,
       ci: r.source === "ci" ? (() => {
@@ -511,7 +520,11 @@ export function getBugReport(id: number) {
   return {
     id: b.id, projectId: b.project_id, sourceId: b.source_id, status: b.review_status as ReviewStatus, reviewedAt: b.reviewed_at, reviewedBy: (b.reviewed_by as string) || null, reviewNote: b.review_note, editedAt: b.edited_at,
     title: b.title, description: b.description, steps: json<string[]>(b.steps, []), expected: b.expected, actual: b.actual, environment: b.environment, url: b.url,
-    severity: { tool: json(b.tool_impact, null), agent: b.agent_severity, human: b.human_severity, effective: effective(b) },
+    severity: {
+      tool: json(b.tool_impact, null), agent: b.agent_severity, human: b.human_severity, effective: effective(b), source: severitySource(b),
+      /** The person who decided it, when a decision exists. */
+      decidedBy: b.human_severity ? (b.severity_by as string) || null : null, decidedAt: b.human_severity ? (b.severity_at as string | null) : null, reason: b.human_severity ? (b.severity_reason as string) : "",
+    },
     confidence: b.confidence, agentReview: json(b.agent_review, null), foundAt: b.found_at, importedAt: b.imported_at,
     fingerprint: b.fingerprint, recurrenceHint: b.recurrence_hint,
     origin: json<Record<string, any>>(b.origin, {}), originAuditId: b.origin_audit_id, audit, runId: b.run_id, resultId: b.result_id,
@@ -566,8 +579,26 @@ const exists = (id: number) => {
   return b;
 };
 
+/**
+ * A person decides a bug's severity (or takes the decision back with null). Saves who, which account, when and why, and logs it. Only a change is saved and logged;
+ * the same value again is nothing. Runs inside the caller's transaction.
+ */
+function decideSeverity(id: number, to: Sev | null, reason?: string) {
+  const b = db.prepare("SELECT human_severity, agent_severity, source FROM bug_reports WHERE id = ?").get(id) as Record<string, any>;
+  const from = b.human_severity as Sev | null;
+  if (from === to) return;
+  const who = actorName();
+  db.prepare("UPDATE bug_reports SET human_severity = ?, severity_by = ?, severity_by_user_id = ?, severity_at = datetime('now'), severity_reason = ? WHERE id = ?")
+    .run(to, who, actorUserId(), to ? reason ?? "" : "", id);
+  const before = from ?? (b.agent_severity as string | null);
+  const what = to === null ? `Severity decision removed (back to the suggestion ${sevWord(b.agent_severity)}), ${who}`
+    : !from && to === b.agent_severity ? `Severity ${sevWord(to)} (${b.source === "ci" ? "default from CI" : "AI suggestion"}) confirmed, ${who}`
+    : `Severity ${sevWord(before)} → ${sevWord(to)}, ${who}`;
+  addEvent(id, "user", "severity", reason ? `${what}: ${reason}` : what);
+}
+
 /** A human edits the working copy. The agent's version stays in the revisions; a later import will not overwrite this. */
-export function updateBugReport(id: number, patch: { title?: string; description?: string; steps?: string[]; expected?: string; actual?: string; environment?: string; url?: string; humanSeverity?: Sev | null }) {
+export function updateBugReport(id: number, patch: { title?: string; description?: string; steps?: string[]; expected?: string; actual?: string; environment?: string; url?: string; humanSeverity?: Sev | null; severityReason?: string }) {
   exists(id);
   const sets: string[] = [];
   const args: unknown[] = [];
@@ -575,18 +606,28 @@ export function updateBugReport(id: number, patch: { title?: string; description
     if (v !== undefined) { sets.push(`${col} = ?`); args.push(v); }
   }
   if (patch.steps !== undefined) { sets.push("steps = ?"); args.push(JSON.stringify(patch.steps)); }
-  if (patch.humanSeverity !== undefined) { sets.push("human_severity = ?"); args.push(patch.humanSeverity); }
-  if (!sets.length) throw new AuditError(400, "Nothing to change");
-  db.prepare(`UPDATE bug_reports SET ${sets.join(", ")}, edited_at = datetime('now') WHERE id = ?`).run(...args, id);
+  if (!sets.length && patch.humanSeverity === undefined) throw new AuditError(400, "Nothing to change");
+  db.transaction(() => {
+    // The severity is a decision of its own: it is saved with who and why, and it does not count as an edit of the text (edited_at guards the text against a later import).
+    if (sets.length) db.prepare(`UPDATE bug_reports SET ${sets.join(", ")}, edited_at = datetime('now') WHERE id = ?`).run(...args, id);
+    if (patch.humanSeverity !== undefined) decideSeverity(id, patch.humanSeverity, patch.severityReason);
+  })();
 }
 
-/** Only a person calls this. Accepting does not publish anything anywhere. */
-export function reviewBugReport(id: number, status: "proposed" | "accepted" | "rejected", note?: string) {
+/**
+ * Only a person calls this. Confirming does not publish anything anywhere. When the person confirms with a severity (the one the screen showed, or one they changed),
+ * it is saved as their decision together with the confirmation, or neither is saved.
+ */
+export function reviewBugReport(id: number, status: "proposed" | "accepted" | "rejected", note?: string, severity?: { value: Sev; reason?: string }) {
   const current = exists(id);
   // A confirmed bug is not restored to Suggested: restoring is for what was dismissed (or marked a duplicate by mistake).
   if (status === "proposed" && current.review_status === "accepted") throw new AuditError(409, "This is a confirmed bug. It cannot be moved back to Suggested.");
-  db.prepare(`UPDATE bug_reports SET review_status = ?, reviewed_at = CASE WHEN ? = 'proposed' THEN NULL ELSE datetime('now') END,
-      review_note = COALESCE(?, review_note), duplicate_of_id = NULL, reviewed_by = ?, reviewed_by_user_id = ? WHERE id = ?`).run(status, status, note ?? null, actorName(), actorUserId(), id);
+  if (severity && status !== "accepted") throw new AuditError(400, "A severity is decided when the bug is confirmed");
+  db.transaction(() => {
+    db.prepare(`UPDATE bug_reports SET review_status = ?, reviewed_at = CASE WHEN ? = 'proposed' THEN NULL ELSE datetime('now') END,
+        review_note = COALESCE(?, review_note), duplicate_of_id = NULL, reviewed_by = ?, reviewed_by_user_id = ? WHERE id = ?`).run(status, status, note ?? null, actorName(), actorUserId(), id);
+    if (severity) decideSeverity(id, severity.value, severity.reason);
+  })();
 }
 
 /** Records that this report is the same bug as another report of the project. Nothing is merged. */

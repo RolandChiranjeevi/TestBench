@@ -518,6 +518,7 @@ button.plan-row:hover { background: var(--bg-hover); }
 .badge--fail { color: var(--failed-fg); background: color-mix(in srgb, var(--failed) 13%, transparent); border-color: color-mix(in srgb, var(--failed) 45%, transparent); }
 .badge--warn { color: var(--blocked-fg); background: color-mix(in srgb, var(--blocked) 13%, transparent); border-color: color-mix(in srgb, var(--blocked) 45%, transparent); }
 .badge--info { color: var(--info-fg); background: color-mix(in srgb, var(--info-fg) 13%, transparent); border-color: color-mix(in srgb, var(--info-fg) 45%, transparent); }
+.sev-suggested .badge { border-style: dashed; }
 .badge--accent { color: var(--accent-text); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
 .badge--crit { color: #fff; background: var(--crit-solid); border-color: var(--crit-solid); font-weight: 600; }
 .chip-check { color: var(--accent); }
