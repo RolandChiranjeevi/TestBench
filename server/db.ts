@@ -523,6 +523,54 @@ BEGIN SELECT RAISE(ABORT, 'A decision on a coverage gap needs a person with an a
 CREATE TRIGGER IF NOT EXISTS audit_coverage_gaps_decision_needs_account_update BEFORE UPDATE OF review_status ON audit_coverage_gaps
 WHEN NEW.review_status != OLD.review_status AND EXISTS (SELECT 1 FROM users) AND ((NEW.review_status IN ('approved', 'rejected') AND NEW.decided_by_user_id IS NULL) OR (NEW.review_status = 'draft' AND NEW.edited_by_user_id IS NULL))
 BEGIN SELECT RAISE(ABORT, 'A decision on a coverage gap needs a person with an account'); END;`);
+  // Automation suggestions: a structured suggestion for automating something a person has approved (D1: a plan item; D2: a requirement). It is made by a fixed rule (origin
+  // 'rule'; 'agent' is kept for an agent that proposes later) and is only ever a suggestion: nothing is generated, run or changed until a person decides. review_status:
+  // proposed (nobody has looked) -> draft (a person works on it) -> approved / rejected, or ignored (put aside, hidden, and not made again). Apply makes a DRAFT test case (case_id).
+  d.exec(`
+CREATE TABLE IF NOT EXISTS automation_suggestions (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  audit_id INTEGER REFERENCES audits(id) ON DELETE CASCADE,
+  subject_kind TEXT NOT NULL DEFAULT 'plan_item',
+  subject_ref TEXT NOT NULL,
+  rule TEXT NOT NULL,
+  origin TEXT NOT NULL DEFAULT 'rule' CHECK (origin IN ('rule', 'agent')),
+  proposed_by TEXT NOT NULL DEFAULT '',
+  summary TEXT NOT NULL DEFAULT '',
+  steps TEXT NOT NULL DEFAULT '[]',
+  assertions TEXT NOT NULL DEFAULT '[]',
+  test_data TEXT NOT NULL DEFAULT '',
+  plan TEXT NOT NULL DEFAULT '',
+  original TEXT NOT NULL DEFAULT '{}',
+  subject_hash TEXT NOT NULL DEFAULT '',
+  review_status TEXT NOT NULL DEFAULT 'proposed' CHECK (review_status IN ('proposed', 'draft', 'approved', 'rejected', 'ignored')),
+  edited_by TEXT NOT NULL DEFAULT '', edited_by_user_id INTEGER, edited_at TEXT,
+  decided_by TEXT NOT NULL DEFAULT '', decided_by_user_id INTEGER, decided_at TEXT,
+  case_id INTEGER REFERENCES cases(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- One suggestion per thing and rule, ever: asking again makes no duplicate, and a rejected or ignored one is not made again.
+CREATE UNIQUE INDEX IF NOT EXISTS automation_suggestions_once ON automation_suggestions(project_id, subject_kind, COALESCE(audit_id, 0), subject_ref, rule);
+CREATE INDEX IF NOT EXISTS automation_suggestions_audit ON automation_suggestions(audit_id);
+CREATE TABLE IF NOT EXISTS automation_suggestion_revisions (
+  id INTEGER PRIMARY KEY,
+  suggestion_id INTEGER NOT NULL REFERENCES automation_suggestions(id) ON DELETE CASCADE,
+  rev INTEGER NOT NULL,
+  at TEXT NOT NULL DEFAULT (datetime('now')),
+  kind TEXT NOT NULL,
+  actor TEXT NOT NULL DEFAULT '',
+  actor_user_id INTEGER,
+  note TEXT NOT NULL DEFAULT '',
+  snapshot TEXT NOT NULL,
+  UNIQUE (suggestion_id, rev)
+);
+-- With accounts, a person's decision on a suggestion (and taking one over) is made by an account: a name alone is not enough, and a rule or an agent has none.
+CREATE TRIGGER IF NOT EXISTS automation_suggestions_decision_needs_account_insert BEFORE INSERT ON automation_suggestions
+WHEN EXISTS (SELECT 1 FROM users) AND ((NEW.review_status IN ('approved', 'rejected', 'ignored') AND NEW.decided_by_user_id IS NULL) OR (NEW.review_status = 'draft' AND NEW.edited_by_user_id IS NULL))
+BEGIN SELECT RAISE(ABORT, 'A decision on an automation suggestion needs a person with an account'); END;
+CREATE TRIGGER IF NOT EXISTS automation_suggestions_decision_needs_account_update BEFORE UPDATE OF review_status ON automation_suggestions
+WHEN NEW.review_status != OLD.review_status AND EXISTS (SELECT 1 FROM users) AND ((NEW.review_status IN ('approved', 'rejected', 'ignored') AND NEW.decided_by_user_id IS NULL) OR (NEW.review_status = 'draft' AND NEW.edited_by_user_id IS NULL))
+BEGIN SELECT RAISE(ABORT, 'A decision on an automation suggestion needs a person with an account'); END;`);
   // With accounts, an AI-suggested requirement is approved by an account: a name alone (which anyone can type, and an agent could send) is not enough.
   d.exec(`
 CREATE TRIGGER IF NOT EXISTS requirements_ai_needs_account_insert BEFORE INSERT ON requirements

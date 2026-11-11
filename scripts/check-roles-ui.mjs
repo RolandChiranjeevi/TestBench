@@ -622,6 +622,95 @@ for (const who of Object.keys(TABS)) {
   check("gaps: nothing was decided by a viewer or the import", (await gapsNow()).filter((g) => g.decidedBy).every((g) => g.decidedBy === "Tess"));
 }
 
+// Automation suggestions: made by a fixed rule (never called AI) for an approved plan item, decided by a person; Apply makes a DRAFT test case and approves nothing.
+{
+  const key = (await call("GET", "/api/projects", undefined, owner)).json.find((x) => x.id === A).key;
+  const plan = (n, over = {}) => ({ sourceId: `UIA-${n}`, title: `UI auto ${n}`, type: "Functional", priority: "High", steps: [`Open the page ${n}`, "Type the text"], acceptanceCriteria: "The text is shown", ...over });
+  const files = { "manifest.json": { format: "testbench-audit-package", version: 1, audit: { id: "ui-auto-audit", title: "UI automation audit", project: key, agent: { name: "ui-check-agent" } }, files: [], parts: {} },
+    "bugs.json": { version: 1, bugs: [] }, "test-plan.json": { version: 1, planItems: [plan(1), plan(2, { steps: [] }), plan(3), plan(4), plan(5)], coverageGaps: [] } };
+  const form = new FormData();
+  for (const [name, content] of Object.entries(files)) { form.append("relpath", name); form.append("file", new Blob([JSON.stringify(content)], { type: "application/json" }), name); }
+  const seeded = await fetch(`${BASE}/api/projects/${A}/audit-import`, { method: "POST", headers: { "X-Testbench": "1", Cookie: `tb_sid=${owner}` }, body: form });
+  check("automation: seeded", seeded.ok, `${seeded.status}`);
+  const auditId = (await call("GET", `/api/projects/${A}/audits`, undefined, owner)).json.find((a) => a.agentAuditId === "ui-auto-audit").id;
+  for (const n of [1, 2, 3, 4]) await call("POST", `/api/audits/${auditId}/plan/items/UIA-${n}/decision`, { status: "approved" }, owner);
+  const sugs = async () => (await call("GET", `/api/audits/${auditId}/automation-suggestions`, undefined, owner)).json;
+  const sugOf = async (src) => (await sugs()).find((x) => x.sourceId === src);
+
+  const { page, close } = await open("tester", `/p/${A}/test-plan?audit=${auditId}`);
+  const region = (title) => page.locator(".plan-entry", { hasText: title }).getByRole("region", { name: "Automation suggestions" });
+  const openRow = async (title) => { await page.locator(".plan-entry", { hasText: title }).locator(".plan-row").click(); };
+  const card = (title) => region(title).locator("[data-suggestion]");
+
+  // An unapproved plan item gets none.
+  await openRow("UI auto 5");
+  check("automation: an unapproved plan item says to approve it first, and offers no button", await eventually(async () => (await region("UI auto 5").innerText()).includes("Approve this plan item") && (await region("UI auto 5").getByRole("button", { name: "Suggest automation" }).count()) === 0));
+
+  // Ask: the rule makes a suggestion, marked as the rule's and not as AI.
+  await openRow("UI auto 1");
+  await region("UI auto 1").getByRole("button", { name: "Suggest automation" }).click();
+  check("automation: a suggestion is made, marked Suggested by rule and not AI", await eventually(async () => { const t = await card("UI auto 1").innerText(); return t.includes("Suggested by rule") && !/\bAI\b/.test(t) && t.includes("Open the page 1"); }));
+  check("automation: it is the rule's, proposed, and nobody has decided it", await eventually(async () => { const x = await sugOf("UIA-1"); return x && x.origin === "rule" && x.status === "proposed" && x.decidedBy === null && x.editedBy === null; }));
+  // Edit and save as a draft.
+  await card("UI auto 1").getByRole("button", { name: "Edit", exact: true }).click();
+  await card("UI auto 1").getByLabel("Summary").fill("Automate the todo flow, my way");
+  await card("UI auto 1").getByRole("button", { name: "Save draft" }).click();
+  check("automation: edited and saved as a draft by Tess", await eventually(async () => { const x = await sugOf("UIA-1"); return x.summary === "Automate the todo flow, my way" && x.status === "draft" && x.editedBy === "Tess"; }));
+  check("automation: the card says Draft", await eventually(async () => (await card("UI auto 1").innerText()).includes("Draft")));
+  // Approve, then Apply.
+  await card("UI auto 1").getByRole("button", { name: "Approve", exact: true }).click();
+  check("automation: approved by Tess", await eventually(async () => { const x = await sugOf("UIA-1"); return x.status === "approved" && x.decidedBy === "Tess"; }));
+  await card("UI auto 1").getByRole("button", { name: "Apply as draft test case" }).click();
+  check("automation: Apply made a draft test case, and the suggestion stayed approved", await eventually(async () => {
+    const x = await sugOf("UIA-1"); if (!x?.testCase) return false;
+    const c = (await call("GET", `/api/cases/${x.testCase.id}`, undefined, owner)).json;
+    return c.status === "draft" && x.status === "approved";
+  }));
+  check("automation: the card links the draft test case", await eventually(async () => (await card("UI auto 1").innerText()).includes("Draft test case")));
+  check("automation: and Apply cannot be pressed twice", await eventually(async () => (await card("UI auto 1").getByRole("button", { name: "Apply as draft test case" }).count()) === 0));
+  // The history.
+  await card("UI auto 1").locator("details summary").click();
+  check("automation: the history says who did what", await eventually(async () => { const t = await card("UI auto 1").innerText(); return t.includes("Suggested by rule") && t.includes("Edited") && t.includes("Approved") && t.includes("Applied as a draft test case") && t.includes("by Tess"); }));
+
+  // Nothing to make: the message says why.
+  await openRow("UI auto 2");
+  await region("UI auto 2").getByRole("button", { name: "Suggest automation" }).click();
+  check("automation: a plan item without steps gets nothing, and says why", await eventually(async () => (await region("UI auto 2").getByRole("status").innerText()).includes("Nothing was generated: the plan item has no steps")));
+  check("automation: and nothing was stored", (await sugOf("UIA-2")) === undefined);
+
+  // Ignore hides it, puts it back, and it is not made again.
+  await openRow("UI auto 3");
+  await region("UI auto 3").getByRole("button", { name: "Suggest automation" }).click();
+  await eventually(async () => (await card("UI auto 3").count()) === 1);
+  await card("UI auto 3").getByRole("button", { name: "Ignore" }).click();
+  check("automation: Ignore hides the suggestion and says how many are ignored", await eventually(async () => (await card("UI auto 3").count()) === 0 && (await region("UI auto 3").getByRole("button", { name: /Show 1 ignored/ }).count()) === 1));
+  check("automation: it is ignored, not rejected", (await sugOf("UIA-3")).status === "ignored");
+  await region("UI auto 3").getByRole("button", { name: "Suggest automation" }).click();
+  check("automation: asking again does not make an ignored one again", await eventually(async () => (await region("UI auto 3").getByRole("status").innerText()).includes("you ignored it") && (await sugs()).filter((x) => x.sourceId === "UIA-3").length === 1));
+  await region("UI auto 3").getByRole("button", { name: /Show 1 ignored/ }).click();
+  await card("UI auto 3").getByRole("button", { name: "Put back" }).click();
+  check("automation: Put back returns it to Suggested", await eventually(async () => (await sugOf("UIA-3")).status === "proposed"));
+
+  // Reject is a decision that stays.
+  await openRow("UI auto 4");
+  await region("UI auto 4").getByRole("button", { name: "Suggest automation" }).click();
+  await eventually(async () => (await card("UI auto 4").count()) === 1);
+  await card("UI auto 4").getByRole("button", { name: "Reject", exact: true }).click();
+  check("automation: rejected by Tess", await eventually(async () => { const x = await sugOf("UIA-4"); return x.status === "rejected" && x.decidedBy === "Tess"; }));
+  check("automation: a rejected suggestion cannot be applied", await eventually(async () => (await card("UI auto 4").getByRole("button", { name: "Apply as draft test case" }).count()) === 0));
+  await close();
+
+  // A viewer reads but cannot change.
+  const v = await open("viewer", `/p/${A}/test-plan?audit=${auditId}`);
+  await v.page.locator(".plan-entry", { hasText: "UI auto 1" }).locator(".plan-row").click();
+  const vcard = v.page.locator(".plan-entry", { hasText: "UI auto 1" }).locator("[data-suggestion]");
+  check("automation: a viewer sees the suggestion but its Edit, Reject and Ignore are off", await eventually(async () => (await vcard.getByRole("button", { name: "Edit", exact: true }).isDisabled()) && (await vcard.getByRole("button", { name: "Reject", exact: true }).isDisabled()) && (await vcard.getByRole("button", { name: "Ignore" }).isDisabled())));
+  await v.page.locator(".plan-entry", { hasText: "UI auto 2" }).locator(".plan-row").click();
+  check("automation: and a viewer's Suggest automation is off", await eventually(async () => await v.page.locator(".plan-entry", { hasText: "UI auto 2" }).getByRole("button", { name: "Suggest automation" }).isDisabled()));
+  await v.close();
+  check("automation: nothing was decided by a viewer or the rule", (await sugs()).filter((x) => x.decidedBy).every((x) => x.decidedBy === "Tess"));
+}
+
 // /admin: the owner looks after the accounts and reads the audit log; nobody else is offered it.
 {
   const { page, close } = await open("owner", "/admin/accounts");

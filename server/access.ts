@@ -21,7 +21,7 @@ export const LEVELS: readonly Level[] = ["viewer", "tester", "admin"];
 export const levelRank = (l: Level) => LEVELS.indexOf(l);
 
 export const KINDS = [
-  "project", "case", "run", "result", "attachment", "automated", "requirement", "reqattachment", "proposal", "observation", "bug", "bugpublication", "manualtest",
+  "project", "case", "run", "result", "attachment", "automated", "requirement", "reqattachment", "proposal", "observation", "bug", "bugpublication", "manualtest", "automationsuggestion",
   "audit", "milestone", "checklist", "suite", "template", "githubsource", "agenttoken", "citoken", "proposetoken", "file",
 ] as const;
 export type Kind = (typeof KINDS)[number];
@@ -99,7 +99,8 @@ export const ACCESS: Record<string, Need> = {
   "POST /api/manual-tests/:id/relink": t("manualtest"), "POST /api/manual-tests/:id/review": t("manualtest"),
   // audits
   "GET /api/projects/:id/audits": v(), "GET /api/projects/:id/audit-rejections": v(), "POST /api/projects/:id/audit-import": t(), "GET /api/projects/:id/coverage-gaps": v(),
-  "GET /api/audits/:id/plan": v("audit"), "GET /api/audits/:id/history": v("audit"), "GET /api/audits/:id/gaps/history": v("audit"), "POST /api/audits/:id/gaps": t("audit"), "PATCH /api/audits/:id/gaps/:sourceId": t("audit"),
+  "GET /api/audits/:id/plan": v("audit"), "GET /api/audits/:id/history": v("audit"), "GET /api/audits/:id/gaps/history": v("audit"), "GET /api/audits/:id/automation-suggestions": v("audit"), "POST /api/audits/:id/plan/items/:sourceId/automation-suggestions": t("audit"),
+  "PATCH /api/automation-suggestions/:id": t("automationsuggestion"), "POST /api/automation-suggestions/:id/decision": t("automationsuggestion"), "POST /api/automation-suggestions/:id/apply": t("automationsuggestion"), "POST /api/audits/:id/gaps": t("audit"), "PATCH /api/audits/:id/gaps/:sourceId": t("audit"),
   "POST /api/audits/:id/gaps/:sourceId/decision": t("audit"), "POST /api/audits/:id/gaps/:sourceId/pending": t("audit"), "POST /api/audits/:id/plan/items": t("audit"), "PATCH /api/audits/:id/plan/items/:sourceId": t("audit"),
   "POST /api/audits/:id/plan/items/:sourceId/decision": t("audit"), "POST /api/audits/:id/plan/items/:sourceId/pending": t("audit"), "GET /api/audits/:id/report": v("audit"), "GET /api/audits/:id/deletion-preview": a("audit"), "DELETE /api/audits/:id": a("audit"),
   // requirements, their proposals, and generating proposals

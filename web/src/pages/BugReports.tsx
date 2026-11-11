@@ -1059,7 +1059,7 @@ function AuditsPanel({ pid }: { pid: string }) {
   const [report, setReport] = useState<Audit | null>(null);
   const [del, setDel] = useState<Audit | null>(null);
   const { data: text } = useQuery({ queryKey: ["audit-report", report?.id], enabled: !!report, queryFn: async () => { const r = await fetch(`/api/audits/${report!.id}/report`); return r.ok ? r.text() : "The report could not be loaded."; } });
-  const { data: preview } = useQuery({ queryKey: ["audit-deletion", del?.id], enabled: !!del, queryFn: () => api.get<{ title: string; deleted: number; kept: number; manualDeleted: number; manualKept: number; plan?: { planItems: number; coverageGaps: number }; planOwned?: { planItems: number; coverageGaps: number; history: number } }>(`/api/audits/${del!.id}/deletion-preview`) });
+  const { data: preview } = useQuery({ queryKey: ["audit-deletion", del?.id], enabled: !!del, queryFn: () => api.get<{ title: string; deleted: number; kept: number; manualDeleted: number; manualKept: number; plan?: { planItems: number; coverageGaps: number }; planOwned?: { planItems: number; coverageGaps: number; automation?: number; history: number } }>(`/api/audits/${del!.id}/deletion-preview`) });
   const remove = useMutation({
     mutationFn: () => api.del<{ deleted: number; kept: number }>(`/api/audits/${del!.id}`),
     onSuccess: (r) => { refresh(); setDel(null); toast("success", `Audit deleted. ${r.deleted} untouched proposal${r.deleted === 1 ? "" : "s"} removed, ${r.kept} report${r.kept === 1 ? "" : "s"} kept.`); },
@@ -1110,9 +1110,9 @@ function AuditsPanel({ pid }: { pid: string }) {
               {preview.manualDeleted + preview.manualKept > 0 && `Agent proposals: ${preview.manualDeleted} untouched proposal${preview.manualDeleted === 1 ? "" : "s"} removed, ${preview.manualKept} kept (reviewed or edited).`}{" "}
               {!!preview.plan && preview.plan.planItems + preview.plan.coverageGaps > 0 && `The test plan (${preview.plan.planItems} plan item${preview.plan.planItems === 1 ? "" : "s"}, ${preview.plan.coverageGaps} coverage gap${preview.plan.coverageGaps === 1 ? "" : "s"}) is removed too.`}
             </p>
-            {!!preview.planOwned && preview.planOwned.planItems + preview.planOwned.coverageGaps > 0 && (
+            {!!preview.planOwned && preview.planOwned.planItems + preview.planOwned.coverageGaps + (preview.planOwned.automation ?? 0) > 0 && (
               <p role="alert" style={{ margin: "8px 0 0", color: "var(--failed-fg)" }}>
-                <strong>Work done by people is lost.</strong> {preview.planOwned.planItems} plan item{preview.planOwned.planItems === 1 ? "" : "s"} and {preview.planOwned.coverageGaps} coverage gap{preview.planOwned.coverageGaps === 1 ? "" : "s"} that people edited, decided or added, and the {preview.planOwned.history} entr{preview.planOwned.history === 1 ? "y" : "ies"} of the plan's history, are deleted with the audit. This cannot be undone.
+                <strong>Work done by people is lost.</strong> {preview.planOwned.planItems} plan item{preview.planOwned.planItems === 1 ? "" : "s"} and {preview.planOwned.coverageGaps} coverage gap{preview.planOwned.coverageGaps === 1 ? "" : "s"} that people edited, decided or added, and the {preview.planOwned.history} entr{preview.planOwned.history === 1 ? "y" : "ies"} of the plan's history, are deleted with the audit.{!!preview.planOwned.automation && ` The ${preview.planOwned.automation} automation suggestion${preview.planOwned.automation === 1 ? "" : "s"} people worked on go too; draft test cases made from them are kept.`} This cannot be undone.
               </p>
             )}
             </>

@@ -54,6 +54,7 @@ import { checkAccessTable, trackRoutes } from "./access.ts";
 import { registerAccessGuard } from "./accessguard.ts";
 import { roleOf } from "./members.ts";
 import { coverageGaps, getObservationLinks, setObservationLinks } from "./coveragegaps.ts";
+import { applyAutomationSuggestion, decideAutomationSuggestion, editAutomationSuggestion, getAutomationSuggestion, listAutomationSuggestions, suggestAutomation } from "./automation.ts";
 import { generateProposals } from "./gapproposals.ts";
 import { agentRequirementsForToken, parseAgentQuery } from "./agentapi.ts";
 import { applyManualUpdate, addToProject, createCaseFromProposal, deleteManualTest, getManualTest, ignoreManualUpdate, listManualTests, relinkManualRefs, reviewManualTest, updateManualTest } from "./manualtests.ts";
@@ -1214,6 +1215,33 @@ app.post("/api/audits/:id/gaps/:sourceId/pending", (req) => {
   return getAuditPlan(id);
 });
 app.get("/api/audits/:id/gaps/history", (req) => audited(() => gapHistory(idParam(req))));
+// Automation suggestions for an approved plan item: made by a fixed rule, decided by a person. Nothing is generated, run or changed until a person decides; Apply makes a DRAFT test case.
+const suggestionFields = z.object({ summary: z.string().trim().min(1).max(300), steps: z.array(z.string().max(1000)).min(1).max(100), assertions: z.array(z.string().max(500)).max(50), testData: z.string().max(5000), plan: z.string().max(5000) });
+app.post("/api/audits/:id/plan/items/:sourceId/automation-suggestions", (req) => {
+  const id = idParam(req);
+  z.object({}).strict().parse(req.body ?? {});
+  const made = audited(() => suggestAutomation(id, sourceParam(req)));
+  return { ...made, suggestions: listAutomationSuggestions(id) };
+});
+app.get("/api/audits/:id/automation-suggestions", (req) => audited(() => listAutomationSuggestions(idParam(req))));
+app.patch("/api/automation-suggestions/:id", (req) => {
+  const id = idParam(req);
+  const body = suggestionFields.partial().strict().parse(req.body);
+  audited(() => editAutomationSuggestion(id, body));
+  return getAutomationSuggestion(id);
+});
+app.post("/api/automation-suggestions/:id/decision", (req) => {
+  const id = idParam(req);
+  const body = z.object({ status: z.enum(["draft", "approved", "rejected", "ignored", "proposed"]), note: z.string().max(500).optional() }).strict().parse(req.body);
+  audited(() => decideAutomationSuggestion(id, body.status, body.note));
+  return getAutomationSuggestion(id);
+});
+app.post("/api/automation-suggestions/:id/apply", (req) => {
+  const id = idParam(req);
+  z.object({}).strict().parse(req.body ?? {});
+  const made = audited(() => applyAutomationSuggestion(id));
+  return { case: made, suggestion: getAutomationSuggestion(id) };
+});
 app.get("/api/audits/:id/deletion-preview", (req) => {
   const { removable: _ids, manualRemovable: _mids, ...preview } = audited(() => previewAuditDeletion(idParam(req)));
   return preview;

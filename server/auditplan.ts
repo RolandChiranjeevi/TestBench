@@ -220,6 +220,14 @@ export const planCounts = (auditId: number) => ({
   coverageGaps: (db.prepare("SELECT COUNT(*) AS n FROM audit_coverage_gaps WHERE audit_id = ?").get(auditId) as { n: number }).n,
 });
 
+/** A plan item as what is made from it needs it (automation suggestions): its fields, its status, and a fingerprint of its text, to tell later that it has changed. Null when there is no such item. */
+export function planItemForSuggestion(auditId: number, sourceId: string) {
+  const r = db.prepare("SELECT * FROM audit_plan_items WHERE audit_id = ? AND source_id = ?").get(auditId, sourceId) as Record<string, any> | undefined;
+  if (!r) return null;
+  const fields = storedItem(r);
+  return { fields, status: r.review_status as PlanStatus, hash: itemKey(fields) };
+}
+
 /** How much of the audit's plan a person made their own (edited, decided or added), and how many history entries it has: what deleting the audit takes with it. */
 export function ownedPlanCounts(auditId: number) {
   const n = (sql: string) => (db.prepare(sql).get(auditId) as { n: number }).n;
@@ -227,7 +235,10 @@ export function ownedPlanCounts(auditId: number) {
   return {
     planItems: n(`SELECT COUNT(*) AS n FROM audit_plan_items WHERE ${own}`),
     coverageGaps: n(`SELECT COUNT(*) AS n FROM audit_coverage_gaps WHERE ${own}`),
-    history: n("SELECT COUNT(*) AS n FROM audit_plan_revisions WHERE audit_id = ?") + n("SELECT COUNT(*) AS n FROM audit_gap_revisions WHERE audit_id = ?"),
+    /** Automation suggestions a person has worked on (edited, decided or applied): they go with the audit, and the draft test cases made from them stay. */
+    automation: n("SELECT COUNT(*) AS n FROM automation_suggestions WHERE audit_id = ? AND review_status != 'proposed'"),
+    history: n("SELECT COUNT(*) AS n FROM audit_plan_revisions WHERE audit_id = ?") + n("SELECT COUNT(*) AS n FROM audit_gap_revisions WHERE audit_id = ?")
+      + n("SELECT COUNT(*) AS n FROM automation_suggestion_revisions r JOIN automation_suggestions s ON s.id = r.suggestion_id WHERE s.audit_id = ?"),
   };
 }
 

@@ -265,7 +265,7 @@ describe("deleting an audit says what people made their own in its plan", () => 
 
   it("the preview counts what people edited, decided or added, and their history; an untouched plan counts none", () => {
     const { a } = seeded(item(), item({ sourceId: "TPI-002", title: "Second" }), item({ sourceId: "TPI-003", title: "Third" }));
-    assert.deepEqual(previewAuditDeletion(a).planOwned, { planItems: 0, coverageGaps: 0, history: 3 + 0 }, "only the agent's own entries so far");
+    assert.deepEqual(previewAuditDeletion(a).planOwned, { planItems: 0, coverageGaps: 0, automation: 0, history: 3 + 0 }, "only the agent's own entries so far");
     runAs(dora, () => { editPlanItem(a, "TPI-001", { title: "Mine" }); decidePlanItem(a, "TPI-002", "rejected"); addPlanItem(a, { title: "Added by hand" }); });
     const p = previewAuditDeletion(a);
     assert.equal(p.plan.planItems, 4, "all four items are in the plan");
