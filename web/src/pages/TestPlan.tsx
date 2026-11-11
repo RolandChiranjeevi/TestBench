@@ -248,7 +248,7 @@ export function TestPlanPage() {
                               {x.steps.length > 0 && <><h4>Steps</h4><ol>{x.steps.map((st, i) => <li key={i}>{st}</li>)}</ol></>}
                               {text("Acceptance criteria", x.acceptanceCriteria)}
                               {text("Automation", x.automation)}
-                              <AutomationSuggestions auditId={audit.id} pid={pid} sourceId={x.sourceId} itemStatus={x.status} />
+                              <AutomationSuggestions pid={pid} scope={{ kind: "plan_item", auditId: audit.id, sourceId: x.sourceId }} itemStatus={x.status} />
                             </>
                           )}
                         </div>

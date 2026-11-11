@@ -1,18 +1,19 @@
-import { db } from "./db.ts";
+import { db, parseJson } from "./db.ts";
 import { actorName, actorUserId } from "./actor.ts";
 import { AuditError, resolveRefs } from "./auditcommon.ts";
 import { planItemForSuggestion, type PlanFields } from "./auditplan.ts";
 import { addRequirementCases } from "./requirements.ts";
+import type { Viewport } from "./shapes.ts";
 
 /**
- * Automation suggestions: a structured suggestion for automating something a person has approved (here: a plan item).
+ * Automation suggestions: a structured suggestion for automating something a person has approved: a plan item, or a requirement.
  *  - It is made by a fixed rule. There is no model behind it, no network and no code generation: the same plan item always gives the same suggestion. `origin` is 'rule';
  *    'agent' is kept for an agent that proposes suggestions later. A suggestion is never called AI here: it says it was made by a rule.
  *  - It is only ever a suggestion. Nothing is generated, run or changed until a person decides. A person edits it, approves it, rejects it, or ignores it (puts it aside:
  *    hidden by default, can be put back, and not made again). Reject is a decision that stays; ignore is not.
- *  - One suggestion per plan item and rule, ever. Asking again makes no duplicate, and a rejected or ignored suggestion is not made again.
- *  - Only an approved plan item gets one. When the plan item changes afterwards, the suggestion says so.
- *  - Apply makes a DRAFT test case of the suggestion, linked to the requirements the plan item names. It never makes a ready test case and never approves anything: whether the
+ *  - One suggestion per plan item (or requirement) and rule, ever. Asking again makes no duplicate, and a rejected or ignored suggestion is not made again.
+ *  - Only an approved plan item, or an approved requirement, gets one. When it changes afterwards, the suggestion says so.
+ *  - Apply makes a DRAFT test case of the suggestion, linked to the requirements the plan item names (or to the requirement itself). It never makes a ready test case and never approves anything: whether the
  *    test case is ready (and counts as coverage) is a separate decision by a person.
  *  - Every change is written to automation_suggestion_revisions: who did what and when.
  */
@@ -67,10 +68,45 @@ export function suggestFromPlanItem(f: PlanFields): { content: SuggestionContent
   };
 }
 
+export const RULE_REQUIREMENT = "scripted_from_requirement";
+export const RULE_REQUIREMENT_LABEL = "rule: scripted from requirement";
+export interface RequirementFields { title: string; description: string; acceptanceCriteria: string; kind: string; priority: string; wcag: string[]; viewports: Viewport[] }
+const viewportText = (v: Viewport) => [v.device, v.width && v.height ? `${v.width}x${v.height}` : v.width ? `${v.width}px wide` : "", v.breakpoint].filter(Boolean).join(" ");
+
+/**
+ * The rule for a requirement. The checks are its acceptance criteria, one per line; without acceptance criteria nothing is generated. A requirement has no steps of its own, so the steps are
+ * a skeleton (the situation its description names, then "do what the requirement asks for") that a person rewrites into concrete ones, and the plan says so. The test data is the WCAG
+ * criteria and viewports the requirement lists. The kind of test follows the requirement's kind and WCAG criteria.
+ */
+export function suggestFromRequirement(f: RequirementFields): { content: SuggestionContent } | { reason: string } {
+  const assertions = linesOf(f.acceptanceCriteria).slice(0, 20).map((a) => clip(a, 500));
+  if (!assertions.length) return { reason: "Nothing was generated: the requirement has no acceptance criteria. Add them to the requirement and ask again." };
+  const approach = f.kind === "security_privacy" ? "a security check" : f.wcag.length ? "an accessibility check" : "an end-to-end test of the user flow";
+  const firstLine = linesOf(f.description)[0] ?? "";
+  const steps = [...(firstLine ? [`Set up the situation the requirement describes: ${clip(firstLine, 300)}`] : []), `Do what the requirement asks for: ${f.title}`];
+  const testData = [f.wcag.length ? `WCAG criteria: ${f.wcag.join(", ")}` : "", f.viewports.length ? `Viewports: ${f.viewports.map(viewportText).join("; ")}` : ""].filter(Boolean).join("\n");
+  return {
+    content: {
+      summary: clip(`Automate the requirement “${f.title}” as ${approach}: ${plural(steps.length, "step")} (a skeleton to rewrite) and ${plural(assertions.length, "check")}.`, 300),
+      steps,
+      assertions,
+      testData,
+      plan: [
+        `Approach: ${approach}.`,
+        `Priority ${f.priority || "not set"}.`,
+        "A requirement has no steps of its own: the steps are a skeleton, to be rewritten into concrete steps before scripting.",
+        `Test data: ${testData ? "taken from the requirement's WCAG criteria and viewports" : "none recorded"}.`,
+        "A person writes and runs the test. Nothing is generated or run by TestBench.",
+      ].join("\n"),
+    },
+  };
+}
+
 // ---- the store ----
 
 type Who = { name: string; userId: number | null };
 const ruleWho: Who = { name: "Rule: scripted from plan item", userId: null };
+const ruleWhoRequirement: Who = { name: "Rule: scripted from requirement", userId: null };
 const person = (): Who => ({ name: actorName(), userId: actorUserId() });
 const stamp = (w: Who) => ["edited_by = ?, edited_by_user_id = ?, edited_at = datetime('now')", [w.name, w.userId]] as const;
 const FIELD_LABEL: Record<keyof SuggestionContent, string> = { summary: "Summary", steps: "Steps", assertions: "Checks", testData: "Test data", plan: "Plan" };
@@ -98,9 +134,35 @@ const rowOf = (id: number) => {
   return r;
 };
 
-/** One suggestion for its view: what it says, who made it, what became of it, whether its plan item has changed since, the draft test case made of it, and its history. */
-function view(r: Record<string, any>) {
+/** What a suggestion is about, as it is now: its title and priority, a fingerprint of its text (to tell later that it has changed), and the requirements a test case made of it is linked to. */
+interface SubjectNow { title: string; hash: string; preconditions: string; priority: string; link: (projectId: number, projectKey: string) => number[] }
+const requirementRow = (id: number) => db.prepare("SELECT * FROM requirements WHERE id = ?").get(id) as Record<string, any> | undefined;
+const requirementFields = (q: Record<string, any>): RequirementFields => ({
+  title: q.title, description: q.description, acceptanceCriteria: q.acceptance_criteria, kind: q.kind, priority: q.priority, wcag: parseJson<string[]>(q.wcag, []), viewports: parseJson<Viewport[]>(q.viewports, []),
+});
+const requirementHash = (f: RequirementFields) => JSON.stringify([f.title, f.description, f.acceptanceCriteria, f.kind, f.wcag, f.viewports]);
+
+function subjectOf(r: Record<string, any>): SubjectNow | null {
+  if (r.subject_kind === "requirement") {
+    const q = requirementRow(Number(r.subject_ref));
+    if (!q) return null;
+    const f = requirementFields(q);
+    return { title: f.title, hash: requirementHash(f), preconditions: "", priority: f.priority, link: () => [q.id as number] };
+  }
   const item = r.audit_id ? planItemForSuggestion(r.audit_id, r.subject_ref) : null;
+  if (!item) return null;
+  return {
+    title: item.fields.title, hash: item.hash, preconditions: item.fields.preconditions, priority: item.fields.priority,
+    link: (projectId, projectKey) => item.fields.requirements.flatMap((raw) => {
+      const ref = resolveRefs(projectId, projectKey, { requirements: [raw], cases: [], tests: [] })[0];
+      return ref.state === "resolved" && ref.requirementId ? [ref.requirementId] : [];
+    }),
+  };
+}
+
+/** One suggestion for its view: what it says, who made it, what became of it, whether what it is about has changed since, the draft test case made of it, and its history. */
+function view(r: Record<string, any>) {
+  const item = subjectOf(r);
   const revs = db.prepare("SELECT * FROM automation_suggestion_revisions WHERE suggestion_id = ? ORDER BY id").all(r.id) as Record<string, any>[];
   let before: SuggestionContent | null = null;
   const history = revs.map((h) => {
@@ -115,7 +177,7 @@ function view(r: Record<string, any>) {
     proposedBy: r.proposed_by as string, label: r.origin === "rule" ? "Suggested by rule" : "Suggested by an agent",
     ...contentOf(r), status: r.review_status as SuggestionStatus,
     editedBy: (r.edited_by as string) || null, editedAt: r.edited_at as string | null, decidedBy: (r.decided_by as string) || null, decidedAt: r.decided_at as string | null,
-    /** The plan item's text has changed since this was suggested (or the plan item is gone). */
+    /** What the suggestion is about (the plan item or the requirement) has changed since it was suggested, or is gone. */
     subjectChanged: !item || item.hash !== r.subject_hash, subjectGone: !item,
     testCase: c ? { id: c.id, number: c.number, key: caseKey(c.project_id, c.number) } : null,
     createdAt: r.created_at as string, history,
@@ -144,18 +206,50 @@ export function suggestAutomation(auditId: number, sourceId: string): { created:
   if (item.status !== "approved") throw new AuditError(409, "Approve the plan item first. Automation is only suggested for an approved plan item.");
   const made = suggestFromPlanItem(item.fields);
   if ("reason" in made) return { created: [], message: made.reason };
-  const existing = db.prepare("SELECT * FROM automation_suggestions WHERE project_id = ? AND subject_kind = 'plan_item' AND audit_id = ? AND subject_ref = ? AND rule = ?").get(audit.project_id, auditId, sourceId, RULE) as Record<string, any> | undefined;
+  return createSuggestion({ projectId: audit.project_id, auditId, kind: "plan_item", ref: sourceId, rule: RULE, label: RULE_LABEL, who: ruleWho, noun: "plan item", content: made.content, hash: item.hash });
+}
+
+/**
+ * A person asks for an automation suggestion for an approved requirement. Same as for a plan item: the rule makes it, as `proposed`; asking again makes no second one, and a rejected or
+ * ignored one is not made again. Only an approved requirement gets one (a draft or a deprecated one is refused with 409).
+ */
+export function suggestAutomationForRequirement(requirementId: number): { created: SuggestionView[]; message: string } {
+  const q = requirementRow(requirementId);
+  if (!q) throw new AuditError(404, "Requirement not found");
+  if (q.status !== "approved") throw new AuditError(409, "Approve the requirement first. Automation is only suggested for an approved requirement.");
+  const f = requirementFields(q);
+  const made = suggestFromRequirement(f);
+  if ("reason" in made) return { created: [], message: made.reason };
+  return createSuggestion({ projectId: q.project_id, auditId: null, kind: "requirement", ref: String(q.id), rule: RULE_REQUIREMENT, label: RULE_REQUIREMENT_LABEL, who: ruleWhoRequirement, noun: "requirement", content: made.content, hash: requirementHash(f) });
+}
+
+/** The suggestions of one requirement, oldest first. Ignored ones are included: the page hides them by default. */
+export function listRequirementAutomationSuggestions(requirementId: number) {
+  const q = requirementRow(requirementId);
+  if (!q) throw new AuditError(404, "Requirement not found");
+  return (db.prepare("SELECT * FROM automation_suggestions WHERE subject_kind = 'requirement' AND subject_ref = ? AND project_id = ? ORDER BY id").all(String(q.id), q.project_id) as Record<string, any>[]).map(view);
+}
+
+/** Removes the suggestions of a requirement that is being deleted (nothing else can reach them). The draft test cases made from them stay. Call before the requirement is deleted. */
+export function removeRequirementSuggestions(requirementId: number) {
+  const q = requirementRow(requirementId);
+  if (q) db.prepare("DELETE FROM automation_suggestions WHERE subject_kind = 'requirement' AND subject_ref = ? AND project_id = ?").run(String(q.id), q.project_id);
+}
+
+/** Makes the suggestion, once: asking again makes no second one, and a rejected or ignored one is not made again. */
+function createSuggestion(a: { projectId: number; auditId: number | null; kind: "plan_item" | "requirement"; ref: string; rule: string; label: string; who: Who; noun: string; content: SuggestionContent; hash: string }): { created: SuggestionView[]; message: string } {
+  const existing = db.prepare("SELECT * FROM automation_suggestions WHERE project_id = ? AND subject_kind = ? AND COALESCE(audit_id, 0) = ? AND subject_ref = ? AND rule = ?").get(a.projectId, a.kind, a.auditId ?? 0, a.ref, a.rule) as Record<string, any> | undefined;
   if (existing) {
     const status = existing.review_status as SuggestionStatus;
-    return { created: [], message: status === "rejected" || status === "ignored" ? `This plan item already has a suggestion, and you ${status === "rejected" ? "rejected" : "ignored"} it. It is not made again.` : "This plan item already has a suggestion." };
+    return { created: [], message: status === "rejected" || status === "ignored" ? `This ${a.noun} already has a suggestion, and you ${status === "rejected" ? "rejected" : "ignored"} it. It is not made again.` : `This ${a.noun} already has a suggestion.` };
   }
   const asker = person();
-  const c = made.content;
+  const c = a.content;
   const id = db.transaction(() => {
     const newId = (db.prepare(`INSERT INTO automation_suggestions (project_id, audit_id, subject_kind, subject_ref, rule, origin, proposed_by, summary, steps, assertions, test_data, plan, original, subject_hash)
-        VALUES (?, ?, 'plan_item', ?, ?, 'rule', ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`)
-      .get(audit.project_id, auditId, sourceId, RULE, RULE_LABEL, c.summary, JSON.stringify(c.steps), JSON.stringify(c.assertions), c.testData, c.plan, JSON.stringify(c), item.hash) as { id: number }).id;
-    revise(newId, "suggested", ruleWho, c, "proposed", `Made by a fixed rule when ${asker.name} asked.`);
+        VALUES (?, ?, ?, ?, ?, 'rule', ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`)
+      .get(a.projectId, a.auditId, a.kind, a.ref, a.rule, a.label, c.summary, JSON.stringify(c.steps), JSON.stringify(c.assertions), c.testData, c.plan, JSON.stringify(c), a.hash) as { id: number }).id;
+    revise(newId, "suggested", a.who, c, "proposed", `Made by a fixed rule when ${asker.name} asked.`);
     return newId;
   })();
   return { created: [view(rowOf(id))], message: "" };
@@ -208,7 +302,7 @@ export function decideAutomationSuggestion(id: number, status: "draft" | "approv
 const casePriority = (raw: string) => (/crit|\bp0\b/i.test(raw) ? "critical" : /high|\bp1\b/i.test(raw) ? "high" : /low|\bp3\b/i.test(raw) ? "low" : "medium");
 
 /**
- * A person applies a suggestion: a DRAFT test case is made of it, linked to the requirements the plan item names, in one transaction. The test case is never ready and the
+ * A person applies a suggestion: a DRAFT test case is made of it, linked to the requirements the plan item names (or to the requirement itself), in one transaction. The test case is never ready and the
  * suggestion is never approved by this: the suggestion becomes a draft (when it was still only suggested), and approving it, or making the test case ready, is a decision of its own.
  * Applying twice makes no second test case. A rejected or ignored suggestion has to be changed or put back first.
  */
@@ -220,10 +314,9 @@ export function applyAutomationSuggestion(id: number) {
     const c = db.prepare("SELECT number FROM cases WHERE id = ?").get(r.case_id) as { number: number } | undefined;
     if (c) throw new AuditError(409, `This suggestion is already the test case ${caseKey(r.project_id, c.number)}.`);
   }
-  const item = r.audit_id ? planItemForSuggestion(r.audit_id, r.subject_ref) : null;
-  if (!item) throw new AuditError(409, "The plan item is gone, so there is nothing to link the test case to.");
+  const subject = subjectOf(r);
+  if (!subject) throw new AuditError(409, `The ${r.subject_kind === "requirement" ? "requirement" : "plan item"} is gone, so there is nothing to link the test case to.`);
   const c = contentOf(r);
-  const f = item.fields;
   const w = person();
   const project = db.prepare("SELECT id, key FROM projects WHERE id = ?").get(r.project_id) as { id: number; key: string };
   return db.transaction(() => {
@@ -232,12 +325,9 @@ export function applyAutomationSuggestion(id: number) {
     const description = [c.summary, c.plan, c.testData ? `Test data: ${c.testData}` : ""].filter(Boolean).join("\n\n");
     const caseId = (db.prepare(`INSERT INTO cases (project_id, suite_id, number, title, description, preconditions, priority, status, tags, position)
         VALUES (?, NULL, ?, ?, ?, ?, ?, 'draft', ?, ?) RETURNING id`)
-      .get(project.id, n.n, f.title, description, f.preconditions, casePriority(f.priority), JSON.stringify(["automation-suggestion"]), pos) as { id: number }).id;
+      .get(project.id, n.n, subject.title, description, subject.preconditions, casePriority(subject.priority), JSON.stringify(["automation-suggestion"]), pos) as { id: number }).id;
     c.steps.forEach((action, i) => db.prepare("INSERT INTO case_steps (case_id, position, action, expected) VALUES (?, ?, ?, ?)").run(caseId, i, action, i === c.steps.length - 1 ? c.assertions.join("\n") : ""));
-    for (const raw of f.requirements) {
-      const ref = resolveRefs(project.id, project.key, { requirements: [raw], cases: [], tests: [] })[0];
-      if (ref.state === "resolved" && ref.requirementId) addRequirementCases(ref.requirementId, project.id, [caseId]);
-    }
+    for (const requirementId of subject.link(project.id, project.key)) addRequirementCases(requirementId, project.id, [caseId]);
     if (r.review_status === "proposed") {
       const [sets, vals] = stamp(w);
       db.prepare(`UPDATE automation_suggestions SET review_status = 'draft', case_id = ?, ${sets} WHERE id = ?`).run(caseId, ...vals, id);

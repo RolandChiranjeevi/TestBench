@@ -785,6 +785,68 @@ describe("automation suggestions: made by a rule, decided by a person", () => {
   });
 });
 
+describe("automation suggestions for a requirement", () => {
+  const approvedReq = (project: number) => { const id = fixture("requirement", project).id as number; db.prepare("UPDATE requirements SET acceptance_criteria = '- Shown in the list' WHERE id = ?").run(id); return id; };
+  const ask = (id: number | string, cookie?: string) => call("POST", `/api/requirements/${id}/automation-suggestions`, { cookie, body: {} });
+  const sugOf = (reqId: number) => db.prepare("SELECT id, review_status AS s, case_id AS c, decided_by_user_id AS d FROM automation_suggestions WHERE subject_kind = 'requirement' AND subject_ref = ?").get(String(reqId)) as { id: number; s: string; c: number | null; d: number | null } | undefined;
+
+  it("a tester asks, edits, approves and applies; a viewer gets 403 to ask and can read; a stranger gets 404 on both; an unapproved requirement is 409", async () => {
+    const req = approvedReq(projects.A);
+    assert.ok(denied403(await ask(req, people.vie.cookie)), "a viewer cannot ask");
+    assert.ok(denied404(await ask(req, people.bob.cookie)), "nor someone from another project");
+    assert.equal(sugOf(req), undefined, "nothing was made");
+    const made = await ask(req, people.tes.cookie);
+    assert.equal(made.statusCode, 200, made.body);
+    assert.deepEqual([made.json().created.length, made.json().created[0].label, made.json().created[0].subjectKind, made.json().suggestions.length], [1, "Suggested by rule", "requirement", 1]);
+    const id = sugOf(req)!.id;
+    assert.equal((await call("GET", `/api/requirements/${req}/automation-suggestions`, { cookie: people.vie.cookie })).statusCode, 200, "a viewer reads");
+    assert.ok(denied404(await call("GET", `/api/requirements/${req}/automation-suggestions`, { cookie: people.bob.cookie })));
+    for (const [who, deny] of [["vie", denied403], ["bob", denied404]] as const) {
+      assert.ok(deny(await call("POST", `/api/automation-suggestions/${id}/decision`, { cookie: people[who].cookie, body: { status: "approved" } })), `${who} cannot decide`);
+      assert.ok(deny(await call("POST", `/api/automation-suggestions/${id}/apply`, { cookie: people[who].cookie, body: {} })), `${who} cannot apply`);
+    }
+    assert.equal(sugOf(req)!.s, "proposed", "nothing changed");
+    assert.equal((await call("POST", `/api/automation-suggestions/${id}/decision`, { cookie: people.adm.cookie, body: { status: "approved" } })).statusCode, 200);
+    const applied = await call("POST", `/api/automation-suggestions/${id}/apply`, { cookie: people.tes.cookie, body: {} });
+    assert.equal(applied.statusCode, 200, applied.body);
+    const caseId = applied.json().case.caseId as number;
+    assert.equal((db.prepare("SELECT status FROM cases WHERE id = ?").get(caseId) as { status: string }).status, "draft", "a draft test case, never ready");
+    assert.equal((db.prepare("SELECT COUNT(*) AS n FROM requirement_cases WHERE requirement_id = ? AND case_id = ?").get(req, caseId) as { n: number }).n, 1, "linked to the requirement");
+    assert.equal(sugOf(req)!.s, "approved", "and Apply approved nothing");
+
+    const draftReq = approvedReq(projects.A);
+    db.prepare("UPDATE requirements SET status = 'draft' WHERE id = ?").run(draftReq);
+    const refused = await ask(draftReq, people.tes.cookie);
+    assert.equal(refused.statusCode, 409);
+    assert.match(refused.json().error, /Approve the requirement first/);
+    assert.equal((await ask(99999999, people.tes.cookie)).statusCode, 404);
+
+    // Deleting the requirement (an admin's decision) takes its suggestions with it; the draft test case stays.
+    assert.equal((await call("DELETE", `/api/requirements/${req}`, { cookie: people.adm.cookie })).statusCode, 200);
+    assert.equal(sugOf(req), undefined, "its suggestions are gone");
+    assert.equal((db.prepare("SELECT COUNT(*) AS n FROM cases WHERE id = ?").get(caseId) as { n: number }).n, 1, "the draft test case stays");
+  });
+
+  it("an agent, CI or proposal token cannot ask for a suggestion for a requirement, with or without a login", async () => {
+    const req = approvedReq(projects.A);
+    assert.equal((await call("PUT", "/api/settings/agent-proposals", { cookie: ownerCookie, body: { enabled: true } })).statusCode, 200);
+    const fresh = (await call("POST", "/api/projects", { cookie: ownerCookie, body: { name: "Req tokens", key: "RTK" } })).json().id as number;
+    const tokens = [
+      (await call("POST", `/api/projects/${fresh}/agent/tokens`, { cookie: ownerCookie, body: { name: "r" } })).json().token,
+      (await call("POST", `/api/projects/${fresh}/ci/tokens`, { cookie: ownerCookie, body: { name: "c" } })).json().token,
+      (await call("POST", `/api/projects/${fresh}/propose-tokens`, { cookie: ownerCookie, body: { name: "p" } })).json().token,
+    ] as string[];
+    assert.ok(tokens.every((t) => typeof t === "string" && t.length > 20));
+    for (const token of tokens) {
+      for (const cookie of [undefined, people.tes.cookie, ownerCookie]) {
+        const r = await call("POST", `/api/requirements/${req}/automation-suggestions`, { cookie, headers: { authorization: `Bearer ${token}` }, body: {} });
+        assert.ok([401, 403].includes(r.statusCode), `answered ${r.statusCode}`);
+      }
+    }
+    assert.equal(sugOf(req), undefined, "nothing was made");
+  });
+});
+
 describe("nothing left this process", () => {
   it("the routes that were let through asked for outside addresses, and every one was refused by the stub", () => {
     assert.ok(outbound.every((u) => /^https?:\/\//.test(u)), outbound.join(", "));
