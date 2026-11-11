@@ -18,30 +18,32 @@ interface PlanItem {
   /** The agent's newer version (or its leaving the item out) of an item a person owns. It waits until a person applies or ignores it. */
   pending: { removed: boolean; changes: Change[] } | null;
 }
-interface HistoryEntry { id: number; sourceId: string; rev: number; at: string; kind: string; actor: string; byAgent: boolean; note: string; title: string; status: PlanStatus; changes: Change[] }
+interface HistoryEntry { subject?: "Plan item" | "Gap"; id: number; sourceId: string; rev: number; at: string; kind: string; actor: string; byAgent: boolean; note: string; title: string; status: PlanStatus; changes: Change[] }
 interface Draft { title: string; type: string; priority: string; risk: string; readiness: string; preconditions: string; testData: string; steps: string; acceptanceCriteria: string; automation: string; requirements: string }
 const draftOf = (x: PlanItem): Draft => ({ title: x.title, type: x.type, priority: x.priority, risk: x.risk, readiness: x.readiness, preconditions: x.preconditions, testData: x.testData, steps: x.steps.join("\n"), acceptanceCriteria: x.acceptanceCriteria, automation: x.automation, requirements: x.requirements.map((r) => r.raw).join(", ") });
 const bodyOf = (d: Draft) => ({ ...d, steps: d.steps.split("\n").map((t) => t.trim()).filter(Boolean), requirements: d.requirements.split(",").map((t) => t.trim()).filter(Boolean) });
 const EMPTY: Draft = { title: "", type: "", priority: "", risk: "", readiness: "", preconditions: "", testData: "", steps: "", acceptanceCriteria: "", automation: "", requirements: "" };
 
 /** What an item is, in a word: the agent's proposal, or a person's draft, approved or rejected item. The words are never only a colour. */
-export function PlanMarks({ x }: { x: PlanItem }) {
+type Owned = Pick<PlanItem, "origin" | "status" | "editedBy" | "editedAt" | "decidedBy" | "pending">;
+export function PlanMarks({ x, noun = "item" }: { x: Owned; noun?: "item" | "gap" }) {
   const aiProposal = x.origin === "agent" && x.status === "proposed" && !x.editedAt;
   return (
     <>
       {aiProposal && <Badge tone="accent" icon="eye" title="Proposed by a test agent. Nobody has reviewed it yet.">AI proposal</Badge>}
-      {x.status === "draft" && <Badge tone="info" icon="circle" title="A person is working on this item.">Draft</Badge>}
+      {x.status === "draft" && <Badge tone="info" icon="circle" title={`A person is working on this ${noun}.`}>Draft</Badge>}
       {x.status === "approved" && <Badge tone="ok" icon="circle-check" title={x.decidedBy ? `Approved by ${x.decidedBy}` : "Approved"}>Approved</Badge>}
       {x.status === "rejected" && <Badge tone="neutral" icon="circle-x" title={x.decidedBy ? `Rejected by ${x.decidedBy}` : "Rejected"}>Rejected</Badge>}
-      {x.pending && <Badge tone="warn" icon="triangle-alert" title="The agent sent something newer. Open the item to apply or ignore it.">{x.pending.removed ? "Agent removal waiting" : "Agent update waiting"}</Badge>}
+      {x.pending && <Badge tone="warn" icon="triangle-alert" title={`The agent sent something newer. Open the ${noun} to apply or ignore it.`}>{x.pending.removed ? "Agent removal waiting" : "Agent update waiting"}</Badge>}
     </>
   );
 }
-const ownerNote = (x: PlanItem) => (x.origin === "human" ? `Added by ${x.editedBy}` : x.editedBy ? `Edited by ${x.editedBy}` : "");
+const ownerNote = (x: Owned) => (x.origin === "human" ? `Added by ${x.editedBy}` : x.editedBy ? `Edited by ${x.editedBy}` : "");
+interface GapItem extends Owned { sourceId: string; description: string; requirements: PlanLink[]; decidedAt: string | null }
 interface PlanView {
   audit: { id: number; agentAuditId: string; title: string };
   planItems: PlanItem[];
-  coverageGaps: { sourceId: string; description: string; requirements: PlanLink[] }[];
+  coverageGaps: GapItem[];
 }
 interface AuditRow { id: number; agentAuditId: string; title: string; planItems: number; coverageGaps: number }
 
@@ -89,6 +91,7 @@ export function TestPlanPage() {
   const [status, setStatus] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [addingGap, setAddingGap] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const qc = useQueryClient();
   const { data: audits, isLoading } = useQuery({ queryKey: ["audits", pid], queryFn: () => api.get<AuditRow[]>(`/api/projects/${pid}/audits`) });
@@ -97,12 +100,20 @@ export function TestPlanPage() {
   const audit = withPlan.find((a) => a.id === wanted) ?? withPlan[0];
   const { data, isLoading: planLoading } = useQuery({ queryKey: ["audit-plan", audit?.id], enabled: !!audit, queryFn: () => api.get<PlanView>(`/api/audits/${audit!.id}/plan`) });
 
-  const { data: history } = useQuery({ queryKey: ["audit-history", audit?.id], enabled: !!audit && showHistory, queryFn: () => api.get<HistoryEntry[]>(`/api/audits/${audit!.id}/history`) });
+  const { data: history } = useQuery({
+    queryKey: ["audit-history", audit?.id], enabled: !!audit && showHistory,
+    queryFn: async () => {
+      const [items, gaps] = await Promise.all([api.get<HistoryEntry[]>(`/api/audits/${audit!.id}/history`), api.get<HistoryEntry[]>(`/api/audits/${audit!.id}/gaps/history`)]);
+      // One panel, oldest first (the panel turns it round): plan items and gaps interleaved by time, each entry keeping its own order.
+      return [...items.map((h) => ({ ...h, subject: "Plan item" as const })), ...gaps.map((h) => ({ ...h, subject: "Gap" as const }))].sort((a, b) => a.at.localeCompare(b.at));
+    },
+  });
   /** Runs a change to the plan and shows the plan the server answers with. The server refuses what the role does not allow; a message says so. */
   const act = (fn: () => Promise<PlanView>, ok: string) =>
     fn().then((plan) => { qc.setQueryData(["audit-plan", audit!.id], plan); for (const k of ["audits", "audit-history", "requirement", "requirements"]) qc.invalidateQueries({ queryKey: [k] }); toast("success", ok); return plan; })
       .catch((e: Error) => { toast("error", e.message); return null; });
   const base = audit ? `/api/audits/${audit.id}/plan/items` : "";
+  const gapBase = audit ? `/api/audits/${audit.id}/gaps` : "";
   const item = (id: string) => `${base}/${encodeURIComponent(id)}`;
 
   const items = data?.planItems ?? [];
@@ -183,16 +194,18 @@ export function TestPlanPage() {
             <div className="plan-stats">
               {stats.map(([n, label]) => <div key={label}><b>{n}</b><span>{label}</span></div>)}
             </div>
-            {data.coverageGaps.length > 0 && (
-              <div className="plan-gaps" role="region" aria-label="Not verified">
-                <div className="row" style={{ gap: 6 }}><AlertTriangle size={14} /><strong>Not verified</strong><span className="faint">{data.coverageGaps.length}</span></div>
-                <ul>
-                  {data.coverageGaps.map((g) => (
-                    <li key={g.sourceId}><span className="mono">{g.sourceId}</span> {g.description} <span className="plan-refs">{reqs(g.requirements)}</span></li>
-                  ))}
-                </ul>
+            <div className="plan-gaps" role="region" aria-label="Not verified">
+              <div className="row" style={{ gap: 6 }}>
+                <AlertTriangle size={14} /><strong>Not verified</strong><span className="faint">{data.coverageGaps.length}</span>
+                <span className="spacer" />
+                <Button needs="tester" size="sm" onClick={() => setAddingGap(true)}><Plus size={13} /> Add gap</Button>
               </div>
-            )}
+              {data.coverageGaps.length === 0 ? <p className="faint" style={{ margin: "6px 0 0" }}>Nothing is recorded as not verified.</p> : (
+                <ul>
+                  {data.coverageGaps.map((g) => <GapRow key={g.sourceId} g={g} reqs={reqs} act={act} url={`${gapBase}/${encodeURIComponent(g.sourceId)}`} />)}
+                </ul>
+              )}
+            </div>
             {items.length > 0 && (
               <div className="plan-filters" role="group" aria-label="Filter plan items">
                 {priorities.length > 1 && <>
@@ -230,7 +243,7 @@ export function TestPlanPage() {
                       </button>
                       {isOpen && (
                         <div className="plan-detail" id={`${anchor(x.sourceId)}-detail`}>
-                          {x.pending && <PendingBanner x={x} onApply={() => act(() => api.post<PlanView>(`${item(x.sourceId)}/pending`, { action: "apply" }), x.pending!.removed ? "Removed, as the agent's plan left it out" : "Applied the agent's version. It is a draft until you approve it.")}
+                          {x.pending && <PendingBanner pending={x.pending} noun="item" onApply={() => act(() => api.post<PlanView>(`${item(x.sourceId)}/pending`, { action: "apply" }), x.pending!.removed ? "Removed, as the agent's plan left it out" : "Applied the agent's version. It is a draft until you approve it.")}
                             onIgnore={() => act(() => api.post<PlanView>(`${item(x.sourceId)}/pending`, { action: "ignore" }), "Kept your version")} />}
                           {editing === x.sourceId ? (
                             <ItemEditor x={x} onCancel={() => setEditing(null)}
@@ -274,6 +287,7 @@ export function TestPlanPage() {
           </div>
         )}
       </div>
+      {addingGap && <AddGapModal onClose={() => setAddingGap(false)} onAdd={(d) => act(() => api.post<PlanView>(gapBase, d), "Added. It is your draft; an import will not change it.").then((plan) => { if (plan) setAddingGap(false); })} />}
       {adding && <AddItemModal onClose={() => setAdding(false)} onAdd={(d) => act(() => api.post<PlanView>(base, bodyOf(d)), "Added. It is your draft; an import will not change it.").then((plan) => {
         if (!plan) return;
         setAdding(false);
@@ -285,21 +299,21 @@ export function TestPlanPage() {
   );
 }
 
-/** The agent's newer version of an item you own, as a diff. Nothing changes until you choose. */
-function PendingBanner({ x, onApply, onIgnore }: { x: PlanItem; onApply: () => void; onIgnore: () => void }) {
-  const removed = !!x.pending?.removed;
+/** The agent's newer version of an item or gap you own, as a diff. Nothing changes until you choose. */
+function PendingBanner({ pending, noun, onApply, onIgnore }: { pending: NonNullable<Owned["pending"]>; noun: "item" | "gap"; onApply: () => void; onIgnore: () => void }) {
+  const removed = pending.removed;
   return (
     <div className="card plan-pending" role="region" aria-label="Agent sent a newer version">
       <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-        <strong>{removed ? "The agent's newer plan leaves this item out" : "Agent sent a newer version"}</strong>
+        <strong>{removed ? `The agent's newer plan leaves this ${noun} out` : "Agent sent a newer version"}</strong>
         <span className="spacer" />
-        <Button needs="tester" size="sm" onClick={onIgnore}>{removed ? "Keep the item" : "Ignore"}</Button>
+        <Button needs="tester" size="sm" onClick={onIgnore}>{removed ? `Keep the ${noun}` : "Ignore"}</Button>
         <Button needs="tester" size="sm" variant="primary" onClick={onApply}>{removed ? "Remove it" : "Apply"}</Button>
       </div>
       <div className="faint" style={{ fontSize: "var(--fs-sm)", margin: "6px 0" }}>
-        {removed ? "Your item is kept until you decide." : "Your text and decision are unchanged until you choose. Applying replaces the text below with the agent's, as a draft you approve again."}
+        {removed ? `Your ${noun} is kept until you decide.` : "Your text and decision are unchanged until you choose. Applying replaces the text below with the agent's, as a draft you approve again."}
       </div>
-      {x.pending!.changes.map((c) => (
+      {pending.changes.map((c) => (
         <div key={c.field} style={{ fontSize: "var(--fs-md)", marginTop: 6 }}>
           <span className="section-label" style={{ margin: 0 }}>{c.field}</span>
           <div className="plan-del">− {c.from || "(empty)"}</div>
@@ -323,8 +337,9 @@ function HistoryPanel({ entries }: { entries: HistoryEntry[] | undefined }) {
       {!entries ? <p className="faint">Loading…</p> : entries.length === 0 ? <p className="faint">Nothing has happened yet.</p> : (
         <ol>
           {[...entries].reverse().map((h) => (
-            <li key={h.id}>
+            <li key={`${h.subject}-${h.id}`}>
               <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                {h.subject && <span className="chip">{h.subject}</span>}
                 <span className="mono muted">{h.sourceId}</span>
                 <strong>{KIND[h.kind] ?? h.kind}</strong>
                 {h.byAgent ? <Badge tone="accent" icon="eye">Agent</Badge> : <span className="muted">by {h.actor}</span>}
@@ -388,6 +403,75 @@ function AddItemModal({ onClose, onAdd }: { onClose: () => void; onAdd: (d: Draf
       footer={<><span className="spacer" /><Button onClick={onClose}>Cancel</Button><Button needs="tester" variant="primary" disabled={!d.title.trim()} onClick={() => onAdd(d)}>Add as draft</Button></>}>
       <div className="faint" style={{ marginBottom: 10 }}>Your own item. It starts as a draft, and an import from the agent never changes or removes it.</div>
       <Fields d={d} set={setD} />
+    </Modal>
+  );
+}
+
+const gapBody = (d: { description: string; requirements: string }) => ({ description: d.description, requirements: d.requirements.split(",").map((t) => t.trim()).filter(Boolean) });
+
+/** One coverage gap: what the audit did not verify. The same marks, edit, approve, reject and agent version as a plan item. */
+function GapRow({ g, reqs, act, url }: { g: GapItem; reqs: (l: PlanLink[]) => React.ReactNode; act: (fn: () => Promise<PlanView>, ok: string) => Promise<PlanView | null>; url: string }) {
+  const [editing, setEditing] = useState(false);
+  const decide = (status: "draft" | "approved" | "rejected", ok: string) => act(() => api.post<PlanView>(`${url}/decision`, { status }), ok);
+  const who = g.origin === "agent" && g.status === "proposed" && !g.editedAt ? "Proposed by the agent. Nobody has reviewed it." : [ownerNote(g), g.editedAt && formatDateTime(g.editedAt), g.decidedBy && g.status !== "draft" && `${g.status === "approved" ? "Approved" : "Rejected"} by ${g.decidedBy}`].filter(Boolean).join(" · ");
+  return (
+    <li data-gap={g.sourceId}>
+      <div><span className="mono">{g.sourceId}</span> {g.description} <span className="plan-refs">{reqs(g.requirements)}</span> <span className="plan-marks"><PlanMarks x={g} noun="gap" />{ownerNote(g) && <span className="faint plan-owner">{ownerNote(g)}</span>}</span></div>
+      {g.pending && <PendingBanner pending={g.pending} noun="gap" onApply={() => act(() => api.post<PlanView>(`${url}/pending`, { action: "apply" }), g.pending!.removed ? "Removed, as the agent's plan left it out" : "Applied the agent's version. It is a draft until you approve it.")}
+        onIgnore={() => act(() => api.post<PlanView>(`${url}/pending`, { action: "ignore" }), "Kept your version")} />}
+      {editing ? (
+        <GapEditor g={g} onCancel={() => setEditing(false)} onSave={(d, decision) => act(async () => {
+          let plan = await api.patch<PlanView>(url, gapBody(d));
+          if (decision) plan = await api.post<PlanView>(`${url}/decision`, { status: decision });
+          return plan;
+        }, decision === "approved" ? "Approved" : decision === "rejected" ? "Rejected" : "Saved as a draft").then((r) => { if (r) setEditing(false); })} />
+      ) : (
+        <div className="plan-actions">
+          <Button needs="tester" size="sm" onClick={() => setEditing(true)}><Pencil size={13} /> Edit</Button>
+          {g.status !== "approved" && <Button needs="tester" size="sm" variant="primary" onClick={() => decide("approved", "Approved")}><Check size={13} /> Approve</Button>}
+          {g.status !== "rejected" && <Button needs="tester" size="sm" onClick={() => decide("rejected", "Rejected")}>Reject</Button>}
+          {g.status !== "draft" && <Button needs="tester" size="sm" variant="ghost" onClick={() => decide("draft", "Saved as a draft")}>Save as draft</Button>}
+          <span className="faint plan-who">{who}</span>
+        </div>
+      )}
+    </li>
+  );
+}
+
+function GapFields({ d, set, id }: { d: { description: string; requirements: string }; set: (d: { description: string; requirements: string }) => void; id: string }) {
+  return (
+    <div className="col" style={{ gap: 10 }}>
+      <div className="field"><label htmlFor={`${id}-description`}>Not verified (description)</label>
+        <textarea id={`${id}-description`} className="textarea" value={d.description} onChange={(e) => set({ ...d, description: e.target.value })} /></div>
+      <div className="field"><label htmlFor={`${id}-requirements`}>Requirements (REQ-1, REQ-LOCAL-002, separated by commas)</label>
+        <input id={`${id}-requirements`} className="input" value={d.requirements} onChange={(e) => set({ ...d, requirements: e.target.value })} /></div>
+    </div>
+  );
+}
+
+function GapEditor({ g, onSave, onCancel }: { g: GapItem; onSave: (d: { description: string; requirements: string }, decision?: "approved" | "rejected") => void; onCancel: () => void }) {
+  const [d, setD] = useState({ description: g.description, requirements: g.requirements.map((r) => r.raw).join(", ") });
+  const ok = !!d.description.trim();
+  return (
+    <div className="col" style={{ gap: 10, marginTop: 6 }}>
+      <GapFields d={d} set={setD} id={`gap-${anchor(g.sourceId)}`} />
+      <div className="plan-actions">
+        <Button needs="tester" variant="primary" size="sm" disabled={!ok} onClick={() => onSave(d)}>Save draft</Button>
+        <Button needs="tester" size="sm" disabled={!ok} onClick={() => onSave(d, "approved")}><Check size={13} /> Approve</Button>
+        <Button needs="tester" size="sm" disabled={!ok} onClick={() => onSave(d, "rejected")}>Reject</Button>
+        <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
+      </div>
+    </div>
+  );
+}
+
+function AddGapModal({ onClose, onAdd }: { onClose: () => void; onAdd: (body: ReturnType<typeof gapBody>) => void }) {
+  const [d, setD] = useState({ description: "", requirements: "" });
+  return (
+    <Modal title="Add a gap" onClose={onClose} width={560}
+      footer={<><span className="spacer" /><Button onClick={onClose}>Cancel</Button><Button needs="tester" variant="primary" disabled={!d.description.trim()} onClick={() => onAdd(gapBody(d))}>Add as draft</Button></>}>
+      <div className="faint" style={{ marginBottom: 10 }}>Something you know was not verified. It starts as a draft, and an import from the agent never changes or removes it.</div>
+      <GapFields d={d} set={setD} id="new-gap" />
     </Modal>
   );
 }

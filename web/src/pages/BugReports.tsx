@@ -79,6 +79,7 @@ interface Audit {
   id: number; agentAuditId: string; title: string; agent: string; startedAt: string | null; source: string; github: { repo: string; runId: number } | null;
   runState: string; hasReport: boolean; bugs: number; proposed: number; imports: number; lastImportedAt: string; planItems: number; coverageGaps: number;
 }
+interface PlanSummary { counts: { new: number; unchanged: number; updated: number; removed: number; pending: number }; waiting: string[] }
 interface Summary {
   dryRun: boolean; audit: { agentAuditId: string; title: string; agent: string; isNew: boolean; github: { repo: string; runId: number } | null; runState: string };
   counts: { new: number; unchanged: number; updated: number; pending: number }; evidence: { ok: number; problems: number }; unresolvedRefs: number; warnings: string[];
@@ -87,7 +88,7 @@ interface Summary {
     listed: boolean; counts: { new: number; unchanged: number; updated: number; pending: number }; unresolvedRefs: number;
     items: { sourceId: string; title: string; action: string; category: string; priority: string; unresolvedRefs: number }[];
   };
-  testPlan?: { listed: boolean; planItems: { counts: { new: number; unchanged: number; updated: number; removed: number; pending: number }; waiting: string[] } };
+  testPlan?: { listed: boolean; planItems: PlanSummary; coverageGaps: PlanSummary };
 }
 
 type SeveritySource = "human" | "ai" | "ci_default";
@@ -1210,20 +1211,22 @@ export function ImportModal({ pid, onClose }: { pid: string; onClose: () => void
                 </div>
               </div>
             )}
-            {s.testPlan?.listed && (
-              <div className="card" style={{ padding: 12 }}>
-                <strong>Test plan</strong>
-                <div style={{ marginTop: 4 }}>
-                  {s.testPlan.planItems.counts.new} new · {s.testPlan.planItems.counts.unchanged} unchanged · {s.testPlan.planItems.counts.updated} updated · {s.testPlan.planItems.counts.removed} removed
+            {s.testPlan?.listed && (() => {
+              const a = s.testPlan.planItems.counts; const g = s.testPlan.coverageGaps.counts; const kept = a.pending + g.pending;
+              return (
+                <div className="card" style={{ padding: 12 }}>
+                  <strong>Test plan</strong>
+                  <div style={{ marginTop: 4 }}>Plan items: {a.new} new · {a.unchanged} unchanged · {a.updated} updated · {a.removed} removed</div>
+                  <div>Coverage gaps: {g.new} new · {g.unchanged} unchanged · {g.updated} updated · {g.removed} removed</div>
+                  {kept > 0 && (
+                    <div style={{ marginTop: 2 }}>
+                      <strong>{kept} post{kept === 1 ? "" : "s"} kept, agent version waiting.</strong>{" "}
+                      <span className="faint">Items and gaps you edited, decided or added are never changed by an import. Review the agent's version on Test plan.</span>
+                    </div>
+                  )}
                 </div>
-                {s.testPlan.planItems.counts.pending > 0 && (
-                  <div style={{ marginTop: 2 }}>
-                    <strong>{s.testPlan.planItems.counts.pending} post{s.testPlan.planItems.counts.pending === 1 ? "" : "s"} kept, agent version waiting.</strong>{" "}
-                    <span className="faint">Items you edited, decided or added are never changed by an import. Review the agent's version on Test plan.</span>
-                  </div>
-                )}
-              </div>
-            )}
+              );
+            })()}
             {s.warnings.map((w, i) => <div key={i} className="row" style={{ gap: 6, color: "var(--blocked-fg)", fontSize: "var(--fs-md)" }}><AlertTriangle size={13} /> {w}</div>)}
             <div style={{ maxHeight: 220, overflow: "auto", border: "1px solid var(--border)", borderRadius: "var(--radius)" }}>
               {s.items.map((i) => (

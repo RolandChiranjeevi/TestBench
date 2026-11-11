@@ -249,7 +249,7 @@ describe("with accounts, a decision needs an account in the database itself", ()
   it("no code but the person's functions writes a plan item's status, and the import writes no decision", () => {
     const dir = join(import.meta.dirname, "..", "server");
     const src = readFileSync(join(dir, "auditplan.ts"), "utf8");
-    const store = src.slice(src.indexOf("export function storeTestPlan"), src.indexOf("export const planCounts"));
+    const store = src.slice(src.indexOf("function reconcile"), src.indexOf("export const planCounts")); // the import: reconcile and storeTestPlan
     assert.ok(store.length > 500);
     assert.doesNotMatch(store, /review_status\s*=|decided_by|edited_by\s*=|origin\s*=\s*'human'/, "the import never decides, edits or claims an item");
     assert.doesNotMatch(store, /DELETE FROM audit_plan_items WHERE audit_id/, "and never clears the whole plan");

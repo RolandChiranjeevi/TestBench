@@ -491,6 +491,38 @@ BEGIN SELECT RAISE(ABORT, 'A decision on a test plan item needs a person with an
 CREATE TRIGGER IF NOT EXISTS audit_plan_items_decision_needs_account_update BEFORE UPDATE OF review_status ON audit_plan_items
 WHEN NEW.review_status != OLD.review_status AND EXISTS (SELECT 1 FROM users) AND ((NEW.review_status IN ('approved', 'rejected') AND NEW.decided_by_user_id IS NULL) OR (NEW.review_status = 'draft' AND NEW.edited_by_user_id IS NULL))
 BEGIN SELECT RAISE(ABORT, 'A decision on a test plan item needs a person with an account'); END;`);
+  // Coverage gaps work the same way as plan items: the agent's proposal until a person edits, decides or adds one; an import never overwrites or removes what a person owns.
+  for (const [col, ddl] of [
+    ["origin", "TEXT NOT NULL DEFAULT 'agent' CHECK (origin IN ('agent', 'human'))"],
+    ["review_status", "TEXT NOT NULL DEFAULT 'proposed' CHECK (review_status IN ('proposed', 'draft', 'approved', 'rejected'))"],
+    ["edited_by", "TEXT NOT NULL DEFAULT ''"], ["edited_by_user_id", "INTEGER"], ["edited_at", "TEXT"],
+    ["decided_by", "TEXT NOT NULL DEFAULT ''"], ["decided_by_user_id", "INTEGER"], ["decided_at", "TEXT"],
+    ["pending_json", "TEXT"],
+    ["agent_hash", "TEXT NOT NULL DEFAULT ''"],
+  ] as const) {
+    if (!hasColumn("audit_coverage_gaps", col)) d.exec(`ALTER TABLE audit_coverage_gaps ADD COLUMN ${col} ${ddl}`);
+  }
+  d.exec(`
+CREATE TABLE IF NOT EXISTS audit_gap_revisions (
+  id INTEGER PRIMARY KEY,
+  audit_id INTEGER NOT NULL REFERENCES audits(id) ON DELETE CASCADE,
+  source_id TEXT NOT NULL,
+  rev INTEGER NOT NULL,
+  at TEXT NOT NULL DEFAULT (datetime('now')),
+  kind TEXT NOT NULL,
+  actor TEXT NOT NULL DEFAULT '',
+  actor_user_id INTEGER,
+  note TEXT NOT NULL DEFAULT '',
+  snapshot TEXT NOT NULL,
+  UNIQUE (audit_id, source_id, rev)
+);
+CREATE INDEX IF NOT EXISTS audit_gap_revisions_audit ON audit_gap_revisions(audit_id, id);
+CREATE TRIGGER IF NOT EXISTS audit_coverage_gaps_decision_needs_account_insert BEFORE INSERT ON audit_coverage_gaps
+WHEN EXISTS (SELECT 1 FROM users) AND ((NEW.review_status IN ('approved', 'rejected') AND NEW.decided_by_user_id IS NULL) OR (NEW.review_status = 'draft' AND NEW.edited_by_user_id IS NULL))
+BEGIN SELECT RAISE(ABORT, 'A decision on a coverage gap needs a person with an account'); END;
+CREATE TRIGGER IF NOT EXISTS audit_coverage_gaps_decision_needs_account_update BEFORE UPDATE OF review_status ON audit_coverage_gaps
+WHEN NEW.review_status != OLD.review_status AND EXISTS (SELECT 1 FROM users) AND ((NEW.review_status IN ('approved', 'rejected') AND NEW.decided_by_user_id IS NULL) OR (NEW.review_status = 'draft' AND NEW.edited_by_user_id IS NULL))
+BEGIN SELECT RAISE(ABORT, 'A decision on a coverage gap needs a person with an account'); END;`);
   // With accounts, an AI-suggested requirement is approved by an account: a name alone (which anyone can type, and an agent could send) is not enough.
   d.exec(`
 CREATE TRIGGER IF NOT EXISTS requirements_ai_needs_account_insert BEFORE INSERT ON requirements

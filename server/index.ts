@@ -34,7 +34,7 @@ import { createJiraIssue, JiraError, jiraEnabled, jiraStatus } from "./jira.ts";
 import { buildPreview, checkPublication, getDestination, lookupTeams, publishBug, PublishError, removeDestination, retryAttachments, saveDestination } from "./publish.ts";
 import {
   applyPendingUpdate, AuditError, auditReportText, deleteAudit, deleteBugReport, getBugReport, ignorePendingUpdate, importAuditPackage, linkExternalIssue,
-  addPlanItem, decidePlanItem, editPlanItem, getAuditPlan, listAudits, planHistory, resolvePending, listBugReports, listRejectedPackages, markDuplicate, previewAuditDeletion, relinkBugRefs, reviewBugReport, unlinkExternalIssue, updateBugReport,
+  addGap, addPlanItem, decideGap, decidePlanItem, editGap, editPlanItem, gapHistory, getAuditPlan, listAudits, planHistory, resolveGapPending, resolvePending, listBugReports, listRejectedPackages, markDuplicate, previewAuditDeletion, relinkBugRefs, reviewBugReport, unlinkExternalIssue, updateBugReport,
 } from "./audits.ts";
 import { agentRequirements } from "./agentexport.ts";
 import { approveImported, importRequirements, RequirementImportError } from "./reqimport.ts";
@@ -1187,6 +1187,33 @@ app.post("/api/audits/:id/plan/items/:sourceId/pending", (req) => {
   return getAuditPlan(id);
 });
 app.get("/api/audits/:id/history", (req) => audited(() => planHistory(idParam(req))));
+// Coverage gaps work the same way as plan items, with the same rules and the same access.
+const gapFields = z.object({ description: z.string().trim().min(1).max(5000), requirements: z.array(z.string().trim().max(200)).max(50) });
+app.post("/api/audits/:id/gaps", (req) => {
+  const id = idParam(req);
+  const body = gapFields.partial().required({ description: true }).strict().parse(req.body);
+  audited(() => addGap(id, body));
+  return getAuditPlan(id);
+});
+app.patch("/api/audits/:id/gaps/:sourceId", (req) => {
+  const id = idParam(req);
+  const body = gapFields.partial().strict().parse(req.body);
+  audited(() => editGap(id, sourceParam(req), body));
+  return getAuditPlan(id);
+});
+app.post("/api/audits/:id/gaps/:sourceId/decision", (req) => {
+  const id = idParam(req);
+  const body = z.object({ status: z.enum(["draft", "approved", "rejected"]), note: z.string().max(500).optional() }).strict().parse(req.body);
+  audited(() => decideGap(id, sourceParam(req), body.status, body.note));
+  return getAuditPlan(id);
+});
+app.post("/api/audits/:id/gaps/:sourceId/pending", (req) => {
+  const id = idParam(req);
+  const body = z.object({ action: z.enum(["apply", "ignore"]) }).strict().parse(req.body);
+  audited(() => resolveGapPending(id, sourceParam(req), body.action));
+  return getAuditPlan(id);
+});
+app.get("/api/audits/:id/gaps/history", (req) => audited(() => gapHistory(idParam(req))));
 app.get("/api/audits/:id/deletion-preview", (req) => {
   const { removable: _ids, manualRemovable: _mids, ...preview } = audited(() => previewAuditDeletion(idParam(req)));
   return preview;
