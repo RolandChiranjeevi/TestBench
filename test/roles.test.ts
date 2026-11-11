@@ -582,6 +582,65 @@ describe("restoring a backup keeps who is a member of what", () => {
   });
 });
 
+describe("the test plan is a workspace a person owns", () => {
+  const item = (audit: number | string) => db.prepare("INSERT INTO audit_plan_items (audit_id, source_id, position, title) VALUES (?, 'TPI-1', 0, 'Add a todo') RETURNING id").get(audit) as { id: number };
+  const row = (audit: number | string, src = "TPI-1") => db.prepare("SELECT title, review_status AS s, decided_by_user_id AS d, edited_by_user_id AS e, origin FROM audit_plan_items WHERE audit_id = ? AND source_id = ?").get(audit, src) as { title: string; s: string; d: number | null; e: number | null; origin: string } | undefined;
+  const base = (audit: number | string) => `/api/audits/${audit}/plan/items`;
+
+  it("a tester edits, saves a draft, approves and rejects, with their account; an admin too; a viewer gets 403 and a stranger 404, and nothing changes", async () => {
+    const audit = fixture("audit", projects.A).id; item(audit);
+    for (const [who, deny] of [["vie", denied403], ["bob", denied404]] as const) {
+      assert.ok(deny(await call("PATCH", `${base(audit)}/TPI-1`, { cookie: people[who].cookie, body: { title: "Changed" } })), `${who} cannot edit`);
+      assert.ok(deny(await call("POST", `${base(audit)}/TPI-1/decision`, { cookie: people[who].cookie, body: { status: "approved" } })), `${who} cannot decide`);
+      assert.ok(deny(await call("POST", base(audit), { cookie: people[who].cookie, body: { title: "Mine" } })), `${who} cannot add`);
+    }
+    assert.deepEqual(row(audit), { title: "Add a todo", s: "proposed", d: null, e: null, origin: "agent" }, "nothing changed");
+    const edit = await call("PATCH", `${base(audit)}/TPI-1`, { cookie: people.tes.cookie, body: { title: "Add a todo item", steps: ["Type", "Enter"] } });
+    assert.equal(edit.statusCode, 200, edit.body);
+    assert.deepEqual(row(audit), { title: "Add a todo item", s: "draft", d: null, e: people.tes.id, origin: "agent" });
+    const approve = await call("POST", `${base(audit)}/TPI-1/decision`, { cookie: people.tes.cookie, body: { status: "approved" } });
+    assert.equal(approve.statusCode, 200, approve.body);
+    assert.deepEqual([row(audit)!.s, row(audit)!.d], ["approved", people.tes.id]);
+    assert.equal((await call("POST", `${base(audit)}/TPI-1/decision`, { cookie: people.adm.cookie, body: { status: "rejected" } })).statusCode, 200);
+    assert.deepEqual([row(audit)!.s, row(audit)!.d], ["rejected", people.adm.id]);
+    assert.equal((await call("POST", `${base(audit)}/TPI-1/decision`, { cookie: people.tes.cookie, body: { status: "proposed" } })).statusCode, 400, "a person cannot make it the agent's proposal again");
+    assert.equal((await call("PATCH", `${base(audit)}/TPI-1`, { cookie: people.tes.cookie, body: { title: "" } })).statusCode, 400);
+    assert.equal((await call("PATCH", `${base(audit)}/TPI-1`, { cookie: people.tes.cookie, body: { origin: "human" } })).statusCode, 400, "only the plan's own fields");
+    assert.equal((await call("PATCH", `${base(audit)}/NOPE`, { cookie: people.tes.cookie, body: { title: "x" } })).statusCode, 404);
+    const added = await call("POST", base(audit), { cookie: people.tes.cookie, body: { title: "Mine" } });
+    assert.equal(added.statusCode, 200, added.body);
+    assert.deepEqual([row(audit, "H-1")?.origin, row(audit, "H-1")?.s, row(audit, "H-1")?.e], ["human", "draft", people.tes.id]);
+    assert.ok(denied403(await call("GET", `/api/audits/${audit}/history`, { cookie: people.nob.cookie })) || denied404(await call("GET", `/api/audits/${audit}/history`, { cookie: people.nob.cookie })));
+    const history = await call("GET", `/api/audits/${audit}/history`, { cookie: people.vie.cookie });
+    assert.equal(history.statusCode, 200, "a viewer reads the history");
+    assert.ok(history.json().length >= 4);
+  });
+
+  it("an agent, CI or proposal token cannot edit, decide, add or apply anything in the plan, with or without a login", async () => {
+    const audit = fixture("audit", projects.A).id; item(audit);
+    assert.equal((await call("PUT", "/api/settings/agent-proposals", { cookie: ownerCookie, body: { enabled: true } })).statusCode, 200);
+    const fresh = (await call("POST", "/api/projects", { cookie: ownerCookie, body: { name: "Plan tokens", key: "PTK" } })).json().id as number;
+    const tokens = [
+      (await call("POST", `/api/projects/${fresh}/agent/tokens`, { cookie: ownerCookie, body: { name: "r" } })).json().token,
+      (await call("POST", `/api/projects/${fresh}/ci/tokens`, { cookie: ownerCookie, body: { name: "c" } })).json().token,
+      (await call("POST", `/api/projects/${fresh}/propose-tokens`, { cookie: ownerCookie, body: { name: "p" } })).json().token,
+    ] as string[];
+    assert.ok(tokens.every((t) => typeof t === "string" && t.length > 20));
+    for (const token of tokens) {
+      for (const cookie of [undefined, people.tes.cookie, ownerCookie]) {
+        for (const [method, url, body] of [
+          ["PATCH", `${base(audit)}/TPI-1`, { title: "Agent" }], ["POST", `${base(audit)}/TPI-1/decision`, { status: "approved" }],
+          ["POST", `${base(audit)}/TPI-1/pending`, { action: "apply" }], ["POST", base(audit), { title: "Agent" }],
+        ] as const) {
+          const r = await call(method, url, { cookie, headers: { authorization: `Bearer ${token}` }, body });
+          assert.ok([401, 403].includes(r.statusCode), `${method} ${url} answered ${r.statusCode}`);
+        }
+      }
+    }
+    assert.deepEqual(row(audit), { title: "Add a todo", s: "proposed", d: null, e: null, origin: "agent" }, "nothing changed");
+  });
+});
+
 describe("nothing left this process", () => {
   it("the routes that were let through asked for outside addresses, and every one was refused by the stub", () => {
     assert.ok(outbound.every((u) => /^https?:\/\//.test(u)), outbound.join(", "));

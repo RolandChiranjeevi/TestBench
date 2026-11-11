@@ -99,7 +99,8 @@ export const ACCESS: Record<string, Need> = {
   "POST /api/manual-tests/:id/relink": t("manualtest"), "POST /api/manual-tests/:id/review": t("manualtest"),
   // audits
   "GET /api/projects/:id/audits": v(), "GET /api/projects/:id/audit-rejections": v(), "POST /api/projects/:id/audit-import": t(), "GET /api/projects/:id/coverage-gaps": v(),
-  "GET /api/audits/:id/plan": v("audit"), "GET /api/audits/:id/report": v("audit"), "GET /api/audits/:id/deletion-preview": a("audit"), "DELETE /api/audits/:id": a("audit"),
+  "GET /api/audits/:id/plan": v("audit"), "GET /api/audits/:id/history": v("audit"), "POST /api/audits/:id/plan/items": t("audit"), "PATCH /api/audits/:id/plan/items/:sourceId": t("audit"),
+  "POST /api/audits/:id/plan/items/:sourceId/decision": t("audit"), "POST /api/audits/:id/plan/items/:sourceId/pending": t("audit"), "GET /api/audits/:id/report": v("audit"), "GET /api/audits/:id/deletion-preview": a("audit"), "DELETE /api/audits/:id": a("audit"),
   // requirements, their proposals, and generating proposals
   "GET /api/projects/:id/requirements": v(), "GET /api/projects/:id/requirements/coverage": v(), "POST /api/projects/:id/requirements": t(), "POST /api/projects/:id/requirements/import": t(), "POST /api/projects/:id/requirements/approve-imported": t(),
   "GET /api/requirements/:id": v("requirement"), "PATCH /api/requirements/:id": t("requirement"), "DELETE /api/requirements/:id": a("requirement"),

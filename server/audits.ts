@@ -10,7 +10,8 @@ import { AuditError, hashOf, resolveOne, resolveRefs, toSqlDate, type ResolvedRe
 export { AuditError } from "./auditcommon.ts";
 import { manualTestsOfAudit, planManualTests, writeManualTests, type PlannedManual } from "./manualtests.ts";
 import { inspectEvidence, PackageError, parsePackage, readEvidence, safeRelPath, type BugItem, type EvidenceCheck, type ParsedPackage } from "./importers/auditpackage.ts";
-import { auditPlan, planCounts, planTestPlan, storeTestPlan } from "./auditplan.ts";
+import { addPlanItem, auditPlan, decidePlanItem, editPlanItem, planCounts, planHistory, planTestPlan, resolvePending, storeTestPlan } from "./auditplan.ts";
+export { addPlanItem, decidePlanItem, editPlanItem, planHistory, resolvePending };
 import type { PlannedTestPlan } from "./auditplan.ts";
 
 /**
@@ -333,7 +334,7 @@ export function importAuditPackage(bag: FileBag, ctx: ImportContext, opts: { dry
       }
       relinkBugRefs(ctx.projectId);
       writeManualTests(plan.manual, { projectId: ctx.projectId, auditId, agentAuditId: a.id, origin, importId });
-      storeTestPlan(auditId, plan.testPlan); // the latest import of the audit wins; no test-plan.json leaves the stored plan alone
+      storeTestPlan(auditId, plan.testPlan); // follows the package for items nobody owns; items a person owns are kept (the agent's version waits); no test-plan.json leaves the plan alone
       summary = summarize(pkg, ctx, plan, false, auditId, !existingAudit);
       db.prepare("UPDATE audit_imports SET new_count = ?, unchanged_count = ?, updated_count = ?, pending_count = ? WHERE id = ?")
         .run(summary.counts.new, summary.counts.unchanged, summary.counts.updated, summary.counts.pending, importId);

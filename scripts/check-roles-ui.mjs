@@ -468,6 +468,87 @@ for (const who of Object.keys(TABS)) {
   check("severity: nothing was decided by a viewer, the import or CI", (await sevRows()).filter((b) => b.severitySource === "human").every((b) => b.severityBy === "Tess"));
 }
 
+// The test plan is a workspace: the agent proposes, a person edits and decides, an import never overwrites what a person owns, and every change is in the history.
+{
+  const key = (await call("GET", "/api/projects", undefined, owner)).json.find((x) => x.id === A).key;
+  const planItem = (n, over = {}) => ({ sourceId: `UIP-${n}`, title: `UI plan ${n}`, type: "Functional", priority: "High", steps: [`Step for ${n}`], acceptanceCriteria: `It works ${n}`, ...over });
+  const send = async (items, dryRun = false) => {
+    const files = { "manifest.json": { format: "testbench-audit-package", version: 1, audit: { id: "ui-plan-audit", title: "UI plan audit", project: key, agent: { name: "ui-check-agent" } }, files: [], parts: {} },
+      "bugs.json": { version: 1, bugs: [] }, "test-plan.json": { version: 1, planItems: items, coverageGaps: [] } };
+    const form = new FormData();
+    for (const [name, content] of Object.entries(files)) { form.append("relpath", name); form.append("file", new Blob([JSON.stringify(content)], { type: "application/json" }), name); }
+    return fetch(`${BASE}/api/projects/${A}/audit-import${dryRun ? "?dryRun=1" : ""}`, { method: "POST", headers: { "X-Testbench": "1", Cookie: `tb_sid=${owner}` }, body: form });
+  };
+  const seeded = await send([planItem(1), planItem(2), planItem(3)]);
+  check("test plan: seeded", seeded.ok, `${seeded.status}`);
+  const auditId = (await call("GET", `/api/projects/${A}/audits`, undefined, owner)).json.find((a) => a.agentAuditId === "ui-plan-audit").id;
+  const planNow = async () => (await call("GET", `/api/audits/${auditId}/plan`, undefined, owner)).json.planItems;
+  const itemNow = async (id) => (await planNow()).find((x) => x.sourceId === id);
+
+  const { page, close } = await open("tester", `/p/${A}/test-plan?audit=${auditId}`);
+  const entry = (title) => page.locator(".plan-entry", { hasText: title });
+  const openRow = async (title) => { await entry(title).locator(".plan-row").click(); };
+  check("test plan: what the agent sent is marked AI proposal", await eventually(async () => (await entry("UI plan 1").innerText()).includes("AI proposal")));
+
+  // Edit and approve in one go.
+  await openRow("UI plan 1");
+  await entry("UI plan 1").getByRole("button", { name: "Edit", exact: true }).click();
+  await page.locator("#pf-title").fill("UI plan 1, my wording");
+  await entry("UI plan 1").getByRole("button", { name: "Approve", exact: true }).click();
+  check("test plan: edited and approved by Tess", await eventually(async () => { const x = await itemNow("UIP-1"); return x.title === "UI plan 1, my wording" && x.status === "approved" && x.editedBy === "Tess" && x.decidedBy === "Tess"; }));
+  check("test plan: the row says Approved and Edited by Tess, not AI proposal", await eventually(async () => { const t = await entry("UI plan 1, my wording").locator(".plan-row").innerText(); return t.includes("Approved") && t.includes("Edited by Tess") && !t.includes("AI proposal"); }));
+
+  // Reject and save as draft from the row.
+  await openRow("UI plan 2");
+  await entry("UI plan 2").getByRole("button", { name: "Reject", exact: true }).click();
+  check("test plan: rejected", await eventually(async () => (await itemNow("UIP-2")).status === "rejected"));
+  await openRow("UI plan 3");
+  await entry("UI plan 3").getByRole("button", { name: "Save as draft" }).click();
+  check("test plan: saved as a draft", await eventually(async () => (await itemNow("UIP-3")).status === "draft"));
+
+  // An import of a newer plan changes nothing a person owns: the agent's version waits.
+  const dry = await (await send([planItem(1, { title: "UI plan 1, agent's wording" }), planItem(3, { title: "UI plan 3, agent's wording" }), planItem(4)], true)).json();
+  check("test plan: the import preview says posts are kept with the agent's version waiting", dry.testPlan.planItems.counts.pending >= 2, JSON.stringify(dry.testPlan.planItems.counts));
+  const again = await send([planItem(1, { title: "UI plan 1, agent's wording" }), planItem(3, { title: "UI plan 3, agent's wording" }), planItem(4)]);
+  check("test plan: the newer plan was imported", again.ok, `${again.status}`);
+  check("test plan: nothing a person owns was overwritten or removed", (await itemNow("UIP-1")).title === "UI plan 1, my wording" && (await itemNow("UIP-1")).status === "approved" && (await itemNow("UIP-2")).status === "rejected" && (await itemNow("UIP-3")).title === "UI plan 3");
+  check("test plan: and the new item arrived as a proposal", (await itemNow("UIP-4")).status === "proposed");
+  await page.reload();
+  check("test plan: the rows say an agent update is waiting", await eventually(async () => (await entry("UI plan 1, my wording").locator(".plan-row").innerText()).includes("Agent update waiting")));
+  await openRow("UI plan 1, my wording");
+  const banner = entry("UI plan 1, my wording").getByRole("region", { name: "Agent sent a newer version" });
+  check("test plan: the banner shows the diff", await eventually(async () => (await banner.count()) === 1 && (await banner.innerText()).includes("UI plan 1, agent's wording")));
+  await banner.getByRole("button", { name: "Ignore" }).click();
+  check("test plan: Ignore keeps the person's text and clears the waiting version", await eventually(async () => { const x = await itemNow("UIP-1"); return x.pending === null && x.title === "UI plan 1, my wording"; }));
+  await openRow("UI plan 3");
+  await entry("UI plan 3").getByRole("region", { name: "Agent sent a newer version" }).getByRole("button", { name: "Apply" }).click();
+  check("test plan: Apply takes the agent's text as a draft", await eventually(async () => { const x = await itemNow("UIP-3"); return x.title === "UI plan 3, agent's wording" && x.status === "draft" && x.pending === null; }));
+  check("test plan: the same ignored version is not offered again", await (async () => { await send([planItem(1, { title: "UI plan 1, agent's wording" }), planItem(3, { title: "UI plan 3, agent's wording" }), planItem(4)]); return (await itemNow("UIP-1")).pending === null; })());
+
+  // History.
+  await page.getByRole("button", { name: "History" }).click();
+  const hist = page.getByRole("region", { name: "Plan history" });
+  check("test plan: the history says who did what", await eventually(async () => { const t = await hist.innerText(); return t.includes("Approved") && t.includes("by Tess") && t.includes("Agent sent a newer version") && t.includes("Agent import") && t.includes("Applied the agent's version") && t.includes("Ignored the agent's version"); }));
+  await page.getByRole("button", { name: "History" }).click();
+
+  // A person's own item.
+  await page.getByRole("button", { name: "Add item" }).click();
+  await page.getByRole("dialog").locator("#pf-title").fill("UI plan my own");
+  await page.getByRole("dialog").getByRole("button", { name: "Add as draft" }).click();
+  check("test plan: the person's own item is a human draft", await eventually(async () => { const x = (await planNow()).find((i) => i.title === "UI plan my own"); return x && x.origin === "human" && x.status === "draft" && x.editedBy === "Tess"; }));
+  await send([planItem(1, { title: "UI plan 1, agent's wording" })]);
+  check("test plan: an import that leaves it out does not remove it", (await planNow()).some((i) => i.title === "UI plan my own"));
+  await close();
+
+  // A viewer reads but cannot change.
+  const v = await open("viewer", `/p/${A}/test-plan?audit=${auditId}`);
+  await v.page.locator(".plan-entry", { hasText: "UI plan 1, my wording" }).locator(".plan-row").click();
+  const ve = v.page.locator(".plan-entry", { hasText: "UI plan 1, my wording" });
+  check("test plan: a viewer's Edit, Save as draft, Reject and Add item are off", await eventually(async () => (await ve.getByRole("button", { name: "Edit", exact: true }).isDisabled()) && (await ve.getByRole("button", { name: "Save as draft" }).isDisabled()) && (await ve.getByRole("button", { name: "Reject", exact: true }).isDisabled()) && (await v.page.getByRole("button", { name: "Add item" }).isDisabled())));
+  await v.close();
+  check("test plan: nothing was decided by a viewer or the import", (await planNow()).filter((x) => x.decidedBy).every((x) => x.decidedBy === "Tess"));
+}
+
 // /admin: the owner looks after the accounts and reads the audit log; nobody else is offered it.
 {
   const { page, close } = await open("owner", "/admin/accounts");

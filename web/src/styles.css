@@ -566,3 +566,15 @@ button.plan-row:hover { background: var(--bg-hover); }
 .suggestion-row { height: auto; min-height: var(--row-h); padding-block: 6px; flex-wrap: wrap; row-gap: 6px; cursor: default; }
 .row-main { display: flex; align-items: center; gap: 12px; flex: 1 1 320px; min-width: 0; background: none; border: 0; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
 .row-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: auto; }
+
+/* The test plan as a workspace: marks, the agent's waiting version, history */
+.plan-marks { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: 6px; vertical-align: middle; }
+.plan-owner { font-size: var(--fs-sm); }
+.plan-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 4px; }
+.plan-who { font-size: var(--fs-sm); }
+.plan-pending { padding: 12px; border-color: var(--accent); margin: 10px 0 4px; }
+.plan-del { color: var(--failed-fg); white-space: pre-wrap; overflow-wrap: anywhere; }
+.plan-add { color: var(--passed-fg); white-space: pre-wrap; overflow-wrap: anywhere; }
+.plan-history { padding: 12px; }
+.plan-history ol { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; max-height: 360px; overflow: auto; }
+.plan-history li { border-top: 1px solid var(--border); padding-top: 8px; overflow-wrap: anywhere; }
