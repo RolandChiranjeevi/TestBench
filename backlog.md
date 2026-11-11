@@ -5,7 +5,7 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 ## Nästa
 
 ### D1: Automatiseringsförslag för planposter
-**Status: pågår** (byggt och testat lokalt, väntar på sista kontrollerna innan PR)
+**Status: klart** (mergad i #70)
 - Regelbaserade förslag från godkända planposter.
 - Innehåll: steg, assertions, testdata, plan.
 - Människan granskar, redigerar, godkänner, avvisar eller ignorerar.
@@ -13,6 +13,7 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 - Ingen modell, inget nätverk, ingen extern integration.
 
 ### D2: Automatiseringsförslag för krav
+**Status: nästa**
 - Samma mekanism som D1, men för godkända krav.
 - Återanvänder D1:s mönster.
 
