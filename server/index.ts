@@ -1070,7 +1070,7 @@ app.patch("/api/bug-reports/:id", (req) => {
     .object({
       title: z.string().trim().min(1).max(200).optional(), description: z.string().max(20000).optional(), steps: z.array(z.string().max(1000)).max(50).optional(),
       expected: z.string().max(5000).optional(), actual: z.string().max(5000).optional(), environment: z.string().max(200).optional(), url: z.string().max(2000).optional(),
-      humanSeverity: severity.nullable().optional(),
+      humanSeverity: severity.nullable().optional(), severityReason: z.string().trim().max(200).optional(),
     })
     .parse(req.body);
   audited(() => updateBugReport(id, body));
@@ -1078,8 +1078,8 @@ app.patch("/api/bug-reports/:id", (req) => {
 });
 app.post("/api/bug-reports/:id/review", (req) => {
   const id = idParam(req);
-  const body = z.object({ status: z.enum(["proposed", "accepted", "rejected"]), note: z.string().max(2000).optional() }).parse(req.body);
-  audited(() => reviewBugReport(id, body.status, body.note));
+  const body = z.object({ status: z.enum(["proposed", "accepted", "rejected"]), note: z.string().max(2000).optional(), severity: severity.optional(), severityReason: z.string().trim().max(200).optional() }).parse(req.body);
+  audited(() => reviewBugReport(id, body.status, body.note, body.severity ? { value: body.severity, reason: body.severityReason } : undefined));
   return getBugReport(id);
 });
 app.post("/api/bug-reports/:id/duplicate", (req) => {

@@ -399,6 +399,60 @@ describe("confirming a bug suggestion", () => {
   });
 });
 
+describe("deciding a bug's severity", () => {
+  const sevOf = (id: number | string) => db.prepare("SELECT human_severity AS s, agent_severity AS a, severity_by_user_id AS uid, severity_reason AS r FROM bug_reports WHERE id = ?").get(id) as { s: string | null; a: string | null; uid: number | null; r: string };
+
+  it("a tester sets it, with a reason, and changes it; an admin too; a viewer gets 403 and a stranger 404, and nothing changes", async () => {
+    const id = fixture("bug", projects.A).id;
+    const url = `/api/bug-reports/${id}`;
+    assert.ok(denied403(await call("PATCH", url, { cookie: people.vie.cookie, body: { humanSeverity: "critical" } })), "a viewer cannot");
+    assert.ok(denied404(await call("PATCH", url, { cookie: people.bob.cookie, body: { humanSeverity: "critical" } })), "nor someone from another project");
+    assert.equal(sevOf(id).s, null);
+    const set = await call("PATCH", url, { cookie: people.tes.cookie, body: { humanSeverity: "high", severityReason: "checkout" } });
+    assert.equal(set.statusCode, 200, set.body);
+    assert.deepEqual([sevOf(id).s, sevOf(id).uid, sevOf(id).r], ["high", people.tes.id, "checkout"]);
+    assert.deepEqual([set.json().severity.human, set.json().severity.source], ["high", "human"]);
+    assert.equal((await call("PATCH", url, { cookie: people.adm.cookie, body: { humanSeverity: "critical" } })).statusCode, 200);
+    assert.deepEqual([sevOf(id).s, sevOf(id).uid], ["critical", people.adm.id]);
+    assert.equal((await call("PATCH", url, { cookie: people.tes.cookie, body: { humanSeverity: "urgent" } })).statusCode, 400, "only the four values");
+    assert.equal((await call("PATCH", url, { cookie: people.tes.cookie, body: { humanSeverity: "low", severityReason: "x".repeat(201) } })).statusCode, 400, "a short reason");
+    assert.equal((await call("PATCH", url, { cookie: people.tes.cookie, body: { humanSeverity: null } })).statusCode, 200, "taken back");
+    assert.equal(sevOf(id).s, null);
+  });
+
+  it("Confirm bug carries the severity: both are saved, a viewer's try saves neither, and a severity needs a confirmation", async () => {
+    const id = fixture("bug", projects.A).id;
+    const url = `/api/bug-reports/${id}/review`;
+    assert.ok(denied403(await call("POST", url, { cookie: people.vie.cookie, body: { status: "accepted", severity: "low" } })));
+    assert.deepEqual([sevOf(id).s, db.prepare("SELECT review_status AS s FROM bug_reports WHERE id = ?").get(id)], [null, { s: "proposed" }]);
+    assert.equal((await call("POST", url, { cookie: people.tes.cookie, body: { status: "rejected", severity: "low" } })).statusCode, 400);
+    const ok = await call("POST", url, { cookie: people.tes.cookie, body: { status: "accepted", severity: "medium", severityReason: "seen it" } });
+    assert.equal(ok.statusCode, 200, ok.body);
+    assert.deepEqual([sevOf(id).s, sevOf(id).uid, ok.json().status, ok.json().severity.decidedBy === ok.json().reviewedBy], ["medium", people.tes.id, "accepted", true]);
+  });
+
+  it("an agent, CI or proposal token cannot decide a severity, with or without a login", async () => {
+    const id = fixture("bug", projects.A).id;
+    assert.equal((await call("PUT", "/api/settings/agent-proposals", { cookie: ownerCookie, body: { enabled: true } })).statusCode, 200);
+    const fresh = (await call("POST", "/api/projects", { cookie: ownerCookie, body: { name: "Delta", key: "DEL" } })).json().id as number;
+    const tokens = [
+      (await call("POST", `/api/projects/${fresh}/agent/tokens`, { cookie: ownerCookie, body: { name: "r" } })).json().token,
+      (await call("POST", `/api/projects/${fresh}/ci/tokens`, { cookie: ownerCookie, body: { name: "c" } })).json().token,
+      (await call("POST", `/api/projects/${fresh}/propose-tokens`, { cookie: ownerCookie, body: { name: "p" } })).json().token,
+    ] as string[];
+    assert.ok(tokens.every((t) => typeof t === "string" && t.length > 20));
+    for (const token of tokens) {
+      for (const cookie of [undefined, people.tes.cookie, ownerCookie]) {
+        for (const [method, url, body] of [["PATCH", `/api/bug-reports/${id}`, { humanSeverity: "critical" }], ["POST", `/api/bug-reports/${id}/review`, { status: "accepted", severity: "critical" }]] as const) {
+          const r = await call(method, url, { cookie, headers: { authorization: `Bearer ${token}` }, body });
+          assert.ok([401, 403].includes(r.statusCode), `${method} ${url} answered ${r.statusCode}`);
+        }
+      }
+    }
+    assert.deepEqual([sevOf(id).s, sevOf(id).uid], [null, null], "nothing was decided");
+  });
+});
+
 describe("adding a suggestion to the project", () => {
   const stateOf = (id: number | string) => db.prepare("SELECT review_status AS s, case_id AS c FROM manual_tests WHERE id = ?").get(id) as { s: string; c: number | null };
 
