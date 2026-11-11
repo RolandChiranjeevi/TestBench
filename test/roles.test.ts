@@ -102,6 +102,10 @@ function fixture(kind: Kind, project: number): { id: number | string } {
     case "bugpublication": return { id: one("INSERT INTO bug_publications (bug_report_id, destination, mode, state) VALUES (?, 'github', 'create', 'pending') RETURNING id", bug()) };
     case "manualtest": return { id: one("INSERT INTO manual_tests (project_id, origin_audit_id, source_id, title, category, agent_priority) VALUES (?, 'o', ?, 'MT', 'c', 'p') RETURNING id", project, `s${n}`) };
     case "audit": return { id: one("INSERT INTO audits (project_id, agent_audit_id, source) VALUES (?, ?, 'test') RETURNING id", project, `a${n}`) };
+    case "automationsuggestion": {
+      const audit = one("INSERT INTO audits (project_id, agent_audit_id, source) VALUES (?, ?, 'test') RETURNING id", project, `a${n}`);
+      return { id: one("INSERT INTO automation_suggestions (project_id, audit_id, subject_ref, rule, proposed_by, summary, steps) VALUES (?, ?, 'TPI-1', 'scripted_from_plan_item', 'rule', 'Automate it', '[\"A step\"]') RETURNING id", project, audit) };
+    }
     case "milestone": return { id: milestone() };
     case "checklist": return { id: one("INSERT INTO milestone_checklist (milestone_id, title) VALUES (?, 'c') RETURNING id", milestone()) };
     case "suite": return { id: one("INSERT INTO suites (project_id, name) VALUES (?, ?) RETURNING id", project, `s${n}`) };
@@ -701,6 +705,83 @@ describe("coverage gaps are a workspace a person owns, like plan items", () => {
       }
     }
     assert.deepEqual(row(audit), { t: "Validation is not verified", s: "proposed", d: null, e: null, origin: "agent" }, "nothing changed");
+  });
+});
+
+describe("automation suggestions: made by a rule, decided by a person", () => {
+  const plan = (audit: number | string, status: string, src = "TPI-1") => db.prepare("INSERT INTO audit_plan_items (audit_id, source_id, position, title, steps, acceptance_criteria, review_status, decided_by, decided_by_user_id) VALUES (?, ?, 0, 'Add a todo', '[\"Type\",\"Enter\"]', 'Shown in the list', ?, 'tes', ?)").run(audit, src, status, status === "approved" ? people.tes.id : null);
+  const sug = (audit: number | string) => db.prepare("SELECT id, review_status AS s, case_id AS c, decided_by_user_id AS d, edited_by_user_id AS e FROM automation_suggestions WHERE audit_id = ?").get(audit) as { id: number; s: string; c: number | null; d: number | null; e: number | null } | undefined;
+  const ask = (audit: number | string, cookie?: string, src = "TPI-1") => call("POST", `/api/audits/${audit}/plan/items/${src}/automation-suggestions`, { cookie, body: {} });
+
+  it("a tester asks, edits, approves and applies; a viewer gets 403 and a stranger 404 on every write; a viewer can read", async () => {
+    const audit = fixture("audit", projects.A).id; plan(audit, "approved");
+    assert.ok(denied403(await ask(audit, people.vie.cookie)), "a viewer cannot ask");
+    assert.ok(denied404(await ask(audit, people.bob.cookie)), "nor someone from another project");
+    assert.equal(sug(audit), undefined, "nothing was made");
+    const made = await ask(audit, people.tes.cookie);
+    assert.equal(made.statusCode, 200, made.body);
+    assert.deepEqual([made.json().created.length, made.json().created[0].label, made.json().created[0].status], [1, "Suggested by rule", "proposed"]);
+    const id = sug(audit)!.id;
+    assert.equal(made.json().suggestions.length, 1, "the answer is the list");
+    for (const [who, deny] of [["vie", denied403], ["bob", denied404]] as const) {
+      const c = people[who].cookie;
+      assert.ok(deny(await call("PATCH", `/api/automation-suggestions/${id}`, { cookie: c, body: { summary: "x" } })), `${who} cannot edit`);
+      assert.ok(deny(await call("POST", `/api/automation-suggestions/${id}/decision`, { cookie: c, body: { status: "approved" } })), `${who} cannot decide`);
+      assert.ok(deny(await call("POST", `/api/automation-suggestions/${id}/apply`, { cookie: c, body: {} })), `${who} cannot apply`);
+    }
+    assert.deepEqual([sug(audit)!.s, sug(audit)!.c], ["proposed", null], "nothing changed");
+    assert.equal((await call("GET", `/api/audits/${audit}/automation-suggestions`, { cookie: people.vie.cookie })).statusCode, 200, "a viewer reads the suggestions");
+    assert.ok(denied404(await call("GET", `/api/audits/${audit}/automation-suggestions`, { cookie: people.bob.cookie })));
+
+    const edit = await call("PATCH", `/api/automation-suggestions/${id}`, { cookie: people.tes.cookie, body: { summary: "Mine", steps: ["One"] } });
+    assert.equal(edit.statusCode, 200, edit.body);
+    assert.deepEqual([sug(audit)!.s, sug(audit)!.e], ["draft", people.tes.id]);
+    assert.equal((await call("PATCH", `/api/automation-suggestions/${id}`, { cookie: people.tes.cookie, body: { origin: "agent" } })).statusCode, 400, "only the suggestion's own fields");
+    assert.equal((await call("PATCH", `/api/automation-suggestions/${id}`, { cookie: people.tes.cookie, body: { steps: [] } })).statusCode, 400);
+    assert.equal((await call("POST", `/api/automation-suggestions/${id}/decision`, { cookie: people.tes.cookie, body: { status: "proposed" } })).statusCode, 409, "only an ignored one can be put back");
+    assert.equal((await call("POST", `/api/automation-suggestions/${id}/decision`, { cookie: people.tes.cookie, body: { status: "nonsense" } })).statusCode, 400);
+    const approve = await call("POST", `/api/automation-suggestions/${id}/decision`, { cookie: people.adm.cookie, body: { status: "approved" } });
+    assert.equal(approve.statusCode, 200, approve.body);
+    assert.deepEqual([sug(audit)!.s, sug(audit)!.d], ["approved", people.adm.id]);
+    const applied = await call("POST", `/api/automation-suggestions/${id}/apply`, { cookie: people.tes.cookie, body: {} });
+    assert.equal(applied.statusCode, 200, applied.body);
+    assert.equal((db.prepare("SELECT status FROM cases WHERE id = ?").get(applied.json().case.caseId) as { status: string }).status, "draft", "a draft test case, never ready");
+    assert.equal(sug(audit)!.s, "approved", "and Apply approved nothing");
+    assert.equal((await call("POST", `/api/automation-suggestions/${id}/apply`, { cookie: people.tes.cookie, body: {} })).statusCode, 409, "applying twice makes no second test case");
+  });
+
+  it("an unapproved plan item gets no suggestion (409), and an unknown one is 404", async () => {
+    const audit = fixture("audit", projects.A).id; plan(audit, "proposed");
+    const refused = await ask(audit, people.tes.cookie);
+    assert.equal(refused.statusCode, 409);
+    assert.match(refused.json().error, /Approve the plan item first/);
+    assert.equal((await ask(audit, people.tes.cookie, "NOPE")).statusCode, 404);
+    assert.equal(sug(audit), undefined);
+  });
+
+  it("an agent, CI or proposal token cannot ask for, edit, decide or apply a suggestion, with or without a login", async () => {
+    const audit = fixture("audit", projects.A).id; plan(audit, "approved");
+    const id = ((await ask(audit, people.tes.cookie)).json().created[0] as { id: number }).id;
+    assert.equal((await call("PUT", "/api/settings/agent-proposals", { cookie: ownerCookie, body: { enabled: true } })).statusCode, 200);
+    const fresh = (await call("POST", "/api/projects", { cookie: ownerCookie, body: { name: "Auto tokens", key: "ATK" } })).json().id as number;
+    const tokens = [
+      (await call("POST", `/api/projects/${fresh}/agent/tokens`, { cookie: ownerCookie, body: { name: "r" } })).json().token,
+      (await call("POST", `/api/projects/${fresh}/ci/tokens`, { cookie: ownerCookie, body: { name: "c" } })).json().token,
+      (await call("POST", `/api/projects/${fresh}/propose-tokens`, { cookie: ownerCookie, body: { name: "p" } })).json().token,
+    ] as string[];
+    assert.ok(tokens.every((t) => typeof t === "string" && t.length > 20));
+    for (const token of tokens) {
+      for (const cookie of [undefined, people.tes.cookie, ownerCookie]) {
+        for (const [method, url, body] of [
+          ["POST", `/api/audits/${audit}/plan/items/TPI-1/automation-suggestions`, {}], ["PATCH", `/api/automation-suggestions/${id}`, { summary: "Agent" }],
+          ["POST", `/api/automation-suggestions/${id}/decision`, { status: "approved" }], ["POST", `/api/automation-suggestions/${id}/apply`, {}],
+        ] as const) {
+          const r = await call(method, url, { cookie, headers: { authorization: `Bearer ${token}` }, body });
+          assert.ok([401, 403].includes(r.statusCode), `${method} ${url} answered ${r.statusCode}`);
+        }
+      }
+    }
+    assert.deepEqual([sug(audit)!.s, sug(audit)!.c, sug(audit)!.d], ["proposed", null, null], "nothing changed");
   });
 });
 

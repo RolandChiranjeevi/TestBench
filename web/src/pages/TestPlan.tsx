@@ -8,6 +8,7 @@ import { Badge, PriorityBadge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { FilterChip } from "../components/FilterChip";
 import { planToMarkdown } from "../planMarkdown";
+import { AutomationSuggestions } from "./AutomationSuggestions";
 
 interface PlanLink { raw: string; state: string; label: string; requirementId: number | null; reason: string }
 type PlanStatus = "proposed" | "draft" | "approved" | "rejected";
@@ -247,6 +248,7 @@ export function TestPlanPage() {
                               {x.steps.length > 0 && <><h4>Steps</h4><ol>{x.steps.map((st, i) => <li key={i}>{st}</li>)}</ol></>}
                               {text("Acceptance criteria", x.acceptanceCriteria)}
                               {text("Automation", x.automation)}
+                              <AutomationSuggestions auditId={audit.id} pid={pid} sourceId={x.sourceId} itemStatus={x.status} />
                             </>
                           )}
                         </div>
