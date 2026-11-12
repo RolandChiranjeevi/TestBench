@@ -17,8 +17,16 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 - Samma mekanism som D1, men för godkända krav.
 - Återanvänder D1:s mönster.
 
-### E: UI/spec.ts-förslag
-**Status: pågår** (E1: planposter. E2: krav följer.)
+### E1: Spec-förslag för planposter
+**Status: klart** (mergad i #78)
+- Playwright-spec från godkänd planpost, fast mall med test.fixme, utan påhittade selektorer eller URL:er.
+- Texten kan redigeras och ändringarna syns i historiken. Apply registrerar vem som applicerade; först därefter kan filen laddas ner.
+
+### E2: Spec-förslag för krav
+**Status: nästa**
+- Samma mekanism som E1, men för godkända krav.
+
+### E: gemensamma regler för E1 och E2
 - Från godkända krav och planposter, föreslå Playwright-spec-filer.
 - Samma ägarskapsmodell som D1 och D2.
 - Förslaget är draft. Människan granskar, redigerar, godkänner, avvisar eller ignorerar.
