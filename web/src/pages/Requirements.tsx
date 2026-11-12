@@ -17,6 +17,7 @@ import type { ReactNode } from "react";
 import { jiraLabel, jiraUrl } from "./BugReport";
 import { NewRunModal } from "./Runs";
 import { EditScope, useCan } from "../components/Access";
+import { AutomationSuggestions } from "./AutomationSuggestions";
 
 export function CoverageChip({ coverage }: { coverage: Requirement["coverage"] }) {
   const detail = coverage.cases ? ` · ${coverage.passing}/${coverage.cases}` : "";
@@ -526,6 +527,7 @@ function RequirementEditor({ id, caseKey, onClose }: { id: number; caseKey: stri
           )}
           <div className="faint" style={{ fontSize: "var(--fs-sm)", marginTop: 4 }}>A plan item says what an audit planned to check. It is not a test: it does not make this requirement covered.</div>
         </section>
+        <AutomationSuggestions pid={pid ?? ""} scope={{ kind: "requirement", requirementId: data.id }} itemStatus={data.status} />
         <section>
           <div className="section-label"><AlertTriangle size={13} /> Coverage gaps <span className="faint">{data.linked.coverageGaps.length}</span></div>
           {data.linked.coverageGaps.length === 0 ? <div className="muted" style={{ fontSize: "var(--fs-md)" }}>No audit reports a coverage gap for this requirement.</div> : (

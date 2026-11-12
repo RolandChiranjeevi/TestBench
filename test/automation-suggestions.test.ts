@@ -7,7 +7,8 @@ import { runAs, type AccountUser } from "../server/accountcontext.ts";
 import { db } from "../server/db.ts";
 import { bagFromFiles } from "../server/importers/bag.ts";
 import { decidePlanItem, deleteAudit, editPlanItem, importAuditPackage, previewAuditDeletion } from "../server/audits.ts";
-import { applyAutomationSuggestion, approachFor, decideAutomationSuggestion, editAutomationSuggestion, getAutomationSuggestion, suggestAutomation, suggestFromPlanItem } from "../server/automation.ts";
+import { applyAutomationSuggestion, approachFor, decideAutomationSuggestion, editAutomationSuggestion, getAutomationSuggestion, listRequirementAutomationSuggestions, removeRequirementSuggestions, suggestAutomation, suggestAutomationForRequirement, suggestFromPlanItem, suggestFromRequirement } from "../server/automation.ts";
+import { getRequirement } from "../server/requirements.ts";
 import { makeProject } from "./helpers.ts";
 
 // An automation suggestion is made by a fixed rule from an approved plan item, and is only ever a suggestion: a person edits, approves, rejects or ignores it, and Apply makes a
@@ -321,5 +322,184 @@ describe("deleting the audit", () => {
     assert.equal(count("SELECT COUNT(*) AS n FROM automation_suggestion_revisions WHERE suggestion_id = ?", one.id), 0);
     assert.equal(count("SELECT COUNT(*) AS n FROM cases WHERE id = ?", made.caseId), 1, "the draft test case stays");
     assert.equal(count("SELECT COUNT(*) AS n FROM cases WHERE project_id = ?", p.id), 1);
+  });
+});
+
+// ---------- the same for an approved requirement ----------
+
+const reqIn = (projectId: number, over: Record<string, unknown> = {}) =>
+  (db.prepare(`INSERT INTO requirements (project_id, number, title, description, priority, status, acceptance_criteria, kind, wcag, viewports)
+    VALUES (?, (SELECT COALESCE(MAX(number), 0) + 1 FROM requirements WHERE project_id = ?), ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`)
+    .get(projectId, projectId, over.title ?? "Todo can be added", over.description ?? "A user with an empty list.\nMore text that is not used.", over.priority ?? "high", over.status ?? "approved",
+      over.criteria ?? "- The text is shown in the list\n- The input is cleared", over.kind ?? "functional", JSON.stringify(over.wcag ?? []), JSON.stringify(over.viewports ?? [])) as { id: number }).id;
+const makeReq = (requirementId: number) => { const r = suggestAutomationForRequirement(requirementId); assert.equal(r.created.length, 1, r.message); return r.created[0]; };
+
+describe("the rule for a requirement", () => {
+  const f = { title: "Todo can be added", description: "A user with an empty list.\nMore text that is not used.", acceptanceCriteria: "- The text is shown in the list\n2. The input is cleared", kind: "functional", priority: "high", wcag: [] as string[], viewports: [] };
+
+  it("makes the same suggestion every time: the checks are the acceptance criteria, the steps are a skeleton, and the plan says so", () => {
+    const one = suggestFromRequirement(f); const two = suggestFromRequirement(structuredClone(f));
+    assert.deepEqual(one, two);
+    assert.ok("content" in one);
+    if (!("content" in one)) return;
+    assert.deepEqual(one.content.assertions, ["The text is shown in the list", "The input is cleared"]);
+    assert.deepEqual(one.content.steps, ["Set up the situation the requirement describes: A user with an empty list.", "Do what the requirement asks for: Todo can be added"]);
+    assert.equal(one.content.testData, "");
+    assert.match(one.content.summary, /^Automate the requirement “Todo can be added” as an end-to-end test of the user flow: 2 steps \(a skeleton to rewrite\) and 2 checks\.$/);
+    assert.match(one.content.plan, /Approach: an end-to-end test of the user flow\.\nPriority high\.\nA requirement has no steps of its own: the steps are a skeleton/);
+    assert.match(one.content.plan, /Test data: none recorded\./);
+    assert.match(one.content.plan, /Nothing is generated or run by TestBench\.$/);
+  });
+
+  it("the kind of test and the test data follow the requirement's kind, WCAG criteria and viewports", () => {
+    const sec = suggestFromRequirement({ ...f, kind: "security_privacy" });
+    assert.ok("content" in sec && /Approach: a security check\./.test(sec.content.plan));
+    const a11y = suggestFromRequirement({ ...f, wcag: ["1.4.3", "2.4.7"], viewports: [{ device: "Phone", width: 390, height: 844 }, { width: 1024 }] });
+    assert.ok("content" in a11y);
+    if (!("content" in a11y)) return;
+    assert.match(a11y.content.plan, /Approach: an accessibility check\./);
+    assert.equal(a11y.content.testData, "WCAG criteria: 1.4.3, 2.4.7\nViewports: Phone 390x844; 1024px wide");
+    assert.match(a11y.content.plan, /Test data: taken from the requirement's WCAG criteria and viewports\./);
+  });
+
+  it("without a description the steps are just the one; without acceptance criteria nothing is generated, and the message says so", () => {
+    const bare = suggestFromRequirement({ ...f, description: "" });
+    assert.ok("content" in bare && bare.content.steps.length === 1);
+    assert.deepEqual(suggestFromRequirement({ ...f, acceptanceCriteria: " \n  " }), { reason: "Nothing was generated: the requirement has no acceptance criteria. Add them to the requirement and ask again." });
+  });
+});
+
+describe("who gets a requirement suggestion, and when it is made again", () => {
+  let rita!: AccountUser;
+  before(() => { rita = user("Rita Req"); });
+
+  it("only an approved requirement gets one: a draft or a deprecated one is refused with 409, an unknown one is 404, and nothing is stored", () => {
+    const p = proj();
+    const draft = reqIn(p.id, { status: "draft" }); const old = reqIn(p.id, { status: "deprecated" });
+    for (const id of [draft, old]) assert.throws(() => runAs(rita, () => suggestAutomationForRequirement(id)), /Approve the requirement first/);
+    assert.throws(() => runAs(rita, () => suggestAutomationForRequirement(99999999)), /Requirement not found/);
+    assert.equal(count("SELECT COUNT(*) AS n FROM automation_suggestions WHERE project_id = ?", p.id), 0);
+    const ok = reqIn(p.id);
+    assert.equal(runAs(rita, () => suggestAutomationForRequirement(ok)).created.length, 1);
+  });
+
+  it("a requirement without acceptance criteria stores nothing and says why", () => {
+    const p = proj();
+    const r = runAs(rita, () => suggestAutomationForRequirement(reqIn(p.id, { criteria: "" })));
+    assert.deepEqual([r.created, r.message], [[], "Nothing was generated: the requirement has no acceptance criteria. Add them to the requirement and ask again."]);
+    assert.equal(count("SELECT COUNT(*) AS n FROM automation_suggestions WHERE project_id = ?", p.id), 0);
+  });
+
+  it("it is the rule's, marked as a requirement's, proposed, with the history saying the rule made it", () => {
+    const p = proj(); const id = reqIn(p.id);
+    const s = runAs(rita, () => makeReq(id));
+    assert.deepEqual([s.origin, s.subjectKind, s.sourceId, s.auditId, s.label, s.proposedBy, s.status, s.rule], ["rule", "requirement", String(id), null, "Suggested by rule", "rule: scripted from requirement", "proposed", "scripted_from_requirement"]);
+    assert.deepEqual(s.history.map((h) => [h.kind, h.byRule, h.actor]), [["suggested", true, "Rule: scripted from requirement"]]);
+    assert.deepEqual(listRequirementAutomationSuggestions(id).map((x) => x.id), [s.id]);
+  });
+
+  it("asking again makes no second suggestion, and a rejected or ignored one is not made again", () => {
+    const p = proj(); const a = reqIn(p.id); const b = reqIn(p.id, { title: "Second" }); const c = reqIn(p.id, { title: "Third" });
+    const first = runAs(rita, () => makeReq(a));
+    assert.deepEqual([runAs(rita, () => suggestAutomationForRequirement(a)).created, runAs(rita, () => suggestAutomationForRequirement(a)).message], [[], "This requirement already has a suggestion."]);
+    const rejected = runAs(rita, () => makeReq(b)); runAs(rita, () => decideAutomationSuggestion(rejected.id, "rejected"));
+    const ignored = runAs(rita, () => makeReq(c)); runAs(rita, () => decideAutomationSuggestion(ignored.id, "ignored"));
+    assert.match(runAs(rita, () => suggestAutomationForRequirement(b)).message, /you rejected it\. It is not made again/);
+    assert.match(runAs(rita, () => suggestAutomationForRequirement(c)).message, /you ignored it\. It is not made again/);
+    assert.equal(count("SELECT COUNT(*) AS n FROM automation_suggestions WHERE project_id = ?", p.id), 3);
+    assert.equal(row(first.id).review_status, "proposed");
+  });
+
+  it("a requirement's suggestion and a plan item's do not collide, even with the same reference", () => {
+    const { p, a } = seeded([item({ sourceId: "1" })], rita);
+    const reqId = reqIn(p.id);
+    const planOne = runAs(rita, () => make(a, "1"));
+    const reqOne = runAs(rita, () => makeReq(reqId));
+    assert.notEqual(planOne.id, reqOne.id);
+    assert.equal(count("SELECT COUNT(*) AS n FROM automation_suggestions WHERE project_id = ?", p.id), 2);
+    assert.deepEqual(listRequirementAutomationSuggestions(reqId).map((x) => x.id), [reqOne.id], "the requirement's list holds only its own");
+  });
+
+  it("when the requirement's text changes after the suggestion, the suggestion says so; an unrelated change does not; a removed requirement is gone", () => {
+    const p = proj(); const id = reqIn(p.id);
+    const s = runAs(rita, () => makeReq(id));
+    assert.equal(getAutomationSuggestion(s.id).subjectChanged, false);
+    db.prepare("UPDATE requirements SET source = 'JIRA-1', priority = 'low' WHERE id = ?").run(id);
+    assert.equal(getAutomationSuggestion(s.id).subjectChanged, false, "its source and priority are not what the suggestion is made from");
+    db.prepare("UPDATE requirements SET acceptance_criteria = '- Something else' WHERE id = ?").run(id);
+    assert.deepEqual([getAutomationSuggestion(s.id).subjectChanged, getAutomationSuggestion(s.id).subjectGone], [true, false]);
+    db.prepare("DELETE FROM requirements WHERE id = ?").run(id);
+    assert.deepEqual([getAutomationSuggestion(s.id).subjectChanged, getAutomationSuggestion(s.id).subjectGone], [true, true]);
+  });
+});
+
+describe("a person decides on a requirement suggestion the same way, and Apply links the draft test case to the requirement", () => {
+  let rita!: AccountUser; let sam!: AccountUser;
+  before(() => { rita = user("Ria Req"); sam = user("Sven Suggest"); });
+  const prepared = () => { const p = proj(); const id = reqIn(p.id); const other = reqIn(p.id, { title: "Another requirement" }); const s = runAs(rita, () => makeReq(id)); return { p, id, other, s }; };
+  const caseOf = (id: number) => db.prepare("SELECT * FROM cases WHERE id = ?").get(id) as Record<string, any>;
+
+  it("edit takes it over as a draft; approve, ignore and put back work; every step is in the history", () => {
+    const { s } = prepared();
+    runAs(rita, () => editAutomationSuggestion(s.id, { summary: "Mine", steps: ["One"] }));
+    assert.deepEqual([row(s.id).review_status, row(s.id).edited_by, row(s.id).edited_by_user_id], ["draft", "Ria Req", rita.id]);
+    runAs(sam, () => decideAutomationSuggestion(s.id, "approved"));
+    runAs(sam, () => decideAutomationSuggestion(s.id, "ignored"));
+    runAs(sam, () => decideAutomationSuggestion(s.id, "proposed"));
+    assert.deepEqual(getAutomationSuggestion(s.id).history.map((h) => [h.kind, h.actor]), [["suggested", "Rule: scripted from requirement"], ["edited", "Ria Req"], ["approved", "Sven Suggest"], ["ignored", "Sven Suggest"], ["restored", "Sven Suggest"]]);
+  });
+
+  it("Apply makes a draft test case with the requirement's title and priority, linked to that requirement only; the suggestion becomes a draft, never approved", () => {
+    const { id, other, s } = prepared();
+    const made = runAs(rita, () => applyAutomationSuggestion(s.id));
+    const c = caseOf(made.caseId);
+    assert.deepEqual([c.status, c.title, c.priority, c.preconditions, JSON.parse(c.tags)], ["draft", "Todo can be added", "high", "", ["automation-suggestion"]]);
+    assert.match(c.description, /^Automate the requirement “Todo can be added”/);
+    assert.deepEqual(db.prepare("SELECT action, expected FROM case_steps WHERE case_id = ? ORDER BY position").all(made.caseId), [
+      { action: "Set up the situation the requirement describes: A user with an empty list.", expected: "" },
+      { action: "Do what the requirement asks for: Todo can be added", expected: "The text is shown in the list\nThe input is cleared" },
+    ]);
+    assert.deepEqual(db.prepare("SELECT requirement_id AS r FROM requirement_cases WHERE case_id = ?").all(made.caseId), [{ r: id }], "linked to this requirement and no other");
+    assert.equal(count("SELECT COUNT(*) AS n FROM requirement_cases WHERE requirement_id = ?", other), 0);
+    assert.deepEqual([row(s.id).review_status, row(s.id).case_id, row(s.id).decided_by_user_id], ["draft", made.caseId, null]);
+    assert.equal(getRequirement(id)!.coverage.cases, 0, "a draft test case does not count as coverage");
+  });
+
+  it("applying twice makes no second test case; a rejected or ignored suggestion is not applied; a requirement that is gone is refused; a failure makes nothing", () => {
+    const { p, id, s } = prepared();
+    const made = runAs(rita, () => applyAutomationSuggestion(s.id));
+    assert.throws(() => runAs(rita, () => applyAutomationSuggestion(s.id)), new RegExp(`already the test case ${made.key}`));
+    assert.equal(count("SELECT COUNT(*) AS n FROM cases WHERE project_id = ?", p.id), 1);
+
+    const q = proj(); const r1 = reqIn(q.id); const r2 = reqIn(q.id, { title: "Two" }); const r3 = reqIn(q.id, { title: "Three" }); const r4 = reqIn(q.id, { title: "Four" });
+    const rejected = runAs(rita, () => makeReq(r1)); runAs(rita, () => decideAutomationSuggestion(rejected.id, "rejected"));
+    const ignored = runAs(rita, () => makeReq(r2)); runAs(rita, () => decideAutomationSuggestion(ignored.id, "ignored"));
+    const gone = runAs(rita, () => makeReq(r3)); db.prepare("DELETE FROM requirements WHERE id = ?").run(r3);
+    const fails = runAs(rita, () => makeReq(r4));
+    assert.throws(() => runAs(rita, () => applyAutomationSuggestion(rejected.id)), /was rejected/);
+    assert.throws(() => runAs(rita, () => applyAutomationSuggestion(ignored.id)), /was ignored/);
+    assert.throws(() => runAs(rita, () => applyAutomationSuggestion(gone.id)), /requirement is gone/);
+    db.exec("CREATE TRIGGER zz_req_apply_fails BEFORE INSERT ON case_steps BEGIN SELECT RAISE(ABORT, 'boom'); END");
+    try { assert.throws(() => runAs(rita, () => applyAutomationSuggestion(fails.id)), /boom/); } finally { db.exec("DROP TRIGGER zz_req_apply_fails"); }
+    assert.equal(count("SELECT COUNT(*) AS n FROM cases WHERE project_id = ?", q.id), 0);
+    assert.deepEqual([row(fails.id).review_status, row(fails.id).case_id], ["proposed", null]);
+    assert.ok(id);
+  });
+
+  it("with accounts the database refuses a decision on a requirement suggestion without an account; the rule leaves none", () => {
+    const { s } = prepared();
+    for (const to of ["approved", "rejected", "ignored", "draft"]) assert.throws(() => db.prepare("UPDATE automation_suggestions SET review_status = ? WHERE id = ?").run(to, s.id), /needs a person with an account/, to);
+    assert.throws(() => applyAutomationSuggestion(s.id), /needs a person with an account/);
+    assert.ok(!row(s.id).decided_by && row(s.id).decided_by_user_id === null && row(s.id).review_status === "proposed");
+  });
+
+  it("deleting the requirement removes its suggestions and their history; the draft test case made from one stays", () => {
+    const { p, id, s } = prepared();
+    const made = runAs(rita, () => applyAutomationSuggestion(s.id));
+    removeRequirementSuggestions(id);
+    db.prepare("DELETE FROM requirements WHERE id = ?").run(id);
+    assert.equal(count("SELECT COUNT(*) AS n FROM automation_suggestions WHERE project_id = ?", p.id), 0);
+    assert.equal(count("SELECT COUNT(*) AS n FROM automation_suggestion_revisions WHERE suggestion_id = ?", s.id), 0);
+    assert.equal(count("SELECT COUNT(*) AS n FROM cases WHERE id = ?", made.caseId), 1);
   });
 });

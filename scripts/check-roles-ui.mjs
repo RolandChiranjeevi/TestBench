@@ -711,6 +711,54 @@ for (const who of Object.keys(TABS)) {
   check("automation: nothing was decided by a viewer or the rule", (await sugs()).filter((x) => x.decidedBy).every((x) => x.decidedBy === "Tess"));
 }
 
+// Automation suggestions for an approved requirement: the same mechanism, on the requirement itself.
+{
+  const mk = async (title, over = {}) => (await call("POST", `/api/projects/${A}/requirements`, { title, description: `${title} is described here.`, acceptanceCriteria: "The text is shown\nThe input is cleared", priority: "high", status: "approved", ...over }, owner)).json;
+  const r1 = await mk("UI req 1");
+  const r2 = await mk("UI req 2", { status: "draft" });
+  check("req automation: seeded", !!r1?.id && !!r2?.id, JSON.stringify([r1?.id, r2?.id]));
+  const sugs = async () => (await call("GET", `/api/requirements/${r1.id}/automation-suggestions`, undefined, owner)).json;
+
+  const { page, close } = await open("tester", `/p/${A}/requirements?req=${r1.id}`);
+  const region = page.getByRole("region", { name: "Automation suggestions" });
+  const card = region.locator("[data-suggestion]");
+  await region.getByRole("button", { name: "Suggest automation" }).click();
+  check("req automation: a suggestion is made, marked Suggested by rule and not AI, with the checks and a skeleton of steps", await eventually(async () => { const t = await card.innerText(); return t.includes("Suggested by rule") && !/\bAI\b/.test(t) && t.includes("Do what the requirement asks for: UI req 1") && t.includes("The input is cleared"); }));
+  check("req automation: it is the rule's, for the requirement, proposed", await eventually(async () => { const x = (await sugs())[0]; return x && x.origin === "rule" && x.subjectKind === "requirement" && x.status === "proposed" && x.decidedBy === null; }));
+  await card.getByRole("button", { name: "Approve", exact: true }).click();
+  check("req automation: approved by Tess", await eventually(async () => { const x = (await sugs())[0]; return x.status === "approved" && x.decidedBy === "Tess"; }));
+  await card.getByRole("button", { name: "Apply as draft test case" }).click();
+  check("req automation: Apply made a draft test case linked to the requirement, and the suggestion stayed approved", await eventually(async () => {
+    const x = (await sugs())[0]; if (!x?.testCase) return false;
+    const c = (await call("GET", `/api/cases/${x.testCase.id}`, undefined, owner)).json;
+    const linked = (await call("GET", `/api/requirements/${r1.id}`, undefined, owner)).json.cases.some((k) => k.id === x.testCase.id);
+    return c.status === "draft" && linked && x.status === "approved";
+  }));
+  check("req automation: the card links the draft test case, and asking again makes no second suggestion", await eventually(async () => (await card.innerText()).includes("Draft test case")));
+  await region.getByRole("button", { name: "Suggest automation" }).click();
+  check("req automation: it says the requirement already has one", await eventually(async () => (await region.getByRole("status").innerText()).includes("This requirement already has a suggestion") && (await sugs()).length === 1));
+  await card.locator("details summary").click();
+  check("req automation: the history says who did what", await eventually(async () => { const t = await card.innerText(); return t.includes("Suggested by rule") && t.includes("Approved") && t.includes("Applied as a draft test case") && t.includes("by Tess"); }));
+  // The requirement's text changes after the suggestion.
+  await call("PATCH", `/api/requirements/${r1.id}`, { acceptanceCriteria: "Something else entirely" }, owner);
+  await page.reload();
+  check("req automation: a changed requirement says so on the suggestion", await eventually(async () => (await page.getByRole("region", { name: "Automation suggestions" }).locator("[data-suggestion]").innerText()).includes("Requirement changed since")));
+  await close();
+
+  // A draft requirement gets none.
+  const d = await open("tester", `/p/${A}/requirements?req=${r2.id}`);
+  const dregion = d.page.getByRole("region", { name: "Automation suggestions" });
+  check("req automation: a draft requirement says to approve it first, and offers no button", await eventually(async () => (await dregion.innerText()).includes("Approve this requirement") && (await dregion.getByRole("button", { name: "Suggest automation" }).count()) === 0));
+  await d.close();
+
+  // A viewer reads but cannot change.
+  const v = await open("viewer", `/p/${A}/requirements?req=${r1.id}`);
+  const vr = v.page.getByRole("region", { name: "Automation suggestions" });
+  check("req automation: a viewer sees the suggestion, and Suggest automation, Edit and Reject are off", await eventually(async () => (await vr.getByRole("button", { name: "Suggest automation" }).isDisabled()) && (await vr.getByRole("button", { name: "Edit", exact: true }).isDisabled()) && (await vr.getByRole("button", { name: "Reject", exact: true }).isDisabled())));
+  await v.close();
+  check("req automation: nothing was decided by a viewer or the rule", (await sugs()).filter((x) => x.decidedBy).every((x) => x.decidedBy === "Tess"));
+}
+
 // /admin: the owner looks after the accounts and reads the audit log; nobody else is offered it.
 {
   const { page, close } = await open("owner", "/admin/accounts");

@@ -11,7 +11,7 @@ type Status = "proposed" | "draft" | "approved" | "rejected" | "ignored";
 interface Change { field: string; from: string; to: string }
 interface HistoryEntry { rev: number; at: string; kind: string; actor: string; byRule: boolean; note: string; status: Status; changes: Change[] }
 export interface Suggestion {
-  id: number; sourceId: string; label: string; summary: string; steps: string[]; assertions: string[]; testData: string; plan: string; status: Status;
+  id: number; sourceId: string; subjectKind: string; label: string; summary: string; steps: string[]; assertions: string[]; testData: string; plan: string; status: Status;
   editedBy: string | null; editedAt: string | null; decidedBy: string | null; decidedAt: string | null; subjectChanged: boolean; subjectGone: boolean;
   testCase: { id: number; number: number; key: string } | null; history: HistoryEntry[];
 }
@@ -33,22 +33,26 @@ function Marks({ s }: { s: Suggestion }) {
       {s.status === "approved" && <Badge tone="ok" icon="circle-check" title={s.decidedBy ? `Approved by ${s.decidedBy}` : "Approved"}>Approved</Badge>}
       {s.status === "rejected" && <Badge tone="neutral" icon="circle-x" title={s.decidedBy ? `Rejected by ${s.decidedBy}` : "Rejected"}>Rejected</Badge>}
       {s.status === "ignored" && <Badge tone="neutral" icon="eye-off" title={s.decidedBy ? `Put aside by ${s.decidedBy}` : "Put aside"}>Ignored</Badge>}
-      {s.subjectChanged && <Badge tone="warn" icon="triangle-alert" title="The plan item was changed after this was suggested, so the suggestion may be out of date.">{s.subjectGone ? "Plan item removed" : "Plan item changed since"}</Badge>}
+      {s.subjectChanged && <Badge tone="warn" icon="triangle-alert" title="What this was suggested for was changed after it was suggested, so the suggestion may be out of date.">{s.subjectKind === "requirement" ? "Requirement" : "Plan item"} {s.subjectGone ? "removed" : "changed since"}</Badge>}
     </>
   );
 }
 
 /**
- * Automation suggestions for one plan item. Made by a fixed rule when a person asks; only an approved plan item gets one. A person edits, approves, rejects or ignores a suggestion,
+ * Automation suggestions for one plan item or one requirement. Made by a fixed rule when a person asks; only an approved one gets a suggestion. A person edits, approves, rejects or ignores a suggestion,
  * and Apply makes a DRAFT test case of it. Nothing is generated or run, and nothing changes until a person clicks.
  */
-export function AutomationSuggestions({ auditId, pid, sourceId, itemStatus }: { auditId: number; pid: string; sourceId: string; itemStatus: string }) {
+export type Scope = { kind: "plan_item"; auditId: number; sourceId: string } | { kind: "requirement"; requirementId: number };
+export function AutomationSuggestions({ pid, scope, itemStatus }: { pid: string; scope: Scope; itemStatus: string }) {
   const toast = useToast();
   const qc = useQueryClient();
   const [message, setMessage] = useState("");
   const [showIgnored, setShowIgnored] = useState(false);
-  const { data } = useQuery({ queryKey: ["automation-suggestions", auditId], queryFn: () => api.get<Suggestion[]>(`/api/audits/${auditId}/automation-suggestions`) });
-  const mine = (data ?? []).filter((s) => s.sourceId === sourceId);
+  const noun = scope.kind === "requirement" ? "requirement" : "plan item";
+  const listUrl = scope.kind === "requirement" ? `/api/requirements/${scope.requirementId}/automation-suggestions` : `/api/audits/${scope.auditId}/automation-suggestions`;
+  const askUrl = scope.kind === "requirement" ? listUrl : `/api/audits/${scope.auditId}/plan/items/${encodeURIComponent(scope.sourceId)}/automation-suggestions`;
+  const { data } = useQuery({ queryKey: ["automation-suggestions", listUrl], queryFn: () => api.get<Suggestion[]>(listUrl) });
+  const mine = (data ?? []).filter((s) => scope.kind === "requirement" || s.sourceId === scope.sourceId);
   const shown = mine.filter((s) => showIgnored || s.status !== "ignored");
   const ignored = mine.length - mine.filter((s) => s.status !== "ignored").length;
 
@@ -58,7 +62,7 @@ export function AutomationSuggestions({ auditId, pid, sourceId, itemStatus }: { 
       if (ok) toast("success", ok);
       return r;
     }).catch((e: Error) => { toast("error", e.message); return null; });
-  const suggest = () => run(() => api.post<{ created: Suggestion[]; message: string }>(`/api/audits/${auditId}/plan/items/${encodeURIComponent(sourceId)}/automation-suggestions`, {}), "").then((r) => {
+  const suggest = () => run(() => api.post<{ created: Suggestion[]; message: string }>(askUrl, {}), "").then((r) => {
     if (!r) return;
     setMessage(r.message);
     if (r.created.length) toast("success", "A suggestion was made. It is only a suggestion: nothing is generated or run.");
@@ -68,11 +72,11 @@ export function AutomationSuggestions({ auditId, pid, sourceId, itemStatus }: { 
     <section className="auto-suggestions" aria-label="Automation suggestions">
       <h4>Automation suggestions</h4>
       {itemStatus !== "approved"
-        ? <p className="faint">Approve this plan item to get an automation suggestion for it.</p>
+        ? <p className="faint">Approve this {noun} to get an automation suggestion for it.</p>
         : (
           <div className="plan-actions">
             <Button needs="tester" size="sm" onClick={suggest}><Wand2 size={13} /> Suggest automation</Button>
-            <span className="faint plan-who">A fixed rule makes it from the item's steps and acceptance criteria. Nothing is generated or run.</span>
+            <span className="faint plan-who">A fixed rule makes it from the {noun}'s {scope.kind === "requirement" ? "acceptance criteria" : "steps and acceptance criteria"}. Nothing is generated or run.</span>
           </div>
         )}
       {message && <p role="status" className="auto-message">{message}</p>}

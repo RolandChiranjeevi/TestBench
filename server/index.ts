@@ -54,7 +54,7 @@ import { checkAccessTable, trackRoutes } from "./access.ts";
 import { registerAccessGuard } from "./accessguard.ts";
 import { roleOf } from "./members.ts";
 import { coverageGaps, getObservationLinks, setObservationLinks } from "./coveragegaps.ts";
-import { applyAutomationSuggestion, decideAutomationSuggestion, editAutomationSuggestion, getAutomationSuggestion, listAutomationSuggestions, suggestAutomation } from "./automation.ts";
+import { applyAutomationSuggestion, decideAutomationSuggestion, editAutomationSuggestion, getAutomationSuggestion, listAutomationSuggestions, listRequirementAutomationSuggestions, removeRequirementSuggestions, suggestAutomation, suggestAutomationForRequirement } from "./automation.ts";
 import { generateProposals } from "./gapproposals.ts";
 import { agentRequirementsForToken, parseAgentQuery } from "./agentapi.ts";
 import { applyManualUpdate, addToProject, createCaseFromProposal, deleteManualTest, getManualTest, ignoreManualUpdate, listManualTests, relinkManualRefs, reviewManualTest, updateManualTest } from "./manualtests.ts";
@@ -1224,6 +1224,14 @@ app.post("/api/audits/:id/plan/items/:sourceId/automation-suggestions", (req) =>
   return { ...made, suggestions: listAutomationSuggestions(id) };
 });
 app.get("/api/audits/:id/automation-suggestions", (req) => audited(() => listAutomationSuggestions(idParam(req))));
+// The same for an approved requirement. Editing, deciding and applying use the routes below, which work on the suggestion's own id.
+app.post("/api/requirements/:id/automation-suggestions", (req) => {
+  const id = idParam(req);
+  z.object({}).strict().parse(req.body ?? {});
+  const made = audited(() => suggestAutomationForRequirement(id));
+  return { ...made, suggestions: listRequirementAutomationSuggestions(id) };
+});
+app.get("/api/requirements/:id/automation-suggestions", (req) => audited(() => listRequirementAutomationSuggestions(idParam(req))));
 app.patch("/api/automation-suggestions/:id", (req) => {
   const id = idParam(req);
   const body = suggestionFields.partial().strict().parse(req.body);
@@ -1610,6 +1618,7 @@ app.delete("/api/requirement-attachments/:id", async (req) => {
 app.delete("/api/requirements/:id", async (req) => {
   const id = idParam(req);
   const files = requirementAttachmentFiles(id);
+  removeRequirementSuggestions(id); // its automation suggestions go with it; the draft test cases made from them stay
   db.prepare("DELETE FROM requirements WHERE id = ?").run(id);
   await Promise.all(files.map((f) => unlink(join(UPLOAD_DIR, f)).catch(() => {})));
   return { ok: true };
