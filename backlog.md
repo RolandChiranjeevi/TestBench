@@ -18,7 +18,7 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 - Återanvänder D1:s mönster.
 
 ### E: UI/spec.ts-förslag
-**Status: nästa**
+**Status: pågår** (E1: planposter. E2: krav följer.)
 - Från godkända krav och planposter, föreslå Playwright-spec-filer.
 - Samma ägarskapsmodell som D1 och D2.
 - Förslaget är draft. Människan granskar, redigerar, godkänner, avvisar eller ignorerar.
