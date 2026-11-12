@@ -67,6 +67,14 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 ### Indikator för dolda avvisade
 - Tydligare indikering i kravvyn.
 
+### Buddy-animation vid discover/run
+UI/UX.
+- När användaren trycker på “Discover” eller “Run” visas Buddy (handyman-maskoten) som en del av “systemet tänker/arbetar”-animationen.
+- Buddy visas med enkel animation (t.ex. puls, tänkande, spinner) medan discover/run pågår.
+- Animationen är kosmetisk och påverkar inte logik eller tester.
+- Ingen ny data, ingen ny route, ingen integration.
+- Kontrast/layout körs opt-in vid visuell ändring.
+
 ### Lokal app (desktop)
 Separat fas, inte en del av D.
 - Gör om TestBench till en lokal skrivbordsapp.
