@@ -580,6 +580,52 @@ BEGIN SELECT RAISE(ABORT, 'A decision on an automation suggestion needs a person
 CREATE TRIGGER IF NOT EXISTS automation_suggestions_apply_needs_account BEFORE UPDATE OF applied_at ON automation_suggestions
 WHEN NEW.applied_at IS NOT NULL AND OLD.applied_at IS NULL AND NEW.applied_by_user_id IS NULL AND EXISTS (SELECT 1 FROM users)
 BEGIN SELECT RAISE(ABORT, 'Applying a spec needs a person with an account'); END;`);
+  // Bug drafts (G): a tester attaches a screenshot and a short note, and a fixed rule makes a draft bug report from a template (origin 'rule'; nothing analyses the picture). It follows the
+  // same model as the automation suggestions: proposed -> draft (a person works on it) -> approved / rejected, or ignored. Apply makes a bug report that stays 'proposed' (source 'manual',
+  // origin '$screenshot'): a person still has to accept it as a real bug. The picture is a stored file (screenshot_name, in the upload folder) that is only ever served by its own route.
+  d.exec(`
+CREATE TABLE IF NOT EXISTS bug_drafts (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  number INTEGER NOT NULL,
+  rule TEXT NOT NULL DEFAULT 'bug_draft_from_note',
+  origin TEXT NOT NULL DEFAULT 'rule' CHECK (origin IN ('rule', 'agent')),
+  proposed_by TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '', steps TEXT NOT NULL DEFAULT '[]', expected TEXT NOT NULL DEFAULT '', actual TEXT NOT NULL DEFAULT '',
+  original TEXT NOT NULL DEFAULT '{}',
+  screenshot_name TEXT NOT NULL, screenshot_filename TEXT NOT NULL DEFAULT '', screenshot_mime TEXT NOT NULL DEFAULT '', screenshot_size INTEGER NOT NULL DEFAULT 0, screenshot_sha256 TEXT NOT NULL DEFAULT '',
+  review_status TEXT NOT NULL DEFAULT 'proposed' CHECK (review_status IN ('proposed', 'draft', 'approved', 'rejected', 'ignored')),
+  created_by TEXT NOT NULL DEFAULT '', created_by_user_id INTEGER,
+  edited_by TEXT NOT NULL DEFAULT '', edited_by_user_id INTEGER, edited_at TEXT,
+  decided_by TEXT NOT NULL DEFAULT '', decided_by_user_id INTEGER, decided_at TEXT,
+  applied_at TEXT, applied_by TEXT NOT NULL DEFAULT '', applied_by_user_id INTEGER,
+  bug_id INTEGER REFERENCES bug_reports(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (project_id, number)
+);
+CREATE TABLE IF NOT EXISTS bug_draft_revisions (
+  id INTEGER PRIMARY KEY,
+  draft_id INTEGER NOT NULL REFERENCES bug_drafts(id) ON DELETE CASCADE,
+  rev INTEGER NOT NULL,
+  at TEXT NOT NULL DEFAULT (datetime('now')),
+  kind TEXT NOT NULL,
+  actor TEXT NOT NULL DEFAULT '',
+  actor_user_id INTEGER,
+  note TEXT NOT NULL DEFAULT '',
+  snapshot TEXT NOT NULL,
+  UNIQUE (draft_id, rev)
+);
+-- With accounts, a decision on a bug draft (and taking one over) and Apply are made by an account: a name alone is not enough, and a rule or an agent has none.
+CREATE TRIGGER IF NOT EXISTS bug_drafts_decision_needs_account_insert BEFORE INSERT ON bug_drafts
+WHEN EXISTS (SELECT 1 FROM users) AND ((NEW.review_status IN ('approved', 'rejected', 'ignored') AND NEW.decided_by_user_id IS NULL) OR (NEW.review_status = 'draft' AND NEW.edited_by_user_id IS NULL))
+BEGIN SELECT RAISE(ABORT, 'A decision on a bug draft needs a person with an account'); END;
+CREATE TRIGGER IF NOT EXISTS bug_drafts_decision_needs_account_update BEFORE UPDATE OF review_status ON bug_drafts
+WHEN NEW.review_status != OLD.review_status AND EXISTS (SELECT 1 FROM users) AND ((NEW.review_status IN ('approved', 'rejected', 'ignored') AND NEW.decided_by_user_id IS NULL) OR (NEW.review_status = 'draft' AND NEW.edited_by_user_id IS NULL))
+BEGIN SELECT RAISE(ABORT, 'A decision on a bug draft needs a person with an account'); END;
+CREATE TRIGGER IF NOT EXISTS bug_drafts_apply_needs_account BEFORE UPDATE OF applied_at ON bug_drafts
+WHEN NEW.applied_at IS NOT NULL AND OLD.applied_at IS NULL AND NEW.applied_by_user_id IS NULL AND EXISTS (SELECT 1 FROM users)
+BEGIN SELECT RAISE(ABORT, 'Applying a bug draft needs a person with an account'); END;`);
   // With accounts, an AI-suggested requirement is approved by an account: a name alone (which anyone can type, and an agent could send) is not enough.
   d.exec(`
 CREATE TRIGGER IF NOT EXISTS requirements_ai_needs_account_insert BEFORE INSERT ON requirements

@@ -54,6 +54,7 @@ import { checkAccessTable, trackRoutes } from "./access.ts";
 import { registerAccessGuard } from "./accessguard.ts";
 import { roleOf } from "./members.ts";
 import { coverageGaps, getObservationLinks, setObservationLinks } from "./coveragegaps.ts";
+import { applyBugDraft, bugDraftScreenshot, checkScreenshot, createBugDraft, decideBugDraft, editBugDraft, getBugDraft, listBugDrafts, buildBugDraft, MAX_SCREENSHOT_BYTES } from "./bugdrafts.ts";
 import { applyAutomationSuggestion, applySpecSuggestion, specFile, suggestSpecForPlanItem, suggestSpecForRequirement, decideAutomationSuggestion, editAutomationSuggestion, getAutomationSuggestion, listAutomationSuggestions, listRequirementAutomationSuggestions, removeRequirementSuggestions, suggestAutomation, suggestAutomationForRequirement } from "./automation.ts";
 import { generateProposals } from "./gapproposals.ts";
 import { agentRequirementsForToken, parseAgentQuery } from "./agentapi.ts";
@@ -1262,6 +1263,61 @@ app.post("/api/automation-suggestions/:id/apply", (req) => {
   }
   const made = audited(() => applyAutomationSuggestion(id));
   return { case: made, suggestion: getAutomationSuggestion(id) };
+});
+// Bug drafts (G): a screenshot and a short note become a draft bug report by a fixed rule. A person edits, decides and applies it; Apply makes a bug report that stays proposed.
+app.get("/api/projects/:id/bug-drafts", (req) => audited(() => listBugDrafts(idParam(req))));
+app.post("/api/projects/:id/bug-drafts", async (req) => {
+  const id = idParam(req);
+  must(db.prepare("SELECT id FROM projects WHERE id = ?").get(id), "Project");
+  let note = "";
+  let buf: Buffer | null = null;
+  let truncated = false;
+  let filename = "";
+  for await (const part of req.parts({ limits: { fileSize: MAX_SCREENSHOT_BYTES + 1, files: 1, fields: 4, fieldSize: 20000 } })) {
+    if (part.type === "file") {
+      if (buf) throw new HttpError(400, "Attach one screenshot");
+      buf = await part.toBuffer();
+      truncated = part.file.truncated;
+      filename = part.filename;
+    } else if (part.fieldname === "note") note = String(part.value);
+  }
+  const made = buildBugDraft(note);
+  if ("reason" in made) throw new HttpError(400, made.reason);
+  const shot = audited(() => checkScreenshot(buf, truncated));
+  const stored = `draft-${randomUUID()}.${shot.ext}`;
+  await writeFile(join(UPLOAD_DIR, stored), buf as Buffer);
+  try {
+    return audited(() => createBugDraft(id, note, { storedName: stored, filename, mime: shot.mime, size: shot.size, sha256: shot.sha256 }));
+  } catch (e) {
+    await unlink(join(UPLOAD_DIR, stored)).catch(() => {});
+    throw e;
+  }
+});
+app.get("/api/bug-drafts/:id/screenshot", async (req, reply) => {
+  const s = audited(() => bugDraftScreenshot(idParam(req)));
+  const data = await readFile(join(UPLOAD_DIR, s.storedName)).catch(() => null);
+  if (!data) throw new HttpError(404, "The screenshot file is missing");
+  reply.type(s.mime).header("Content-Disposition", `attachment; filename="${s.fileName}"`).header("X-Content-Type-Options", "nosniff").header("Content-Security-Policy", "default-src 'none'; sandbox").header("Cache-Control", "private, no-store");
+  return data;
+});
+const bugDraftFields = z.object({ title: z.string().max(1000), description: z.string().max(20000), steps: z.array(z.string().max(2000)).max(100), expected: z.string().max(10000), actual: z.string().max(10000) });
+app.patch("/api/bug-drafts/:id", (req) => {
+  const id = idParam(req);
+  const body = bugDraftFields.partial().strict().parse(req.body);
+  audited(() => editBugDraft(id, body));
+  return getBugDraft(id);
+});
+app.post("/api/bug-drafts/:id/decision", (req) => {
+  const id = idParam(req);
+  const body = z.object({ status: z.enum(["draft", "approved", "rejected", "ignored", "proposed"]), note: z.string().max(500).optional() }).strict().parse(req.body);
+  audited(() => decideBugDraft(id, body.status, body.note));
+  return getBugDraft(id);
+});
+app.post("/api/bug-drafts/:id/apply", (req) => {
+  const id = idParam(req);
+  z.object({}).strict().parse(req.body ?? {});
+  const made = audited(() => applyBugDraft(id));
+  return { bugId: made.bugId, draft: getBugDraft(id) };
 });
 // A Playwright spec suggestion for an approved plan item, and the file of an applied spec (a text download: nothing is run, and nothing is written to disk or to git by the server).
 app.post("/api/audits/:id/plan/items/:sourceId/spec-suggestions", (req) => {

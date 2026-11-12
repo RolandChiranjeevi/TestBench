@@ -20,6 +20,7 @@ const PROJECT_OF: Record<Exclude<Kind, "file">, string> = {
   bugpublication: "SELECT b.project_id FROM bug_publications p JOIN bug_reports b ON b.id = p.bug_report_id WHERE p.id = ?",
   manualtest: "SELECT project_id FROM manual_tests WHERE id = ?",
   automationsuggestion: "SELECT project_id FROM automation_suggestions WHERE id = ?",
+  bugdraft: "SELECT project_id FROM bug_drafts WHERE id = ?",
   audit: "SELECT project_id FROM audits WHERE id = ?",
   milestone: "SELECT project_id FROM milestones WHERE id = ?",
   checklist: "SELECT m.project_id FROM milestone_checklist c JOIN milestones m ON m.id = c.milestone_id WHERE c.id = ?",

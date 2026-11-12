@@ -11,6 +11,9 @@
 // Usage:  node scripts/check-roles-ui.mjs http://127.0.0.1:4100      (an EMPTY instance with no accounts, started on this computer)
 //         CHECK_CPU_THROTTLE=8 node scripts/check-roles-ui.mjs ...   (the same, with the browser 8 times slower)
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { baseUrlFromArgs, launchBrowser } from "./lib/pages.mjs";
 
@@ -823,6 +826,54 @@ for (const who of Object.keys(TABS)) {
   const vsr = sv.page.getByRole("region", { name: "Automation suggestions" });
   check("req spec: a viewer sees it and can download it, but Suggest, Edit and Reject are off", await eventually(async () => (await vsr.getByRole("link", { name: /Download/ }).count()) === 1 && (await vsr.getByRole("button", { name: "Suggest Playwright spec" }).isDisabled()) && (await vsr.getByRole("button", { name: "Edit", exact: true }).isDisabled()) && (await vsr.getByRole("button", { name: "Reject", exact: true }).isDisabled())));
   await sv.close();
+}
+
+// Bug drafts from a screenshot: a note and a picture, a draft by a fixed rule, edited, approved, applied (a bug report that stays proposed), and a viewer who can only read.
+{
+  const dir = mkdtempSync(join(tmpdir(), "tb-shot-"));
+  const pic = join(dir, "screen.png");
+  writeFileSync(pic, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64"));
+  const drafts = async () => (await call("GET", `/api/projects/${A}/bug-drafts`, undefined, owner)).json;
+  const { page, close } = await open("tester", `/p/${A}/bugs`);
+  const region = page.getByRole("region", { name: "Bug drafts from screenshots" });
+  const card = region.locator("[data-bug-draft]");
+  check("bug draft: Make draft bug is off until there is a note and a picture", await eventually(async () => await region.getByRole("button", { name: "Make draft bug" }).isDisabled()));
+  await region.getByLabel(/^Note/).fill("Cart total ignores removals\nI removed the second item and the total stayed the same.");
+  await region.getByLabel(/^Screenshot/).setInputFiles(pic);
+  await region.getByRole("button", { name: "Make draft bug" }).click();
+  check("bug draft: a draft is made, marked Suggested by rule (not AI), with the TODO steps, expected and actual, and the picture", await eventually(async () => { const t = await card.innerText(); return t.includes("Suggested by rule") && !/\bAI\b/.test(t) && t.includes("Cart total ignores removals") && t.includes("TODO: what you expected") && t.includes("Evidence: screenshot attached. Not analysed.") && (await card.locator("img.bug-draft-shot").count()) === 1; }));
+  check("bug draft: it is the rule's, proposed, nobody has decided it", await eventually(async () => { const x = (await drafts())[0]; return x && x.origin === "rule" && x.status === "proposed" && x.decidedBy === null && x.label === "SCR-1"; }));
+  check("bug draft: the picture is served as an attachment, nosniff, to a signed-in member only", await eventually(async () => {
+    const x = (await drafts())[0];
+    const ok = await fetch(`${BASE}${x.screenshot.url}`, { headers: { ...HDR, Cookie: `tb_sid=${cookies.viewer}` } });
+    const anon = await fetch(`${BASE}${x.screenshot.url}`, { headers: HDR });
+    return ok.status === 200 && ok.headers.get("content-type") === "image/png" && /^attachment;/.test(ok.headers.get("content-disposition") ?? "") && ok.headers.get("x-content-type-options") === "nosniff" && anon.status !== 200;
+  }));
+  await card.getByRole("button", { name: "Edit", exact: true }).click();
+  await card.getByLabel("Title", { exact: true }).fill("Cart total ignores removed items");
+  await card.getByRole("button", { name: "Save draft" }).click();
+  check("bug draft: the edit is saved by Tess as a draft", await eventually(async () => { const x = (await drafts())[0]; return x.title === "Cart total ignores removed items" && x.status === "draft" && x.editedBy === "Tess"; }));
+  await card.getByRole("button", { name: "Approve", exact: true }).click();
+  check("bug draft: approved by Tess", await eventually(async () => { const x = (await drafts())[0]; return x.status === "approved" && x.decidedBy === "Tess"; }));
+  await card.getByRole("button", { name: "Apply as draft bug" }).click();
+  check("bug draft: Apply made a bug report that is still proposed, with the picture attached, and the draft stayed approved", await eventually(async () => {
+    const x = (await drafts())[0]; if (!x?.bug) return false;
+    const b = (await call("GET", `/api/bug-reports/${x.bug.id}`, undefined, owner)).json;
+    return b.status === "proposed" && b.attachments.length === 1 && x.status === "approved" && x.appliedBy === "Tess";
+  }));
+  check("bug draft: the card links the bug report, and Apply cannot be pressed twice", await eventually(async () => (await card.getByRole("link", { name: /Bug report SCR-1/ }).count()) === 1 && (await card.getByRole("button", { name: "Apply as draft bug" }).count()) === 0));
+  await page.goto(`${BASE}/p/${A}/bugs?bug=${(await drafts())[0].bug.id}`, { waitUntil: "networkidle" });
+  check("bug draft: the bug report says From a screenshot and never AI suggestion", await eventually(async () => { const t = await page.locator(".modal-header").first().innerText(); return t.includes("From a screenshot") && !t.includes("AI suggestion"); }));
+  await page.goto(`${BASE}/p/${A}/bugs`, { waitUntil: "networkidle" });
+  await card.locator("details summary").click();
+  check("bug draft: the history says who did what", await eventually(async () => { const t = await card.innerText(); return t.includes("Suggested by rule") && t.includes("Edited") && t.includes("Approved") && t.includes("Applied as a draft bug") && t.includes("by Tess"); }));
+  await close();
+
+  const v = await open("viewer", `/p/${A}/bugs`);
+  const vr = v.page.getByRole("region", { name: "Bug drafts from screenshots" });
+  check("bug draft: a viewer sees the draft, and Make draft bug, Edit and Reject are off", await eventually(async () => (await vr.locator("[data-bug-draft]").count()) === 1 && (await vr.getByRole("button", { name: "Make draft bug" }).isDisabled()) && (await vr.getByRole("button", { name: "Edit", exact: true }).isDisabled()) && (await vr.getByRole("button", { name: "Reject", exact: true }).isDisabled())));
+  await v.close();
+  check("bug draft: nothing was decided by a viewer or the rule", (await drafts()).filter((x) => x.decidedBy).every((x) => x.decidedBy === "Tess"));
 }
 
 // /admin: the owner looks after the accounts and reads the audit log; nobody else is offered it.

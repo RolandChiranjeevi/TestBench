@@ -21,7 +21,7 @@ export const LEVELS: readonly Level[] = ["viewer", "tester", "admin"];
 export const levelRank = (l: Level) => LEVELS.indexOf(l);
 
 export const KINDS = [
-  "project", "case", "run", "result", "attachment", "automated", "requirement", "reqattachment", "proposal", "observation", "bug", "bugpublication", "manualtest", "automationsuggestion",
+  "project", "case", "run", "result", "attachment", "automated", "requirement", "reqattachment", "proposal", "observation", "bug", "bugpublication", "manualtest", "automationsuggestion", "bugdraft",
   "audit", "milestone", "checklist", "suite", "template", "githubsource", "agenttoken", "citoken", "proposetoken", "file",
 ] as const;
 export type Kind = (typeof KINDS)[number];
@@ -89,6 +89,8 @@ export const ACCESS: Record<string, Need> = {
   "GET /api/observations/:id": v("observation"), "GET /api/observations/:id/links": v("observation"), "PUT /api/observations/:id/links": t("observation"), "PATCH /api/observations/:id": t("observation"),
   "POST /api/observations/:id/archive": t("observation"), "POST /api/observations/:id/reopen": t("observation"), "POST /api/observations/:id/resolve": t("observation"), "POST /api/observations/:id/convert-to-bug": t("observation"),
   // bug reports
+  "GET /api/projects/:id/bug-drafts": v(), "POST /api/projects/:id/bug-drafts": t(), "GET /api/bug-drafts/:id/screenshot": v("bugdraft"),
+  "PATCH /api/bug-drafts/:id": t("bugdraft"), "POST /api/bug-drafts/:id/decision": t("bugdraft"), "POST /api/bug-drafts/:id/apply": t("bugdraft"),
   "GET /api/projects/:id/bug-reports": v(), "GET /api/bug-reports/:id": v("bug"), "PATCH /api/bug-reports/:id": t("bug"), "DELETE /api/bug-reports/:id": t("bug"),
   "POST /api/bug-reports/:id/apply-update": t("bug"), "POST /api/bug-reports/:id/duplicate": t("bug"), "POST /api/bug-reports/:id/external-link": t("bug"), "POST /api/bug-reports/:id/ignore-update": t("bug"),
   "POST /api/bug-reports/:id/publish": t("bug"), "POST /api/bug-reports/:id/publish-preview": t("bug"), "POST /api/bug-reports/:id/relink": t("bug"), "POST /api/bug-reports/:id/review": t("bug"), "POST /api/bug-reports/:id/triage": t("bug"),

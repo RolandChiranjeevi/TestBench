@@ -1,11 +1,11 @@
 import "./env.ts";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
 import { strToU8, zipSync } from "fflate";
-import { db } from "../server/db.ts";
+import { db, UPLOAD_DIR } from "../server/db.ts";
 import { ACCESS, levelRank, type Kind, type Level } from "../server/access.ts";
 import { createFirstOwner } from "../server/accounts.ts";
 
@@ -106,6 +106,7 @@ function fixture(kind: Kind, project: number): { id: number | string } {
       const audit = one("INSERT INTO audits (project_id, agent_audit_id, source) VALUES (?, ?, 'test') RETURNING id", project, `a${n}`);
       return { id: one("INSERT INTO automation_suggestions (project_id, audit_id, subject_ref, rule, proposed_by, summary, steps) VALUES (?, ?, 'TPI-1', 'scripted_from_plan_item', 'rule', 'Automate it', '[\"A step\"]') RETURNING id", project, audit) };
     }
+    case "bugdraft": return { id: one("INSERT INTO bug_drafts (project_id, number, proposed_by, title, steps, screenshot_name) VALUES (?, ?, 'rule', 'Draft', '[\"A step\"]', ?) RETURNING id", project, n, `draft-${n}.png`) };
     case "milestone": return { id: milestone() };
     case "checklist": return { id: one("INSERT INTO milestone_checklist (milestone_id, title) VALUES (?, 'c') RETURNING id", milestone()) };
     case "suite": return { id: one("INSERT INTO suites (project_id, name) VALUES (?, ?) RETURNING id", project, `s${n}`) };
@@ -1028,6 +1029,134 @@ describe("Playwright spec suggestions for a requirement", () => {
       }
     }
     assert.equal(specOf(q2.id), undefined, "nothing was made");
+  });
+});
+
+describe("Bug drafts from a screenshot", () => {
+  const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("not really a picture, but it starts like one")]);
+  const multipart = (note: string, file: Buffer | null, filename = "shot.png") => {
+    const b = "----tbtest" + Math.random().toString(16).slice(2);
+    const parts: Buffer[] = [Buffer.from(`--${b}\r\nContent-Disposition: form-data; name="note"\r\n\r\n${note}\r\n`)];
+    if (file) parts.push(Buffer.from(`--${b}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: image/png\r\n\r\n`), file, Buffer.from("\r\n"));
+    parts.push(Buffer.from(`--${b}--\r\n`));
+    return { body: Buffer.concat(parts), headers: { "content-type": `multipart/form-data; boundary=${b}` } };
+  };
+  const make = (project: number, note: string, file: Buffer | null, cookie?: string, filename?: string, extra: Record<string, string> = {}) => {
+    const m = multipart(note, file, filename);
+    return call("POST", `/api/projects/${project}/bug-drafts`, { cookie, body: m.body, headers: { ...m.headers, ...extra } });
+  };
+  const draftFiles = () => readdirSync(UPLOAD_DIR).filter((f) => f.startsWith("draft-")).length;
+  const rows = (project: number) => (db.prepare("SELECT COUNT(*) AS n FROM bug_drafts WHERE project_id = ?").get(project) as { n: number }).n;
+  const shotOf = (id: number) => call("GET", `/api/bug-drafts/${id}/screenshot`, { cookie: people.vie.cookie });
+
+  it("a tester makes a draft; a viewer can read but not make, edit, decide or apply; a stranger gets 404; the picture needs a login and a role in the project", async () => {
+    const before = [draftFiles(), rows(projects.A)];
+    assert.ok(denied403(await make(projects.A, "A bug", PNG, people.vie.cookie)), "a viewer cannot make one");
+    assert.ok(denied404(await make(projects.A, "A bug", PNG, people.bob.cookie)), "nor someone from another project");
+    assert.ok([401, 403].includes((await make(projects.A, "A bug", PNG)).statusCode), "nor someone who is not signed in");
+    assert.deepEqual([draftFiles(), rows(projects.A)], before, "nothing was stored");
+
+    const made = await make(projects.A, "The total is wrong\nAfter removing an item.", PNG, people.tes.cookie, "my shot.png");
+    assert.equal(made.statusCode, 200, made.body);
+    const d = made.json();
+    assert.deepEqual([d.suggestedBy, d.status, d.title, d.createdBy, d.label.startsWith("SCR-"), d.screenshot.mime], ["Suggested by rule", "proposed", "The total is wrong", "tes", true, "image/png"]);
+    assert.deepEqual([draftFiles(), rows(projects.A)], [before[0] + 1, before[1] + 1]);
+    const id = d.id as number;
+
+    assert.equal((await call("GET", `/api/projects/${projects.A}/bug-drafts`, { cookie: people.vie.cookie })).statusCode, 200, "a viewer reads");
+    assert.ok(denied404(await call("GET", `/api/projects/${projects.A}/bug-drafts`, { cookie: people.bob.cookie })));
+
+    const shot = await shotOf(id);
+    assert.equal(shot.statusCode, 200);
+    assert.deepEqual([shot.headers["content-type"], shot.headers["x-content-type-options"], String(shot.headers["content-disposition"]).startsWith("attachment; filename=\"scr-")], ["image/png", "nosniff", true]);
+    assert.ok(shot.rawPayload.equals(PNG), "the picture as it was sent");
+    assert.ok(denied404(await call("GET", `/api/bug-drafts/${id}/screenshot`, { cookie: people.bob.cookie })));
+    assert.ok([401, 403].includes((await call("GET", `/api/bug-drafts/${id}/screenshot`)).statusCode), "not signed in");
+
+    for (const [who, deny] of [["vie", denied403], ["bob", denied404]] as const) {
+      assert.ok(deny(await call("PATCH", `/api/bug-drafts/${id}`, { cookie: people[who].cookie, body: { title: "x" } })), `${who} cannot edit`);
+      assert.ok(deny(await call("POST", `/api/bug-drafts/${id}/decision`, { cookie: people[who].cookie, body: { status: "approved" } })), `${who} cannot decide`);
+      assert.ok(deny(await call("POST", `/api/bug-drafts/${id}/apply`, { cookie: people[who].cookie, body: {} })), `${who} cannot apply`);
+    }
+    const stillProposed = db.prepare("SELECT review_status AS s, applied_at AS a, bug_id AS b FROM bug_drafts WHERE id = ?").get(id) as { s: string; a: string | null; b: number | null };
+    assert.deepEqual(stillProposed, { s: "proposed", a: null, b: null }, "nothing changed");
+
+    assert.equal((await call("PATCH", `/api/bug-drafts/${id}`, { cookie: people.tes.cookie, body: { unknown: 1 } })).statusCode, 400, "an unknown field");
+    assert.equal((await call("PATCH", `/api/bug-drafts/${id}`, { cookie: people.tes.cookie, body: { title: "  " } })).statusCode, 400, "an empty title");
+    const edited = await call("PATCH", `/api/bug-drafts/${id}`, { cookie: people.tes.cookie, body: { title: "Total ignores removals", expected: "The total drops" } });
+    assert.equal(edited.statusCode, 200, edited.body);
+    assert.equal(edited.json().history.at(-1).changes[0].field, "Title", "the edit is in the history");
+    assert.equal((await call("POST", `/api/bug-drafts/${id}/decision`, { cookie: people.adm.cookie, body: { status: "approved" } })).statusCode, 200);
+
+    const applied = await call("POST", `/api/bug-drafts/${id}/apply`, { cookie: people.tes.cookie, body: {} });
+    assert.equal(applied.statusCode, 200, applied.body);
+    const bugId = applied.json().bugId as number;
+    const bug = db.prepare("SELECT review_status AS s, source, origin_audit_id AS o, title, reviewed_at AS r FROM bug_reports WHERE id = ?").get(bugId) as Record<string, unknown>;
+    assert.deepEqual(bug, { s: "proposed", source: "manual", o: "$screenshot", title: "Total ignores removals", r: null }, "a proposed bug report, never accepted");
+    const after = db.prepare("SELECT review_status AS s, applied_by_user_id AS by FROM bug_drafts WHERE id = ?").get(id) as { s: string; by: number };
+    assert.deepEqual(after, { s: "approved", by: people.tes.id }, "applied by the tester's account, approved only by the admin's decision");
+    assert.equal((await call("POST", `/api/bug-drafts/${id}/apply`, { cookie: people.tes.cookie, body: {} })).statusCode, 409, "a second Apply is refused");
+    assert.equal((db.prepare("SELECT COUNT(*) AS n FROM bug_reports WHERE project_id = ?").get(projects.A) as { n: number }).n >= 1, true);
+    const view = await call("GET", `/api/bug-reports/${bugId}`, { cookie: people.vie.cookie });
+    assert.equal(view.statusCode, 200);
+    assert.equal(view.json().attachments.length, 1, "the screenshot is attached to the bug report");
+    const stored = db.prepare("SELECT screenshot_name AS n FROM bug_drafts WHERE id = ?").get(id) as { n: string };
+    assert.equal((await call("GET", `/uploads/${stored.n}`, { cookie: people.vie.cookie })).statusCode, 200, "now a member of the project can open it with the bug");
+    const anon = await call("GET", `/uploads/${stored.n}`);
+    assert.notEqual(anon.statusCode, 200, `not signed in got ${anon.statusCode}`);
+  });
+
+  it("only a real picture of the right size is taken: text, svg, a missing file, an empty note and an enormous file are refused (400, or 413 for the enormous file), and no file or row is left", async () => {
+    const before = [draftFiles(), rows(projects.A)];
+    const cases: [string, Buffer | null, string][] = [
+      ["A note", Buffer.from("just text"), "fake.png"],
+      ["A note", Buffer.from("<svg xmlns='http://www.w3.org/2000/svg'><script>1</script></svg>"), "shot.svg"],
+      ["A note", Buffer.from("<html><script>1</script></html>"), "shot.png"],
+      ["A note", null, "x.png"],
+      ["   ", PNG, "shot.png"],
+      ["A note", Buffer.concat([PNG, Buffer.alloc(5 * 1024 * 1024)]), "big.png"],
+    ];
+    for (const [note, file, name] of cases) {
+      const r = await make(projects.A, note, file, people.tes.cookie, name);
+      assert.equal(r.statusCode, name === "big.png" ? 413 : 400, `${name}: ${r.statusCode} ${r.body.slice(0, 120)}`);
+    }
+    assert.deepEqual([draftFiles(), rows(projects.A)], before);
+  });
+
+  it("before Apply the picture is served only by its own route, not by /uploads", async () => {
+    const d = (await make(projects.A, "Not applied yet", PNG, people.tes.cookie)).json();
+    const stored = db.prepare("SELECT screenshot_name AS n FROM bug_drafts WHERE id = ?").get(d.id) as { n: string };
+    assert.ok(existsSync(join(UPLOAD_DIR, stored.n)));
+    for (const cookie of [people.vie.cookie, people.tes.cookie, people.bob.cookie, undefined]) assert.notEqual((await call("GET", `/uploads/${stored.n}`, { cookie })).statusCode, 200);
+  });
+
+  it("an agent, CI or proposal token cannot make a draft, read or decide on one, or fetch its picture, with or without a login", async () => {
+    const d = (await make(projects.A, "Token test", PNG, people.tes.cookie)).json();
+    assert.equal((await call("PUT", "/api/settings/agent-proposals", { cookie: ownerCookie, body: { enabled: true } })).statusCode, 200);
+    const fresh = (await call("POST", "/api/projects", { cookie: ownerCookie, body: { name: "Draft tokens", key: "BDT" } })).json().id as number;
+    const tokens = [
+      (await call("POST", `/api/projects/${fresh}/agent/tokens`, { cookie: ownerCookie, body: { name: "r" } })).json().token,
+      (await call("POST", `/api/projects/${fresh}/ci/tokens`, { cookie: ownerCookie, body: { name: "c" } })).json().token,
+      (await call("POST", `/api/projects/${fresh}/propose-tokens`, { cookie: ownerCookie, body: { name: "p" } })).json().token,
+    ] as string[];
+    assert.ok(tokens.every((t) => typeof t === "string" && t.length > 20));
+    const before = rows(projects.A);
+    for (const token of tokens) {
+      for (const cookie of [undefined, people.tes.cookie, ownerCookie]) {
+        const h = { authorization: `Bearer ${token}` };
+        const results = [
+          await make(projects.A, "By token", PNG, cookie, undefined, h),
+          await call("GET", `/api/projects/${projects.A}/bug-drafts`, { cookie, headers: h }),
+          await call("GET", `/api/bug-drafts/${d.id}/screenshot`, { cookie, headers: h }),
+          await call("PATCH", `/api/bug-drafts/${d.id}`, { cookie, headers: h, body: { title: "x" } }),
+          await call("POST", `/api/bug-drafts/${d.id}/decision`, { cookie, headers: h, body: { status: "approved" } }),
+          await call("POST", `/api/bug-drafts/${d.id}/apply`, { cookie, headers: h, body: {} }),
+        ];
+        for (const r of results) assert.ok([401, 403].includes(r.statusCode), `answered ${r.statusCode}`);
+      }
+    }
+    assert.equal(rows(projects.A), before, "nothing was made");
+    assert.equal((db.prepare("SELECT review_status AS s FROM bug_drafts WHERE id = ?").get(d.id) as { s: string }).s, "proposed");
   });
 });
 

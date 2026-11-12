@@ -417,7 +417,7 @@ export function listBugReports(projectId: number, opts: BugListFilter = {}) {
   const rows = db.prepare(`
     WITH ${PRESENCE_CTE}
     SELECT b.id, b.source_id, b.title, b.review_status, b.reviewed_by, b.reviewed_at, b.agent_severity, b.human_severity, b.severity_by, b.source, b.found_at, b.imported_at, b.audit_id, b.origin, b.latest_rev, b.applied_rev, b.ignored_rev,
-      b.source, b.test_key, b.tags, b.workflow_status, b.assignee, b.last_ci_status, b.last_ci_at, b.ci_flaky,
+      b.source, b.origin_audit_id, b.test_key, b.tags, b.workflow_status, b.assignee, b.last_ci_status, b.last_ci_at, b.ci_flaky,
       (SELECT COUNT(*) FROM bug_occurrences o JOIN ci_results x ON x.id = o.ci_result_id WHERE o.bug_report_id = b.id AND x.status = 'failed') AS failed_runs,
       (SELECT r.branch || char(31) || r.commit_sha || char(31) || r.pipeline_url FROM bug_occurrences o JOIN ci_results x ON x.id = o.ci_result_id JOIN ci_runs r ON r.id = x.ci_run_id
         WHERE o.bug_report_id = b.id ORDER BY o.id DESC LIMIT 1) AS last_occurrence,
@@ -435,7 +435,7 @@ export function listBugReports(projectId: number, opts: BugListFilter = {}) {
     items: rows.map((r) => ({
       id: r.id, sourceId: r.source_id, title: r.title, status: r.review_status as ReviewStatus, reviewedBy: (r.reviewed_by as string) || null, reviewedAt: r.reviewed_at as string | null, severity: effective(r), severitySource: severitySource(r), severityBy: r.human_severity ? ((r.severity_by as string) || null) : null, foundAt: r.found_at, importedAt: r.imported_at,
       auditTitle: json<{ title?: string }>(r.origin, {}).title ?? "", auditDeleted: r.audit_id == null && r.source === "agent_audit",
-      source: r.source as string, testKey: r.test_key as string | null, tags: json<string[]>(r.tags, []), workflowStatus: r.workflow_status as WorkflowStatus, assignee: r.assignee as string,
+      source: r.source as string, fromScreenshot: r.origin_audit_id === "$screenshot", testKey: r.test_key as string | null, tags: json<string[]>(r.tags, []), workflowStatus: r.workflow_status as WorkflowStatus, assignee: r.assignee as string,
       ci: r.source === "ci" ? (() => {
         const [branch = "", commit = "", pipelineUrl = ""] = String(r.last_occurrence ?? "").split("\u001f");
         return { lastStatus: r.last_ci_status as string | null, lastAt: r.last_ci_at as string | null, flaky: !!r.ci_flaky, failedRuns: r.failed_runs as number, branch, commit, pipelineUrl };
@@ -529,7 +529,7 @@ export function getBugReport(id: number) {
     confidence: b.confidence, agentReview: json(b.agent_review, null), foundAt: b.found_at, importedAt: b.imported_at,
     fingerprint: b.fingerprint, recurrenceHint: b.recurrence_hint,
     origin: json<Record<string, any>>(b.origin, {}), originAuditId: b.origin_audit_id, audit, runId: b.run_id, resultId: b.result_id,
-    source: b.source as string, testKey: b.test_key as string | null, tags: json<string[]>(b.tags, []),
+    source: b.source as string, fromScreenshot: b.origin_audit_id === "$screenshot", testKey: b.test_key as string | null, tags: json<string[]>(b.tags, []),
     workflowStatus: b.workflow_status as WorkflowStatus, assignee: b.assignee as string, resolvedSuspectedAt: b.resolved_suspected_at as string | null, closedAt: b.closed_at as string | null,
     ci: ciDetail(b as Parameters<typeof ciDetail>[0]), events: bugEvents(id),
     refs, attachments, revisions, pendingUpdate: pending,
