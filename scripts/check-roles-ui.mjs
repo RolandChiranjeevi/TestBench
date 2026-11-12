@@ -627,13 +627,13 @@ for (const who of Object.keys(TABS)) {
   const key = (await call("GET", "/api/projects", undefined, owner)).json.find((x) => x.id === A).key;
   const plan = (n, over = {}) => ({ sourceId: `UIA-${n}`, title: `UI auto ${n}`, type: "Functional", priority: "High", steps: [`Open the page ${n}`, "Type the text"], acceptanceCriteria: "The text is shown", ...over });
   const files = { "manifest.json": { format: "testbench-audit-package", version: 1, audit: { id: "ui-auto-audit", title: "UI automation audit", project: key, agent: { name: "ui-check-agent" } }, files: [], parts: {} },
-    "bugs.json": { version: 1, bugs: [] }, "test-plan.json": { version: 1, planItems: [plan(1), plan(2, { steps: [] }), plan(3), plan(4), plan(5)], coverageGaps: [] } };
+    "bugs.json": { version: 1, bugs: [] }, "test-plan.json": { version: 1, planItems: [plan(1), plan(2, { steps: [] }), plan(3), plan(4), plan(5), plan(6)], coverageGaps: [] } };
   const form = new FormData();
   for (const [name, content] of Object.entries(files)) { form.append("relpath", name); form.append("file", new Blob([JSON.stringify(content)], { type: "application/json" }), name); }
   const seeded = await fetch(`${BASE}/api/projects/${A}/audit-import`, { method: "POST", headers: { "X-Testbench": "1", Cookie: `tb_sid=${owner}` }, body: form });
   check("automation: seeded", seeded.ok, `${seeded.status}`);
   const auditId = (await call("GET", `/api/projects/${A}/audits`, undefined, owner)).json.find((a) => a.agentAuditId === "ui-auto-audit").id;
-  for (const n of [1, 2, 3, 4]) await call("POST", `/api/audits/${auditId}/plan/items/UIA-${n}/decision`, { status: "approved" }, owner);
+  for (const n of [1, 2, 3, 4, 6]) await call("POST", `/api/audits/${auditId}/plan/items/UIA-${n}/decision`, { status: "approved" }, owner);
   const sugs = async () => (await call("GET", `/api/audits/${auditId}/automation-suggestions`, undefined, owner)).json;
   const sugOf = async (src) => (await sugs()).find((x) => x.sourceId === src);
 
@@ -709,6 +709,39 @@ for (const who of Object.keys(TABS)) {
   check("automation: and a viewer's Suggest automation is off", await eventually(async () => await v.page.locator(".plan-entry", { hasText: "UI auto 2" }).getByRole("button", { name: "Suggest automation" }).isDisabled()));
   await v.close();
   check("automation: nothing was decided by a viewer or the rule", (await sugs()).filter((x) => x.decidedBy).every((x) => x.decidedBy === "Tess"));
+
+  // A Playwright spec for an approved plan item: suggested, edited, approved, applied, and only then downloadable.
+  const specOf = async () => (await sugs()).find((x) => x.sourceId === "UIA-6" && x.isSpec);
+  const sp = await open("tester", `/p/${A}/test-plan?audit=${auditId}`);
+  const sregion = sp.page.locator(".plan-entry", { hasText: "UI auto 6" }).getByRole("region", { name: "Automation suggestions" });
+  const scard = sregion.locator("[data-suggestion]");
+  await sp.page.locator(".plan-entry", { hasText: "UI auto 6" }).locator(".plan-row").click();
+  await sregion.getByRole("button", { name: "Suggest Playwright spec" }).click();
+  check("spec: a draft spec is made, marked as the rule's and as a spec, with test.fixme and a step per plan step", await eventually(async () => { const t = await scard.innerText(); return t.includes("Suggested by rule") && t.includes("Playwright spec") && !/\bAI\b/.test(t) && t.includes("test.fixme(") && t.includes("test.step(") && t.includes("Open the page 6"); }));
+  check("spec: it is the rule's, proposed, named by reference and slug", await eventually(async () => { const x = await specOf(); return x && x.origin === "rule" && x.status === "proposed" && x.artifactName === "uia-6-ui-auto-6.spec.ts" && x.decidedBy === null; }));
+  check("spec: there is nothing to download before Apply, in the page or on the server", await eventually(async () => (await scard.getByRole("link", { name: /Download/ }).count()) === 0 && (await fetch(`${BASE}/api/automation-suggestions/${(await specOf()).id}/spec`, { headers: { ...HDR, Cookie: `tb_sid=${cookies.tester}` } })).status === 409));
+  await scard.getByRole("button", { name: "Edit", exact: true }).click();
+  await scard.getByLabel(/Spec text/).fill("// edited by Tess\ntest.fixme(true, 'still a draft');\n");
+  await scard.getByRole("button", { name: "Save draft" }).click();
+  check("spec: the edited text is saved by Tess", await eventually(async () => { const x = await specOf(); return x.artifactText === "// edited by Tess\ntest.fixme(true, 'still a draft');\n" && x.status === "draft" && x.editedBy === "Tess"; }));
+  await scard.getByRole("button", { name: "Approve", exact: true }).click();
+  check("spec: approved by Tess", await eventually(async () => (await specOf()).status === "approved"));
+  await scard.getByRole("button", { name: "Apply as draft spec" }).click();
+  check("spec: Apply recorded who applied it, made no test case, and the suggestion stayed approved", await eventually(async () => { const x = await specOf(); return x.appliedBy === "Tess" && !!x.appliedAt && !x.testCase && x.status === "approved"; }));
+  check("spec: now the card offers Download and Copy, and Apply is gone", await eventually(async () => (await scard.getByRole("link", { name: /Download/ }).count()) === 1 && (await scard.getByRole("button", { name: /Copy/ }).count()) === 1 && (await scard.getByRole("button", { name: "Apply as draft spec" }).count()) === 0));
+  const got = await fetch(`${BASE}/api/automation-suggestions/${(await specOf()).id}/spec`, { headers: { ...HDR, Cookie: `tb_sid=${cookies.tester}` } });
+  check("spec: the download is the edited text, an attachment with the file name, plain text", got.status === 200 && (await got.text()) === "// edited by Tess\ntest.fixme(true, 'still a draft');\n" && got.headers.get("content-disposition") === 'attachment; filename="uia-6-ui-auto-6.spec.ts"' && /^text\/plain/.test(got.headers.get("content-type") ?? "") && got.headers.get("x-content-type-options") === "nosniff");
+  await sregion.getByRole("button", { name: "Suggest Playwright spec" }).click();
+  check("spec: asking again makes no second spec", await eventually(async () => (await sregion.getByRole("status").innerText()).includes("already has a spec suggestion") && (await sugs()).filter((x) => x.sourceId === "UIA-6" && x.isSpec).length === 1));
+  await scard.locator("details summary").click();
+  check("spec: the history says who did what", await eventually(async () => { const t = await scard.innerText(); return t.includes("Suggested by rule") && t.includes("Spec text") && t.includes("Approved") && t.includes("Applied as a draft spec") && t.includes("by Tess"); }));
+  await sp.close();
+
+  const sv = await open("viewer", `/p/${A}/test-plan?audit=${auditId}`);
+  const vsr = sv.page.locator(".plan-entry", { hasText: "UI auto 6" }).getByRole("region", { name: "Automation suggestions" });
+  await sv.page.locator(".plan-entry", { hasText: "UI auto 6" }).locator(".plan-row").click();
+  check("spec: a viewer sees it and can download it, but Suggest, Edit and Reject are off", await eventually(async () => (await vsr.getByRole("link", { name: /Download/ }).count()) === 1 && (await vsr.getByRole("button", { name: "Suggest Playwright spec" }).isDisabled()) && (await vsr.getByRole("button", { name: "Edit", exact: true }).isDisabled()) && (await vsr.getByRole("button", { name: "Reject", exact: true }).isDisabled())));
+  await sv.close();
 }
 
 // Automation suggestions for an approved requirement: the same mechanism, on the requirement itself.

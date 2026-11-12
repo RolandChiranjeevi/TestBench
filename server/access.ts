@@ -99,7 +99,8 @@ export const ACCESS: Record<string, Need> = {
   "POST /api/manual-tests/:id/relink": t("manualtest"), "POST /api/manual-tests/:id/review": t("manualtest"),
   // audits
   "GET /api/projects/:id/audits": v(), "GET /api/projects/:id/audit-rejections": v(), "POST /api/projects/:id/audit-import": t(), "GET /api/projects/:id/coverage-gaps": v(),
-  "GET /api/audits/:id/plan": v("audit"), "GET /api/audits/:id/history": v("audit"), "GET /api/audits/:id/gaps/history": v("audit"), "GET /api/audits/:id/automation-suggestions": v("audit"), "POST /api/audits/:id/plan/items/:sourceId/automation-suggestions": t("audit"),
+  "GET /api/audits/:id/plan": v("audit"), "GET /api/audits/:id/history": v("audit"), "GET /api/audits/:id/gaps/history": v("audit"), "GET /api/audits/:id/automation-suggestions": v("audit"), "POST /api/audits/:id/plan/items/:sourceId/automation-suggestions": t("audit"), "POST /api/audits/:id/plan/items/:sourceId/spec-suggestions": t("audit"),
+  "GET /api/automation-suggestions/:id/spec": v("automationsuggestion"),
   "GET /api/requirements/:id/automation-suggestions": v("requirement"), "POST /api/requirements/:id/automation-suggestions": t("requirement"),
   "PATCH /api/automation-suggestions/:id": t("automationsuggestion"), "POST /api/automation-suggestions/:id/decision": t("automationsuggestion"), "POST /api/automation-suggestions/:id/apply": t("automationsuggestion"), "POST /api/audits/:id/gaps": t("audit"), "PATCH /api/audits/:id/gaps/:sourceId": t("audit"),
   "POST /api/audits/:id/gaps/:sourceId/decision": t("audit"), "POST /api/audits/:id/gaps/:sourceId/pending": t("audit"), "POST /api/audits/:id/plan/items": t("audit"), "PATCH /api/audits/:id/plan/items/:sourceId": t("audit"),
