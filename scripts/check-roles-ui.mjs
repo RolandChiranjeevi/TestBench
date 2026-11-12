@@ -814,16 +814,30 @@ for (const who of Object.keys(TABS)) {
   await scard.getByRole("button", { name: "Apply as draft spec" }).click();
   check("req spec: Apply recorded who applied it, made no test case, and the suggestion stayed approved", await eventually(async () => { const x = (await specs())[0]; return x.appliedBy === "Tess" && !!x.appliedAt && !x.testCase && x.status === "approved"; }));
   check("req spec: now the card offers Download and Copy, and Apply is gone", await eventually(async () => (await scard.getByRole("link", { name: /Download/ }).count()) === 1 && (await scard.getByRole("button", { name: /Copy/ }).count()) === 1 && (await scard.getByRole("button", { name: "Apply as draft spec" }).count()) === 0));
+  const box = scard.getByRole("region", { name: "Run it yourself" });
+  check("run it yourself: after Apply the box says TestBench runs nothing, gives the exact command, where the file goes and how to point it at the app, and links to Import", await eventually(async () => {
+    const t = await box.innerText();
+    return t.includes("TestBench does not run tests") && t.includes(`npx playwright test ${fileName}`) && t.includes("testDir") && t.includes("baseURL") && (await box.getByRole("link", { name: "open Import" }).getAttribute("href")) === `/p/${A}/import`;
+  }));
+  check("run it yourself: while test.fixme is in the text it warns that the test is not runnable yet, and offers no button", await eventually(async () => (await box.innerText()).includes("Not runnable yet") && !(await box.innerText()).includes("Runnable test") && (await box.getByRole("button").count()) === 0));
   const got = await fetch(`${BASE}/api/automation-suggestions/${(await specs())[0].id}/spec`, { headers: { ...HDR, Cookie: `tb_sid=${cookies.tester}` } });
   check("req spec: the download is the edited text, an attachment with the file name, plain text", got.status === 200 && (await got.text()) === "// edited by Tess\ntest.fixme(true, 'still a draft');\n" && got.headers.get("content-disposition") === `attachment; filename="${fileName}"` && /^text\/plain/.test(got.headers.get("content-type") ?? "") && got.headers.get("x-content-type-options") === "nosniff");
   await sregion.getByRole("button", { name: "Suggest Playwright spec" }).click();
   check("req spec: asking again makes no second spec", await eventually(async () => (await sregion.getByRole("status").innerText()).includes("already has a spec suggestion") && (await specs()).length === 1));
   await scard.locator("details summary").click();
   check("req spec: the history says who did what", await eventually(async () => { const t = await scard.innerText(); return t.includes("Suggested by rule") && t.includes("Spec text") && t.includes("Approved") && t.includes("Applied as a draft spec") && t.includes("by Tess"); }));
+  await scard.getByRole("button", { name: "Edit", exact: true }).click();
+  await scard.getByLabel(/Spec text/).fill("// TODO: finish this test\ntest('x', async () => {});\n");
+  await scard.getByRole("button", { name: "Save draft" }).click();
+  check("run it yourself: with test.fixme gone the box says Runnable and that TestBench has not checked it, and notes the TODO line that is left", await eventually(async () => {
+    const t = await box.innerText();
+    return t.includes("Runnable") && !t.includes("Not runnable yet") && t.includes("TestBench has not checked it") && t.includes("1 TODO line is still in the text") && !/\b(correct|verified)\b/i.test(t);
+  }));
   await sp.close();
 
   const sv = await open("viewer", `/p/${A}/requirements?req=${r3.id}`);
   const vsr = sv.page.getByRole("region", { name: "Automation suggestions" });
+  check("run it yourself: a viewer sees the box too", await eventually(async () => (await vsr.getByRole("region", { name: "Run it yourself" }).count()) === 1));
   check("req spec: a viewer sees it and can download it, but Suggest, Edit and Reject are off", await eventually(async () => (await vsr.getByRole("link", { name: /Download/ }).count()) === 1 && (await vsr.getByRole("button", { name: "Suggest Playwright spec" }).isDisabled()) && (await vsr.getByRole("button", { name: "Edit", exact: true }).isDisabled()) && (await vsr.getByRole("button", { name: "Reject", exact: true }).isDisabled())));
   await sv.close();
 }
