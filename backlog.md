@@ -13,9 +13,18 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 - Ingen modell, inget nätverk, ingen extern integration.
 
 ### D2: Automatiseringsförslag för krav
-**Status: pågår**
+**Status: klart** (mergad i #75)
 - Samma mekanism som D1, men för godkända krav.
 - Återanvänder D1:s mönster.
+
+### E: UI/spec.ts-förslag
+**Status: nästa**
+- Från godkända krav och planposter, föreslå Playwright-spec-filer.
+- Samma ägarskapsmodell som D1 och D2.
+- Förslaget är draft. Människan granskar, redigerar, godkänner, avvisar eller ignorerar.
+- Apply skapar en draft-spec, aldrig en färdig eller körd.
+- Ingen körning, ingen extern AI, ingen integration.
+- Ingen kodgenerering utan mänskligt beslut.
 
 ## Backlog
 
