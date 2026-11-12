@@ -571,6 +571,15 @@ BEGIN SELECT RAISE(ABORT, 'A decision on an automation suggestion needs a person
 CREATE TRIGGER IF NOT EXISTS automation_suggestions_decision_needs_account_update BEFORE UPDATE OF review_status ON automation_suggestions
 WHEN NEW.review_status != OLD.review_status AND EXISTS (SELECT 1 FROM users) AND ((NEW.review_status IN ('approved', 'rejected', 'ignored') AND NEW.decided_by_user_id IS NULL) OR (NEW.review_status = 'draft' AND NEW.edited_by_user_id IS NULL))
 BEGIN SELECT RAISE(ABORT, 'A decision on an automation suggestion needs a person with an account'); END;`);
+  // Spec suggestions (E1) live in the same table. A spec suggestion has a file name and the spec text (artifact_*). Apply makes it a draft spec: it records who and when (applied_*),
+  // and only then can the file be downloaded. With accounts, applying needs an account, so a rule or an agent can never do it.
+  for (const [col, ddl] of [["artifact_name", "TEXT NOT NULL DEFAULT ''"], ["artifact_text", "TEXT NOT NULL DEFAULT ''"], ["applied_at", "TEXT"], ["applied_by", "TEXT NOT NULL DEFAULT ''"], ["applied_by_user_id", "INTEGER"]] as const) {
+    if (!hasColumn("automation_suggestions", col)) d.exec(`ALTER TABLE automation_suggestions ADD COLUMN ${col} ${ddl}`);
+  }
+  d.exec(`
+CREATE TRIGGER IF NOT EXISTS automation_suggestions_apply_needs_account BEFORE UPDATE OF applied_at ON automation_suggestions
+WHEN NEW.applied_at IS NOT NULL AND OLD.applied_at IS NULL AND NEW.applied_by_user_id IS NULL AND EXISTS (SELECT 1 FROM users)
+BEGIN SELECT RAISE(ABORT, 'Applying a spec needs a person with an account'); END;`);
   // With accounts, an AI-suggested requirement is approved by an account: a name alone (which anyone can type, and an agent could send) is not enough.
   d.exec(`
 CREATE TRIGGER IF NOT EXISTS requirements_ai_needs_account_insert BEFORE INSERT ON requirements

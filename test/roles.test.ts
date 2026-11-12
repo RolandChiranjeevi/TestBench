@@ -847,6 +847,96 @@ describe("automation suggestions for a requirement", () => {
   });
 });
 
+describe("Playwright spec suggestions for a plan item", () => {
+  const planOf = (audit: number | string, status = "approved") => db.prepare("INSERT INTO audit_plan_items (audit_id, source_id, position, title, steps, acceptance_criteria, review_status, decided_by, decided_by_user_id) VALUES (?, 'TPI-1', 0, 'Add a todo', '[\"Type\",\"Enter\"]', 'Shown in the list', ?, 'tes', ?)").run(audit, status, status === "approved" ? people.tes.id : null);
+  const ask = (audit: number | string, cookie?: string) => call("POST", `/api/audits/${audit}/plan/items/TPI-1/spec-suggestions`, { cookie, body: {} });
+  const specOf = (audit: number | string) => db.prepare("SELECT id, review_status AS s, applied_at AS at, applied_by_user_id AS by, case_id AS c FROM automation_suggestions WHERE audit_id = ? AND artifact_name != ''").get(audit) as { id: number; s: string; at: string | null; by: number | null; c: number | null } | undefined;
+  const download = (id: number, cookie?: string, headers: Record<string, string> = {}) => call("GET", `/api/automation-suggestions/${id}/spec`, { cookie, headers });
+
+  it("a tester asks, edits, approves and applies; a viewer can read but not ask, decide or apply; a stranger gets 404; the file can only be downloaded after Apply, by someone who is signed in with a role", async () => {
+    const audit = fixture("audit", projects.A).id; planOf(audit);
+    assert.ok(denied403(await ask(audit, people.vie.cookie)), "a viewer cannot ask");
+    assert.ok(denied404(await ask(audit, people.bob.cookie)), "nor someone from another project");
+    assert.equal(specOf(audit), undefined, "nothing was made");
+    const made = await ask(audit, people.tes.cookie);
+    assert.equal(made.statusCode, 200, made.body);
+    assert.deepEqual([made.json().created.length, made.json().created[0].label, made.json().created[0].isSpec, made.json().created[0].artifactName], [1, "Suggested by rule", true, "tpi-1-add-a-todo.spec.ts"]);
+    assert.match(made.json().created[0].artifactText, /test\.fixme\(true,/);
+    const id = specOf(audit)!.id;
+    assert.equal((await call("GET", `/api/audits/${audit}/automation-suggestions`, { cookie: people.vie.cookie })).statusCode, 200, "a viewer reads");
+
+    // Nothing can be downloaded before Apply, whoever asks.
+    for (const who of ["tes", "vie", "adm"]) assert.equal((await download(id, people[who].cookie)).statusCode, 409, `${who} before Apply`);
+    assert.ok(denied404(await download(id, people.bob.cookie)), "a stranger gets 404");
+    assert.ok([401, 403].includes((await download(id)).statusCode), "and nobody who is not signed in gets anything");
+
+    for (const [who, deny] of [["vie", denied403], ["bob", denied404]] as const) {
+      assert.ok(deny(await call("PATCH", `/api/automation-suggestions/${id}`, { cookie: people[who].cookie, body: { artifactText: "// x\n" } })), `${who} cannot edit`);
+      assert.ok(deny(await call("POST", `/api/automation-suggestions/${id}/decision`, { cookie: people[who].cookie, body: { status: "approved" } })), `${who} cannot decide`);
+      assert.ok(deny(await call("POST", `/api/automation-suggestions/${id}/apply`, { cookie: people[who].cookie, body: {} })), `${who} cannot apply`);
+    }
+    assert.deepEqual([specOf(audit)!.s, specOf(audit)!.at], ["proposed", null], "nothing changed");
+
+    const edit = await call("PATCH", `/api/automation-suggestions/${id}`, { cookie: people.tes.cookie, body: { artifactText: "// edited by tes\nawait x();\n" } });
+    assert.equal(edit.statusCode, 200, edit.body);
+    assert.equal(edit.json().artifactText, "// edited by tes\nawait x();\n");
+    assert.equal(edit.json().history.at(-1).changes[0].field, "Spec text", "the edit is in the history");
+    assert.equal((await call("PATCH", `/api/automation-suggestions/${id}`, { cookie: people.tes.cookie, body: { artifactText: "  " } })).statusCode, 400, "the text cannot be empty");
+    assert.equal((await call("PATCH", `/api/automation-suggestions/${id}`, { cookie: people.tes.cookie, body: { artifactName: "../x.ts" } })).statusCode, 400, "the file name cannot be set");
+    assert.equal((await call("POST", `/api/automation-suggestions/${id}/decision`, { cookie: people.adm.cookie, body: { status: "approved" } })).statusCode, 200);
+
+    const applied = await call("POST", `/api/automation-suggestions/${id}/apply`, { cookie: people.tes.cookie, body: {} });
+    assert.equal(applied.statusCode, 200, applied.body);
+    assert.equal(applied.json().spec.fileName, "tpi-1-add-a-todo.spec.ts");
+    assert.deepEqual([specOf(audit)!.s, specOf(audit)!.by, specOf(audit)!.c], ["approved", people.tes.id, null], "applied by the tester's account, still only approved by the admin's decision, and no test case");
+    assert.equal((await call("POST", `/api/automation-suggestions/${id}/apply`, { cookie: people.tes.cookie, body: {} })).statusCode, 409, "applying twice is refused");
+
+    for (const who of ["vie", "tes", "adm"]) {
+      const f = await download(id, people[who].cookie);
+      assert.equal(f.statusCode, 200, who);
+      assert.equal(f.body, "// edited by tes\nawait x();\n", "the file is the text as it is now");
+      assert.equal(f.headers["content-disposition"], 'attachment; filename="tpi-1-add-a-todo.spec.ts"');
+      assert.match(String(f.headers["content-type"]), /^text\/plain/);
+      assert.equal(f.headers["x-content-type-options"], "nosniff");
+    }
+    assert.ok(denied404(await download(id, people.bob.cookie)), "a stranger still gets 404");
+    assert.ok([401, 403].includes((await download(id)).statusCode), "and so does someone who is not signed in");
+  });
+
+  it("an unapproved plan item gets no spec suggestion (409), and an unknown one is 404", async () => {
+    const audit = fixture("audit", projects.A).id; planOf(audit, "proposed");
+    const refused = await ask(audit, people.tes.cookie);
+    assert.equal(refused.statusCode, 409);
+    assert.match(refused.json().error, /Approve the plan item first/);
+    assert.equal((await call("POST", `/api/audits/${audit}/plan/items/NOPE/spec-suggestions`, { cookie: people.tes.cookie, body: {} })).statusCode, 404);
+    assert.equal(specOf(audit), undefined);
+  });
+
+  it("an agent, CI or proposal token cannot ask for a spec, apply it or download it, with or without a login", async () => {
+    const audit = fixture("audit", projects.A).id; planOf(audit);
+    const id = ((await ask(audit, people.tes.cookie)).json().created[0] as { id: number }).id;
+    assert.equal((await call("POST", `/api/automation-suggestions/${id}/apply`, { cookie: people.tes.cookie, body: {} })).statusCode, 200);
+    assert.equal((await call("PUT", "/api/settings/agent-proposals", { cookie: ownerCookie, body: { enabled: true } })).statusCode, 200);
+    const fresh = (await call("POST", "/api/projects", { cookie: ownerCookie, body: { name: "Spec tokens", key: "STK" } })).json().id as number;
+    const tokens = [
+      (await call("POST", `/api/projects/${fresh}/agent/tokens`, { cookie: ownerCookie, body: { name: "r" } })).json().token,
+      (await call("POST", `/api/projects/${fresh}/ci/tokens`, { cookie: ownerCookie, body: { name: "c" } })).json().token,
+      (await call("POST", `/api/projects/${fresh}/propose-tokens`, { cookie: ownerCookie, body: { name: "p" } })).json().token,
+    ] as string[];
+    assert.ok(tokens.every((t) => typeof t === "string" && t.length > 20));
+    const audit2 = fixture("audit", projects.A).id; planOf(audit2);
+    for (const token of tokens) {
+      for (const cookie of [undefined, people.tes.cookie, ownerCookie]) {
+        const h = { authorization: `Bearer ${token}` };
+        for (const r of [await download(id, cookie, h), await call("POST", `/api/audits/${audit2}/plan/items/TPI-1/spec-suggestions`, { cookie, headers: h, body: {} }), await call("POST", `/api/automation-suggestions/${id}/apply`, { cookie, headers: h, body: {} })]) {
+          assert.ok([401, 403].includes(r.statusCode), `answered ${r.statusCode}`);
+        }
+      }
+    }
+    assert.equal(specOf(audit2), undefined, "nothing was made");
+  });
+});
+
 describe("nothing left this process", () => {
   it("the routes that were let through asked for outside addresses, and every one was refused by the stub", () => {
     assert.ok(outbound.every((u) => /^https?:\/\//.test(u)), outbound.join(", "));

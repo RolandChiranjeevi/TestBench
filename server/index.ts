@@ -54,7 +54,7 @@ import { checkAccessTable, trackRoutes } from "./access.ts";
 import { registerAccessGuard } from "./accessguard.ts";
 import { roleOf } from "./members.ts";
 import { coverageGaps, getObservationLinks, setObservationLinks } from "./coveragegaps.ts";
-import { applyAutomationSuggestion, decideAutomationSuggestion, editAutomationSuggestion, getAutomationSuggestion, listAutomationSuggestions, listRequirementAutomationSuggestions, removeRequirementSuggestions, suggestAutomation, suggestAutomationForRequirement } from "./automation.ts";
+import { applyAutomationSuggestion, applySpecSuggestion, specFile, suggestSpecForPlanItem, decideAutomationSuggestion, editAutomationSuggestion, getAutomationSuggestion, listAutomationSuggestions, listRequirementAutomationSuggestions, removeRequirementSuggestions, suggestAutomation, suggestAutomationForRequirement } from "./automation.ts";
 import { generateProposals } from "./gapproposals.ts";
 import { agentRequirementsForToken, parseAgentQuery } from "./agentapi.ts";
 import { applyManualUpdate, addToProject, createCaseFromProposal, deleteManualTest, getManualTest, ignoreManualUpdate, listManualTests, relinkManualRefs, reviewManualTest, updateManualTest } from "./manualtests.ts";
@@ -1216,7 +1216,7 @@ app.post("/api/audits/:id/gaps/:sourceId/pending", (req) => {
 });
 app.get("/api/audits/:id/gaps/history", (req) => audited(() => gapHistory(idParam(req))));
 // Automation suggestions for an approved plan item: made by a fixed rule, decided by a person. Nothing is generated, run or changed until a person decides; Apply makes a DRAFT test case.
-const suggestionFields = z.object({ summary: z.string().trim().min(1).max(300), steps: z.array(z.string().max(1000)).min(1).max(100), assertions: z.array(z.string().max(500)).max(50), testData: z.string().max(5000), plan: z.string().max(5000) });
+const suggestionFields = z.object({ summary: z.string().trim().min(1).max(300), steps: z.array(z.string().max(1000)).min(1).max(100), assertions: z.array(z.string().max(500)).max(50), testData: z.string().max(5000), plan: z.string().max(5000), artifactText: z.string().max(100000) });
 app.post("/api/audits/:id/plan/items/:sourceId/automation-suggestions", (req) => {
   const id = idParam(req);
   z.object({}).strict().parse(req.body ?? {});
@@ -1247,8 +1247,26 @@ app.post("/api/automation-suggestions/:id/decision", (req) => {
 app.post("/api/automation-suggestions/:id/apply", (req) => {
   const id = idParam(req);
   z.object({}).strict().parse(req.body ?? {});
+  // A spec suggestion is applied as a draft spec (the file can then be downloaded); anything else as a draft test case.
+  const isSpec = audited(() => getAutomationSuggestion(id).isSpec);
+  if (isSpec) {
+    const spec = audited(() => applySpecSuggestion(id));
+    return { spec, suggestion: getAutomationSuggestion(id) };
+  }
   const made = audited(() => applyAutomationSuggestion(id));
   return { case: made, suggestion: getAutomationSuggestion(id) };
+});
+// A Playwright spec suggestion for an approved plan item, and the file of an applied spec (a text download: nothing is run, and nothing is written to disk or to git by the server).
+app.post("/api/audits/:id/plan/items/:sourceId/spec-suggestions", (req) => {
+  const id = idParam(req);
+  z.object({}).strict().parse(req.body ?? {});
+  const made = audited(() => suggestSpecForPlanItem(id, sourceParam(req)));
+  return { ...made, suggestions: listAutomationSuggestions(id) };
+});
+app.get("/api/automation-suggestions/:id/spec", (req, reply) => {
+  const f = audited(() => specFile(idParam(req)));
+  reply.type("text/plain; charset=utf-8").header("Content-Disposition", `attachment; filename="${f.fileName}"`).header("X-Content-Type-Options", "nosniff");
+  return f.text;
 });
 app.get("/api/audits/:id/deletion-preview", (req) => {
   const { removable: _ids, manualRemovable: _mids, ...preview } = audited(() => previewAuditDeletion(idParam(req)));
