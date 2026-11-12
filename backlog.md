@@ -23,10 +23,11 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 - Texten kan redigeras och ändringarna syns i historiken. Apply registrerar vem som applicerade; först därefter kan filen laddas ner.
 
 ### E2: Spec-förslag för krav
-**Status: nästa**
-- Samma mekanism som E1, men för godkända krav.
+**Status: klart** (mergad i #80)
+- Samma mekanism som E1, men för godkända krav. Filnamn req-<nummer>-<titel>.spec.ts; radering av ett krav tar bort dess spec-förslag.
 
 ### E: gemensamma regler för E1 och E2
+**Status: klart** (E1 och E2 är mergade)
 - Från godkända krav och planposter, föreslå Playwright-spec-filer.
 - Samma ägarskapsmodell som D1 och D2.
 - Förslaget är draft. Människan granskar, redigerar, godkänner, avvisar eller ignorerar.
