@@ -6,6 +6,7 @@ import { api, formatDateTime } from "../api";
 import { useToast } from "../components/ui";
 import { Badge } from "../components/Badge";
 import { Button, buttonClass } from "../components/Button";
+import { runCommand, specRunState, todoNotice } from "../specrun";
 
 type Status = "proposed" | "draft" | "approved" | "rejected" | "ignored";
 interface Change { field: string; from: string; to: string }
@@ -141,6 +142,7 @@ function SuggestionCard({ s, pid, run }: { s: Suggestion; pid: string; run: <T>(
             </>}
             <span className="faint plan-who">{who}</span>
           </div>
+          {s.isSpec && s.appliedAt && s.status !== "rejected" && s.status !== "ignored" && s.artifactName && <RunItYourself pid={pid} file={s.artifactName} text={s.artifactText} />}
         </>
       )}
       <details className="auto-history">
@@ -166,6 +168,31 @@ function SuggestionCard({ s, pid, run }: { s: Suggestion; pid: string; run: <T>(
         </ol>
       </details>
     </div>
+  );
+}
+
+/**
+ * What to do with an applied spec: TestBench does not run it. The box gives the command, where the file goes, how to point the test at the app under test, and how the result comes back
+ * (the Import page). It says "runnable" only when test.fixme is gone, and it never says the test is correct.
+ */
+function RunItYourself({ pid, file, text }: { pid: string; file: string; text: string }) {
+  const st = specRunState(text);
+  const cmd = runCommand(file);
+  return (
+    <section className="run-yourself" aria-label="Run it yourself">
+      <h5>Run it yourself</h5>
+      <p>TestBench does not run tests. You run this one on your own machine or in CI.</p>
+      {st.hasFixme
+        ? <p><Badge tone="warn" icon="triangle-alert">Not runnable yet</Badge> <code>test.fixme</code> is still in the text, so Playwright skips the test. Finish the test, then remove that line (Edit).</p>
+        : <p><Badge tone="ok" icon="circle-check">Runnable</Badge> <code>test.fixme</code> is gone. TestBench has not checked it.</p>}
+      {st.todoLines > 0 && <p className="faint run-todo">{todoNotice(st.todoLines)}. A test with TODO lines left may pass without checking anything.</p>}
+      <ol>
+        <li>Save the file as <code>{file}</code> in your Playwright project's test folder (<code>testDir</code> in <code>playwright.config.ts</code>).</li>
+        <li>Point the test at your app: set <code>use: {"{ baseURL: \"<your app's address>\" }"}</code> in <code>playwright.config.ts</code>. The spec has no address: TestBench does not know yours.</li>
+        <li>Run it:<pre className="snippet auto-code" aria-label="Command" tabIndex={0}>{cmd}</pre></li>
+        <li>Import the result: run with the JSON reporter as in the setup guide on the Import page, then <Link to={`/p/${pid}/import`}>open Import</Link> and add the report (Playwright JSON, JUnit XML or a .zip). CI can send results too.</li>
+      </ol>
+    </section>
   );
 }
 
