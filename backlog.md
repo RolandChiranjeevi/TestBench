@@ -35,13 +35,19 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 - Ingen körning, ingen extern AI, ingen integration.
 - Ingen kodgenerering utan mänskligt beslut.
 
+### G: Buggrapport från skärmdump
+**Status: klart** (mergad i #83)
+- Testaren bifogar en skärmdump och en kort notis. En fast regel (ingen modell, inget nätverk) gör ett draft-bugförslag: titel från notisens första rad, steg som TODO-skelett, expected/actual som TODO.
+- Skärmdumpen sparas som bevis och analyseras aldrig. Den verifieras via sin riktiga header (png/jpg/webp/gif, max 5 MB) och visas bara via egen route (attachment, nosniff, endast inloggade medlemmar).
+- Samma ägarskapsmodell som D/E. Apply skapar en bugg som förblir proposed (källa manual, ursprung $screenshot, SCR-n), en gång per draft, och accepterar den aldrig.
+
 ## Backlog
 
-### Bug screenshot → AI-förslag
-- Testaren tar kort på en bugg.
-- AI föreslår titel, steg, förväntat/aktuellt beteende, rotorsak, ändring.
-- Människan granskar och beslutar.
-- Godkänt förslag blir draft, aldrig automatiskt färdig bugg.
+### Bug screenshot → AI-förslag (AI-delen)
+G är klart som regelbaserad första version. Det som återstår:
+- AI tittar på skärmdumpen och föreslår titel, steg, förväntat/aktuellt beteende, rotorsak, ändring.
+- Kräver riktig modell och prompt injection-skydd (se Säkerhet och AI).
+- Människan granskar och beslutar. Godkänt förslag blir draft, aldrig automatiskt färdig bugg.
 - Ingen kodgenerering, testkörning eller extern integration i första versionen.
 
 ### Release-check skill
