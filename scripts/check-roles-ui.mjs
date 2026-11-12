@@ -790,6 +790,39 @@ for (const who of Object.keys(TABS)) {
   check("req automation: a viewer sees the suggestion, and Suggest automation, Edit and Reject are off", await eventually(async () => (await vr.getByRole("button", { name: "Suggest automation" }).isDisabled()) && (await vr.getByRole("button", { name: "Edit", exact: true }).isDisabled()) && (await vr.getByRole("button", { name: "Reject", exact: true }).isDisabled())));
   await v.close();
   check("req automation: nothing was decided by a viewer or the rule", (await sugs()).filter((x) => x.decidedBy).every((x) => x.decidedBy === "Tess"));
+
+  // A Playwright spec for an approved requirement: suggested, edited, approved, applied, and only then downloadable.
+  const r3 = await mk("UI req 3");
+  const specs = async () => (await call("GET", `/api/requirements/${r3.id}/automation-suggestions`, undefined, owner)).json.filter((x) => x.isSpec);
+  const fileName = `req-${(await call("GET", `/api/requirements/${r3.id}`, undefined, owner)).json.number}-ui-req-3.spec.ts`;
+  const sp = await open("tester", `/p/${A}/requirements?req=${r3.id}`);
+  const sregion = sp.page.getByRole("region", { name: "Automation suggestions" });
+  const scard = sregion.locator("[data-suggestion]");
+  await sregion.getByRole("button", { name: "Suggest Playwright spec" }).click();
+  check("req spec: a draft spec is made, marked as the rule's and as a spec, with test.fixme and the criteria as TODOs", await eventually(async () => { const t = await scard.innerText(); return t.includes("Suggested by rule") && t.includes("Playwright spec") && !/\bAI\b/.test(t) && t.includes("test.fixme(") && t.includes("test.step(") && t.includes("The input is cleared"); }));
+  check("req spec: it is the rule's, proposed, named req-<number>-<title>", await eventually(async () => { const x = (await specs())[0]; return x && x.origin === "rule" && x.subjectKind === "requirement" && x.status === "proposed" && x.artifactName === fileName && x.decidedBy === null; }));
+  check("req spec: nothing can be downloaded before Apply, in the page or on the server", await eventually(async () => (await scard.getByRole("link", { name: /Download/ }).count()) === 0 && (await fetch(`${BASE}/api/automation-suggestions/${(await specs())[0].id}/spec`, { headers: { ...HDR, Cookie: `tb_sid=${cookies.tester}` } })).status === 409));
+  await scard.getByRole("button", { name: "Edit", exact: true }).click();
+  await scard.getByLabel(/Spec text/).fill("// edited by Tess\ntest.fixme(true, 'still a draft');\n");
+  await scard.getByRole("button", { name: "Save draft" }).click();
+  check("req spec: the edited text is saved by Tess", await eventually(async () => { const x = (await specs())[0]; return x.artifactText === "// edited by Tess\ntest.fixme(true, 'still a draft');\n" && x.status === "draft" && x.editedBy === "Tess"; }));
+  await scard.getByRole("button", { name: "Approve", exact: true }).click();
+  check("req spec: approved by Tess", await eventually(async () => (await specs())[0].status === "approved"));
+  await scard.getByRole("button", { name: "Apply as draft spec" }).click();
+  check("req spec: Apply recorded who applied it, made no test case, and the suggestion stayed approved", await eventually(async () => { const x = (await specs())[0]; return x.appliedBy === "Tess" && !!x.appliedAt && !x.testCase && x.status === "approved"; }));
+  check("req spec: now the card offers Download and Copy, and Apply is gone", await eventually(async () => (await scard.getByRole("link", { name: /Download/ }).count()) === 1 && (await scard.getByRole("button", { name: /Copy/ }).count()) === 1 && (await scard.getByRole("button", { name: "Apply as draft spec" }).count()) === 0));
+  const got = await fetch(`${BASE}/api/automation-suggestions/${(await specs())[0].id}/spec`, { headers: { ...HDR, Cookie: `tb_sid=${cookies.tester}` } });
+  check("req spec: the download is the edited text, an attachment with the file name, plain text", got.status === 200 && (await got.text()) === "// edited by Tess\ntest.fixme(true, 'still a draft');\n" && got.headers.get("content-disposition") === `attachment; filename="${fileName}"` && /^text\/plain/.test(got.headers.get("content-type") ?? "") && got.headers.get("x-content-type-options") === "nosniff");
+  await sregion.getByRole("button", { name: "Suggest Playwright spec" }).click();
+  check("req spec: asking again makes no second spec", await eventually(async () => (await sregion.getByRole("status").innerText()).includes("already has a spec suggestion") && (await specs()).length === 1));
+  await scard.locator("details summary").click();
+  check("req spec: the history says who did what", await eventually(async () => { const t = await scard.innerText(); return t.includes("Suggested by rule") && t.includes("Spec text") && t.includes("Approved") && t.includes("Applied as a draft spec") && t.includes("by Tess"); }));
+  await sp.close();
+
+  const sv = await open("viewer", `/p/${A}/requirements?req=${r3.id}`);
+  const vsr = sv.page.getByRole("region", { name: "Automation suggestions" });
+  check("req spec: a viewer sees it and can download it, but Suggest, Edit and Reject are off", await eventually(async () => (await vsr.getByRole("link", { name: /Download/ }).count()) === 1 && (await vsr.getByRole("button", { name: "Suggest Playwright spec" }).isDisabled()) && (await vsr.getByRole("button", { name: "Edit", exact: true }).isDisabled()) && (await vsr.getByRole("button", { name: "Reject", exact: true }).isDisabled())));
+  await sv.close();
 }
 
 // /admin: the owner looks after the accounts and reads the audit log; nobody else is offered it.

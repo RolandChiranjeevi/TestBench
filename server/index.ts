@@ -54,7 +54,7 @@ import { checkAccessTable, trackRoutes } from "./access.ts";
 import { registerAccessGuard } from "./accessguard.ts";
 import { roleOf } from "./members.ts";
 import { coverageGaps, getObservationLinks, setObservationLinks } from "./coveragegaps.ts";
-import { applyAutomationSuggestion, applySpecSuggestion, specFile, suggestSpecForPlanItem, decideAutomationSuggestion, editAutomationSuggestion, getAutomationSuggestion, listAutomationSuggestions, listRequirementAutomationSuggestions, removeRequirementSuggestions, suggestAutomation, suggestAutomationForRequirement } from "./automation.ts";
+import { applyAutomationSuggestion, applySpecSuggestion, specFile, suggestSpecForPlanItem, suggestSpecForRequirement, decideAutomationSuggestion, editAutomationSuggestion, getAutomationSuggestion, listAutomationSuggestions, listRequirementAutomationSuggestions, removeRequirementSuggestions, suggestAutomation, suggestAutomationForRequirement } from "./automation.ts";
 import { generateProposals } from "./gapproposals.ts";
 import { agentRequirementsForToken, parseAgentQuery } from "./agentapi.ts";
 import { applyManualUpdate, addToProject, createCaseFromProposal, deleteManualTest, getManualTest, ignoreManualUpdate, listManualTests, relinkManualRefs, reviewManualTest, updateManualTest } from "./manualtests.ts";
@@ -1232,6 +1232,13 @@ app.post("/api/requirements/:id/automation-suggestions", (req) => {
   return { ...made, suggestions: listRequirementAutomationSuggestions(id) };
 });
 app.get("/api/requirements/:id/automation-suggestions", (req) => audited(() => listRequirementAutomationSuggestions(idParam(req))));
+// A Playwright spec suggestion for an approved requirement. The file is downloaded with the route below, after a person has applied it.
+app.post("/api/requirements/:id/spec-suggestions", (req) => {
+  const id = idParam(req);
+  z.object({}).strict().parse(req.body ?? {});
+  const made = audited(() => suggestSpecForRequirement(id));
+  return { ...made, suggestions: listRequirementAutomationSuggestions(id) };
+});
 app.patch("/api/automation-suggestions/:id", (req) => {
   const id = idParam(req);
   const body = suggestionFields.partial().strict().parse(req.body);

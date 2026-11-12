@@ -163,6 +163,27 @@ export function suggestSpecFromPlanItem(f: PlanFields, ref: string): { content: 
   };
 }
 
+export const RULE_SPEC_REQUIREMENT = "playwright_spec_from_requirement";
+export const RULE_SPEC_REQUIREMENT_LABEL = "rule: playwright spec from requirement";
+
+/** The spec suggestion for a requirement: the same template as for a plan item. Without acceptance criteria nothing is made, for the same reason as the automation suggestion. */
+export function suggestSpecFromRequirement(f: RequirementFields, number: number): { content: SuggestionContent; fileName: string } | { reason: string } {
+  const base = suggestFromRequirement(f);
+  if ("reason" in base) return base;
+  const { steps, assertions, testData } = base.content;
+  const ref = `REQ-${number}`;
+  const fileName = specFileName(`req-${number}`, f.title);
+  return {
+    fileName,
+    content: {
+      summary: clip(`Playwright spec ${fileName} for “${f.title}”: ${plural(steps.length, "step")} (a skeleton to rewrite) and ${plural(assertions.length, "check")}, as a draft to finish.`, 300),
+      steps, assertions, testData,
+      plan: ["Draft Playwright spec from the requirement's acceptance criteria.", "A requirement has no steps of its own: the steps are a skeleton, to be rewritten before scripting.", "It starts with test.fixme, and every step and check is a TODO for a person to write: no selector or URL is known.", "Nothing is run by TestBench, and nothing is written to disk or to git."].join("\n"),
+      artifactText: buildSpec({ source: `requirement ${ref}`, title: f.title, steps, assertions, testData }),
+    },
+  };
+}
+
 // ---- the store ----
 
 type Who = { name: string; userId: number | null };
@@ -299,6 +320,20 @@ export function suggestAutomationForRequirement(requirementId: number): { create
   const made = suggestFromRequirement(f);
   if ("reason" in made) return { created: [], message: made.reason };
   return createSuggestion({ projectId: q.project_id, auditId: null, kind: "requirement", ref: String(q.id), rule: RULE_REQUIREMENT, label: RULE_REQUIREMENT_LABEL, who: ruleWhoRequirement, noun: "requirement", content: made.content, hash: requirementHash(f) });
+}
+
+/**
+ * A person asks for a Playwright spec suggestion for an approved requirement. Same rules as for a plan item: the rule makes it, as `proposed`, once; a rejected or ignored one is not made
+ * again; only an approved requirement gets one (409 otherwise). It cannot be downloaded until a person has applied it.
+ */
+export function suggestSpecForRequirement(requirementId: number): { created: SuggestionView[]; message: string } {
+  const q = requirementRow(requirementId);
+  if (!q) throw new AuditError(404, "Requirement not found");
+  if (q.status !== "approved") throw new AuditError(409, "Approve the requirement first. A spec is only suggested for an approved requirement.");
+  const f = requirementFields(q);
+  const made = suggestSpecFromRequirement(f, q.number);
+  if ("reason" in made) return { created: [], message: made.reason };
+  return createSuggestion({ projectId: q.project_id, auditId: null, kind: "requirement", ref: String(q.id), rule: RULE_SPEC_REQUIREMENT, label: RULE_SPEC_REQUIREMENT_LABEL, who: { name: "Rule: playwright spec from requirement", userId: null }, noun: "requirement", thing: "a spec suggestion", content: made.content, hash: requirementHash(f), artifactName: made.fileName });
 }
 
 /** The suggestions of one requirement, oldest first. Ignored ones are included: the page hides them by default. */

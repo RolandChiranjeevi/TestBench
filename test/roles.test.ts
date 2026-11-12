@@ -937,6 +937,100 @@ describe("Playwright spec suggestions for a plan item", () => {
   });
 });
 
+describe("Playwright spec suggestions for a requirement", () => {
+  const reqOf = (project: number, status = "approved", criteria = "- The text is shown\n- The input is cleared") =>
+    db.prepare("INSERT INTO requirements (project_id, number, title, status, acceptance_criteria) VALUES (?, (SELECT COALESCE(MAX(number), 0) + 1 FROM requirements WHERE project_id = ?), 'Todo can be added', ?, ?) RETURNING id, number").get(project, project, status, criteria) as { id: number; number: number };
+  const ask = (id: number, cookie?: string, headers: Record<string, string> = {}) => call("POST", `/api/requirements/${id}/spec-suggestions`, { cookie, headers, body: {} });
+  const specOf = (id: number) => db.prepare("SELECT id, review_status AS s, applied_at AS at, applied_by_user_id AS by, case_id AS c FROM automation_suggestions WHERE subject_kind = 'requirement' AND subject_ref = ? AND artifact_name != ''").get(String(id)) as { id: number; s: string; at: string | null; by: number | null; c: number | null } | undefined;
+  const download = (id: number, cookie?: string, headers: Record<string, string> = {}) => call("GET", `/api/automation-suggestions/${id}/spec`, { cookie, headers });
+
+  it("a tester asks, edits, approves and applies; a viewer reads but cannot ask, decide or apply; a stranger gets 404; the file needs Apply, a login and a role", async () => {
+    const q = reqOf(projects.A);
+    assert.ok(denied403(await ask(q.id, people.vie.cookie)), "a viewer cannot ask");
+    assert.ok(denied404(await ask(q.id, people.bob.cookie)), "nor someone from another project");
+    assert.equal(specOf(q.id), undefined, "nothing was made");
+    const made = await ask(q.id, people.tes.cookie);
+    assert.equal(made.statusCode, 200, made.body);
+    assert.deepEqual([made.json().created.length, made.json().created[0].isSpec, made.json().created[0].artifactName], [1, true, `req-${q.number}-todo-can-be-added.spec.ts`]);
+    assert.match(made.json().created[0].artifactText, /test\.fixme\(true,/);
+    const id = specOf(q.id)!.id;
+    assert.equal((await call("GET", `/api/requirements/${q.id}/automation-suggestions`, { cookie: people.vie.cookie })).statusCode, 200, "a viewer reads");
+
+    for (const who of ["tes", "vie", "adm"]) assert.equal((await download(id, people[who].cookie)).statusCode, 409, `${who} before Apply`);
+    assert.ok(denied404(await download(id, people.bob.cookie)));
+    assert.ok([401, 403].includes((await download(id)).statusCode));
+
+    for (const [who, deny] of [["vie", denied403], ["bob", denied404]] as const) {
+      assert.ok(deny(await call("PATCH", `/api/automation-suggestions/${id}`, { cookie: people[who].cookie, body: { artifactText: "// x\n" } })), `${who} cannot edit`);
+      assert.ok(deny(await call("POST", `/api/automation-suggestions/${id}/decision`, { cookie: people[who].cookie, body: { status: "approved" } })), `${who} cannot decide`);
+      assert.ok(deny(await call("POST", `/api/automation-suggestions/${id}/apply`, { cookie: people[who].cookie, body: {} })), `${who} cannot apply`);
+    }
+    assert.deepEqual([specOf(q.id)!.s, specOf(q.id)!.at], ["proposed", null], "nothing changed");
+
+    assert.equal((await call("PATCH", `/api/automation-suggestions/${id}`, { cookie: people.tes.cookie, body: { artifactText: "// edited by tes\nawait x();\n" } })).statusCode, 200);
+    assert.equal((await call("POST", `/api/automation-suggestions/${id}/decision`, { cookie: people.adm.cookie, body: { status: "approved" } })).statusCode, 200);
+    const applied = await call("POST", `/api/automation-suggestions/${id}/apply`, { cookie: people.tes.cookie, body: {} });
+    assert.equal(applied.statusCode, 200, applied.body);
+    assert.deepEqual([specOf(q.id)!.s, specOf(q.id)!.by, specOf(q.id)!.c], ["approved", people.tes.id, null], "applied by the tester's account, approved only by the admin's decision, and no test case");
+
+    for (const who of ["vie", "tes", "adm"]) {
+      const f = await download(id, people[who].cookie);
+      assert.equal(f.statusCode, 200, who);
+      assert.equal(f.body, "// edited by tes\nawait x();\n");
+      assert.equal(f.headers["content-disposition"], `attachment; filename="req-${q.number}-todo-can-be-added.spec.ts"`);
+      assert.match(String(f.headers["content-type"]), /^text\/plain/);
+      assert.equal(f.headers["x-content-type-options"], "nosniff");
+    }
+    assert.ok(denied404(await download(id, people.bob.cookie)));
+    assert.ok([401, 403].includes((await download(id)).statusCode));
+  });
+
+  it("a draft requirement gets 409, one without criteria gets a message and nothing is stored, an unknown one is 404", async () => {
+    const draft = reqOf(projects.A, "draft"), bare = reqOf(projects.A, "approved", "");
+    const refused = await ask(draft.id, people.tes.cookie);
+    assert.equal(refused.statusCode, 409);
+    assert.match(refused.json().error, /Approve the requirement first/);
+    const none = await ask(bare.id, people.tes.cookie);
+    assert.equal(none.statusCode, 200);
+    assert.match(none.json().message, /no acceptance criteria/);
+    assert.equal((await ask(999999, people.tes.cookie)).statusCode, 404);
+    assert.equal(specOf(draft.id), undefined);
+    assert.equal(specOf(bare.id), undefined);
+  });
+
+  it("deleting the requirement removes its spec suggestion", async () => {
+    const q = reqOf(projects.A);
+    assert.equal((await ask(q.id, people.tes.cookie)).statusCode, 200);
+    assert.ok(specOf(q.id));
+    assert.equal((await call("DELETE", `/api/requirements/${q.id}`, { cookie: people.adm.cookie })).statusCode, 200);
+    assert.equal(specOf(q.id), undefined);
+  });
+
+  it("an agent, CI or proposal token cannot ask for a requirement spec, apply it or download it, with or without a login", async () => {
+    const q = reqOf(projects.A);
+    const id = ((await ask(q.id, people.tes.cookie)).json().created[0] as { id: number }).id;
+    assert.equal((await call("POST", `/api/automation-suggestions/${id}/apply`, { cookie: people.tes.cookie, body: {} })).statusCode, 200);
+    assert.equal((await call("PUT", "/api/settings/agent-proposals", { cookie: ownerCookie, body: { enabled: true } })).statusCode, 200);
+    const fresh = (await call("POST", "/api/projects", { cookie: ownerCookie, body: { name: "Req spec tokens", key: "RST" } })).json().id as number;
+    const tokens = [
+      (await call("POST", `/api/projects/${fresh}/agent/tokens`, { cookie: ownerCookie, body: { name: "r" } })).json().token,
+      (await call("POST", `/api/projects/${fresh}/ci/tokens`, { cookie: ownerCookie, body: { name: "c" } })).json().token,
+      (await call("POST", `/api/projects/${fresh}/propose-tokens`, { cookie: ownerCookie, body: { name: "p" } })).json().token,
+    ] as string[];
+    assert.ok(tokens.every((t) => typeof t === "string" && t.length > 20));
+    const q2 = reqOf(projects.A);
+    for (const token of tokens) {
+      for (const cookie of [undefined, people.tes.cookie, ownerCookie]) {
+        const h = { authorization: `Bearer ${token}` };
+        for (const r of [await download(id, cookie, h), await ask(q2.id, cookie, h), await call("POST", `/api/automation-suggestions/${id}/apply`, { cookie, headers: h, body: {} })]) {
+          assert.ok([401, 403].includes(r.statusCode), `answered ${r.statusCode}`);
+        }
+      }
+    }
+    assert.equal(specOf(q2.id), undefined, "nothing was made");
+  });
+});
+
 describe("nothing left this process", () => {
   it("the routes that were let through asked for outside addresses, and every one was refused by the stub", () => {
     assert.ok(outbound.every((u) => /^https?:\/\//.test(u)), outbound.join(", "));

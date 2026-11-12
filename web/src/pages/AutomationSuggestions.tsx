@@ -67,7 +67,7 @@ export function AutomationSuggestions({ pid, scope, itemStatus }: { pid: string;
       if (ok) toast("success", ok);
       return r;
     }).catch((e: Error) => { toast("error", e.message); return null; });
-  const specUrl = scope.kind === "plan_item" ? `/api/audits/${scope.auditId}/plan/items/${encodeURIComponent(scope.sourceId)}/spec-suggestions` : null;
+  const specUrl = scope.kind === "plan_item" ? `/api/audits/${scope.auditId}/plan/items/${encodeURIComponent(scope.sourceId)}/spec-suggestions` : `/api/requirements/${scope.requirementId}/spec-suggestions`;
   const ask = (url: string) => run(() => api.post<{ created: Suggestion[]; message: string }>(url, {}), "").then((r) => {
     if (!r) return;
     setMessage(r.message);
