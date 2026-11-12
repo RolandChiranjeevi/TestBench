@@ -7,13 +7,14 @@ import { ConfirmModal, Empty, ListSkeleton, Modal, PRIORITY_LABEL, useToast } fr
 import { Badge, BugWorkflowBadge, CiStatusBadge, ReviewStatusBadge, SeverityBadge } from "../components/Badge";
 import { SEVERITY_LOOK } from "../statuses";
 import { Button, buttonClass } from "../components/Button";
+import { BugDrafts } from "./BugDrafts";
 import { useCan } from "../components/Access";
 
 type Status = "proposed" | "accepted" | "rejected" | "duplicate";
 interface Item {
   id: number; sourceId: string; title: string; status: Status; reviewedBy: string | null; reviewedAt: string | null; severity: Priority | null; severitySource: SeveritySource | null; severityBy: string | null; foundAt: string | null; importedAt: string;
   auditTitle: string; auditDeleted: boolean; unresolvedRefs: number; attachments: number; attachmentProblems: number; pendingUpdate: boolean; published: boolean; presence: Presence;
-  source: Source; testKey: string | null; tags: string[]; workflowStatus: Workflow; assignee: string;
+  source: Source; fromScreenshot: boolean; testKey: string | null; tags: string[]; workflowStatus: Workflow; assignee: string;
   ci: { lastStatus: CiStatus | null; lastAt: string | null; flaky: boolean; failedRuns: number; branch: string; commit: string; pipelineUrl: string } | null;
   /** Where the bug is new: it came with the project's latest CI run or latest audit import. */
   newIn: "ci" | "audit" | null;
@@ -58,7 +59,7 @@ interface Detail {
   pendingUpdate: { rev: number; changes: { field: string; from: string; to: string }[]; evidenceAdded: number; evidenceRemoved: number } | null;
   duplicateOf: { id: number; title: string } | null; duplicates: { id: number; title: string }[]; similar: { id: number; title: string; status: string }[];
   publications: Publication[];
-  source: Source; testKey: string | null; tags: string[]; workflowStatus: Workflow; assignee: string; resolvedSuspectedAt: string | null; closedAt: string | null;
+  source: Source; fromScreenshot: boolean; testKey: string | null; tags: string[]; workflowStatus: Workflow; assignee: string; resolvedSuspectedAt: string | null; closedAt: string | null;
   ci: CiDetail | null; events: { at: string; actor: string; kind: string; detail: string }[];
 }
 interface Publication {
@@ -122,10 +123,11 @@ const DECISION_WORD: Record<Status, string> = { proposed: "Suggested", accepted:
 const DECIDED_BY: Record<Status, string> = { proposed: "Restored by", accepted: "Confirmed by", rejected: "Dismissed by", duplicate: "Marked as a duplicate by" };
 
 /**
- * Who made a bug suggestion. A test agent's report and an observation that a person turned into a bug are AI suggestions; a failing CI test is not
+ * Who made a bug suggestion. A bug made from a screenshot draft says so (a rule made the draft, it is not AI). A test agent's report and an observation that a person turned into a bug are AI suggestions; a failing CI test is not
  * (it is a fact from a test run), so it says where it came from and is not marked as AI.
  */
-function Origin({ source }: { source: Source }) {
+function Origin({ source, fromScreenshot }: { source: Source; fromScreenshot?: boolean }) {
+  if (fromScreenshot) return <span className="chip" title="A bug draft that a person made from a screenshot and a note, and applied. A fixed rule made the draft; it is not an AI. Nothing becomes a bug until you confirm it.">From a screenshot</span>;
   if (source === "ci") return <span className="chip" title="Reported by CI from a failing test. Nothing becomes a bug until you confirm it.">From CI</span>;
   return (
     <Badge tone="accent" title={source === "manual" ? "A test agent's observation that a person turned into a suggestion. Nothing becomes a bug until you confirm it." : "Suggested by a test agent. Nothing becomes a bug until you confirm it."}>
@@ -192,6 +194,7 @@ export function BugReportsPage() {
         <Button needs="admin" onClick={() => setTokensOpen(true)} title="API tokens that let your CI send test results here"><KeyRound size={14} /> CI</Button>
         <Button needs="tester" variant="primary" onClick={() => setImporting(true)}><Upload size={14} /> Import audit package</Button>
       </div>
+      <BugDrafts pid={pid ?? ""} />
       {tab !== "audits" && data && <LatestRunsStrip r={data.latestRuns} onShowNew={showNew} />}
       <div className="toolbar">
         <div className="tabs" role="tablist">
@@ -261,7 +264,7 @@ export function BugReportsPage() {
               <span className="title">{b.title}</span>
               <span className="meta">
                 {b.newIn && <Badge tone="accent" title={newWhy(b.newIn, data?.latestRuns)}>New</Badge>}
-                <Origin source={b.source} />
+                <Origin source={b.source} fromScreenshot={b.fromScreenshot} />
                 {b.ci?.lastStatus && (
                   <CiStatusBadge value={b.ci.lastStatus} title="The latest CI result of this test"
                     label={`${CI_STATUS_LABEL[b.ci.lastStatus]}${b.ci.failedRuns > 0 ? ` · ${b.ci.failedRuns} failed run${b.ci.failedRuns === 1 ? "" : "s"}` : ""}`} />
@@ -360,7 +363,7 @@ function DetailModal({ id, pid, onClose, onOpen }: { id: number; pid: string; on
 
   return (
     <Modal
-      title={<span className="row" style={{ gap: 8 }}><Origin source={b.source} />{b.source !== "ci" && <span className="mono faint">{b.sourceId}</span>}<span className="chip">{b.status === "accepted" ? `Confirmed · bug #${b.id}` : DECISION_WORD[b.status]}</span></span>}
+      title={<span className="row" style={{ gap: 8 }}><Origin source={b.source} fromScreenshot={b.fromScreenshot} />{b.source !== "ci" && <span className="mono faint">{b.sourceId}</span>}<span className="chip">{b.status === "accepted" ? `Confirmed · bug #${b.id}` : DECISION_WORD[b.status]}</span></span>}
       onClose={onClose}
       width={820}
       footer={
