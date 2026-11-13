@@ -1,0 +1,31 @@
+{
+  "version" : 1,
+  "name" : "TP-Auditors",
+  "type" : "DECATHLON",
+  "competitors" : [ {
+    "name" : "TP-A1",
+    "competition" : "DECATHLON",
+    "results" : {
+      "100m" : 10.8,
+      "longJump" : 720.0,
+      "shotPut" : 14.5,
+      "highJump" : 200.0,
+      "400m" : 48.5,
+      "110mHurdles" : 14.3,
+      "discusThrow" : 44.0,
+      "poleVault" : 480.0,
+      "javelinThrow" : 60.0,
+      "1500m" : 270.0
+    }
+  }, {
+    "name" : "TP-A2",
+    "competition" : "DECATHLON",
+    "results" : {
+      "100m" : 11.2,
+      "longJump" : 680.0,
+      "shotPut" : 13.0
+    }
+  }, {
+    "name" : "TP-A3",
+    "competition" : "DECATHLON",
+    "results"

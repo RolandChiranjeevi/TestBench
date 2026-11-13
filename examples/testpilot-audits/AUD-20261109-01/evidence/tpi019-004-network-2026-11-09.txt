@@ -1,0 +1,8 @@
+TPI-019 / TPI-004 in TP-Auditors-H, 2026-11-09
+TPI-019 overwrite dialog texts:
+ 12:44:38Z "TP-A5 already has a result for 200m (s): 24.5 (933 pts). Replace it with 24?" -> Yes -> "Saved: 981 pts", row total 1867
+ 12:44:39Z "TP-A5 already has a result for 200m (s): 24 (981 pts). Replace it with 24.5?" -> Yes -> "Saved: 933 pts", row total 1819
+TPI-004 edit dialog: "Edit competitor | Name | 200m (s) | 800m (s) | Remove competitor | Cancel | Save changes", name prefilled.
+ 12:44:49Z TP-A5 -> TP-A5-E: "Changes saved", row TP-A5-E total 1819
+ 12:44:50Z TP-A5-E -> TP-A5: "Changes saved", row TP-A5 total 1819
+Network (Playwright MCP): 81/84 POST c2/score 200 (TPI-018), 87/90 POST c2/score 200 (TPI-019), 92/94 POST c2/competitors/rename 204 (TPI-004; no score requests sent by Save changes).

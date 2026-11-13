@@ -1,0 +1,45 @@
+{
+  "status": "Added",
+  "rows": [
+    "TP-Bo",
+    "TP-Cia",
+    "TP-Anna",
+    "TP-V768",
+    "TP-V375",
+    "TP-Key"
+  ],
+  "counter": "TP-AUD-20261105-01 · Decathlon (6)",
+  "focusLog": [
+    {
+      "tag": "INPUT",
+      "role": null,
+      "name": "Name",
+      "outline": "solid 2px",
+      "boxShadow": "none"
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "name": "Add competitor",
+      "outline": "solid 2px",
+      "boxShadow": "none"
+    }
+  ],
+  "accessibleNames": [
+    "BUTTON: Switch to dark mode",
+    "combobox: TP-AUD-20261105-01 · Decathlon (6)",
+    "BUTTON: New competition",
+    "BUTTON: Rename",
+    "INPUT: Name",
+    "BUTTON: Add competitor",
+    "combobox: Competitor",
+    "BUTTON: Show all competitors",
+    "combobox: Decathlon",
+    "combobox: 100m (s)",
+    "INPUT: Result",
+    "BUTTON: Save score",
+    "BUTTON: Export CSV",
+    "BUTTON: Save state",
+    "BUTTON: Load state…"
+  ]
+}

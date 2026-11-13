@@ -1,0 +1,6 @@
+TPI-006 special-character competitor name in TP-Auditors, 2026-11-09
+12:49:16Z typed: TP-<b>X</b> & "Ö" 'å'   -> click 'Add competitor'
+Request #168 POST /api/competitions/c1/competitors body {"name":"TP-<b>X</b> & \"Ö\" 'å'"} -> 400 (empty response body)
+UI: #error "Name must contain valid letters"; no row added (standings: TP-A1, TP-Bnd, TP-A2, TP-A3); picker shows no new entry; after reload no new row.
+Console: 1 'Failed to load resource: 400' error.
+Not determined: which character(s) cause the rejection (<, >, &, quotes, Ö/å). Isolating it needs extra add attempts beyond the scope limit.

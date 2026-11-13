@@ -1,0 +1,12 @@
+TPI-032 keyboard-only walkthrough (attempt 2), 2026-11-09, 1280x800, light mode
+Focus indicator: every stop shows outline solid 2px rgb(30, 64, 175) (tab order captured 12:54:31Z):
+ themeToggle > competition combobox > New competition > Rename > Name > Add competitor > Competitor (combobox) > Event (combobox; Discipline is disabled in a one-discipline competition)
+ > Result > Save score > Export CSV > Save state > Load state… > Edit <name> buttons (one per row) > back to the browser UI > themeToggle. No traps.
+Add: Enter in Name adds (attempt 1, 12:54:50Z, TP-Key).
+Result entry (12:55:43Z-12:56:03Z): Competitor field: typing does not filter or open the list; ArrowDown opens the full list (aria-expanded=true, aria-activedescendant moves);
+ 5 x ArrowDown to TP-Key, Enter picks it and moves focus to Result (skips Event). Shift+Tab to Event: ArrowDown opens the list, arrows move, Enter closes keeping 100m.
+ Tab to Result, typed 11.50, Enter in Result saves: "Saved: 753 pts" (row 5|TP-Key|753).
+Tabs (General, view only): competition combobox ArrowDown/ArrowUp + Enter selects General; Tab reaches tab "Decathlon 0"; ArrowRight selects Heptathlon, ArrowLeft back. Back to TP-Auditors the same way.
+Remove (12:56:35Z): Tab to "Edit TP-Key", Enter opens the dialog with focus on Name; Tab x2 to "Remove competitor"; Enter -> "Confirm remove"; Escape closes the dialog, TP-Key kept, focus returns to "Edit TP-Key".
+Gaps: table rows are not focusable, so "click a row to load the competitor" has no keyboard equivalent (the Competitor combobox reaches the same result).
+Method note: before each part the script clicked an empty page corner (5,5) to reset focus to the document start; all actions under test were done with keys only.

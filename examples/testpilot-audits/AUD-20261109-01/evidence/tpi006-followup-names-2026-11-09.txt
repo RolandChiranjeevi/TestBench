@@ -1,0 +1,6 @@
+TPI-006 follow-up (scope change 13:01:12Z, +3 add attempts), TP-Auditors, 1280x800, 2026-11-09
+13:01:21Z "TP-Åsa Öberg"    -> "Added"; table cell text "TP-Åsa Öberg" (innerHTML identical, no <b>); picker option TP-Åsa Öberg; still listed after reload.
+13:01:22Z "TP-O'Neil & Co"  -> #error "Name must contain valid letters"; no row (server 400, console error).
+13:01:22Z "TP-<b>X</b>"     -> #error "Name must contain valid letters"; no row (server 400, console error).
+Earlier (EX-021, 12:49:16Z): "TP-<b>X</b> & \"Ö\" 'å'" -> same rejection.
+Conclusion: å/ö are accepted and shown literally; the apostrophe and/or the ampersand cause rejection (not isolated further: both are in the requirement's list); '<' '>' cause rejection, so no HTML is ever rendered, but literal display of those characters cannot be checked.

@@ -1,0 +1,24 @@
+TPI-034 contrast, computed from computed styles (WCAG 2.x relative luminance), 1280x800, TP-Auditors, 2026-11-09 12:57:57Z
+Note: #msg and #error were filled with sample text in the DOM ('Saved: 774 pts', 'Result is required') only to measure their colours; no request was sent.
+TEXT (need 4.5:1, 3:1 for large)                 light            dark
+ h1 title (25.6px, large)                         17.06            15.89
+ subtitle                                          7.24             8.49
+ labels / hints / table header / footer hint       7.58             7.86
+ input text, table cells, selected tab             17.85            14.72
+ placeholder #name                                 7.58             7.86
+ primary buttons (Add, Save score, New comp.)      8.72             7.52
+ secondary button (Export CSV)                     17.85            14.72
+ unselected tab (Heptathlon)                       6.92             7.25
+ status #msg                                       5.02             11.23
+ error #error                                      6.47             8.54
+ => all text passes in both themes.
+UI COMPONENTS (need 3:1)
+ text input border #name, #name2 (Competitor), #compName:
+   light 1px solid rgb(213,220,232) on rgb(255,255,255) = 1.38   FAIL
+   dark  1px solid rgb(38,50,72)   on rgb(17,26,46)     = 1.35   FAIL
+   input background equals the card background in both themes (light 255,255,255 / dark 17,26,46) and there is no box-shadow,
+   so the border is the only visual boundary of the field.
+ #raw in error state: red border + 1px ring, 6.47 (light) / 8.54 (dark)  pass
+ button 'New competition' border/background vs card: 8.72 / 6.97  pass
+ focus outline rgb(30,64,175) 2px (TPI-032) on white: 8.72  pass
+Independent recomputation in Python (12:58Z): 1.38, 1.35 and 5.02 confirmed.

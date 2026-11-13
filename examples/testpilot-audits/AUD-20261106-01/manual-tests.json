@@ -1,0 +1,157 @@
+[
+  {
+    "manual_test_proposal_id": "MTP-001",
+    "title": "Valid and invalid competitor names",
+    "requirement_id": "REQ-LOCAL-001",
+    "objective": "Agree which competitor names are valid, then verify how the app handles empty, duplicate, very long and special-character names.",
+    "steps": [
+      "Agree with the product owner which names are valid and what the app must say for an invalid one.",
+      "In a TP- competition, try an empty name, a name that already exists, a 200-character name and a name with a comma and a quote.",
+      "Check the message for each and that invalid names are not added, also after a page reload."
+    ],
+    "expected_result": "Invalid names are rejected with a clear message and are not added; valid names are added.",
+    "origin": {
+      "type": "coverage_gap",
+      "id": "CG-001"
+    },
+    "reason_manual": "Needs a product decision on what a valid name is before it can be automated.",
+    "evidence_ids": [],
+    "status": "proposed"
+  },
+  {
+    "manual_test_proposal_id": "MTP-002",
+    "title": "Valid and invalid result values",
+    "requirement_id": "REQ-LOCAL-002",
+    "objective": "Agree limits and messages for invalid result values and verify them per event.",
+    "steps": [
+      "Agree with the product owner the valid range per event and the expected message.",
+      "In a TP- competition, try an empty, a negative, a non-numeric and a very large value for one time event and one distance event.",
+      "Check the message and that no invalid value is saved, also after a page reload."
+    ],
+    "expected_result": "Invalid values are rejected with a clear message and are not saved.",
+    "origin": {
+      "type": "coverage_gap",
+      "id": "CG-002"
+    },
+    "reason_manual": "Needs a product decision on the limits before it can be automated.",
+    "evidence_ids": [],
+    "status": "proposed"
+  },
+  {
+    "manual_test_proposal_id": "MTP-003",
+    "title": "Replace an existing result",
+    "requirement_id": "REQ-LOCAL-002",
+    "objective": "Verify what happens when a result is saved for an event that already has one.",
+    "steps": [
+      "In a TP- competition, save a valid result for a competitor and an event.",
+      "Save a different valid result for the same competitor and event.",
+      "Answer the confirmation dialog once with 'No, keep it' and once with 'Yes, replace', and check the standings each time."
+    ],
+    "expected_result": "'No' keeps the old result and its points; 'Yes' replaces them; the standings and total follow the choice.",
+    "origin": {
+      "type": "coverage_gap",
+      "id": "CG-003"
+    },
+    "reason_manual": "The requirement gives no criterion for replacing a result; a person should agree the expected behaviour first.",
+    "evidence_ids": [],
+    "status": "proposed"
+  },
+  {
+    "manual_test_proposal_id": "MTP-004",
+    "title": "Edit and remove a competitor",
+    "requirement_id": "REQ-LOCAL-001",
+    "objective": "Verify editing a competitor's name and results, and removing a competitor.",
+    "steps": [
+      "In a TP- competition, click a competitor row to open the edit dialog.",
+      "Change the name and a result and save; then open it again and remove the competitor.",
+      "Check the standings and total after each change."
+    ],
+    "expected_result": "Changes are shown in the standings and are kept after a reload; a removed competitor is no longer listed.",
+    "origin": {
+      "type": "coverage_gap",
+      "id": "CG-004"
+    },
+    "reason_manual": "Editing and removing data was outside the scope and no criterion exists; run by a person on disposable data.",
+    "evidence_ids": [],
+    "status": "proposed"
+  },
+  {
+    "manual_test_proposal_id": "MTP-005",
+    "title": "Points and ranking per event",
+    "requirement_id": "REQ-LOCAL-002",
+    "objective": "Compare the points and the ranking with the official combined-events scoring tables.",
+    "steps": [
+      "Agree the scoring tables that apply (World Athletics, current version).",
+      "In a TP- competition, enter reference results for every Decathlon event for two competitors.",
+      "Compare each event's points and the total with the tables, and check the order of the standings."
+    ],
+    "expected_result": "Points per event and total equal the tables; positions follow the totals.",
+    "origin": {
+      "type": "coverage_gap",
+      "id": "CG-005"
+    },
+    "reason_manual": "Needs the scoring tables as a reference before it can be automated.",
+    "evidence_ids": [],
+    "status": "proposed"
+  },
+  {
+    "manual_test_proposal_id": "MTP-006",
+    "title": "CSV export matches the table",
+    "requirement_id": "REQ-LOCAL-002",
+    "objective": "Verify that the exported CSV contains the same data as the standings.",
+    "steps": [
+      "In a TP- competition with results, click 'Export CSV' on the Decathlon tab.",
+      "Open the file and compare every competitor, total, position and event value with the table.",
+      "Repeat with a name that contains a comma."
+    ],
+    "expected_result": "The CSV has every competitor and value shown in the table, and names with a comma stay intact.",
+    "origin": {
+      "type": "coverage_gap",
+      "id": "CG-006"
+    },
+    "reason_manual": "The export was not in scope and gives a download that a person should inspect.",
+    "evidence_ids": [],
+    "status": "proposed"
+  },
+  {
+    "manual_test_proposal_id": "MTP-007",
+    "title": "Page width at 375 px",
+    "requirement_id": "REQ-LOCAL-001",
+    "objective": "Decide whether the page may be wider than a 375 px screen and check the layout on a real phone.",
+    "steps": [
+      "Open http://localhost:8080 at 375x812 (or a real phone) and select a TP- competition with competitors.",
+      "Check whether the page scrolls sideways and whether the standings table can be read and reached.",
+      "Agree the expected behaviour (for example a table that scrolls inside its own box)."
+    ],
+    "expected_result": "The page does not scroll sideways, or the table scrolls in its own box, as agreed.",
+    "origin": {
+      "type": "execution",
+      "id": "EX-004"
+    },
+    "reason_manual": "No requirement gives a layout criterion and there is no design reference; a person must decide what is acceptable.",
+    "evidence_ids": [
+      "EV-006",
+      "EV-007"
+    ],
+    "status": "proposed"
+  },
+  {
+    "manual_test_proposal_id": "MTP-008",
+    "title": "Long Jump result after a reload",
+    "requirement_id": "REQ-LOCAL-002",
+    "objective": "Verify that a saved Long Jump result is still there after a page reload.",
+    "steps": [
+      "In a TP- competition, save a Long Jump result for a competitor (in cm).",
+      "Reload the page and select the competition.",
+      "Check that the Long Jump result and its points are still shown."
+    ],
+    "expected_result": "The Long Jump result and its points are still shown after the reload.",
+    "origin": {
+      "type": "coverage_gap",
+      "id": "CG-007"
+    },
+    "reason_manual": "Can be automated; proposed as a follow-up to TPI-008, which did not reload after saving.",
+    "evidence_ids": [],
+    "status": "proposed"
+  }
+]

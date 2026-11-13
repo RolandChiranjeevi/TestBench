@@ -1,0 +1,12 @@
+{
+  "attempt": "(empty)",
+  "input": "",
+  "ariaInvalid": "true",
+  "visibleMessages": [
+    "Enter results and follow the standings",
+    "Result is required",
+    "Click a row to load that competitor into \"Enter result\". Positions are counted within each competition and ties share a position."
+  ],
+  "keyTotal": "0",
+  "keyCells": []
+}

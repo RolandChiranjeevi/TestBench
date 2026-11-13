@@ -1,0 +1,2 @@
+# Audit evidence must stay byte-identical to the registered files (contract V-32): no line-ending conversion.
+AUD-*/evidence/** -text

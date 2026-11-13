@@ -1,0 +1,12 @@
+{
+  "attempt": "abc",
+  "input": "abc",
+  "ariaInvalid": "true",
+  "visibleMessages": [
+    "Enter results and follow the standings",
+    "Enter the result in seconds (163) or as minutes:seconds (2:43).",
+    "Click a row to load that competitor into \"Enter result\". Positions are counted within each competition and ties share a position."
+  ],
+  "keyTotal": "0",
+  "keyCells": []
+}

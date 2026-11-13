@@ -1,0 +1,8 @@
+TPI-003 rejected competitor names - network and console (Playwright MCP), 2026-11-09
+Network:
+18. [POST] /api/competitions/c1/competitors => 201   (TP-A1, TPI-002, 12:42:33Z)
+20. [POST] /api/competitions/c1/competitors => 400   (empty name, 12:42:33Z)
+22. [POST] /api/competitions/c1/competitors => 400   (3 spaces, 12:42:34Z)
+Console:
+[ERROR] Failed to load resource: the server responded with a status of 400 () @ /api/competitions/c1/competitors  (x2, one per rejected add)
+UI after each rejected add: #error "Name must contain valid letters", #name aria-invalid="true", competitor count stays 1 (only TP-A1).

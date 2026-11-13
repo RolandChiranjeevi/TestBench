@@ -1,0 +1,4 @@
+Report-phase re-check (read-only, no data changed), 2026-11-09 13:03:59Z, app.js?v=13, selected competition "TP-Auditors-H · Heptathlon (0)" (empty after cleanup)
+TPI-037 at 375x812: documentElement clientWidth 360, scrollWidth 383, page scrolls sideways scrollX = 23; #standingsHead .sr-only position absolute, left 382px; standings rows 0
+  -> the overflow occurs with an empty table and in the Heptathlon competition too: independent of data and of the long name.
+TPI-034 at 1280x800, light: #name and #name2 border 1px rgb(213,220,232), field background rgb(255,255,255), card background rgb(255,255,255) -> 1.38:1 (unchanged).

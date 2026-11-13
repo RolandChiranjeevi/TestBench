@@ -1,0 +1,7 @@
+{"captured_before": "2026-11-09T12:52:46Z", "reloaded_at": "2026-11-09T12:52:48Z", "identical": true,
+ "columns": "Pos|Name|Total|Actions|events... (points per event)",
+ "before": {"TP-Auditors · Decathlon (6)": ["1|TP-A1|8229||906|936|885|745|862|803|849|759|746|738", "2|TP-Bnd|5019||1202|||745|1312|1244||516||", "3|TP-A2|2251||817||||767|||667||", "3|TP-A3|2251||817||||767|||667||", "–|TP-LLL...(200 chars)|0|||||||||||", "–|TP-Dup|0|||||||||||"],
+            "TP-Auditors-H · Heptathlon (2)": ["1|TP-A4|6445||1050|981|936|943|978|794|763", "2|TP-A5|1819|||933|886||||"]},
+ "after": {"TP-Auditors · Decathlon (6)": ["1|TP-A1|8229||906|936|885|745|862|803|849|759|746|738", "2|TP-Bnd|5019||1202|||745|1312|1244||516||", "3|TP-A2|2251||817||||767|||667||", "3|TP-A3|2251||817||||767|||667||", "–|TP-LLL...(200 chars)|0|||||||||||", "–|TP-Dup|0|||||||||||"],
+           "TP-Auditors-H · Heptathlon (2)": ["1|TP-A4|6445||1050|981|936|943|978|794|763", "2|TP-A5|1819|||933|886||||"]},
+ "note": "The 200-character name is shortened here; the comparison in the browser used the full text."}

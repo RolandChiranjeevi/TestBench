@@ -1,0 +1,7 @@
+{"test": "TPI-007 200-character name 'TP-' + 197 x 'L' in TP-Auditors", "added_at": "2026-11-09T12:49:57Z", "ui": "Added", "input_maxlength": "none (-1)", "stored_length": 200,
+ "viewport_1280": {"innerWidth": 1280, "document_scrollWidth": 1265, "page_overflow": false, "table_wrap": {"clientWidth": 1181, "scrollWidth": 1181, "overflowX": "auto"},
+   "name_cell": {"width_px": 176, "text_length": 200, "title_length": 200}, "picker_list": {"right_px": 599, "width_px": 213, "scrollWidth": 1903, "clientWidth": 211, "note": "long option scrolls inside the list"}},
+ "viewport_375": {"innerWidth": 375, "clientWidth": 360, "document_scrollWidth": 383, "body_scrollWidth": 360, "page_overflow": true,
+   "table_wrap": {"clientWidth": 276, "scrollWidth": 1168}, "name_cell": {"width_px": 176},
+   "picker_list": {"right_px": 319, "width_px": 278, "scrollWidth": 1903, "clientWidth": 276},
+   "overflow_cause": "only element beyond the 360 px client width: <span class=\"sr-only\">Actions</span> in the standings table header, position:absolute, right edge 383 px; it is not the long name. Followed up in TPI-037."}}

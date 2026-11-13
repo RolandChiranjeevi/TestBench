@@ -1,0 +1,120 @@
+{
+  "captured_at": "2026-11-06T13:28:06.526Z",
+  "url": "http://localhost:8080/",
+  "viewport": [
+    1440,
+    900
+  ],
+  "competition": "TP-TPT-20261106 · Decathlon (5)",
+  "header": [
+    "Pos",
+    "Name",
+    "Total",
+    "Actions",
+    "100m",
+    "110m Hurdles",
+    "400m",
+    "1500m",
+    "Long Jump",
+    "High Jump",
+    "Pole Vault",
+    "Shot Put",
+    "Discus Throw",
+    "Javelin Throw"
+  ],
+  "rows": [
+    {
+      "cells": [
+        "1",
+        "TP-Anna",
+        "1520",
+        "",
+        "753 [raw 11.5 s]",
+        "",
+        "",
+        "",
+        "767 [raw 680 cm]",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ]
+    },
+    {
+      "cells": [
+        "–",
+        "TP-Bo",
+        "0",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ]
+    },
+    {
+      "cells": [
+        "–",
+        "TP-Cia",
+        "0",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ]
+    },
+    {
+      "cells": [
+        "–",
+        "TP-V375",
+        "0",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ]
+    },
+    {
+      "cells": [
+        "–",
+        "TP-Key",
+        "0",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ]
+    }
+  ],
+  "error": "",
+  "msg": "Saved: 767 pts",
+  "overwriteDialogOpen": false
+}
