@@ -9,6 +9,7 @@ Playwright, TestCafe, Selenium or any JUnit report (files or GitHub Actions), an
 - **Manual runs** with step-by-step execution, evidence, and bug drafts you can paste into Jira
 - **Automated results** linked to cases by the ID in the test name, with Playwright traces, screenshots and flaky-test tracking
 - **Sprint and release reports** as PDF, with a release checklist, requirement coverage and trends
+- **TestPilot, the AI test agent, is part of this repository.** It proposes test cases and bugs that a person decides on. See [testpilot/README.md](testpilot/README.md) and [TestPilot, the test agent](#testpilot-the-test-agent).
 - **Yours:** your data stays in one SQLite file on your own machine or server, with automatic daily backups. No account, no per-seat price.
 
 | | |

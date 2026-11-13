@@ -20,8 +20,7 @@ agentdb.rvf*
 # Templates for the configuration are in testpilot/config/. Reference audits are in examples/testpilot-audits/.
 .testpilot/
 audits/
-*-testbench.zip
-AUD-*-*.zip
+*.zip
 .playwright-mcp/
 test-results/
 __pycache__/
