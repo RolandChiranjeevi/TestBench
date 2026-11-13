@@ -97,7 +97,7 @@ Automatiserade testfall ska skrivas i **Playwright-format (`*.spec.ts`)**, så a
 
 ## Arkitektur
 
-- **TestBench och TestPilot ska slås ihop till ett repo** (idag är de separata). Det görs först, innan suite-modellen, triggern från UI och spec.ts-stödet, så att de byggs mot den slutliga strukturen.
+- **TestBench och TestPilot är sammanslagna till ett repo.** TestPilots skills ligger i `.claude/skills/` och dess verktyg under `testpilot/`. Suite-modellen, triggern från UI och spec.ts-stödet byggs mot den strukturen.
 - **TestBench är en lokal app** på användarens dator, med tillgång till internet.
 - **Trigger från TestBench UI** till TestPilot är nyckel-UX — användaren ska kunna starta discover eller köra om automatiska tester direkt från TestBench.
 
@@ -114,10 +114,10 @@ Automatiserade testfall ska skrivas i **Playwright-format (`*.spec.ts`)**, så a
 - Target profiles + permission modes + agent-rules + audit contract.
 - Delivery till TestBench (`deliveryEnabled`).
 - WCAG 2.2 AA i design-review skillen.
+- **TestBench och TestPilot i ett repo** — TestPilots historik är nåbar via `git log --follow` eller `--full-history`.
 
 ## Vad som saknas / behöver byggas
 
-- **Repo-sammanslagning** — TestBench + TestPilot till ett repo. Nästa steg.
 - **Suite som körbar grupp av testfall** — se "Suites och runs".
 - **Trigger från TestBench UI** — kör discover / kör om automatiska tester.
 - **Användarskapade automatiserade testfall (spec.ts)** — ej byggt.
@@ -126,14 +126,12 @@ Automatiserade testfall ska skrivas i **Playwright-format (`*.spec.ts`)**, så a
 
 ## Nästa steg
 
-1. **Repo-sammanslagning** — arkitekturellt beslut, stor förändring. Görs före allt nedan.
-2. **Suite som körbar grupp** och körning av suites.
-3. **Trigger från UI** — nyckel-feature för att knyta ihop allt.
-4. **Användarskapade automatiserade testfall (spec.ts)** — bygg efter suites och trigger.
-5. **Integrationer (Azure DevOps, mobil)** — senare.
+1. **Suite-modell** — suite som körbar grupp av testfall, och körning av suites. Nästa steg nu när repona är sammanslagna.
+2. **Trigger från UI** — nyckel-feature för att knyta ihop allt.
+3. **Användarskapade automatiserade testfall (spec.ts)** — bygg efter suites och trigger.
+4. **Integrationer (Azure DevOps, mobil)** — senare.
 
 ## Frågor att förtydliga
 
 - **Körmiljö för triggern** — vad startar agenten (Claude Code CLI, Agent SDK eller API), var körs den, och vem betalar?
 - **Ägande av spec.ts** — i databasen, som filer på disk eller i användarens git-repo? Hur isoleras de när de körs?
-- **Repo-sammanslagning** — vilka är de största utmaningarna (beroenden, konfiguration, tester, CI)?
