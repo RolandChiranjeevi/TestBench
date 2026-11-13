@@ -208,7 +208,7 @@ Use wording such as:
 
 > No automated accessibility scan was performed in this audit. Accessibility
 > signals were assessed through Playwright MCP exploration, keyboard interaction
-> and DOM/accessibility-tree inspection. This does not establish WCAG 2.1 AA
+> and DOM/accessibility-tree inspection. This does not establish WCAG 2.2 AA
 > conformance.
 
 When the run is finished, tell the user that the next step is the analysis

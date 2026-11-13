@@ -295,7 +295,7 @@ priority, readiness and title, and then the coverage gaps. It repeats the manife
 The summary uses the execution statuses of section 2.1 and never combines `blocked`, `skipped` or
 `inconclusive` into `pass` or `fail`. Automated scans that find nothing are described as:
 "No violations were detected by the configured automated checks in the tested states.
-This does not establish WCAG 2.1 AA conformance."
+This does not establish WCAG 2.2 AA conformance."
 
 ### 5.5 `evidence/`
 
