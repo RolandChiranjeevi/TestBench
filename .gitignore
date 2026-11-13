@@ -2,7 +2,10 @@ node_modules
 dist
 data/
 .DS_Store
-.claude/
+# Claude Code: the TestPilot skills and references are part of the repository; everything else in .claude/ (local settings and so on) is not.
+.claude/*
+!.claude/skills/
+!.claude/references/
 .claude-flow
 .swarm/
 ruvector.db
@@ -12,3 +15,13 @@ agentdb.rvf*
 !.env.example
 # Local exports to the Testbench import format (npm run audit:export:testbench); regenerated from audits/
 .testbench-export/
+
+# TestPilot: local configuration (project profiles, target profiles), audit packages and the zips built from them, browser and test output.
+# Templates for the configuration are in testpilot/config/. Reference audits are in examples/testpilot-audits/.
+.testpilot/
+audits/
+*-testbench.zip
+AUD-*-*.zip
+.playwright-mcp/
+test-results/
+__pycache__/

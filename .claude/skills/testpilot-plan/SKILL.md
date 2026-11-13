@@ -71,7 +71,7 @@ Output: requirement list with `requirement_id` and readiness.
 
 Read:
 
-1. `config/testbench.json`
+1. `.testpilot/testbench.json`
 2. The project profile referenced by `activeProject`
 
 Use from the global configuration:
@@ -89,7 +89,7 @@ Rules:
 
 - Do not read project-specific values from the global configuration.
 - Do not store token values, passwords, cookies or target URLs in the TestBench
-  project profile. An API target profile (`config/targets/<name>.json`) may hold
+  project profile. An API target profile (`.testpilot/targets/<name>.json`) may hold
   a non-production base URL, never a secret.
 - If the active profile is missing, invalid or unreadable, pause and ask the user.
 
@@ -253,5 +253,5 @@ complete the plan, and ask the user whether to retain or discard the already
 collected results.
 
 The plan phase is complete when the scope and the test plan are both approved and
-recorded in `<audit-id>/`. Tell the user that `run` can start. Do not start it
+recorded in `audits/<audit-id>/`. Tell the user that `run` can start. Do not start it
 before they say so.

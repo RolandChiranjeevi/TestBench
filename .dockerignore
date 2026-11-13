@@ -6,3 +6,20 @@ data
 docs
 *.log
 .DS_Store
+# Secrets and local state must never reach the build context (COPY . . in the Dockerfile would copy them into a build layer).
+.env
+.env.*
+!.env.example
+.testpilot
+.testbench-export
+.playwright-mcp
+.swarm
+.claude-flow
+agentdb.rvf*
+ruvector.db
+test-results
+*.zip
+# TestPilot (Python tools, audit packages, examples) is not part of the Testbench image.
+testpilot
+audits
+examples

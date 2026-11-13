@@ -25,7 +25,7 @@ they say applies; this file only says what is different for an API.
 
 ## Tooling
 
-`tools/apitest/` (stdlib Python, no dependencies):
+`testpilot/tools/apitest/` (stdlib Python, no dependencies):
 
 | Module | Does |
 |---|---|
@@ -33,15 +33,15 @@ they say applies; this file only says what is different for an API.
 | `validate.py` | Checks status, headers and body fields (type, format `uuid`/`email`/`date-time`, pattern, enum, ranges), plus a JSON-schema subset; uses `jsonschema` automatically when installed. |
 | `contract.py` | Loads an OpenAPI 3 document (JSON) or a GraphQL schema (introspection JSON or SDL) and lists deviations between the spec and what was sent and received. |
 | `redact.py` | Masks secrets in headers, bodies, URLs and text before anything is written. |
-| `runner.py` | Runs `<audit-id>/api-plan.json` against the target profile and writes executions, actions, evidence and observations into the package. |
+| `runner.py` | Runs `audits/<audit-id>/api-plan.json` against the target profile and writes executions, actions, evidence and observations into the package. |
 
-Run: `python3 tools/apitest/runner.py <audit-id> [--dry-run] [--items TPI-001,TPI-002]`
-Tests: `python3 -m unittest discover -s tests` (the tests use an in-process mock
+Run: `python3 testpilot/tools/apitest/runner.py <audit-id> --config-dir .testpilot --audits-dir audits [--dry-run] [--items TPI-001,TPI-002]`
+Tests: `python3 -m unittest discover -s testpilot/tests` (the tests use an in-process mock
 server on 127.0.0.1 and never reach the network).
 
 ## Target profile
 
-An API target is described in `config/targets/<name>.json`
+An API target is described in `.testpilot/targets/<name>.json`
 (template: `templates/target-profile.json`). It holds a **non-production**
 base URL, the environment, the auth method with the **names** of the
 environment variables that hold credentials, an optional schema location, and
@@ -79,7 +79,7 @@ Follow `../testpilot-discover/SKILL.md` with these differences:
 
 Follow `../testpilot-plan/SKILL.md`. Each plan item keeps the contract's
 fields (5.9) and adds a structured `request` and `expect`, written to
-`<audit-id>/api-plan.json` for the runner and summarised in the plan item's
+`audits/<audit-id>/api-plan.json` for the runner and summarised in the plan item's
 `steps`. Format: `templates/api-plan-item.md`.
 
 Plan from `references/api-test-heuristics.md`: the happy path per endpoint,
@@ -127,7 +127,7 @@ Follow `../testpilot-run/SKILL.md`; the runner replaces Playwright.
 - Every state-changing call that received a 2xx is recorded in
   `manifest.actions[]`; a rejected one is not, but counts against the limit.
 - Contract deviations (spec mismatches that no `expect` covers) do not fail
-  the item; they are written to `<audit-id>/api-observations.json` (see 4).
+  the item; they are written to `audits/<audit-id>/api-observations.json` (see 4).
 - After the run, say which tools were used. If the runner cannot run, say so;
   do not fall back to unrecorded manual calls.
 

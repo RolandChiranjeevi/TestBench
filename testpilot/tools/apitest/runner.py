@@ -1,7 +1,7 @@
 """Runs <audit-id>/api-plan.json against a target profile and records executions, actions, evidence and
 observations in the audit package. See .claude/skills/testpilot-api-testing/SKILL.md.
 
-    python3 tools/apitest/runner.py AUD-20261110-01 [--root .] [--items TPI-001,TPI-002] [--dry-run]
+    python3 testpilot/tools/apitest/runner.py AUD-20261110-01 [--root .] [--config-dir .testpilot] [--audits-dir audits] [--items TPI-001,TPI-002] [--dry-run]
 
 Refuses to start (and sends nothing) when the effective permission mode forbids a planned state change,
 a state-changing item has no allowed action or would exceed its limit, the profile holds a literal
@@ -121,13 +121,14 @@ def http_call(prepared, timeout):
     return {"status": status, "headers": headers, "text": text, "json": body, "elapsed_ms": elapsed, "truncated": len(raw) > BODY_LIMIT}
 
 
-def effective_mode(root, profile):
+def effective_mode(root, profile, config_dir=None):
     """observe_only unless both the TestBench project profile and the target profile say full."""
     project_mode = "observe_only"
-    global_path = os.path.join(root, "config", "testbench.json")
+    config_dir = config_dir or os.path.join(root, "config")
+    global_path = os.path.join(config_dir, "testbench.json")
     if os.path.isfile(global_path):
         active = load_json(global_path).get("activeProject")
-        project_path = os.path.join(root, "config", "projects", f"{active}.json") if active else None
+        project_path = os.path.join(config_dir, "projects", f"{active}.json") if active else None
         if project_path and os.path.isfile(project_path):
             project_mode = load_json(project_path).get("permissionMode", "observe_only")
     target_mode = profile.get("permissionMode", "observe_only")
@@ -135,15 +136,19 @@ def effective_mode(root, profile):
 
 
 class Runner:
-    def __init__(self, audit_id, root=".", env=None, items=None, dry_run=False, sleep=time.sleep):
+    def __init__(self, audit_id, root=".", env=None, items=None, dry_run=False, sleep=time.sleep, config_dir=None, audits_dir=None):
+        # Without config_dir / audits_dir the layout is <root>/config and <root>/<audit-id>. In the TestBench repository the skills pass
+        # --config-dir .testpilot and --audits-dir audits, so that local configuration and audit packages stay out of git.
         self.root = os.path.abspath(root)
+        self.config_dir = os.path.abspath(config_dir) if config_dir else os.path.join(self.root, "config")
+        self.audits_dir = os.path.abspath(audits_dir) if audits_dir else self.root
         self.audit_id = audit_id
         self.env = os.environ if env is None else env
-        self.pkg = os.path.join(self.root, audit_id)
+        self.pkg = os.path.join(self.audits_dir, audit_id)
         self.manifest_path = os.path.join(self.pkg, "manifest.json")
         self.plan = load_json(os.path.join(self.pkg, "api-plan.json"))
         self.manifest = load_json(self.manifest_path)
-        self.profile = load_json(os.path.join(self.root, "config", "targets", f"{self.plan['target']}.json"))
+        self.profile = load_json(os.path.join(self.config_dir, "targets", f"{self.plan['target']}.json"))
         self.only = set(items) if items else None
         self.dry_run = dry_run
         self.sleep = sleep
@@ -225,7 +230,7 @@ class Runner:
             raise RunError("the target profile holds literal secrets at " + ", ".join(secrets) + "; use ${env:NAME}")
         if profile.get("production") and int(self.plan.get("productionConfirmations", 0)) < 2:
             raise RunError("production target without two recorded confirmations (api-plan.json productionConfirmations)")
-        mode = effective_mode(self.root, profile)
+        mode = effective_mode(self.root, profile, self.config_dir)
         items = self.selected_items()
         if not items:
             raise RunError("no plan items selected")
@@ -474,7 +479,7 @@ class Runner:
         summary_location = f"evidence/api-run-summary-{run_started.replace(':', '').replace('-', '')}.json"
         save_json(os.path.join(self.pkg, summary_location), {
             "captured_at": run_started, "finished_at": utc_now(), "target": self.plan["target"], "mode": mode, "requests_made": self.requests_made,
-            "counts": counts, "results": self.results, "tools": ["tools/apitest/runner.py (urllib)"]})
+            "counts": counts, "results": self.results, "tools": ["testpilot/tools/apitest/runner.py (urllib)"]})
         self.manifest["evidence"].append({
             "evidence_id": next_id(self.manifest["evidence"], "EV"), "type": "test-output", "source": "other", "location": summary_location,
             "related": [r["execution_id"] for r in self.results], "captured_at": run_started,
@@ -490,11 +495,13 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Run an API test plan into an audit package.")
     parser.add_argument("audit_id")
     parser.add_argument("--root", default=".")
+    parser.add_argument("--config-dir", help="folder with testbench.json, projects/ and targets/ (default: <root>/config)")
+    parser.add_argument("--audits-dir", help="folder that holds the audit package folders (default: <root>)")
     parser.add_argument("--items", help="comma-separated test_plan_item_ids")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     try:
-        runner = Runner(args.audit_id, root=args.root, items=args.items.split(",") if args.items else None, dry_run=args.dry_run)
+        runner = Runner(args.audit_id, root=args.root, config_dir=args.config_dir, audits_dir=args.audits_dir, items=args.items.split(",") if args.items else None, dry_run=args.dry_run)
         result = runner.run()
     except (RunError, FileNotFoundError, ValueError) as error:
         print(f"refused: {redact_text(str(error))}", file=sys.stderr)

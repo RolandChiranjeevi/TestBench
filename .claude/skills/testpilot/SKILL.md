@@ -30,7 +30,7 @@ Paths in this file are relative to this `SKILL.md`.
   `../testpilot-deliver/SKILL.md`.
 - `api-testing`: the API variant of discover → plan → run → report → deliver
   for a REST or GraphQL target described by a target profile
-  (`config/targets/<name>.json`); `tools/apitest/runner.py` replaces Playwright
+  (`.testpilot/targets/<name>.json`); `testpilot/tools/apitest/runner.py` replaces Playwright
   and the package, contract and delivery are unchanged. See
   `../testpilot-api-testing/SKILL.md`.
 
@@ -95,7 +95,7 @@ When rules conflict, this order decides:
 
 Before fetching requirements or delivering an audit package, read:
 
-1. `config/testbench.json`
+1. `.testpilot/testbench.json`
 2. The project profile referenced by `activeProject`
 
 The global configuration must provide:
@@ -148,7 +148,7 @@ Rules:
 - Read project-specific values only from the matching profile.
 - Do not duplicate project-specific fields in the global configuration.
 - Do not store token values, passwords, cookies or target URLs in the TestBench
-  project profile. An API target profile (`config/targets/<name>.json`) may hold
+  project profile. An API target profile (`.testpilot/targets/<name>.json`) may hold
   a non-production base URL, never a secret.
 - Treat `deliveryEnabled` in the project profile as authoritative.
 - If the active profile is missing, invalid or unreadable, pause and ask the user.
@@ -268,7 +268,7 @@ See `../testpilot-deliver/SKILL.md`.
 TestBench integration (for `deliver`):
 
 - Config is read from:
-  - `config/testbench.json` for `baseUrl`
+  - `.testpilot/testbench.json` for `baseUrl`
   - the active project profile for `projectId`, `projectKey`, `tokenEnvVar`
     and `deliveryEnabled`
 

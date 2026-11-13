@@ -55,7 +55,7 @@ requirements), so this command logs in with the password instead.
 
 Read:
 
-1. `config/testbench.json`
+1. `.testpilot/testbench.json`
 2. The project profile referenced by `activeProject`
 
 Use from the global configuration:
@@ -73,7 +73,7 @@ Rules:
 
 - Do not read project-specific values from the global configuration.
 - Do not store token values, passwords, cookies or target URLs in the TestBench
-  project profile. An API target profile (`config/targets/<name>.json`) may hold
+  project profile. An API target profile (`.testpilot/targets/<name>.json`) may hold
   a non-production base URL, never a secret.
 - If the active profile is missing, invalid or unreadable, pause and ask the user.
 - `deliveryEnabled` in the project profile is authoritative.
@@ -92,13 +92,13 @@ Refuse a `baseUrl` that uses plain `http` unless the host is `localhost`,
 
 ### 2. Check the package is validated
 
-Read `<audit-id>/manifest.json`. If `validation.result` is not `"pass"`, stop and
+Read `audits/<audit-id>/manifest.json`. If `validation.result` is not `"pass"`, stop and
 show `validation.errors`. Do not build or upload anything.
 
 ### 3. Build the TestBench package
 
 ```bash
-python3 tools/build_testbench_package.py <audit-id> <projectKey>
+python3 testpilot/tools/build_testbench_package.py audits/<audit-id> <projectKey>
 ```
 
 This writes `<audit-id>-testbench.zip` in the repository root. Stop if the
@@ -123,8 +123,8 @@ set -uo pipefail; umask 077
 AUD="<audit-id>"
 eval "$(python3 -I - <<'PY'
 import json, shlex
-g = json.load(open('config/testbench.json'))
-p = json.load(open(f"config/projects/{g['activeProject']}.json"))
+g = json.load(open('.testpilot/testbench.json'))
+p = json.load(open(f".testpilot/projects/{g['activeProject']}.json"))
 for k, v in (('BASE', g['baseUrl'].rstrip('/')), ('PID', str(p['projectId'])),
              ('PWVAR', p.get('passwordEnvVar', 'TESTBENCH_PASSWORD'))):
     print(f"{k}={shlex.quote(v)}")
@@ -253,7 +253,7 @@ of acceptance. Any other result is a failed delivery.
 
 ### 8. Record the result in `manifest.delivery`
 
-Edit only the `delivery` object of `<audit-id>/manifest.json`. Keep all other
+Edit only the `delivery` object of `audits/<audit-id>/manifest.json`. Keep all other
 content. Keep the contract fields (section 5.7) and add `response_summary`.
 
 

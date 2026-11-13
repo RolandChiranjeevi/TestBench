@@ -45,7 +45,7 @@ It does not:
 
 Read:
 
-1. `config/testbench.json`
+1. `.testpilot/testbench.json`
 2. The project profile referenced by `activeProject`
 
 Use from the global configuration:
@@ -66,7 +66,7 @@ Rules:
 
 - Do not read project-specific values from the global configuration.
 - Do not store token values, passwords, cookies or target URLs in the TestBench
-  project profile. An API target profile (`config/targets/<name>.json`) may hold
+  project profile. An API target profile (`.testpilot/targets/<name>.json`) may hold
   a non-production base URL, never a secret.
 - If the active profile is missing, invalid or unreadable, pause and ask the user.
 
@@ -91,8 +91,8 @@ Do not invent a target URL or environment.
 
 Before the first check:
 
-- `<audit-id>/manifest.json` must hold the approved `scope`, and the approved test
-  plan and coverage gaps must be recorded in `<audit-id>/`. If not, stop and tell
+- `audits/<audit-id>/manifest.json` must hold the approved `scope`, and the approved test
+  plan and coverage gaps must be recorded in `audits/<audit-id>/`. If not, stop and tell
   the user to run `plan` first. Do not run anything from an unapproved plan.
 - The stop conditions in `SKILL.md` apply during the whole run.
 - Check `permissionMode` against the plan. In `observe_only`, no plan item may

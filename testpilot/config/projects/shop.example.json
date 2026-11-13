@@ -1,0 +1,10 @@
+{
+  "name": "Demo shop",
+  "projectId": "1",
+  "projectKey": "SHOP",
+  "requirementsSource": "testbench",
+  "requirementsPath": "/api/agent/projects/1/requirements",
+  "tokenEnvVar": "TESTBENCH_API_TOKEN_SHOP",
+  "deliveryEnabled": false,
+  "permissionMode": "observe_only"
+}

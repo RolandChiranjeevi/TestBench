@@ -16,7 +16,7 @@ init → discover → plan → run → report → validate → transform → del
 | run | `.claude/skills/testpilot-run/SKILL.md` | Playwright checks, visual design review and evidence. Needs the approved scope and test plan first. |
 | report | `.claude/skills/testpilot-report/SKILL.md` | Analysis, bug and manual-test proposals, and the audit package. Needs a finished run first. |
 | validate | audit flow, step 9 in `testpilot/SKILL.md` | Contract validation. `deliver` needs `validation.result == "pass"`. |
-| transform | `tools/build_testbench_package.py` | Turns the audit package into a TestBench import zip. |
+| transform | `testpilot/tools/build_testbench_package.py` | Turns the audit package into a TestBench import zip. |
 | deliver | `.claude/skills/testpilot-deliver/SKILL.md` | Builds the zip, dry-run, asks you, then imports. |
 
 `init`, `discover`, `plan`, `run`, `report` and `deliver` are separate skills.
@@ -30,9 +30,25 @@ Everything TestPilot sends is `proposed`. Humans review in TestBench.
 
 TestPilot supports multiple TestBench projects.
 
+### Where things live in this repository
+
+TestPilot is part of the TestBench repository. Start Claude Code in the repository root; the skills are found in `.claude/skills/`.
+
+| Path | What | In git |
+|---|---|---|
+| `.claude/skills/`, `.claude/references/` | Skills and shared rules (audit contract, agent rules, test heuristics) | yes |
+| `testpilot/tools/`, `testpilot/tests/` | Python tools and their tests | yes |
+| `testpilot/config/*.example.json` | Templates for the configuration | yes |
+| `.testpilot/` | **Your** configuration: `testbench.json`, `projects/<key>.json`, `targets/<name>.json` | no (git-ignored) |
+| `audits/<audit-id>/` | The audit package of a run, and `<audit-id>-testbench.zip` in the repository root | no (git-ignored) |
+| `examples/testpilot-audits/` | Three finished audit packages kept as references | yes |
+
+First time: `cp -R testpilot/config .testpilot`, rename the two `*.example.json` files (drop `.example`), and edit them. `init` can also write them for you.
+Paths below that start with `.testpilot/` mean this folder.
+
 ### Global configuration
 
-`config/testbench.json`:
+`.testpilot/testbench.json`:
 
 ```json
 {
@@ -48,11 +64,11 @@ TestPilot supports multiple TestBench projects.
 
 ### Project profiles
 
-`config/projects/<lowercase_project_key>.json`
+`.testpilot/projects/<lowercase_project_key>.json`
 
 Example for project key `TS`:
 
-`config/projects/ts.json`
+`.testpilot/projects/ts.json`
 
 ```json
 {
@@ -87,11 +103,11 @@ Rules:
   the agent stops and asks rather than run a state-changing check. Production
   targets need two separate confirmations in `discover`. The agent's working
   rules are in `.claude/references/agent-rules.md`.
-- Do not store token values, passwords, cookies or target URLs in the TestBench project profile. An API target profile (`config/targets/<name>.json`) may hold a non-production base URL, never a secret.
+- Do not store token values, passwords, cookies or target URLs in the TestBench project profile. An API target profile (`.testpilot/targets/<name>.json`) may hold a non-production base URL, never a secret.
 
 ### API target profiles
 
-`config/targets/<name>.json` describes an API target for `/testpilot-api-testing`
+`.testpilot/targets/<name>.json` describes an API target for `/testpilot-api-testing`
 (template: `.claude/skills/testpilot-api-testing/templates/target-profile.json`).
 
 | Field | Use |
@@ -104,8 +120,8 @@ Rules:
 | `limits` | `timeoutSeconds` (max 30), `maxAttempts` (max 3), `maxRequestsPerRun`, `rateLimitProbeMax` |
 
 The runner refuses a profile that holds a literal secret. Run a plan with
-`python3 tools/apitest/runner.py <audit-id> [--dry-run]`; tests with
-`python3 -m unittest discover -s tests` (in-process mock server, no network).
+`python3 testpilot/tools/apitest/runner.py <audit-id> --config-dir .testpilot --audits-dir audits [--dry-run]`; tests with
+`python3 -m unittest discover -s testpilot/tests` (in-process mock server, no network).
 
 ## 3. Environment variables
 
@@ -123,7 +139,7 @@ Rules:
 - One token per project, named after the project key.
 - The token value is never stored in configuration files.
 - `tokenEnvVar` in the profile points to the variable name.
-- `.gitignore` covers `.env`, `*-testbench.zip`, `__pycache__/` and `.DS_Store`.
+- `.gitignore` covers `.env`, `.testpilot/`, `audits/`, `*-testbench.zip`, `__pycache__/` and `.DS_Store`. `.dockerignore` keeps `.env*` and `testpilot/` out of the image build.
 
 `deliver` never `source`s `.env`. A password with characters such as `&` would be
 parsed by the shell. Python reads the raw line instead.
@@ -185,7 +201,7 @@ The endpoint is `POST {baseUrl}/api/projects/{projectId}/audit-import`. Add
 
 `init`:
 
-1. Read `config/testbench.json`.
+1. Read `.testpilot/testbench.json`.
 2. List or create a TestBench project.
 3. Determine requirements source.
 4. Confirm before creating anything.
@@ -193,10 +209,10 @@ The endpoint is `POST {baseUrl}/api/projects/{projectId}/audit-import`. Add
 
 `deliver <audit-id>`:
 
-1. Read `config/testbench.json` and the active project profile.
+1. Read `.testpilot/testbench.json` and the active project profile.
 2. Stop if `deliveryEnabled` is not `true` in the profile.
-3. Check `<audit-id>/manifest.json`. Stop unless `validation.result` is `pass`.
-4. Build the zip: `python3 tools/build_testbench_package.py <audit-id> <projectKey>`.
+3. Check `audits/<audit-id>/manifest.json`. Stop unless `validation.result` is `pass`.
+4. Build the zip: `python3 testpilot/tools/build_testbench_package.py audits/<audit-id> <projectKey>`.
    Output: `<audit-id>-testbench.zip`.
 5. Log in, upload with `?dryRun=1`.
 6. Show counts (new/unchanged/updated/pending), evidence ok/problems, unresolved

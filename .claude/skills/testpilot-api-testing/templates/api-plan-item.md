@@ -1,7 +1,7 @@
 # API plan item
 
 Each API plan item is a contract 5.9 plan item (in `manifest.test_plan_items[]`
-and `test-plan.md`) plus an entry in `<audit-id>/api-plan.json` that the
+and `test-plan.md`) plus an entry in `audits/<audit-id>/api-plan.json` that the
 runner executes. The two share the `test_plan_item_id`.
 
 ## `api-plan.json`

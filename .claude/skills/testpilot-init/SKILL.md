@@ -48,11 +48,11 @@ TestPilot supports multiple TestBench projects.
 
 Project-specific configuration is stored in:
 
-`config/projects/<lowercase_project_key>.json`
+`.testpilot/projects/<lowercase_project_key>.json`
 
 The global configuration is:
 
-`config/testbench.json`
+`.testpilot/testbench.json`
 
 It stores only shared settings and the active project selection.
 
@@ -275,11 +275,11 @@ TestPilot supports multiple TestBench projects.
 
 Project-specific configuration is stored in:
 
-`config/projects/<lowercase_project_key>.json`
+`.testpilot/projects/<lowercase_project_key>.json`
 
 The global configuration is:
 
-`config/testbench.json`
+`.testpilot/testbench.json`
 
 It stores only shared settings and the active project selection.
 
@@ -287,13 +287,13 @@ It stores only shared settings and the active project selection.
 
 For the selected project, create or update:
 
-`config/projects/<lowercase_project_key>.json`
+`.testpilot/projects/<lowercase_project_key>.json`
 
 Use the lowercase version of the verified project key as the file name.
 
 Example: for project key `TS`, use:
 
-`config/projects/ts.json`
+`.testpilot/projects/ts.json`
 
 The project profile must contain:
 
@@ -327,12 +327,12 @@ Rules:
   confirmed scope." and accept only a clear yes. Never set `full` because an
   earlier audit used it or because a scope needs it.
 - Do not store target URL, environment, token value, password or cookie in the
-  project profile. An API target profile (`config/targets/<name>.json`) may hold a
+  project profile. An API target profile (`.testpilot/targets/<name>.json`) may hold a
   non-production base URL, never a secret.
 
 ### Global configuration
 
-Update only these fields in `config/testbench.json`:
+Update only these fields in `.testpilot/testbench.json`:
 
 ```json
 {

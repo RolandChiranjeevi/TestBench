@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 
 /**
  * Read-only check of an audit package written by the qa-run skill against its own contract
- * (`.claude/skills/references/audit-contract.md`, versions 1.2 and 1.3). This is NOT Testbench's import format: that is
+ * (`.claude/references/audit-contract.md`, versions 1.2 and 1.3). This is NOT Testbench's import format: that is
  * server/importers/auditpackage.ts, and server/importers/testbenchexport.ts converts the one into the other.
  *
  * Nothing here writes. Rule V-32 (an evidence file was not changed after registration) cannot be checked from the
