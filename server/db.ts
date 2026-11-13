@@ -729,6 +729,9 @@ CREATE TABLE IF NOT EXISTS run_template_cases (
   PRIMARY KEY (template_id, case_id)
 );`);
   if (!hasColumn("runs", "template_id")) d.exec("ALTER TABLE runs ADD COLUMN template_id INTEGER REFERENCES run_templates(id) ON DELETE SET NULL");
+  // A run template is what the app calls a Suite: a runnable group of cases (the folders of `suites` only organise cases). See server/runsuites.ts.
+  if (!hasColumn("run_templates", "description")) d.exec("ALTER TABLE run_templates ADD COLUMN description TEXT NOT NULL DEFAULT ''");
+  d.exec("CREATE INDEX IF NOT EXISTS runs_template ON runs(template_id)");
 
   // Requirements, linked many-to-many to test cases. Numbers (REQ-1, REQ-2...) are per project.
   d.exec(`

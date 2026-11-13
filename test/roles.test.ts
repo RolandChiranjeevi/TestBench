@@ -151,7 +151,7 @@ const denied403 = (r: Res) => r.statusCode === 403 && /This needs the (viewer|te
 function aim(route: string, kind: Kind, project: number) {
   const [method, pattern] = route.split(" ");
   const f = fixture(kind, project);
-  const url = pattern.replace(/:id\b|\*$/, String(f.id)).replace(/:(stepId|runId|userId)\b/g, "1");
+  const url = pattern.replace(/:id\b|\*$/, String(f.id)).replace(/:(stepId|runId|userId|caseId)\b/g, "1");
   return { method, url, id: f.id };
 }
 const bodyFor = (route: string, project: number): unknown => {
