@@ -1,6 +1,6 @@
 ---
 name: visual-design-review
-description: Reviews web UI layout against explicit design requirements and evaluates accessibility against WCAG 2.1 Level A and AA. Use when the user requests visual validation, layout checks, or accessibility testing.
+description: Reviews web UI layout against explicit design requirements and evaluates accessibility against WCAG 2.2 Level A and AA. Use when the user requests visual validation, layout checks, or accessibility testing.
 ---
 
 # Visual Design and Accessibility Review
@@ -8,7 +8,7 @@ description: Reviews web UI layout against explicit design requirements and eval
 ## Purpose
 Review:
 1. Layout and visual behavior against explicit design requirements.
-2. Accessibility against WCAG 2.1 Level A and AA.
+2. Accessibility against WCAG 2.2 Level A and AA.
 
 Keep design findings separate from accessibility findings.
 
@@ -160,10 +160,11 @@ A state is only `pass` when its expected behaviour was defined and the evidence
 supports it. Missing or unclear expected behaviour is `inconclusive`, with
 reason `insufficient-evidence` or `needs-design-reference`.
 
-## Accessibility target: WCAG 2.1 AA
+## Accessibility target: WCAG 2.2 AA
 
 The target includes applicable Level A and Level AA success criteria
-from WCAG 2.1.
+from WCAG 2.2. WCAG 2.2 includes all criteria from 2.0 and 2.1, except
+4.1.1 Parsing, which 2.2 removed. Do not report 4.1.1.
 
 This skill provides scoped testing, not automatic certification.
 Passing automated checks does not establish full conformance.
@@ -174,6 +175,7 @@ For saved Playwright tests, use @axe-core/playwright with:
 - wcag2aa
 - wcag21a
 - wcag21aa
+- wcag22aa
 
 Scan after the page and relevant UI state have loaded.
 
@@ -212,7 +214,24 @@ Where in scope, assess:
 - Text and non-text contrast.
 - Screen reader behavior.
 
-This list is not a complete WCAG 2.1 AA checklist.
+This list is not a complete WCAG 2.2 AA checklist.
+
+### WCAG 2.2 criteria for web UI
+These criteria are new in WCAG 2.2. Assess the ones that apply to the
+agreed scope. Automated scans cover little of them (`wcag22aa` currently
+covers target size only), so most need manual or scripted checks.
+
+| Criterion | Level | What to check |
+|---|---|---|
+| 2.4.11 Focus Not Obscured (Minimum) | AA | A focused element is not entirely hidden by sticky headers, footers, cookie banners or other overlays. Tab through the page and check. |
+| 2.5.7 Dragging Movements | AA | Anything done by dragging (sorting, sliders, drag and drop) can also be done with a single pointer action or the keyboard. |
+| 2.5.8 Target Size (Minimum) | AA | Pointer targets are at least 24 by 24 CSS pixels, or have enough spacing, or fall under an exception (inline text links, essential size). |
+| 3.2.6 Consistent Help | A | Where a help mechanism (contact, chat, help link) appears on several pages, it is in the same relative place. |
+| 3.3.7 Redundant Entry | A | Information the user already gave in the same process is not asked for again, unless essential or for security. |
+| 3.3.8 Accessible Authentication (Minimum) | AA | Sign-in does not require a cognitive function test (remembering, transcribing, solving) unless an alternative exists. Password managers and paste must work. |
+
+2.4.12 Focus Not Obscured (Enhanced), 2.4.13 Focus Appearance and 3.3.9
+Accessible Authentication (Enhanced) are Level AAA and out of scope.
 
 Use keyboard interaction when assessing keyboard focus.
 Do not infer absence of a visible focus indicator only from
@@ -327,7 +346,7 @@ For each finding, record:
   reason `needs-design-reference`, and describe the impact. Do not call it a defect.
   It becomes a bug proposal only if a requirement or WCAG criterion is verifiably violated. Otherwise
   propose a manual test or ask for the design decision.
-- **`accessibility`**: tied to a WCAG 2.1 criterion, kept apart from design findings.
+- **`accessibility`**: tied to a WCAG 2.2 criterion, kept apart from design findings.
 
 When creating a bug proposal, use the project's bug-reporting skill and `../bug-reporting/templates/bug-report.md`.
 The template is mandatory for visual and accessibility findings as well.
@@ -349,6 +368,6 @@ Report:
 
 If no automated violations are found, say:
 "No violations were detected by the configured automated checks
-in the tested states. This does not establish WCAG 2.1 AA conformance."
+in the tested states. This does not establish WCAG 2.2 AA conformance."
 
 Do not say "WCAG compliant" or "fully accessible" based on this run alone.

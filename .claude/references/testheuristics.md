@@ -86,7 +86,7 @@ are the shared material these ideas draw on.
 - Page language and title, one `h1`, landmarks, headings in order.
 - 200 % zoom and 320 px reflow. Text contrast 4.5:1, and information not carried by colour alone.
 - Errors identified in text and linked to the field.
-- Run axe per relevant state with `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`. Passing does not establish WCAG 2.1 AA conformance.
+- Run axe per relevant state with `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`, `wcag22aa`. Passing does not establish WCAG 2.1 AA conformance.
 
 ### Performance (Performance)
 - Initial load and time until usable, also on a throttled network.
