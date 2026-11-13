@@ -71,6 +71,9 @@ export const ACCESS: Record<string, Need> = {
   "GET /api/cases/:id": v("case"), "PATCH /api/cases/:id": t("case"), "DELETE /api/cases/:id": t("case"), "POST /api/cases/:id/duplicate": t("case"), "PUT /api/cases/:id/requirements": t("case"),
   "GET /api/projects/:id/suites": v(), "POST /api/projects/:id/suites": t(), "PATCH /api/suites/:id": t("suite"), "DELETE /api/suites/:id": a("suite"), "POST /api/suites/:id/move": t("suite"),
   "GET /api/projects/:id/templates": v(), "POST /api/projects/:id/templates": t(), "PATCH /api/templates/:id": t("template"), "DELETE /api/templates/:id": a("template"),
+  // templates are what the app calls Suites: runnable groups of cases (server/runsuites.ts)
+  "GET /api/templates/:id": v("template"), "POST /api/projects/:id/templates/from-folder": t(), "POST /api/templates/:id/cases": t("template"),
+  "DELETE /api/templates/:id/cases/:caseId": t("template"), "POST /api/templates/:id/run": t("template"),
   // runs and results
   "GET /api/projects/:id/runs": v(), "POST /api/projects/:id/runs": t(), "GET /api/runs/:id": v("run"), "PATCH /api/runs/:id": t("run"), "DELETE /api/runs/:id": t("run"),
   "GET /api/results/:id": v("result"), "PATCH /api/results/:id": t("result"), "GET /api/results/:id/automated": v("result"), "GET /api/results/:id/attachments.zip": v("result"),

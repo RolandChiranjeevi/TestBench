@@ -16,7 +16,7 @@ import { moveSuite, SuiteMoveError } from "./suites.ts";
 import { bulkUpdateCases, CaseBulkError, duplicateCase } from "./casebulk.ts";
 import { authConfigFromEnv, makeLimiter, registerAuth } from "./auth.ts";
 import { authenticateCiToken, CI_LIMITS, createCiToken, ingestCiResults, isCiIngest, listCiTokens, revokeCiToken, setTriage, WORKFLOW_STATUSES } from "./ci.ts";
-import { DATA_DIR, db, ensureMilestone, parseJson, snapshotCase, UPLOAD_DIR } from "./db.ts";
+import { DATA_DIR, db, ensureMilestone, parseJson, UPLOAD_DIR } from "./db.ts";
 import { seedDemo } from "./demo.ts";
 import { artifactsByRun, getToken, importRun, listRuns, parseWorkflowList, REPO_SLUG, type GithubSource } from "./importers/github.ts";
 import { bagFromFiles, bagFromZip, dedupeReports, mergeBags, readReports, type FileBag } from "./importers/bag.ts";
@@ -43,6 +43,7 @@ import { normViewports, normWcag, viewportSchema, wcagCriterion, type Viewport }
 import { LIMITS as AUDIT_LIMITS, PackageError } from "./importers/auditpackage.ts";
 import { archiveObservation, convertToBug, getObservation, importObservations, listObservations, ObservationError, observationSummary, reopenObservation, resolveObservation, setObservationStatus } from "./observations.ts";
 import { listCases } from "./newcases.ts";
+import { addSuiteCases, createManualRun, getSuite, listSuites, removeSuiteCase, runSuiteInfo, setSuiteCases, startSuiteRun, SuiteError, suiteFromFolder, withAutomation } from "./runsuites.ts";
 import { LOGGER_OPTIONS } from "./logging.ts";
 import { authenticateAgentToken, createAgentToken, isAgentRead, listAgentTokens, revokeAgentToken } from "./agenttokens.ts";
 import { agentCredentialKind, agentProposalsEnabled, authenticateProposeToken, createProposeToken, isAgentPropose, listProposeTokens, revokeProposeToken, setAgentProposalsEnabled } from "./proposetokens.ts";
@@ -171,6 +172,16 @@ const must = <T>(row: T | undefined, what: string): T => {
   if (!row) throw new HttpError(404, `${what} not found`);
   return row;
 };
+
+/** Suites and manual runs (server/runsuites.ts): its errors say which status they mean. */
+function suitesApi<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (e) {
+    if (e instanceof SuiteError) throw new HttpError(e.status, e.message);
+    throw e;
+  }
+}
 
 const STATUS_COUNTS = `
   COUNT(r.id) AS total,
@@ -473,14 +484,21 @@ app.post("/api/projects/:id/delete", async (req) => {
 
 // ---------------- Runs ----------------
 
+// `template_name` is the suite the run came from: its name now, or the name it had when the run started if the suite has been deleted since.
+// ?templateId=<suite id> lists only the runs of that suite.
 app.get("/api/projects/:id/runs", (req) => {
+  const projectId = idParam(req);
+  const templateParam = (req.query as { templateId?: string }).templateId;
+  const templateId = templateParam === undefined ? null : Number(templateParam);
+  if (templateId !== null && !Number.isInteger(templateId)) throw new HttpError(400, "Invalid templateId");
   const rows = db
     .prepare(`
       SELECT ru.*, ${STATUS_COUNTS},
-        COALESCE(SUM(r.duration_ms), 0) AS duration_ms
-      FROM runs ru LEFT JOIN results r ON r.run_id = ru.id
-      WHERE ru.project_id = ? GROUP BY ru.id ORDER BY ru.started_at DESC, ru.id DESC`)
-    .all(idParam(req)) as Record<string, any>[];
+        COALESCE(SUM(r.duration_ms), 0) AS duration_ms,
+        COALESCE(t.name, json_extract(ru.meta, '$.suite.name')) AS template_name
+      FROM runs ru LEFT JOIN results r ON r.run_id = ru.id LEFT JOIN run_templates t ON t.id = ru.template_id
+      WHERE ru.project_id = ? ${templateId === null ? "" : "AND ru.template_id = ?"} GROUP BY ru.id ORDER BY ru.started_at DESC, ru.id DESC`)
+    .all(...(templateId === null ? [projectId] : [projectId, templateId])) as Record<string, any>[];
   return rows.map((r) => ({ ...r, meta: parseJson(r.meta, {}) }));
 });
 
@@ -494,32 +512,11 @@ const manualRunBody = z.object({
   rerunOf: z.number().int().nullable().optional(),
 });
 
+// A manual run of chosen cases: one case, a selection, or a suite's cases picked in the dialog. A whole suite is started with POST /api/templates/:id/run.
 app.post("/api/projects/:id/runs", (req) => {
   const projectId = idParam(req);
   const body = manualRunBody.parse(req.body);
-  if (body.templateId && !db.prepare("SELECT 1 FROM run_templates WHERE id = ? AND project_id = ?").get(body.templateId, projectId)) {
-    throw new HttpError(400, "Template belongs to another project");
-  }
-  const source = body.rerunOf
-    ? (db.prepare("SELECT id, title FROM runs WHERE id = ? AND project_id = ?").get(body.rerunOf, projectId) as { id: number; title: string } | undefined)
-    : undefined;
-  if (body.rerunOf && !source) throw new HttpError(400, "The run to re-test belongs to another project");
-  return db.transaction(() => {
-    const run = db
-      .prepare(`
-        INSERT INTO runs (project_id, title, kind, source, environment, milestone, template_id, meta)
-        VALUES (?, ?, 'manual', 'manual', ?, ?, ?, ?) RETURNING *`)
-      .get(projectId, body.title, body.environment ?? "", body.milestone ?? "", body.templateId ?? null, JSON.stringify(source ? { rerunOf: source } : {})) as { id: number };
-    // Keep the same order as the case list, not the order of selection.
-    const placeholders = body.caseIds.map(() => "?").join(",");
-    const cases = db
-      .prepare(`SELECT id FROM cases WHERE project_id = ? AND id IN (${placeholders}) ORDER BY position, number`)
-      .all(projectId, ...body.caseIds) as { id: number }[];
-    const ins = db.prepare("INSERT INTO results (run_id, case_id, position, snapshot) VALUES (?, ?, ?, ?)");
-    cases.forEach((c, i) => ins.run(run.id, c.id, i, JSON.stringify(snapshotCase(c.id))));
-    ensureMilestone(projectId, body.milestone ?? "");
-    return run;
-  })();
+  return suitesApi(() => createManualRun(projectId, body));
 });
 
 app.get("/api/runs/:id", (req) => {
@@ -547,7 +544,15 @@ app.get("/api/runs/:id", (req) => {
       LEFT JOIN automated_tests a ON a.id = r.automated_test_id
       WHERE r.run_id = ? ORDER BY r.position, r.id`)
     .all(id);
-  return { ...run, meta: parseJson(run.meta, {}), counts, results };
+  // `suite`: which suite the run came from and how the suite has changed since (null when it did not come from one). For a manual run each result also says what the
+  // automated side knows about its case (information only: nothing is started).
+  return {
+    ...run,
+    meta: parseJson(run.meta, {}),
+    counts,
+    suite: runSuiteInfo(run as { id: number; template_id: number | null; meta: unknown }),
+    results: run.kind === "manual" ? withAutomation(run.project_id, results as { case_id: number | null }[]) : results,
+  };
 });
 
 app.patch("/api/runs/:id", (req) => {
@@ -1482,50 +1487,48 @@ app.post("/api/github-sources/:id/runs/:runId/import", async (req) => {
   }
 });
 
-// ---------------- Run templates ----------------
+// ---------------- Run templates = Suites (runnable groups of cases; see server/runsuites.ts) ----------------
 
 const templateBody = z.object({
   name: z.string().trim().min(1).max(100),
+  description: z.string().max(10000).optional(),
   environment: z.string().max(200).optional(),
   caseIds: z.array(z.number().int()).max(5000),
 });
 
-function listTemplates(projectId: number, onlyId?: number) {
-  const rows = db
-    .prepare(`
-      SELECT t.id, t.project_id, t.name, t.environment, t.created_at, t.updated_at,
-        (SELECT COUNT(*) FROM runs r WHERE r.template_id = t.id) AS run_count,
-        (SELECT MAX(r.started_at) FROM runs r WHERE r.template_id = t.id) AS last_used
-      FROM run_templates t WHERE t.project_id = ? ${onlyId ? "AND t.id = ?" : ""} ORDER BY t.name COLLATE NOCASE`)
-    .all(...(onlyId ? [projectId, onlyId] : [projectId])) as Record<string, any>[];
-  const cases = db.prepare(`
-    SELECT x.case_id FROM run_template_cases x JOIN cases c ON c.id = x.case_id
-    WHERE x.template_id = ? ORDER BY c.position, c.number`);
-  return rows.map((t) => ({ ...t, caseIds: (cases.all(t.id) as { case_id: number }[]).map((c) => c.case_id) }));
-}
+app.get("/api/projects/:id/templates", (req) => listSuites(idParam(req)));
 
-function setTemplateCases(templateId: number, projectId: number, caseIds: number[]) {
-  const valid = caseIds.length
-    ? (db.prepare(`SELECT id FROM cases WHERE project_id = ? AND id IN (${caseIds.map(() => "?").join(",")})`).all(projectId, ...caseIds) as { id: number }[])
-    : [];
-  db.prepare("DELETE FROM run_template_cases WHERE template_id = ?").run(templateId);
-  const ins = db.prepare("INSERT OR IGNORE INTO run_template_cases (template_id, case_id) VALUES (?, ?)");
-  for (const c of valid) ins.run(templateId, c.id);
-}
-
-app.get("/api/projects/:id/templates", (req) => listTemplates(idParam(req)));
+// A copy of the cases a folder holds now. Later changes to the folder do not change the suite.
+app.post("/api/projects/:id/templates/from-folder", (req) => {
+  const projectId = idParam(req);
+  const body = z
+    .object({
+      folderId: z.number().int(),
+      name: z.string().trim().min(1).max(100).optional(),
+      description: z.string().max(10000).optional(),
+      environment: z.string().max(200).optional(),
+      includeSubfolders: z.boolean().optional(),
+    })
+    .parse(req.body);
+  return suitesApi(() => suiteFromFolder(projectId, body));
+});
 
 app.post("/api/projects/:id/templates", (req) => {
   const projectId = idParam(req);
   const body = templateBody.parse(req.body);
   if (db.prepare("SELECT 1 FROM run_templates WHERE project_id = ? AND name = ?").get(projectId, body.name)) throw new HttpError(409, `A template named "${body.name}" already exists`);
   const id = db.transaction(() => {
-    const t = db.prepare("INSERT INTO run_templates (project_id, name, environment) VALUES (?, ?, ?) RETURNING id").get(projectId, body.name, body.environment ?? "") as { id: number };
-    setTemplateCases(t.id, projectId, body.caseIds);
+    const t = db
+      .prepare("INSERT INTO run_templates (project_id, name, description, environment) VALUES (?, ?, ?, ?) RETURNING id")
+      .get(projectId, body.name, body.description ?? "", body.environment ?? "") as { id: number };
+    setSuiteCases(t.id, projectId, body.caseIds);
     return t.id;
   })();
-  return listTemplates(projectId, id)[0];
+  return listSuites(projectId, id)[0];
 });
+
+// One suite with its cases (in run order), what the automated side knows about each, and its latest runs.
+app.get("/api/templates/:id", (req) => suitesApi(() => getSuite(idParam(req))));
 
 app.patch("/api/templates/:id", (req) => {
   const id = idParam(req);
@@ -1534,15 +1537,33 @@ app.patch("/api/templates/:id", (req) => {
   const name = body.name ?? cur.name;
   if (name !== cur.name && db.prepare("SELECT 1 FROM run_templates WHERE project_id = ? AND name = ?").get(cur.project_id, name)) throw new HttpError(409, `A template named "${name}" already exists`);
   db.transaction(() => {
-    db.prepare("UPDATE run_templates SET name = ?, environment = ?, updated_at = datetime('now') WHERE id = ?").run(name, body.environment ?? cur.environment, id);
-    if (body.caseIds) setTemplateCases(id, cur.project_id, body.caseIds);
+    db.prepare("UPDATE run_templates SET name = ?, description = ?, environment = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(name, body.description ?? cur.description, body.environment ?? cur.environment, id);
+    if (body.caseIds) setSuiteCases(id, cur.project_id, body.caseIds);
   })();
-  return listTemplates(cur.project_id, id)[0];
+  return listSuites(cur.project_id, id)[0];
 });
 
 app.delete("/api/templates/:id", (req) => {
   db.prepare("DELETE FROM run_templates WHERE id = ?").run(idParam(req));
   return { ok: true };
+});
+
+// Add or remove single cases. Two people editing at once do not overwrite each other, as they would with the whole list in PATCH.
+app.post("/api/templates/:id/cases", (req) => {
+  const id = idParam(req);
+  const body = z.object({ caseIds: z.array(z.number().int()).min(1, "Pick at least one case").max(5000) }).parse(req.body);
+  return suitesApi(() => addSuiteCases(id, body.caseIds));
+});
+app.delete("/api/templates/:id/cases/:caseId", (req) => suitesApi(() => removeSuiteCase(idParam(req), idParam(req, "caseId"))));
+
+// Runs the suite: a manual run of the cases it holds now, in the order of the case list. Nothing is started automatically.
+app.post("/api/templates/:id/run", (req) => {
+  const id = idParam(req);
+  const body = z
+    .object({ title: z.string().trim().min(1).max(200).optional(), environment: z.string().max(200).optional(), milestone: z.string().max(200).optional() })
+    .parse(req.body ?? {});
+  return suitesApi(() => startSuiteRun(id, body));
 });
 
 // ---------------- Requirements ----------------
