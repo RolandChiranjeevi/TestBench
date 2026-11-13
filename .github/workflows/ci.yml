@@ -14,6 +14,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # TestPilot's Python tools (API test runner, package builder) and their tests: standard library only, no network (an in-process mock server).
+  testpilot:
+    name: TestPilot (Python tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m unittest discover -s testpilot/tests
+
   test:
     name: Typecheck, test, build
     runs-on: ubuntu-latest

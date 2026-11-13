@@ -1,0 +1,6 @@
+{"captured_note": "Competition selector options read from the DOM (#competition option)",
+ "before_create_2026-11-09T12:39:42Z": [{"value": "default", "text": "General · Mixed (0)", "selected": true}],
+ "after_create_TP-Auditors_2026-11-09T12:39:49Z": {"message": "Created TP-Auditors", "options": ["General · Mixed (0)", "TP-Auditors · Decathlon (0) [selected]"]},
+ "after_create_TP-Auditors-H_2026-11-09T12:39:50Z": {"message": "Created TP-Auditors-H", "options": ["General · Mixed (0)", "TP-Auditors · Decathlon (0)", "TP-Auditors-H · Heptathlon (0) [selected]"]},
+ "after_reselect_TP-Auditors_2026-11-09T12:41:58Z": {"options": ["General · Mixed (0)", "TP-Auditors · Decathlon (0) [selected]", "TP-Auditors-H · Heptathlon (0)"], "localStorage.competition": "c1",
+   "tabs": ["Decathlon 0 (selected)", "Heptathlon 0 (visible although the competition is Decathlon-only)"]}}

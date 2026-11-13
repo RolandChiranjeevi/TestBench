@@ -1,0 +1,8 @@
+{"TPI-021_12:51:58Z": {"TP-Auditors": {"selector": "TP-Auditors · Decathlon (6)", "tablist_visible": false, "tab_counts": {"Decathlon": "6", "Heptathlon": "0"}, "rows": 6},
+                       "TP-Auditors-H": {"selector": "TP-Auditors-H · Heptathlon (2)", "tablist_visible": false, "tab_counts": {"Decathlon": "0", "Heptathlon": "2"}, "rows": 2},
+                       "General (viewed in TPI-024)": {"selector": "General · Mixed (0)", "tablist_visible": true, "tab_counts": {"Decathlon": "0", "Heptathlon": "0"}, "rows": 0}},
+ "TPI-023": [{"at": "2026-11-09T12:51:59Z", "dialog": "Rename competition | Competition name (prefilled TP-Auditors) | Cancel | Save", "to": "TP-Auditors-R", "msg": "Competition renamed", "selector": "TP-Auditors-R · Decathlon (6)", "rows": 6},
+             {"at": "2026-11-09T12:52:00Z", "to": "TP-Auditors", "msg": "Competition renamed", "selector": "TP-Auditors · Decathlon (6)", "rows": 6}],
+ "TPI-024_12:52:01Z": {"General": {"names": [], "empty_state": "No competitors here yet. Add the first one above.", "heptathlon_tab_names": []},
+                       "TP-Auditors-H": ["TP-A4", "TP-A5"], "TP-Auditors": ["TP-A1", "TP-Bnd", "TP-A2", "TP-A3", "TP-LLL...(200)", "TP-Dup"]},
+ "TPI-025_12:52:04Z": {"after_reload_selector": "TP-Auditors · Decathlon (6)", "localStorage.competition": "c1"}}

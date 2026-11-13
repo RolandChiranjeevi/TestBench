@@ -319,6 +319,22 @@ The token stays on the server and is sent only to the site in `JIRA_BASE_URL` (h
 password and revoke it on the Atlassian page if it leaks. Projects with required custom fields reject the create; the card shows Jira's message
 naming the field. Jira Server / Data Center is not supported, only Jira Cloud.
 
+## TestPilot, the test agent
+
+TestPilot is the AI test agent that works with Testbench: discover → plan → run → report → deliver. It lives in this repository (it was a separate
+repository before; its history is kept, and old pull request numbers are written `testpilot#N`).
+
+| Where | What |
+|---|---|
+| `.claude/skills/` and `.claude/references/` | The skills (init, discover, plan, run, report, deliver, API testing, load testing, security review, design review) and the shared rules, including the audit contract. Claude Code finds them here when you start it in the repository root. |
+| `testpilot/` | Its Python tools (API test runner, package builder), their tests and configuration templates. See [testpilot/README.md](testpilot/README.md). |
+| `.testpilot/` | Your own configuration (project and target profiles). Git-ignored: copy it from `testpilot/config/` and edit. |
+| `audits/` | Audit packages that a run produces. Git-ignored. |
+| `examples/testpilot-audits/` | Three finished audit packages, kept as references. |
+
+TestPilot runs from Claude Code on your own computer. It is not part of the Docker image. `npm run test:python` runs its tests.
+Everything it sends to Testbench is a proposal that a person decides on.
+
 ## Bug reports from a test agent
 
 Optional. A test agent can leave an **audit package** (its findings, evidence and its own report) that Testbench imports as **proposals** on the

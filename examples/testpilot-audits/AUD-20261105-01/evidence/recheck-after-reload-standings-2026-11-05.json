@@ -1,0 +1,58 @@
+{
+  "selected": "TP-AUD-20261105-01 · Decathlon (6)",
+  "status": "",
+  "rows": [
+    {
+      "name": "TP-Bo",
+      "pos": "1",
+      "total": "1789",
+      "cells": [
+        "10.5 s => 975",
+        "700 cm => 814"
+      ]
+    },
+    {
+      "name": "TP-Cia",
+      "pos": "2",
+      "total": "1676",
+      "cells": [
+        "11 s => 861",
+        "50 s => 815"
+      ]
+    },
+    {
+      "name": "TP-Anna",
+      "pos": "3",
+      "total": "1589",
+      "cells": [
+        "11 s => 861",
+        "14 m => 728"
+      ]
+    },
+    {
+      "name": "TP-V768",
+      "pos": "4",
+      "total": "861",
+      "cells": [
+        "11 s => 861"
+      ]
+    },
+    {
+      "name": "TP-V375",
+      "pos": "4",
+      "total": "861",
+      "cells": [
+        "11 s => 861"
+      ]
+    },
+    {
+      "name": "TP-Key",
+      "pos": "6",
+      "total": "0",
+      "cells": [
+        "1666:39 => 0"
+      ]
+    }
+  ],
+  "anyEventRank": false
+}

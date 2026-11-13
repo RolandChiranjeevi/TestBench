@@ -1,0 +1,141 @@
+- main [ref=f2e2]:
+  - generic [ref=f2e3]:
+    - generic [ref=f2e5]:
+      - heading "Decathlon & Heptathlon" [level=1] [ref=f2e6]
+      - paragraph [ref=f2e7]: Enter results and follow the standings
+    - button "Switch to dark mode" [ref=f2e8] [cursor=pointer]
+  - region "Competition" [ref=f2e11]:
+    - generic [ref=f2e12]:
+      - generic [ref=f2e13]: Competition
+      - generic [ref=f2e14]:
+        - combobox "Competition" [ref=f2e15] [cursor=pointer]:
+          - generic [ref=f2e16]: TP-AUD-20261105-01 · Decathlon (3)
+        - combobox [aria-hidden] [ref=f2e19]
+    - generic [ref=f2e20]: Decathlon
+    - generic [ref=f2e21]:
+      - button "New competition" [ref=f2e22] [cursor=pointer]
+      - button "Rename" [ref=f2e23] [cursor=pointer]
+    - paragraph [ref=f2e24]
+  - region "Competitors and results" [ref=f2e25]:
+    - generic [ref=f2e26]:
+      - generic [ref=f2e27]:
+        - heading "Add competitor" [level=2] [ref=f2e28]
+        - generic [ref=f2e29]:
+          - generic [ref=f2e30]:
+            - generic [ref=f2e31]: Name
+            - textbox "Name" [ref=f2e32]:
+              - /placeholder: e.g., Anna
+          - button "Add competitor" [ref=f2e33] [cursor=pointer]
+      - generic [ref=f2e34]:
+        - heading "Enter result" [level=2] [ref=f2e35]
+        - generic [ref=f2e36]:
+          - generic [ref=f2e37]:
+            - generic [ref=f2e38]: Competitor
+            - generic [ref=f2e39]:
+              - combobox "Competitor" [ref=f2e40]: TP-Bo
+              - button "Show all competitors" [ref=f2e41] [cursor=pointer]
+          - generic [ref=f2e44]:
+            - generic [ref=f2e45]: Discipline
+            - generic [ref=f2e46]:
+              - combobox "Discipline" [disabled] [ref=f2e47]:
+                - generic [ref=f2e48]: Decathlon
+              - combobox [disabled] [aria-hidden] [ref=f2e51]
+          - generic [ref=f2e52]:
+            - generic [ref=f2e53]: Event
+            - generic [ref=f2e54]:
+              - combobox "Event" [ref=f2e55] [cursor=pointer]:
+                - generic [ref=f2e56]: Long Jump (cm)
+              - text: ✓
+              - combobox [aria-hidden] [ref=f2e59]
+          - generic [ref=f2e60]:
+            - generic [ref=f2e61]: Result
+            - generic [ref=f2e62]:
+              - textbox "Result" [ref=f2e63]:
+                - /placeholder: ""
+                - text: "700"
+              - generic [aria-hidden]: cm
+          - button "Save score" [active] [ref=f2e64] [cursor=pointer]
+        - generic [ref=f2e65]: Can you jump further than Mike Powell did in 1991?
+        - generic [ref=f2e66]: "World record: 895 cm"
+    - generic [ref=f2e67]:
+      - paragraph
+      - status [ref=f2e132]: "Saved: 814 pts"
+  - region "Standings" [ref=f2e68]:
+    - generic [ref=f2e75]:
+      - button "Export CSV" [ref=f2e76] [cursor=pointer]
+      - button "Save state" [ref=f2e77] [cursor=pointer]
+      - button "Load state…" [ref=f2e78] [cursor=pointer]
+    - tabpanel "Decathlon 3" [ref=f2e280]:
+      - table [ref=f2e80]:
+        - rowgroup [ref=f2e96]:
+          - row [ref=f2e97]:
+            - columnheader "Pos" [ref=f2e483]
+            - columnheader "Name" [ref=f2e484]
+            - columnheader "Total" [ref=f2e485]
+            - columnheader "Actions" [ref=f2e486]
+            - columnheader "100m" [ref=f2e488]
+            - columnheader "110m Hurdles" [ref=f2e489]
+            - columnheader "400m" [ref=f2e490]
+            - columnheader "1500m" [ref=f2e491]
+            - columnheader "Long Jump" [ref=f2e492]
+            - columnheader "High Jump" [ref=f2e493]
+            - columnheader "Pole Vault" [ref=f2e494]
+            - columnheader "Shot Put" [ref=f2e495]
+            - columnheader "Discus Throw" [ref=f2e496]
+            - columnheader "Javelin Throw" [ref=f2e497]
+        - rowgroup [ref=f2e192]:
+          - row [ref=f2e498] [cursor=pointer]:
+            - cell [ref=f2e499]:
+              - generic [ref=f2e500]:
+                - img "Gold medal" [ref=f2e501]
+                - text: "1"
+            - cell "TP-Anna" [ref=f2e506]
+            - cell "861" [ref=f2e507]
+            - cell [ref=f2e508]:
+              - button "Edit TP-Anna" [ref=f2e509]
+            - cell "11 s 861" [ref=f2e512]
+            - cell "–" [ref=f2e513]
+            - cell "–" [ref=f2e514]
+            - cell "–" [ref=f2e515]
+            - cell "–" [ref=f2e516]
+            - cell "–" [ref=f2e517]
+            - cell "–" [ref=f2e518]
+            - cell "–" [ref=f2e519]
+            - cell "–" [ref=f2e520]
+            - cell "–" [ref=f2e521]
+          - row [ref=f2e522] [cursor=pointer]:
+            - cell [ref=f2e523]:
+              - generic [ref=f2e524]:
+                - img "Silver medal" [ref=f2e525]
+                - text: "2"
+            - cell "TP-Bo" [ref=f2e530]
+            - cell "814" [ref=f2e531]
+            - cell [ref=f2e532]:
+              - button "Edit TP-Bo" [ref=f2e533]
+            - cell "–" [ref=f2e536]
+            - cell "–" [ref=f2e537]
+            - cell "–" [ref=f2e538]
+            - cell "–" [ref=f2e539]
+            - cell "700 cm 814" [ref=f2e540]
+            - cell "–" [ref=f2e541]
+            - cell "–" [ref=f2e542]
+            - cell "–" [ref=f2e543]
+            - cell "–" [ref=f2e544]
+            - cell "–" [ref=f2e545]
+          - row [ref=f2e546] [cursor=pointer]:
+            - cell "–" [ref=f2e547]
+            - cell "TP-Cia" [ref=f2e549]
+            - cell "0" [ref=f2e550]
+            - cell [ref=f2e551]:
+              - button "Edit TP-Cia" [ref=f2e552]
+            - cell "–" [ref=f2e555]
+            - cell "–" [ref=f2e556]
+            - cell "–" [ref=f2e557]
+            - cell "–" [ref=f2e558]
+            - cell "–" [ref=f2e559]
+            - cell "–" [ref=f2e560]
+            - cell "–" [ref=f2e561]
+            - cell "–" [ref=f2e562]
+            - cell "–" [ref=f2e563]
+            - cell "–" [ref=f2e564]
+    - paragraph [ref=f2e114]: Click a row to load that competitor into "Enter result". Positions are counted within each competition and ties share a position.

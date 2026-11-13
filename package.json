@@ -12,6 +12,7 @@
     "start": "NODE_ENV=production tsx server/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test test/*.test.ts",
+    "test:python": "python3 -m unittest discover -s testpilot/tests",
     "check:contrast": "node scripts/check-contrast.mjs",
     "check:layout": "node scripts/check-layout.mjs",
     "check:roles": "node scripts/check-roles-ui.mjs",

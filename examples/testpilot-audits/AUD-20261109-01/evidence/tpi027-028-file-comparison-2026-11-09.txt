@@ -1,0 +1,8 @@
+TPI-027 / TPI-028 file checks, 2026-11-09 (TP-Auditors selected)
+Export CSV: browser filename tp-auditors-results-20261109-135250.csv, saved as tpi027-export-tp-auditors-2026-11-09.csv (937 bytes)
+ header: Position, Name, Competition, <event> result, <event> points (x10), Total; 6 rows.
+ Compared with the standings after reload: positions, points per event and totals identical for all 6 rows (0 differences).
+ No General, TP-A4 or TP-A5 data in the file. Result columns hold stored values (1500m as seconds: 270).
+Save state: browser filename tp-auditors-state-20261109-135250.json, saved as tpi028-save-state-tp-auditors-2026-11-09.json (1307 bytes)
+ {"version":1,"name":"TP-Auditors","type":"DECATHLON","competitors":[6 entries]}
+ Results per competitor equal the values typed in the plan (TP-A1 10, TP-A2 3, TP-A3 3, TP-Bnd 5, TP-LLL... 0, TP-Dup 0): 0 mismatches.

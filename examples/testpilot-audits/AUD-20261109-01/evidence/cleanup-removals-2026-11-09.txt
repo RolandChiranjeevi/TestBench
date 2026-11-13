@@ -1,0 +1,5 @@
+Cleanup after the audit, 2026-11-09 13:01:57Z-13:02:10Z (each removal: Edit -> 'Remove competitor' -> 'Confirm remove' -> message 'Removed <name>')
+TP-Auditors:   TP-A1 13:01:58Z, TP-Bnd 13:01:59Z, TP-A2 13:02:00Z, TP-A3 13:02:01Z, TP-Key 13:02:02Z, TP-V375 13:02:03Z, TP-LLL...(200 chars) 13:02:04Z, TP-Dup 13:02:05Z, TP-Åsa Öberg 13:02:06Z
+TP-Auditors-H: TP-A4 13:02:07Z, TP-A5 13:02:08Z
+After reload: General · Mixed (0) | TP-Auditors · Decathlon (0) | TP-Auditors-H · Heptathlon (0)
+The two TP competitions remain (empty): the UI has no action to delete a competition (CG-004).

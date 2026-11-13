@@ -1,0 +1,138 @@
+[
+  {
+    "bug_proposal_id": "BP-001",
+    "finding_category": "functional",
+    "title": "Standings table: no rank within each event is shown when results are saved",
+    "classification": "Finding category: functional",
+    "duplicate_check": "not_available",
+    "possible_duplicate_of": null,
+    "duplicate_check_notes": "No bug data is available through a configured TestBench integration, so no comparison was made.",
+    "requirement_link": {
+      "requirement_id": "REQ-LOCAL-004",
+      "acceptance_criterion": "The table shows the rank within each event, and also the total and the total position (user clarification of REQ-LOCAL-004).",
+      "test_plan_item_id": "TPI-009",
+      "execution_ids": [
+        "EX-007",
+        "EX-013"
+      ]
+    },
+    "environment": {
+      "url": "http://localhost:8080/",
+      "browser": "Playwright MCP browser (Chromium-based, version not recorded)",
+      "viewport": "1440x900",
+      "build": "unknown (no build or version given)",
+      "test_environment": "local, competition TP-AUD-20261105-01"
+    },
+    "preconditions": [
+      "The app is running at http://localhost:8080/.",
+      "Competition TP-AUD-20261105-01 (Decathlon) is selected.",
+      "TP-Anna and TP-Cia each have 100m 11.00; TP-Bo has 100m 10.50 and Long Jump 700 cm."
+    ],
+    "steps_to_reproduce": [
+      "Open the app and select the competition TP-AUD-20261105-01.",
+      "Look at the standings table, including the 100m and Long Jump columns, and hover the event cells.",
+      "Optionally click Export CSV and open the file.",
+      "Look for the rank of each competitor within the 100m event and within the Long Jump event."
+    ],
+    "expected_result": "Each competitor has a rank within each event they have a result in, plus the total and total position. Source: REQ-LOCAL-004 as clarified by the user (\"Placement per event means rank within each event; total and total placement are also shown\").",
+    "actual_result": "The table shows the total and the total position (Pos). Each event cell shows only the result and points, for example TP-Bo 100m: 10.5 s and 975. No rank within an event is shown in the table, in its HTML, on hover, or in the CSV export (columns: Position, Name, Competition, result and points per event, Total).",
+    "reproduction_rate": {
+      "rate": "Always",
+      "attempts": "2 of 2 (EX-007; EX-013 after a page reload and with the CSV export)"
+    },
+    "evidence": [
+      "EV-013",
+      "EV-014",
+      "EV-039",
+      "EV-040"
+    ],
+    "severity": {
+      "level": "Medium",
+      "rationale": "A clarified requirement is not met, but totals, positions and points are correct and no data is lost. Severity is a proposal for human review."
+    },
+    "agent_confidence": {
+      "level": "Medium",
+      "basis": "The absence of an event rank is clearly observed and reproduced through three routes. Confidence is not High because the requirement text was clarified by the user and a design reference was not available; the UI may intentionally show only points per event."
+    },
+    "proposed_manual_test": {
+      "manual_test_proposal_id": "MTP-002",
+      "objective": "Confirm with the product owner how rank within an event is meant to be shown.",
+      "steps": [
+        "Review the requirement and design for event rank.",
+        "With three competitors holding different 100m results, check where the 100m rank is shown."
+      ],
+      "expected_result": "The agreed event rank is visible for each competitor and event."
+    },
+    "status": "proposed"
+  },
+  {
+    "bug_proposal_id": "BP-002",
+    "finding_category": "functional",
+    "title": "Enter result: an unreasonable 100m value (99999 s) is accepted and saved without an error",
+    "classification": "Finding category: functional",
+    "duplicate_check": "not_available",
+    "possible_duplicate_of": null,
+    "duplicate_check_notes": "No bug data is available through a configured TestBench integration, so no comparison was made.",
+    "requirement_link": {
+      "requirement_id": "REQ-LOCAL-006",
+      "acceptance_criterion": "Negative, non-numeric, empty and unreasonable values for an event are rejected with a clear error message and the result is not saved (user clarification of REQ-LOCAL-006).",
+      "test_plan_item_id": "TPI-012",
+      "execution_ids": [
+        "EX-012",
+        "EX-016"
+      ]
+    },
+    "environment": {
+      "url": "http://localhost:8080/",
+      "browser": "Playwright MCP browser (Chromium-based, version not recorded)",
+      "viewport": "1440x900",
+      "build": "unknown (no build or version given)",
+      "test_environment": "local, competition TP-AUD-20261105-01"
+    },
+    "preconditions": [
+      "The app is running at http://localhost:8080/.",
+      "Competition TP-AUD-20261105-01 (Decathlon) is selected with a competitor TP-Key that has no results."
+    ],
+    "steps_to_reproduce": [
+      "Click the row TP-Key so that the competitor is loaded in Enter result.",
+      "Select discipline Decathlon and event 100m (s).",
+      "Type 99999 in Result and click Save score.",
+      "Read the message, then reload the page, select the competition and look at the TP-Key row."
+    ],
+    "expected_result": "The value is rejected with a clear error message and nothing is saved. Source: REQ-LOCAL-006 as clarified by the user (unreasonable values for the event are invalid).",
+    "actual_result": "No error is shown. The status line says Saved: 0 pts, the 100m cell shows 1666:39 (99999 s), TP-Key gets position 6 and the server answered 200. The value is still there after a reload. In the same session, 0.5 s was rejected with Faster than the world record for 100m: 9.58 s, so an unreasonable low value is handled and an unreasonable high one is not.",
+    "reproduction_rate": {
+      "rate": "Always",
+      "attempts": "2 of 2 (EX-012 attempt 5 and EX-016); persisted after reload (EX-013)"
+    },
+    "evidence": [
+      "EV-034",
+      "EV-035",
+      "EV-036",
+      "EV-038",
+      "EV-039",
+      "EV-046",
+      "EV-047",
+      "EV-048"
+    ],
+    "severity": {
+      "level": "Medium",
+      "rationale": "Invalid data is stored and shown in the standings (scored 0 points), but other clearly invalid values are rejected and the data stays contained in a test competition. Severity is a proposal for human review."
+    },
+    "agent_confidence": {
+      "level": "Medium",
+      "basis": "The behaviour is reproduced twice and persisted. Confidence is not High because no numeric upper limit for unreasonable values is defined; 99999 s (about 27.8 hours) is unreasonable under any reading, but the exact threshold is unspecified."
+    },
+    "proposed_manual_test": {
+      "manual_test_proposal_id": "MTP-001",
+      "objective": "Find out which upper limits the app should enforce per event and check each event.",
+      "steps": [
+        "Agree an upper limit per event.",
+        "For each event enter a value just below, at and above the limit.",
+        "Check message and that above-limit values are not saved."
+      ],
+      "expected_result": "Values above the limit are rejected with a clear message and are not saved."
+    },
+    "status": "proposed"
+  }
+]

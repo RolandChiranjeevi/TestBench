@@ -1,0 +1,25 @@
+{
+  "name": "example-api",
+  "baseUrl": "http://localhost:8080",
+  "environment": "local",
+  "production": false,
+  "permissionMode": "observe_only",
+  "headers": { "Accept": "application/json" },
+  "auth": {
+    "type": "bearer",
+    "tokenEnvVar": "EXAMPLE_API_TOKEN",
+    "login": {
+      "method": "POST",
+      "path": "/api/login",
+      "body": { "username": "${env:EXAMPLE_API_USER}", "password": "${env:EXAMPLE_API_PASSWORD}" },
+      "tokenPath": "$.token"
+    },
+    "refresh": { "method": "POST", "path": "/api/refresh", "tokenPath": "$.token" },
+    "expiredTokenEnvVar": "EXAMPLE_API_EXPIRED_TOKEN",
+    "secondAccount": {
+      "body": { "username": "${env:EXAMPLE_API_USER2}", "password": "${env:EXAMPLE_API_PASSWORD2}" }
+    }
+  },
+  "schema": { "type": "openapi", "file": "specs/example-openapi.json" },
+  "limits": { "timeoutSeconds": 30, "maxAttempts": 3, "maxRequestsPerRun": 200, "rateLimitProbeMax": 30 }
+}

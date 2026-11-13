@@ -1,0 +1,10 @@
+TPI-015 / TPI-009 / TPI-010 rejected results in TP-Auditors - UI message and where it was rejected, 2026-11-09
+time       competitor event   typed  UI #error                                                          request
+12:46:57Z  TP-A1      100m    xyz    Enter the result in seconds (163) or as minutes:seconds (2:43).    none (rejected in the browser)
+12:46:58Z  TP-Bnd     100m    ''     Result is required                                                 #122 POST c1/score {"name":"TP-Bnd","event":"100m","raw":null} -> 400 "Result is required"
+12:46:58Z  TP-Bnd     100m    abc    Enter the result in seconds (163) or as minutes:seconds (2:43).    none (rejected in the browser)
+12:46:59Z  TP-Bnd     100m    -5     Result cannot be negative                                          #125 POST c1/score {"...","event":"100m","raw":-5} -> 400
+12:46:59Z  TP-Bnd     shotPut -1     Result cannot be negative                                          #128 POST c1/score {"...","event":"shotPut","raw":-1} -> 400
+Each rejection sets #raw aria-invalid="true". Console: one "Failed to load resource: 400" error per server rejection (3).
+TP-A1 row before and after 'xyz': 1 | TP-A1 | 8229 | 906 (100m) ... unchanged. TP-Bnd row after all: total 0, no event values.
+Observation: the message for 'abc' on 100m refers to minutes:seconds although 100m is not a minute event.

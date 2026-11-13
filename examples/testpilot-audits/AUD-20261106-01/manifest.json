@@ -1,0 +1,920 @@
+{
+  "audit_id": "AUD-20261106-01",
+  "contract_version": "1.3",
+  "created_at": "2026-11-06T13:19:21Z",
+  "agent": {
+    "name": "testpilot",
+    "model": "claude-sonnet-5-5"
+  },
+  "target": {
+    "url": "http://localhost:8080",
+    "environment": "local",
+    "build": null
+  },
+  "scope": {
+    "objective": "Black-box check that a user can add participants and save results in the Decathlon & Heptathlon app (REQ-LOCAL-001 and REQ-LOCAL-002).",
+    "target": {
+      "url": "http://localhost:8080",
+      "environment": "local",
+      "build": null
+    },
+    "included_requirement_ids": [
+      "REQ-LOCAL-001",
+      "REQ-LOCAL-002"
+    ],
+    "excluded_requirement_ids": [],
+    "allowed_check_types": [
+      "Functional",
+      "State",
+      "Responsive",
+      "Accessibility"
+    ],
+    "viewports": [
+      {
+        "width": 1440,
+        "height": 900
+      },
+      {
+        "width": 768,
+        "height": 1024
+      },
+      {
+        "width": 375,
+        "height": 812
+      }
+    ],
+    "state_changes": {
+      "allowed": true,
+      "allowed_actions": [
+        {
+          "action": "create_competition",
+          "limit": "once per audit",
+          "data": "TP-TPT-20261106, type Decathlon"
+        },
+        {
+          "action": "add_competitor",
+          "limit": "once per listed name, 5 in total per audit",
+          "data": "TP-Anna, TP-Bo, TP-Cia, TP-V375, TP-Key"
+        },
+        {
+          "action": "save_result",
+          "limit": "at most 2 per audit, counting attempted saves",
+          "data": "TP-Anna 100m 11.50, TP-Anna Long Jump 680 (cm)"
+        }
+      ],
+      "constraints": "State-changing checks are allowed only in the competition TP-TPT-20261106. The existing competitions General and TP-AUD-20261105-01 must not be changed."
+    },
+    "test_data_constraints": "Local-only, disposable test data. No real personal data. Names start with TP-.",
+    "out_of_scope": [
+      "Save state and Load state",
+      "The existing competitions General and TP-AUD-20261105-01",
+      "Editing and removing competitors",
+      "Heptathlon",
+      "CSV export",
+      "Server-side validation, performance and security testing"
+    ],
+    "stop_conditions": [
+      "Stop on an unexpected error, data loss, or any write outside the competition TP-TPT-20261106 (user, 2026-11-06)",
+      "Stop on a server error (5xx) response",
+      "Pause and ask when a check would need data or an action that the scope does not allow"
+    ],
+    "confirmed_at": "2026-11-06T13:19:21Z",
+    "confirmed_by": "johan"
+  },
+  "requirements": [
+    {
+      "requirement_id": "REQ-LOCAL-001",
+      "title": "A user can add a participant to a competition",
+      "source": "local",
+      "readiness": "ready",
+      "acceptance_criteria": "After entering a name and clicking 'Add competitor', the competitor is shown as a row in the standings table of the selected competition, and is still shown after a page reload."
+    },
+    {
+      "requirement_id": "REQ-LOCAL-002",
+      "title": "A user can save a result for a participant",
+      "source": "local",
+      "readiness": "ready",
+      "acceptance_criteria": "For an existing competitor, selecting the event, entering a valid numeric result and clicking 'Save score' shows a success message without an error, and the competitor's row in the standings shows the result and the points for that event; the result is still shown after a page reload."
+    }
+  ],
+  "test_plan_items": [
+    {
+      "test_plan_item_id": "TPI-001",
+      "requirement_id": "REQ-LOCAL-001",
+      "title": "Create the test competition and add TP-Anna (1440 px)",
+      "risk": "Medium",
+      "priority": "High",
+      "type": "Functional",
+      "readiness": "ready",
+      "preconditions": "The app is reachable at http://localhost:8080. The competition TP-TPT-20261106 does not exist yet. Viewport 1440x900.",
+      "test_data": "Competition name TP-TPT-20261106, type Decathlon. Competitor name TP-Anna.",
+      "steps": [
+        "Open http://localhost:8080 at viewport 1440x900.",
+        "Click 'New competition'.",
+        "Enter TP-TPT-20261106 as the competition name, keep the type Decathlon and click 'Create'.",
+        "Check that the competition TP-TPT-20261106 is selected.",
+        "Enter TP-Anna in the Name field under 'Add competitor' and click 'Add competitor'.",
+        "Check that a row for TP-Anna is shown in the Decathlon standings table and that no error is shown."
+      ],
+      "acceptance_criteria": "After entering a name and clicking 'Add competitor', the competitor is shown as a row in the standings table of the selected competition, and is still shown after a page reload.",
+      "automation": {
+        "suitable": true,
+        "mode": "mcp-exploration"
+      }
+    },
+    {
+      "test_plan_item_id": "TPI-002",
+      "requirement_id": "REQ-LOCAL-001",
+      "title": "TP-Anna is still there after a page reload",
+      "risk": "Medium",
+      "priority": "Medium",
+      "type": "State",
+      "readiness": "ready",
+      "preconditions": "The app is reachable at http://localhost:8080. TPI-001 is done: TP-Anna exists in the competition TP-TPT-20261106. Viewport 1440x900.",
+      "test_data": "None",
+      "steps": [
+        "Reload the page.",
+        "Select the competition TP-TPT-20261106 if it is not selected.",
+        "Check that a row for TP-Anna is shown in the Decathlon standings table."
+      ],
+      "acceptance_criteria": "After entering a name and clicking 'Add competitor', the competitor is shown as a row in the standings table of the selected competition, and is still shown after a page reload.",
+      "automation": {
+        "suitable": true,
+        "mode": "mcp-exploration"
+      }
+    },
+    {
+      "test_plan_item_id": "TPI-003",
+      "requirement_id": "REQ-LOCAL-001",
+      "title": "Add TP-Bo and TP-Cia, three rows in total",
+      "risk": "Low",
+      "priority": "Medium",
+      "type": "Functional",
+      "readiness": "ready",
+      "preconditions": "The app is reachable at http://localhost:8080. TP-Anna exists in the competition TP-TPT-20261106, which is selected. Viewport 1440x900.",
+      "test_data": "Competitor names TP-Bo and TP-Cia.",
+      "steps": [
+        "Enter TP-Bo in the Name field under 'Add competitor' and click 'Add competitor'.",
+        "Enter TP-Cia in the Name field under 'Add competitor' and click 'Add competitor'.",
+        "Check that rows for TP-Anna, TP-Bo and TP-Cia are shown in the Decathlon standings table and that no error is shown."
+      ],
+      "acceptance_criteria": "After entering a name and clicking 'Add competitor', the competitor is shown as a row in the standings table of the selected competition, and is still shown after a page reload.",
+      "automation": {
+        "suitable": true,
+        "mode": "mcp-exploration"
+      }
+    },
+    {
+      "test_plan_item_id": "TPI-004",
+      "requirement_id": "REQ-LOCAL-001",
+      "title": "Add a competitor at 375x812",
+      "risk": "Medium",
+      "priority": "Medium",
+      "type": "Responsive",
+      "readiness": "ready",
+      "preconditions": "The app is reachable at http://localhost:8080. The competition TP-TPT-20261106 exists. Viewport 375x812.",
+      "test_data": "Competitor name TP-V375.",
+      "steps": [
+        "Set the viewport to 375x812 and open http://localhost:8080.",
+        "Select the competition TP-TPT-20261106.",
+        "Enter TP-V375 in the Name field under 'Add competitor' and click 'Add competitor'.",
+        "Check that a row for TP-V375 is shown in the Decathlon standings table and that no error is shown."
+      ],
+      "acceptance_criteria": "After entering a name and clicking 'Add competitor', the competitor is shown as a row in the standings table of the selected competition, and is still shown after a page reload.",
+      "automation": {
+        "suitable": true,
+        "mode": "mcp-exploration"
+      }
+    },
+    {
+      "test_plan_item_id": "TPI-005",
+      "requirement_id": "REQ-LOCAL-001",
+      "title": "Add a competitor with the keyboard only",
+      "risk": "Medium",
+      "priority": "Medium",
+      "type": "Accessibility",
+      "readiness": "ready",
+      "preconditions": "The app is reachable at http://localhost:8080. The competition TP-TPT-20261106 exists and is selected. Viewport 1440x900. Heuristic-based (input method variation): the requirement has no keyboard criterion; the acceptance criterion is the one of the requirement.",
+      "test_data": "Competitor name TP-Key.",
+      "steps": [
+        "Move the focus to the Name field under 'Add competitor' with the Tab key.",
+        "Type TP-Key.",
+        "Move the focus to the 'Add competitor' button with the Tab key and press Enter.",
+        "Check that a row for TP-Key is shown in the Decathlon standings table and that no error is shown."
+      ],
+      "acceptance_criteria": "After entering a name and clicking 'Add competitor', the competitor is shown as a row in the standings table of the selected competition, and is still shown after a page reload.",
+      "automation": {
+        "suitable": true,
+        "mode": "mcp-exploration"
+      }
+    },
+    {
+      "test_plan_item_id": "TPI-006",
+      "requirement_id": "REQ-LOCAL-002",
+      "title": "Save a valid 100m result for TP-Anna",
+      "risk": "High",
+      "priority": "High",
+      "type": "Functional",
+      "readiness": "ready",
+      "preconditions": "The app is reachable at http://localhost:8080. TP-Anna exists in the competition TP-TPT-20261106, which is selected. Viewport 1440x900.",
+      "test_data": "Competitor TP-Anna, discipline Decathlon, event 100m, result 11.50.",
+      "steps": [
+        "Select TP-Anna in the Competitor field under 'Enter result'.",
+        "Select the discipline Decathlon and the event 100m.",
+        "Enter 11.50 in the Result field and click 'Save score'.",
+        "Check that a success message is shown and no error is shown.",
+        "Check that the row for TP-Anna shows the 100m result 11.50 and a points value."
+      ],
+      "acceptance_criteria": "For an existing competitor, selecting the event, entering a valid numeric result and clicking 'Save score' shows a success message without an error, and the competitor's row in the standings shows the result and the points for that event; the result is still shown after a page reload.",
+      "automation": {
+        "suitable": true,
+        "mode": "mcp-exploration"
+      }
+    },
+    {
+      "test_plan_item_id": "TPI-007",
+      "requirement_id": "REQ-LOCAL-002",
+      "title": "The saved result is still there after a page reload",
+      "risk": "Medium",
+      "priority": "Medium",
+      "type": "State",
+      "readiness": "ready",
+      "preconditions": "The app is reachable at http://localhost:8080. TPI-006 is done: TP-Anna has a 100m result of 11.50. Viewport 1440x900.",
+      "test_data": "None",
+      "steps": [
+        "Reload the page.",
+        "Select the competition TP-TPT-20261106 if it is not selected.",
+        "Check that the row for TP-Anna shows the 100m result 11.50 and a points value."
+      ],
+      "acceptance_criteria": "For an existing competitor, selecting the event, entering a valid numeric result and clicking 'Save score' shows a success message without an error, and the competitor's row in the standings shows the result and the points for that event; the result is still shown after a page reload.",
+      "automation": {
+        "suitable": true,
+        "mode": "mcp-exploration"
+      }
+    },
+    {
+      "test_plan_item_id": "TPI-008",
+      "requirement_id": "REQ-LOCAL-002",
+      "title": "Save a Long Jump result, both events are shown",
+      "risk": "Medium",
+      "priority": "Medium",
+      "type": "Functional",
+      "readiness": "ready",
+      "preconditions": "The app is reachable at http://localhost:8080. TP-Anna exists in the competition TP-TPT-20261106, which is selected, and has a 100m result. Viewport 1440x900.",
+      "test_data": "Competitor TP-Anna, discipline Decathlon, event Long Jump, result 680 (the app takes Long Jump in cm; 680 cm = 6.80 m).",
+      "steps": [
+        "Select TP-Anna in the Competitor field under 'Enter result'.",
+        "Select the discipline Decathlon and the event Long Jump.",
+        "Enter 680 in the Result field and click 'Save score'.",
+        "Check that a success message is shown and no error is shown.",
+        "Check that the row for TP-Anna shows both the 100m result 11.50 and the Long Jump result 680 cm, each with a points value."
+      ],
+      "acceptance_criteria": "For an existing competitor, selecting the event, entering a valid numeric result and clicking 'Save score' shows a success message without an error, and the competitor's row in the standings shows the result and the points for that event; the result is still shown after a page reload.",
+      "automation": {
+        "suitable": true,
+        "mode": "mcp-exploration"
+      }
+    }
+  ],
+  "executions": [
+    {
+      "execution_id": "EX-001",
+      "test_plan_item_id": "TPI-001",
+      "requirement_id": "REQ-LOCAL-001",
+      "status": "pass",
+      "reason": null,
+      "started_at": "2026-11-06T13:21:57Z",
+      "finished_at": "2026-11-06T13:22:36Z",
+      "url": "http://localhost:8080/",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "mode": "mcp-exploration",
+      "evidence_ids": [
+        "EV-001",
+        "EV-002"
+      ],
+      "summary": "Verified: the competition TP-TPT-20261106 (Decathlon) was created and selected (ACT-001); after adding TP-Anna a row 'TP-Anna' is shown in the Decathlon standings, the app says 'Added' and no error is shown. Not verified: console output for this item, blank or special-character names, server-side behaviour."
+    },
+    {
+      "execution_id": "EX-002",
+      "test_plan_item_id": "TPI-002",
+      "requirement_id": "REQ-LOCAL-001",
+      "status": "pass",
+      "reason": null,
+      "started_at": "2026-11-06T13:22:41Z",
+      "finished_at": "2026-11-06T13:22:42Z",
+      "url": "http://localhost:8080/",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "mode": "mcp-exploration",
+      "evidence_ids": [
+        "EV-003"
+      ],
+      "summary": "Verified: after a page reload the competition c2 is selected and the row 'TP-Anna' is still shown. Not verified: console output for this item, persistence in another browser or session."
+    },
+    {
+      "execution_id": "EX-003",
+      "test_plan_item_id": "TPI-003",
+      "requirement_id": "REQ-LOCAL-001",
+      "status": "pass",
+      "reason": null,
+      "started_at": "2026-11-06T13:22:59Z",
+      "finished_at": "2026-11-06T13:23:12Z",
+      "url": "http://localhost:8080/",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "mode": "mcp-exploration",
+      "evidence_ids": [
+        "EV-004",
+        "EV-005"
+      ],
+      "summary": "Verified: after adding TP-Bo (ACT-003) and TP-Cia (ACT-004) the standings show three rows (TP-Anna, TP-Bo, TP-Cia) and no error. Not verified: console output for this item, ordering of equal rows, duplicate names."
+    },
+    {
+      "execution_id": "EX-004",
+      "test_plan_item_id": "TPI-004",
+      "requirement_id": "REQ-LOCAL-001",
+      "status": "pass",
+      "reason": null,
+      "started_at": "2026-11-06T13:23:22Z",
+      "finished_at": "2026-11-06T13:23:38Z",
+      "url": "http://localhost:8080/",
+      "viewport": {
+        "width": 375,
+        "height": 812
+      },
+      "mode": "mcp-exploration",
+      "evidence_ids": [
+        "EV-006",
+        "EV-007"
+      ],
+      "summary": "Verified: at 375x812 TP-V375 was added (ACT-005) and a row 'TP-V375' is shown with no error. Observation, not judged because no requirement gives a layout criterion: the page is wider than the viewport (scrollWidth 383, clientWidth 360) and the standings table extends past it. Not verified: layout against any design reference, console output for this item."
+    },
+    {
+      "execution_id": "EX-005",
+      "test_plan_item_id": "TPI-005",
+      "requirement_id": "REQ-LOCAL-001",
+      "status": "pass",
+      "reason": null,
+      "started_at": "2026-11-06T13:23:52Z",
+      "finished_at": "2026-11-06T13:24:17Z",
+      "url": "http://localhost:8080/",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "mode": "mcp-exploration",
+      "evidence_ids": [
+        "EV-008",
+        "EV-009"
+      ],
+      "summary": "Verified: with the keyboard only (Tab to the Name field, typing, Tab to the 'Add competitor' button with a visible focus, Enter) TP-Key was added (ACT-006) and a row 'TP-Key' is shown with no error. Not verified: other keyboard paths, screen reader behaviour; no automated accessibility scan was performed."
+    },
+    {
+      "execution_id": "EX-006",
+      "test_plan_item_id": "TPI-006",
+      "requirement_id": "REQ-LOCAL-002",
+      "status": "pass",
+      "reason": null,
+      "started_at": "2026-11-06T13:24:30Z",
+      "finished_at": "2026-11-06T13:24:57Z",
+      "url": "http://localhost:8080/",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "mode": "mcp-exploration",
+      "evidence_ids": [
+        "EV-010",
+        "EV-011"
+      ],
+      "summary": "Verified: TP-Anna was chosen from the competitor list, Decathlon 100m 11.50 was saved (ACT-007); the app says 'Saved: 753 pts' with no error, and TP-Anna's row shows 753 points and the raw value 11.5 s for the 100m. Not verified: that 753 is the correct score (no scoring rule supplied), console output for this item, invalid values."
+    },
+    {
+      "execution_id": "EX-007",
+      "test_plan_item_id": "TPI-007",
+      "requirement_id": "REQ-LOCAL-002",
+      "status": "pass",
+      "reason": null,
+      "started_at": "2026-11-06T13:25:08Z",
+      "finished_at": "2026-11-06T13:25:08Z",
+      "url": "http://localhost:8080/",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "mode": "mcp-exploration",
+      "evidence_ids": [
+        "EV-012",
+        "EV-013",
+        "EV-014"
+      ],
+      "summary": "Verified: after a page reload competition c2 is selected and TP-Anna's row still shows 753 points and the raw value 11.5 s; the console had 0 messages since the load. Not verified: persistence in another browser or session."
+    },
+    {
+      "execution_id": "EX-008",
+      "test_plan_item_id": "TPI-008",
+      "requirement_id": "REQ-LOCAL-002",
+      "status": "pass",
+      "reason": null,
+      "started_at": "2026-11-06T13:27:55Z",
+      "finished_at": "2026-11-06T13:28:06Z",
+      "url": "http://localhost:8080/",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "mode": "mcp-exploration",
+      "evidence_ids": [
+        "EV-015",
+        "EV-016",
+        "EV-017"
+      ],
+      "summary": "Verified: TP-Anna was chosen from the competitor list, Decathlon Long Jump 680 cm was saved (ACT-008); the app says 'Saved: 767 pts' with no error, and TP-Anna's row shows both events: 100m 753 points (raw 11.5 s) and Long Jump 767 points (raw 680 cm), total 1520 (the sum of the two shown values); the console had 0 messages. Not verified: that 767 is the correct score (no scoring rule supplied), persistence of the Long Jump result after a reload, invalid values. The planned test data 6.80 was corrected to 680 cm because the app takes Long Jump in cm (see limitations)."
+    }
+  ],
+  "actions": [
+    {
+      "action_id": "ACT-001",
+      "execution_id": "EX-001",
+      "action": "create_competition",
+      "target": "competition TP-TPT-20261106 (type Decathlon)",
+      "allowed_by_scope": true,
+      "performed_at": "2026-11-06T13:22:13Z",
+      "evidence_ids": [
+        "EV-001",
+        "EV-002"
+      ]
+    },
+    {
+      "action_id": "ACT-002",
+      "execution_id": "EX-001",
+      "action": "add_competitor",
+      "target": "competitor TP-Anna in TP-TPT-20261106",
+      "allowed_by_scope": true,
+      "performed_at": "2026-11-06T13:22:28Z",
+      "evidence_ids": [
+        "EV-001",
+        "EV-002"
+      ]
+    },
+    {
+      "action_id": "ACT-003",
+      "execution_id": "EX-003",
+      "action": "add_competitor",
+      "target": "competitor TP-Bo in TP-TPT-20261106",
+      "allowed_by_scope": true,
+      "performed_at": "2026-11-06T13:22:59Z",
+      "evidence_ids": [
+        "EV-004",
+        "EV-005"
+      ]
+    },
+    {
+      "action_id": "ACT-004",
+      "execution_id": "EX-003",
+      "action": "add_competitor",
+      "target": "competitor TP-Cia in TP-TPT-20261106",
+      "allowed_by_scope": true,
+      "performed_at": "2026-11-06T13:23:11Z",
+      "evidence_ids": [
+        "EV-004",
+        "EV-005"
+      ]
+    },
+    {
+      "action_id": "ACT-005",
+      "execution_id": "EX-004",
+      "action": "add_competitor",
+      "target": "competitor TP-V375 in TP-TPT-20261106",
+      "allowed_by_scope": true,
+      "performed_at": "2026-11-06T13:23:38Z",
+      "evidence_ids": [
+        "EV-006",
+        "EV-007"
+      ]
+    },
+    {
+      "action_id": "ACT-006",
+      "execution_id": "EX-005",
+      "action": "add_competitor",
+      "target": "competitor TP-Key in TP-TPT-20261106",
+      "allowed_by_scope": true,
+      "performed_at": "2026-11-06T13:24:16Z",
+      "evidence_ids": [
+        "EV-008",
+        "EV-009"
+      ]
+    },
+    {
+      "action_id": "ACT-007",
+      "execution_id": "EX-006",
+      "action": "save_result",
+      "target": "TP-Anna Decathlon 100m 11.50 in TP-TPT-20261106",
+      "allowed_by_scope": true,
+      "performed_at": "2026-11-06T13:24:56Z",
+      "evidence_ids": [
+        "EV-010",
+        "EV-011"
+      ]
+    },
+    {
+      "action_id": "ACT-008",
+      "execution_id": "EX-008",
+      "action": "save_result",
+      "target": "TP-Anna Decathlon Long Jump 680 cm in TP-TPT-20261106",
+      "allowed_by_scope": true,
+      "performed_at": "2026-11-06T13:28:06Z",
+      "evidence_ids": [
+        "EV-015",
+        "EV-016"
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "evidence_id": "EV-001",
+      "type": "screenshot",
+      "source": "playwright-mcp",
+      "location": "evidence/tpi-001-tp-anna-added-screenshot-2026-11-06.png",
+      "related": [
+        "EX-001"
+      ],
+      "captured_at": "2026-11-06T13:22:36Z",
+      "description": "Screenshot after creating TP-TPT-20261106 and adding TP-Anna at 1440x900.",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "redacted": false
+    },
+    {
+      "evidence_id": "EV-002",
+      "type": "test-output",
+      "source": "playwright-mcp",
+      "location": "evidence/tpi-001-tp-anna-added-dom-2026-11-06.json",
+      "related": [
+        "EX-001"
+      ],
+      "captured_at": "2026-11-06T13:22:36Z",
+      "description": "Read-out after adding TP-Anna: row 'TP-Anna', message 'Added', no error.",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "redacted": false
+    },
+    {
+      "evidence_id": "EV-003",
+      "type": "test-output",
+      "source": "playwright-mcp",
+      "location": "evidence/tpi-002-after-reload-dom-2026-11-06.json",
+      "related": [
+        "EX-002"
+      ],
+      "captured_at": "2026-11-06T13:22:42Z",
+      "description": "Read-out after a page reload: competition c2 selected, row 'TP-Anna' present.",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "redacted": false
+    },
+    {
+      "evidence_id": "EV-004",
+      "type": "test-output",
+      "source": "playwright-mcp",
+      "location": "evidence/tpi-003-three-competitors-dom-2026-11-06.json",
+      "related": [
+        "EX-003"
+      ],
+      "captured_at": "2026-11-06T13:23:12Z",
+      "description": "Read-out after adding TP-Bo and TP-Cia: rows TP-Anna, TP-Bo, TP-Cia, message 'Added', no error.",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "redacted": false
+    },
+    {
+      "evidence_id": "EV-005",
+      "type": "screenshot",
+      "source": "playwright-mcp",
+      "location": "evidence/tpi-003-three-competitors-screenshot-2026-11-06.png",
+      "related": [
+        "EX-003"
+      ],
+      "captured_at": "2026-11-06T13:23:13Z",
+      "description": "Screenshot of the standings with three competitors at 1440x900.",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "redacted": false
+    },
+    {
+      "evidence_id": "EV-006",
+      "type": "test-output",
+      "source": "playwright-mcp",
+      "location": "evidence/tpi-004-375-add-competitor-dom-2026-11-06.json",
+      "related": [
+        "EX-004"
+      ],
+      "captured_at": "2026-11-06T13:23:38Z",
+      "description": "Read-out at 375x812 after adding TP-V375: row present, no error; scrollWidth 383 against clientWidth 360, table#standingsTableEl extends past the viewport.",
+      "viewport": {
+        "width": 375,
+        "height": 812
+      },
+      "redacted": false
+    },
+    {
+      "evidence_id": "EV-007",
+      "type": "screenshot",
+      "source": "playwright-mcp",
+      "location": "evidence/tpi-004-375-add-competitor-screenshot-2026-11-06.png",
+      "related": [
+        "EX-004"
+      ],
+      "captured_at": "2026-11-06T13:23:39Z",
+      "description": "Screenshot at 375x812 after adding TP-V375.",
+      "viewport": {
+        "width": 375,
+        "height": 812
+      },
+      "redacted": false
+    },
+    {
+      "evidence_id": "EV-008",
+      "type": "test-output",
+      "source": "playwright-mcp",
+      "location": "evidence/tpi-005-keyboard-add-competitor-dom-2026-11-06.json",
+      "related": [
+        "EX-005"
+      ],
+      "captured_at": "2026-11-06T13:24:17Z",
+      "description": "Read-out after adding TP-Key with Tab and Enter only: row present, message 'Added', no error.",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "redacted": false
+    },
+    {
+      "evidence_id": "EV-009",
+      "type": "screenshot",
+      "source": "playwright-mcp",
+      "location": "evidence/tpi-005-keyboard-add-competitor-screenshot-2026-11-06.png",
+      "related": [
+        "EX-005"
+      ],
+      "captured_at": "2026-11-06T13:24:18Z",
+      "description": "Screenshot after adding TP-Key with the keyboard only.",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "redacted": false
+    },
+    {
+      "evidence_id": "EV-010",
+      "type": "test-output",
+      "source": "playwright-mcp",
+      "location": "evidence/tpi-006-save-100m-dom-2026-11-06.json",
+      "related": [
+        "EX-006"
+      ],
+      "captured_at": "2026-11-06T13:24:57Z",
+      "description": "Read-out after saving 100m 11.50 for TP-Anna: 'Saved: 753 pts', row shows 753 [raw 11.5 s], no error.",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "redacted": false
+    },
+    {
+      "evidence_id": "EV-011",
+      "type": "screenshot",
+      "source": "playwright-mcp",
+      "location": "evidence/tpi-006-save-100m-screenshot-2026-11-06.png",
+      "related": [
+        "EX-006"
+      ],
+      "captured_at": "2026-11-06T13:24:58Z",
+      "description": "Screenshot of the standings after saving the 100m result for TP-Anna.",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "redacted": false
+    },
+    {
+      "evidence_id": "EV-012",
+      "type": "test-output",
+      "source": "playwright-mcp",
+      "location": "evidence/tpi-007-after-reload-dom-2026-11-06.json",
+      "related": [
+        "EX-007"
+      ],
+      "captured_at": "2026-11-06T13:25:08Z",
+      "description": "Read-out after a page reload: competition c2 selected, TP-Anna row still shows 753 [raw 11.5 s].",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "redacted": false
+    },
+    {
+      "evidence_id": "EV-013",
+      "type": "screenshot",
+      "source": "playwright-mcp",
+      "location": "evidence/tpi-007-after-reload-screenshot-2026-11-06.png",
+      "related": [
+        "EX-007"
+      ],
+      "captured_at": "2026-11-06T13:25:13Z",
+      "description": "Screenshot of the standings after the reload.",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "redacted": false
+    },
+    {
+      "evidence_id": "EV-014",
+      "type": "console-log",
+      "source": "playwright-mcp",
+      "location": "evidence/tpi-007-console-after-reload-2026-11-06.txt",
+      "related": [
+        "EX-007"
+      ],
+      "captured_at": "2026-11-06T13:25:55Z",
+      "description": "Console output since the last page load: 0 messages, 0 errors, 0 warnings.",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "redacted": false
+    },
+    {
+      "evidence_id": "EV-015",
+      "type": "test-output",
+      "source": "playwright-mcp",
+      "location": "evidence/tpi-008-save-longjump-dom-2026-11-06.json",
+      "related": [
+        "EX-008"
+      ],
+      "captured_at": "2026-11-06T13:28:06Z",
+      "description": "Read-out after saving Long Jump 680 cm for TP-Anna: 'Saved: 767 pts', row shows 753 [raw 11.5 s] for 100m and 767 [raw 680 cm] for Long Jump, total 1520, no error.",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "redacted": false
+    },
+    {
+      "evidence_id": "EV-016",
+      "type": "screenshot",
+      "source": "playwright-mcp",
+      "location": "evidence/tpi-008-save-longjump-screenshot-2026-11-06.png",
+      "related": [
+        "EX-008"
+      ],
+      "captured_at": "2026-11-06T13:28:07Z",
+      "description": "Screenshot of the standings after saving the Long Jump result for TP-Anna.",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "redacted": false
+    },
+    {
+      "evidence_id": "EV-017",
+      "type": "console-log",
+      "source": "playwright-mcp",
+      "location": "evidence/tpi-008-console-after-save-2026-11-06.txt",
+      "related": [
+        "EX-008"
+      ],
+      "captured_at": "2026-11-06T13:28:07Z",
+      "description": "Console output since the last page load, after saving the Long Jump result: 0 messages, 0 errors, 0 warnings.",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "redacted": false
+    }
+  ],
+  "coverage_gaps": [
+    {
+      "coverage_gap_id": "CG-001",
+      "requirement_id": "REQ-LOCAL-001",
+      "description": "Validation of competitor names (empty, duplicate, special characters, very long) is not verified: the requirement gives no criterion for it."
+    },
+    {
+      "coverage_gap_id": "CG-002",
+      "requirement_id": "REQ-LOCAL-002",
+      "description": "Validation of result values (empty, negative, non-numeric, unreasonably large) is not verified: the requirement gives no criterion for it."
+    },
+    {
+      "coverage_gap_id": "CG-003",
+      "requirement_id": "REQ-LOCAL-002",
+      "description": "Replacing an existing result and its confirmation dialog are not verified: the requirement gives no criterion for it."
+    },
+    {
+      "coverage_gap_id": "CG-004",
+      "requirement_id": "REQ-LOCAL-001",
+      "description": "Editing and removing a competitor are not verified: they are not part of the requirement and are not allowed by the scope."
+    },
+    {
+      "coverage_gap_id": "CG-005",
+      "requirement_id": "REQ-LOCAL-002",
+      "description": "Correctness of the points calculation and of the ranking per event is not verified: no scoring rule is supplied. The plan only checks that points are shown."
+    },
+    {
+      "coverage_gap_id": "CG-006",
+      "requirement_id": "REQ-LOCAL-002",
+      "description": "The CSV export of the results is not verified: the requirement gives no criterion for it."
+    },
+    {
+      "coverage_gap_id": "CG-007",
+      "requirement_id": "REQ-LOCAL-002",
+      "description": "Persistence of the Long Jump result after a page reload is not verified: TPI-007 reloaded the page before the Long Jump result was saved (TPI-008), and no later reload was planned."
+    }
+  ],
+  "testbench_backlog": [],
+  "limitations": [
+    "2026-11-06T13:19:21Z: Scope confirmed by the user (johan). It was proposed in the discover step and approved there; it is recorded here when the user approved the test plan.",
+    "2026-11-06T13:19:21Z: REQ-LOCAL-001 and REQ-LOCAL-002 come from the user's goal ('testa att man kan lägga till deltagare och spara resultat'). TestBench project 4 (TPT1106) has no requirements. The acceptance criteria were proposed by the agent and confirmed by the user when approving the test plan.",
+    "Execution start and finish times are derived from recorded tool timestamps and evidence read-out times; they are not measured to the second. The performed_at of an action is the time of the first tool record after the action.",
+    "Screenshot and console-log captured_at values are the file write times; the read-out files carry their own capture time.",
+    "The browser console was captured only after the page load of TPI-007 (EV-014). Console output of the other items was not captured.",
+    "A stale Chrome process (pid 82172, profile mcp-chrome-c6d51fd) from the earlier audit blocked the Playwright browser at the start of the run. It was ended with the user's approval before the first check; no check was affected.",
+    "2026-11-06T13:28:31Z: Correction confirmed by the user (johan) during the run: the app takes Long Jump in cm, so the planned test data 6.80 (TPI-008 and scope.state_changes save_result) was changed to 680 cm (= 6.80 m). It is the same intent; TPI-008 was run with 680.",
+    "No automated accessibility scan was performed in this audit. Accessibility signals were assessed through Playwright MCP exploration, keyboard interaction and DOM/accessibility-tree inspection. This does not establish WCAG 2.1 AA conformance.",
+    "Visual design review (step 4) was not run as a separate check: no requirement concerns visual presentation and no design reference exists. Responsive layout was observed in TPI-004 only (page wider than the 375 px viewport, see MTP-007).",
+    "No bug proposals were created, so no duplicate check was needed. No bug data is available from a TestBench integration for a comparison.",
+    "The expected values (753 and 767 points) were not compared with a scoring table; only that the app shows points was checked (see CG-005)."
+  ],
+  "external_actions": [],
+  "validation": {
+    "validated_at": "2026-11-06T13:32:54Z",
+    "contract_version": "1.3",
+    "result": "pass",
+    "errors": []
+  },
+  "delivery": {
+    "status": "delivered",
+    "delivered_at": "2026-11-06T13:35:43Z",
+    "method": "http-post",
+    "target": "http://localhost:4100/api/projects/4/audit-import",
+    "request_reference": "AUD-20261106-01-testbench.zip",
+    "response_reference": "auditId=7",
+    "error": null,
+    "response_summary": {
+      "http_status": 200,
+      "is_new": true,
+      "counts": {
+        "new": 0,
+        "unchanged": 0,
+        "updated": 0,
+        "pending": 0
+      },
+      "manual_tests": {
+        "new": 8,
+        "unchanged": 0,
+        "updated": 0,
+        "pending": 0
+      },
+      "test_plan": {
+        "plan_items": {
+          "new": 8,
+          "unchanged": 0,
+          "updated": 0,
+          "removed": 0
+        },
+        "coverage_gaps": {
+          "new": 7,
+          "unchanged": 0,
+          "updated": 0,
+          "removed": 0
+        }
+      },
+      "evidence": {
+        "ok": 0,
+        "problems": 0
+      },
+      "unresolved_refs": 23
+    }
+  },
+  "human_review": {
+    "required": true,
+    "status": "pending"
+  }
+}
