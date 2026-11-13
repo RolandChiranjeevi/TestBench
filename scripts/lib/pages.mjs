@@ -66,6 +66,7 @@ export async function discoverPages(base) {
     ["Test cases", `/p/${pid}/cases`],
     ["Test case open", `/p/${pid}/cases${cases[0] ? `?case=${cases[0].id}` : ""}`],
     ["Runs", `/p/${pid}/runs`],
+    ["Runs, suites", `/p/${pid}/runs?kind=suites`],
     ...(manualRun ? [["Manual run", `/p/${pid}/runs/${manualRun.id}`]] : []),
     ...(autoRun ? [["Automated run", `/p/${pid}/runs/${autoRun.id}`]] : []),
     ["Automated tests", `/p/${pid}/automated`],

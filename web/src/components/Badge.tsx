@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { Archive, Bug, ChevronDown, ChevronUp, ChevronsUp, Circle, CircleCheck, CircleMinus, CircleX, Copy, Diamond, Eye, EyeOff, Info, ShieldAlert, TriangleAlert } from "lucide-react";
+import { AUTOMATION_LABEL, type Automation } from "../automation";
+import { Archive, Bot, Bug, ChevronDown, ChevronUp, ChevronsUp, Circle, CircleCheck, CircleMinus, CircleX, Copy, Diamond, Eye, EyeOff, Info, ShieldAlert, TriangleAlert } from "lucide-react";
 import {
   BUG_WORKFLOW_LOOK, CI_STATUS_LOOK, COVERAGE_LOOK, OBSERVATION_STATUS_LOOK, priorityLook, REVIEW_STATUS_LOOK, SEVERITY_LOOK,
   type BadgeLook, type BugWorkflow, type CiStatus, type CoverageState, type IconName, type ObservationStatus, type ReviewStatus, type Severity, type Tone,
@@ -34,3 +35,18 @@ export const ReviewStatusBadge = ({ value, ...p }: { value: ReviewStatus } & Loo
 export const CiStatusBadge = ({ value, ...p }: { value: CiStatus } & LookProps) => <FromLook look={CI_STATUS_LOOK[value]} {...p} />;
 export const BugWorkflowBadge = ({ value, ...p }: { value: BugWorkflow } & LookProps) => <FromLook look={BUG_WORKFLOW_LOOK[value]} {...p} />;
 export const CoverageBadge = ({ value, ...p }: { value: CoverageState } & LookProps) => <FromLook look={COVERAGE_LOOK[value]} {...p} />;
+
+/**
+ * What the automated side knows about a case: Manual (no automated test is linked), Automated (tests are linked, no manual steps) or Manual + automated.
+ * Derived from the links, never set by hand. `compact` is for narrow lists: nothing for a manual case, and for the others the icon and the number of tests.
+ */
+export function AutomationChip({ automation, tests, compact = false }: { automation: Automation; tests: number; compact?: boolean }) {
+  if (automation === "manual") return compact ? null : <span className="chip" title="No automated test is linked to this case">{AUTOMATION_LABEL.manual}</span>;
+  const tail = automation === "both" ? "The case also has manual steps." : "The case has no manual steps.";
+  const title = `${tests} automated ${tests === 1 ? "test" : "tests"} linked. ${tail}`;
+  return (
+    <span className="chip" title={title} aria-label={compact ? `${AUTOMATION_LABEL[automation]}: ${title}` : undefined}>
+      <Bot size={11} aria-hidden="true" /> {compact ? tests : AUTOMATION_LABEL[automation]}
+    </span>
+  );
+}

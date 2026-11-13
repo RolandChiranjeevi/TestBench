@@ -189,9 +189,9 @@ export function DashboardPage() {
                 )}
               </div>
               <div className="card">
-                <div className="card-header" role="heading" aria-level={2} style={{ fontSize: "var(--fs-md)" }}><Bot size={14} /> Automation coverage by suite</div>
+                <div className="card-header" role="heading" aria-level={2} style={{ fontSize: "var(--fs-md)" }}><Bot size={14} /> Automation coverage by folder</div>
                 <div className="card-body">
-                  {d.bySuite.length === 0 ? <span className="muted">No suites yet.</span> : d.bySuite.map((x) => <CoverageBar key={x.name} label={x.name} value={x.automated} total={x.cases} />)}
+                  {d.bySuite.length === 0 ? <span className="muted">No folders yet.</span> : d.bySuite.map((x) => <CoverageBar key={x.name} label={x.name} value={x.automated} total={x.cases} />)}
                 </div>
               </div>
             </div>

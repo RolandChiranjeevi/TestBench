@@ -216,11 +216,11 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
         />
 
         <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
-          <label className="pill" title="Suite">
+          <label className="pill" title="Folder">
             <Folder size={13} />
-            {suites.find((s) => s.id === draft.suiteId)?.name ?? "No suite"}
-            <select value={draft.suiteId ?? ""} onChange={(e) => update({ suiteId: e.target.value ? Number(e.target.value) : null }, true)} aria-label="Suite">
-              <option value="">No suite</option>
+            {suites.find((s) => s.id === draft.suiteId)?.name ?? "No folder"}
+            <select value={draft.suiteId ?? ""} onChange={(e) => update({ suiteId: e.target.value ? Number(e.target.value) : null }, true)} aria-label="Folder">
+              <option value="">No folder</option>
               {suites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </label>

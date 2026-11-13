@@ -1,17 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, BookOpenCheck, Bot, ClipboardList, Copy, Folder, FolderOpen, Inbox, Lightbulb, ListChecks, MoreHorizontal, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, BookOpenCheck, ClipboardList, Copy, Folder, FolderOpen, Inbox, Lightbulb, ListChecks, MoreHorizontal, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
 import { api, orderSuites, parseDate, type BackupInfo, type CaseDetail, type CaseSummary, type Project, type RequirementDetail, type Suite } from "../api";
 import { ConfirmModal, Empty, Kbd, Modal, PriorityIcon, StatusIcon, rowActivation, useConfirm, useHotkeys, useToast, ListSkeleton } from "../components/ui";
 import { Button } from "../components/Button";
 import { useCan } from "../components/Access";
-import { Badge } from "../components/Badge";
+import { AutomationChip, Badge } from "../components/Badge";
 import { FilterChip } from "../components/FilterChip";
 import { caseCounts, filterCases, openedFromProposal, type CaseTab } from "../caseFilter";
+import { automationOf } from "../automation";
+import { casesInFolder, folderScope } from "../folders";
 import { CaseEditor } from "./CaseEditor";
 import { NewRunModal } from "./Runs";
-import { TemplateModal } from "./Templates";
+import { FolderToSuiteModal, TemplateModal } from "./Templates";
+
+// Words: the tree on this page is made of FOLDERS (the table and the routes are still called suites). A SUITE is a runnable group of cases: see Runs, Suites.
 import { LinkToRequirementModal } from "./Requirements";
 
 type Filter = CaseTab;
@@ -72,7 +76,7 @@ export function CasesPage() {
       qc.invalidateQueries({ queryKey: ["cases", pid] });
       qc.invalidateQueries({ queryKey: ["suites", pid] });
       qc.invalidateQueries({ queryKey: ["case"] });
-      toast("success", `Moved ${r.updated} ${r.updated === 1 ? "case" : "cases"} to ${v.suiteId == null ? "No suite" : suites.find((s) => s.id === v.suiteId)?.name ?? "the suite"}`);
+      toast("success", `Moved ${r.updated} ${r.updated === 1 ? "case" : "cases"} to ${v.suiteId == null ? "No folder" : suites.find((s) => s.id === v.suiteId)?.name ?? "the folder"}`);
     },
     onError: (e: Error) => toast("error", e.message),
   });
@@ -109,6 +113,9 @@ export function CasesPage() {
   const [suiteModal, setSuiteModal] = useState<{ suite?: Suite; parentId?: number | null } | null>(null);
   const [runModal, setRunModal] = useState(false);
   const [templateModal, setTemplateModal] = useState(false);
+  /** The folder to start a run from, and the folder to save as a suite (both from the folder's menu). */
+  const [folderRun, setFolderRun] = useState<Suite | null>(null);
+  const [folderToSuite, setFolderToSuite] = useState<Suite | null>(null);
   const [linkModal, setLinkModal] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -122,17 +129,8 @@ export function CasesPage() {
     }, { replace: true });
   const select = (id: number | null) => setParam("case", id == null ? null : String(id));
 
-  // Suite ids in the selected subtree.
-  const suiteScope = useMemo(() => {
-    if (typeof suiteFilter !== "number") return null;
-    const ids = new Set([suiteFilter]);
-    let grew = true;
-    while (grew) {
-      grew = false;
-      for (const s of suites) if (s.parent_id && ids.has(s.parent_id) && !ids.has(s.id)) { ids.add(s.id); grew = true; }
-    }
-    return ids;
-  }, [suiteFilter, suites]);
+  // Folder ids in the selected subtree.
+  const suiteScope = useMemo(() => (typeof suiteFilter === "number" ? folderScope(suites, suiteFilter) : null), [suiteFilter, suites]);
 
   const visible = useMemo(() => {
     const inSuite = (cases ?? []).filter((c) => {
@@ -143,7 +141,7 @@ export function CasesPage() {
     return filterCases(inSuite, { tab: filter, onlyNew, onlyProposal, search, projectKey: project?.key });
   }, [cases, search, filter, onlyNew, onlyProposal, suiteFilter, suiteScope, project?.key]);
 
-  // Group by suite in tree order, with "No suite" last.
+  // Group by folder in tree order, with "No folder" last.
   const groups = useMemo(() => {
     const order = new Map(orderSuites(suites).map((s, i) => [s.id, i]));
     const map = new Map<number | null, CaseSummary[]>();
@@ -153,7 +151,7 @@ export function CasesPage() {
     }
     return [...map.entries()]
       .sort(([a], [b]) => (a == null ? 1 : b == null ? -1 : (order.get(a) ?? 0) - (order.get(b) ?? 0)))
-      .map(([id, items]) => ({ id, name: id == null ? "No suite" : suites.find((s) => s.id === id)?.name ?? "Unknown", items }));
+      .map(([id, items]) => ({ id, name: id == null ? "No folder" : suites.find((s) => s.id === id)?.name ?? "Unknown", items }));
   }, [visible, suites]);
   const flat = useMemo(() => groups.flatMap((g) => g.items), [groups]);
 
@@ -205,12 +203,12 @@ export function CasesPage() {
 
   return (
     <div className="split has-tree">
-      {/* Suite tree */}
+      {/* Folder tree */}
       <div className="pane suite-pane" style={{ width: 220, flexShrink: 0, borderRight: "1px solid var(--border)", background: "var(--bg-panel)", position: "relative" }}>
         <div className="topbar" style={{ padding: "0 8px 0 16px" }}>
-          <h2 style={{ fontSize: "var(--fs-md)", color: "var(--text-3)", fontWeight: 500 }}>Suites</h2>
+          <h2 style={{ fontSize: "var(--fs-md)", color: "var(--text-3)", fontWeight: 500 }}>Folders</h2>
           <span className="spacer" />
-          <Button needs="tester" variant="ghost" size="sm" icon onClick={() => setSuiteModal({ parentId: null })} title="New suite" aria-label="New suite">
+          <Button needs="tester" variant="ghost" size="sm" icon onClick={() => setSuiteModal({ parentId: null })} title="New folder" aria-label="New folder">
             <Plus size={14} />
           </Button>
         </div>
@@ -226,7 +224,9 @@ export function CasesPage() {
             onSelect={(id) => setParam("suite", String(id))}
             onAdd={(parentId) => setSuiteModal({ parentId })}
             onEdit={(suite) => setSuiteModal({ suite })}
-            onDelete={async (s) => (await confirm({ title: `Delete suite "${s.name}"?`, body: <p style={{ margin: 0 }}>Its sub-suites go too. Cases are kept and moved to “No suite”.</p>, confirmLabel: "Delete suite" })) && deleteSuite.mutate(s.id)}
+            onDelete={async (s) => (await confirm({ title: `Delete folder "${s.name}"?`, body: <p style={{ margin: 0 }}>Its subfolders go too. Cases are kept and moved to “No folder”. Suites are not affected.</p>, confirmLabel: "Delete folder" })) && deleteSuite.mutate(s.id)}
+            onRun={setFolderRun}
+            onSaveAsSuite={setFolderToSuite}
             dragId={dragId}
             setDragId={setDragId}
             drop={drop}
@@ -235,7 +235,7 @@ export function CasesPage() {
             caseDrag={caseDrag}
             onDropCases={dropCases}
           />
-          {/* Dropping below the last suite moves it to the end of the top level. */}
+          {/* Dropping below the last folder moves it to the end of the top level. */}
           {dragId != null && (
             <div
               style={{ height: 24, borderRadius: 4, ...(drop?.id === "end" ? { boxShadow: "inset 0 2px 0 var(--accent)" } : {}) }}
@@ -250,7 +250,7 @@ export function CasesPage() {
               onDragOver={(e) => { if (caseDrag == null) return; e.preventDefault(); if (drop?.id !== "none") setDrop({ id: "none", zone: "into" }); }}
               onDrop={(e) => { if (!canEdit || caseDrag == null) return; e.preventDefault(); dropCases(null); }}
             >
-              <Inbox size={14} /> No suite <span className="count">{noSuiteCount}</span>
+              <Inbox size={14} /> No folder <span className="count">{noSuiteCount}</span>
             </button>
           )}
         </div>
@@ -260,15 +260,15 @@ export function CasesPage() {
       <div className="pane grow" style={{ display: "flex", flexDirection: "column" }}>
         <div className="topbar">
           <h1>Test cases</h1>
-          {/* On narrow screens the suite tree is hidden and this takes its place. */}
-          <select className="select suite-select" aria-label="Suite" value={suiteParam ?? ""} onChange={(e) => setParam("suite", e.target.value || null)}>
+          {/* On narrow screens the folder tree is hidden and this takes its place. */}
+          <select className="select suite-select" aria-label="Folder" value={suiteParam ?? ""} onChange={(e) => setParam("suite", e.target.value || null)}>
             <option value="">All cases ({cases?.length ?? 0})</option>
             {orderSuites(suites).map((s) => {
               let depth = 0;
               for (let p = s.parent_id; p != null; p = suites.find((x) => x.id === p)?.parent_id ?? null) depth++;
               return <option key={s.id} value={s.id}>{"\u00a0\u00a0".repeat(depth)}{s.name} ({s.case_count})</option>;
             })}
-            {noSuiteCount > 0 && <option value="none">No suite ({noSuiteCount})</option>}
+            {noSuiteCount > 0 && <option value="none">No folder ({noSuiteCount})</option>}
           </select>
           <span className="spacer" />
           <div className="search">
@@ -321,7 +321,7 @@ export function CasesPage() {
                 <BookOpenCheck size={12} /> Link to requirement
               </Button>
               <Button needs="tester" size="sm" onClick={() => setTemplateModal(true)}>
-                <ClipboardList size={12} /> Save as template
+                <ClipboardList size={12} /> Save as suite
               </Button>
               <Button needs="tester" variant="danger" size="sm" onClick={() => setDeleteModal(true)}>
                 <Trash2 size={12} /> Delete
@@ -370,7 +370,7 @@ export function CasesPage() {
                 title="No test cases yet"
                 action={<Button needs="tester" variant="primary" onClick={() => setNewCase(true)}><Plus size={14} /> New case</Button>}
               >
-                Write your first manual test case. Group cases in suites, then start a run to execute them.
+                Write your first manual test case. Group cases in folders, then start a run to execute them, or save a group of cases as a suite to run again.
               </Empty>
             )
           ) : (
@@ -420,11 +420,7 @@ export function CasesPage() {
                         {!!c.requirement_count && (
                           <span className="chip" title={`${c.requirement_count} linked requirement(s)`}><BookOpenCheck size={11} /> {c.requirement_count}{!compact && " req"}</span>
                         )}
-                        {c.automated_count > 0 && (
-                          <span className="chip" title={`${c.automated_count} automated test(s)`}>
-                            <Bot size={11} /> {c.automated_count}{!compact && " auto"}
-                          </span>
-                        )}
+                        <AutomationChip automation={automationOf(c)} tests={c.automated_count} compact={compact} />
                         {!compact && (
                           <span className="faint tabular" style={{ width: 52, textAlign: "right" }} title="Steps">
                             {c.step_count} {c.step_count === 1 ? "step" : "steps"}
@@ -475,6 +471,14 @@ export function CasesPage() {
       {bulkModal && <BulkEditModal caseIds={[...checked]} suites={suites} allTags={[...new Set((cases ?? []).flatMap((c) => c.tags))].sort()} onClose={() => setBulkModal(false)} onDone={() => setChecked(new Set())} />}
       {linkModal && <LinkToRequirementModal caseIds={[...checked]} onClose={() => setLinkModal(false)} onDone={() => setChecked(new Set())} />}
       {templateModal && <TemplateModal initialCaseIds={[...checked]} onClose={() => setTemplateModal(false)} />}
+      {folderRun && (
+        <NewRunModal
+          initialCaseIds={casesInFolder(cases ?? [], suites, folderRun.id).map((c) => c.id)}
+          initialTitle={`${folderRun.name} · ${new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" })}`}
+          onClose={() => setFolderRun(null)}
+        />
+      )}
+      {folderToSuite && <FolderToSuiteModal folder={folderToSuite} onClose={() => setFolderToSuite(null)} />}
     </div>
   );
 }
@@ -493,9 +497,13 @@ function SuiteTree(props: {
   drop: { id: number | "end" | "none"; zone: "before" | "after" | "into" } | null;
   setDrop: (d: { id: number | "end" | "none"; zone: "before" | "after" | "into" } | null) => void;
   onMove: (id: number, parentId: number | null, beforeId: number | null) => void;
-  /** Cases being dragged from the list, if any: suites then accept them as a drop. */
+  /** Cases being dragged from the list, if any: folders then accept them as a drop. */
   caseDrag: number[] | null;
   onDropCases: (suiteId: number) => void;
+  /** Start a run of the cases in this folder and its subfolders. */
+  onRun: (s: Suite) => void;
+  /** Save the cases in this folder as a suite (a runnable group of cases). */
+  onSaveAsSuite: (s: Suite) => void;
 }) {
   const canEdit = useCan("tester");
   const canAdmin = useCan("admin");
@@ -577,7 +585,7 @@ function SuiteTree(props: {
               <Button needs="tester" variant="ghost" size="sm" icon
                 style={{ width: 20, height: 20 }}
                 onClick={(e) => { e.stopPropagation(); setMenu(menu === s.id ? null : s.id); }}
-                aria-label={`Suite actions for ${s.name}`}
+                aria-label={`Folder actions for ${s.name}`}
               >
                 <MoreHorizontal size={13} />
               </Button>
@@ -586,8 +594,10 @@ function SuiteTree(props: {
           {menu === s.id && (
             <>
               <div style={{ position: "fixed", inset: 0, zIndex: 9 }} onClick={() => setMenu(null)} />
-              <div className="card" style={{ position: "absolute", right: 0, top: 28, zIndex: 10, padding: 4, boxShadow: "var(--shadow)", background: "var(--bg-elev)", width: 170 }}>
-                <button className="nav-item" disabled={!canEdit} onClick={() => { setMenu(null); props.onAdd(s.id); }}><Plus size={13} /> Add sub-suite</button>
+              <div className="card" style={{ position: "absolute", right: 0, top: 28, zIndex: 10, padding: 4, boxShadow: "var(--shadow)", background: "var(--bg-elev)", width: 196 }}>
+                <button className="nav-item" disabled={!canEdit} onClick={() => { setMenu(null); props.onRun(s); }}><Play size={13} /> Run this folder</button>
+                <button className="nav-item" disabled={!canEdit} onClick={() => { setMenu(null); props.onSaveAsSuite(s); }}><ClipboardList size={13} /> Save folder as suite</button>
+                <button className="nav-item" disabled={!canEdit} onClick={() => { setMenu(null); props.onAdd(s.id); }}><Plus size={13} /> Add subfolder</button>
                 <button className="nav-item" disabled={!canEdit} onClick={() => { setMenu(null); props.onEdit(s); }}><Pencil size={13} /> Rename</button>
                 <button className="nav-item" disabled={!canEdit || children[0] === s} onClick={() => { setMenu(null); nudge(s, -1); }}><ArrowUp size={13} /> Move up</button>
                 <button className="nav-item" disabled={!canEdit || children.at(-1) === s} onClick={() => { setMenu(null); nudge(s, 1); }}><ArrowDown size={13} /> Move down</button>
@@ -663,9 +673,9 @@ function NewCaseModal({ projectId, suites, defaultSuite, requirementId, onClose,
       <div className="row">
         <label className="pill">
           <Folder size={13} />
-          {suites.find((s) => s.id === suiteId)?.name ?? "No suite"}
-          <select value={suiteId ?? ""} onChange={(e) => setSuiteId(e.target.value ? Number(e.target.value) : null)} aria-label="Suite">
-            <option value="">No suite</option>
+          {suites.find((s) => s.id === suiteId)?.name ?? "No folder"}
+          <select value={suiteId ?? ""} onChange={(e) => setSuiteId(e.target.value ? Number(e.target.value) : null)} aria-label="Folder">
+            <option value="">No folder</option>
             {suites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </label>
@@ -692,10 +702,10 @@ function SuiteModal({ projectId, suites, suite, parentId, onClose }: { projectId
   const parent = suites.find((s) => s.id === parentId);
   return (
     <Modal
-      title={suite ? "Rename suite" : parent ? `New suite in ${parent.name}` : "New suite"}
+      title={suite ? "Rename folder" : parent ? `New folder in ${parent.name}` : "New folder"}
       onClose={onClose}
       width={420}
-      footer={<Button needs="tester" variant="primary" disabled={!name.trim()} onClick={() => save.mutate()}>{suite ? "Save" : "Create suite"}</Button>}
+      footer={<Button needs="tester" variant="primary" disabled={!name.trim()} onClick={() => save.mutate()}>{suite ? "Save" : "Create folder"}</Button>}
     >
       <input
         className="input"
@@ -704,7 +714,7 @@ function SuiteModal({ projectId, suites, suite, parentId, onClose }: { projectId
         value={name}
         onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && name.trim() && save.mutate()}
-        aria-label="Suite name"
+        aria-label="Folder name"
       />
     </Modal>
   );
@@ -752,10 +762,10 @@ function BulkEditModal({ caseIds, suites, allTags, onClose, onDone }: { caseIds:
     >
       <div className="col" style={{ gap: 12 }}>
         <div className="field">
-          <label htmlFor="be-suite">Suite</label>
+          <label htmlFor="be-suite">Folder</label>
           <select id="be-suite" className="select" value={suite} onChange={(e) => setSuite(e.target.value)}>
             <option value="keep">Keep</option>
-            <option value="none">No suite</option>
+            <option value="none">No folder</option>
             {orderSuites(suites).map((s) => <option key={s.id} value={s.id}>{"\u00a0\u00a0".repeat(depth(s))}{s.name}</option>)}
           </select>
         </div>
