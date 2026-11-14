@@ -28,6 +28,10 @@ Paths in this file are relative to this `SKILL.md`.
 - `deliver`: transform a validated audit package and import it to TestBench
   after user confirmation (dry-run first, then real import). See
   `../testpilot-deliver/SKILL.md`.
+- `requests`: fetch the requests people have made of the agent in TestBench
+  (Automated tests, Requests), let the user pick one, take it, hand it to
+  `discover` or run its failed Playwright tests after the user confirms the
+  command, and mark it done. See `../testpilot-requests/SKILL.md`.
 - `api-testing`: the API variant of discover → plan → run → report → deliver
   for a REST or GraphQL target described by a target profile
   (`.testpilot/targets/<name>.json`); `testpilot/tools/apitest/runner.py` replaces Playwright
@@ -42,6 +46,9 @@ init → discover → plan → run → report → deliver
 
 `init` is optional when the user already has a configured TestBench project.
 `discover` is required before planning or running an audit.
+`requests` is optional and comes before `discover`: it fetches what people asked
+the agent for in TestBench and hands the target to `discover`. It replaces no
+step and no stop.
 
 ## Boundaries
 
@@ -71,6 +78,9 @@ Permitted external write paths are:
 - `/testpilot-init`: create a confirmed TestBench project and save local
   project configuration
 - `/testpilot-deliver`: deliver a validated audit package to TestBench
+- `/testpilot-requests`: take a request that the user chose, and mark it done,
+  with a request token (`tbrq_`) that opens those routes of one project and
+  nothing else
 
 Follow the delivery policy configured for the project.
 
@@ -113,6 +123,10 @@ The project profile must provide:
 - `tokenEnvVar`
 - `deliveryEnabled`
 - `permissionMode`: `observe_only` or `full` (missing means `observe_only`)
+
+Optional: `requestTokenEnvVar`, the name of the environment variable that holds
+the request token, used only by `/testpilot-requests`. It is separate from
+`tokenEnvVar`.
 
 Example global configuration:
 
