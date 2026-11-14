@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { isCiIngest } from "./ci.ts";
 import { isAgentRead } from "./agenttokens.ts";
 import { isAgentPropose } from "./proposetokens.ts";
+import { isAgentRequestRoute } from "./requesttokens.ts";
 import { accountsState, sessionFromToken } from "./accounts.ts";
 import { enterAs } from "./accountcontext.ts";
 import { ACCOUNT_COOKIE, cookieValue, makeAccountSession, registerAccountRoutes, type AuthMode } from "./accountroutes.ts";
@@ -190,7 +191,7 @@ export function registerAuth(app: FastifyInstance, cfg: AuthConfig | null) {
       return reply.code(503).send(path.startsWith("/api/") ? { error: LOCKED } : LOCKED);
     }
     // CI's route, the agent's read route and the agent's proposal route skip the login only because their handlers require their own API token on every call.
-    const tokenRoute = isCiIngest(req.method, req.url) || isAgentRead(req.method, req.url) || isAgentPropose(req.method, req.url);
+    const tokenRoute = isCiIngest(req.method, req.url) || isAgentRead(req.method, req.url) || isAgentPropose(req.method, req.url) || isAgentRequestRoute(req.method, req.url);
     let allowed = tokenRoute || PUBLIC_PATHS.has(path) || (m === "accounts" && PUBLIC_PREFIXES.some((x) => path.startsWith(x)));
     if (m === "accounts") {
       const found = accountUser(req);

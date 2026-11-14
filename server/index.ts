@@ -50,7 +50,9 @@ import { authenticateAgentToken, createAgentToken, isAgentRead, listAgentTokens,
 import { agentCredentialKind, agentProposalsEnabled, authenticateProposeToken, createProposeToken, isAgentPropose, listProposeTokens, revokeProposeToken, setAgentProposalsEnabled } from "./proposetokens.ts";
 import { approveProposal, createProposals, editProposal, getProposal, listProposals, rejectProposal } from "./reqproposals.ts";
 import { actorName, actorUserId, getDisplayName, setDisplayName } from "./actor.ts";
-import { accountsState, AccountError, revokeAllSessions, updateProfile } from "./accounts.ts";
+import { accountsState, AccountError, audit, revokeAllSessions, updateProfile } from "./accounts.ts";
+import { cancelRequest, claimRequest, completeRequest, createRequest, listRequests, pendingForAgent } from "./agentrequests.ts";
+import { authenticateRequestToken, createRequestToken, isAgentRequestRoute, listRequestTokens, revokeRequestToken } from "./requesttokens.ts";
 import { currentUser } from "./accountcontext.ts";
 import { checkAccessTable, trackRoutes } from "./access.ts";
 import { registerAccessGuard } from "./accessguard.ts";
@@ -91,7 +93,7 @@ app.addHook("onRequest", async (req, reply) => {
   const host = (req.headers.host ?? "").replace(/:\d+$/, "").toLowerCase();
   if (!ALLOWED_HOSTS.has(host)) return reply.code(403).send({ error: "Forbidden host" });
   // CI is not a browser: its route is authenticated by an API token instead of the header (a web page cannot add an Authorization token it does not have).
-  if (req.method !== "GET" && req.method !== "HEAD" && req.headers["x-testbench"] !== "1" && !isCiIngest(req.method, req.url) && !isAgentPropose(req.method, req.url)) {
+  if (req.method !== "GET" && req.method !== "HEAD" && req.headers["x-testbench"] !== "1" && !isCiIngest(req.method, req.url) && !isAgentPropose(req.method, req.url) && !isAgentRequestRoute(req.method, req.url)) {
     return reply.code(403).send({ error: "Missing X-Testbench header" });
   }
 });
@@ -100,7 +102,7 @@ registerAuth(app, auth);
 // An agent credential (a read, proposal or CI token) opens its own route and nothing else. Registered after the login check, so with a password set a stranger still
 // gets "sign in" first; whatever is left is refused here, so an agent can never approve, reject, edit or deprecate a requirement, with or without a login being set up.
 app.addHook("onRequest", async (req, reply) => {
-  if (agentCredentialKind(req.headers.authorization) && !isCiIngest(req.method, req.url) && !isAgentRead(req.method, req.url) && !isAgentPropose(req.method, req.url)) {
+  if (agentCredentialKind(req.headers.authorization) && !isCiIngest(req.method, req.url) && !isAgentRead(req.method, req.url) && !isAgentPropose(req.method, req.url) && !isAgentRequestRoute(req.method, req.url)) {
     return reply.code(403).send({ error: "An agent token opens only its own route. Requirements are decided by a person." });
   }
 });
@@ -1820,6 +1822,85 @@ app.post("/api/agent/projects/:id/requirement-proposals", { bodyLimit: 2 * 1024 
   if (auth.state !== "ok") throw new HttpError(401, "A valid proposal token is required");
   reply.header("Cache-Control", "no-store");
   return requirementsApi(() => createProposals(id, req.body, `agent: ${auth.name}`));
+});
+
+// ---------------- Requests to a test agent (server/agentrequests.ts) ----------------
+// A person asks an agent to look at a target (discover) or to run the failed automated tests of a run again. Testbench starts nothing: the request waits until an agent with a
+// request token takes it, and says when it is done. What the agent delivers comes in through the normal import and is `proposed` until a person decides.
+const requestBody = z.object({
+  kind: z.enum(["discover", "rerun"]),
+  targetUrl: z.string().max(1000).optional(),
+  environment: z.string().max(500).optional(),
+  note: z.string().max(10000).optional(),
+  runId: z.number().int().optional(),
+});
+const requestAudit = (req: FastifyRequest, action: string, r: { id: number; projectId: number; kind: string }, label = actorName(), userId: number | null = actorUserId()) =>
+  audit({ userId, label, ip: req.ip }, action, { projectId: r.projectId, detail: { request: r.id, kind: r.kind } });
+
+app.get("/api/projects/:id/agent-requests", (req) => audited(() => listRequests(idParam(req), (req.query as { status?: string }).status)));
+app.post("/api/projects/:id/agent-requests", (req) => {
+  const id = idParam(req);
+  const body = requestBody.parse(req.body);
+  const r = audited(() => createRequest(id, body, { name: actorName(), userId: actorUserId() }));
+  requestAudit(req, "agent_request.created", r);
+  return r;
+});
+app.post("/api/agent-requests/:id/cancel", (req) => {
+  const r = audited(() => cancelRequest(idParam(req)));
+  requestAudit(req, "agent_request.cancelled", r);
+  return r;
+});
+
+app.get("/api/projects/:id/request-tokens", (req) => listRequestTokens(idParam(req)));
+app.post("/api/projects/:id/request-tokens", (req, reply) => {
+  const id = idParam(req);
+  const body = z.object({ name: z.string().max(200) }).parse(req.body);
+  reply.header("Cache-Control", "no-store");
+  return audited(() => createRequestToken(id, body.name));
+});
+app.post("/api/request-tokens/:id/revoke", (req) => {
+  audited(() => revokeRequestToken(idParam(req)));
+  return { ok: true };
+});
+
+// The test agent's routes: the waiting requests, taking one and finishing it, with a request token and nothing else. The token cannot make or cancel a request.
+const requestLimiter = makeLimiter({ max: 20, windowMs: 15 * 60_000 });
+function requestTokenAuth(req: FastifyRequest, projectId: number) {
+  if (requestLimiter.blockedFor(req.ip) > 0) throw new HttpError(429, "Too many failed attempts. Try again later.");
+  const auth = authenticateRequestToken(req.headers.authorization, projectId);
+  if (auth.state === "invalid") {
+    requestLimiter.fail(req.ip);
+    throw new HttpError(401, "A valid request token is required: send it as Authorization: Bearer <token>");
+  }
+  if (auth.state === "other_project") {
+    requestLimiter.fail(req.ip);
+    throw new HttpError(403, "This token does not belong to this project");
+  }
+  if (auth.state !== "ok") throw new HttpError(401, "A valid request token is required");
+  return auth;
+}
+app.get("/api/agent/projects/:id/requests", (req, reply) => {
+  const id = idParam(req);
+  requestTokenAuth(req, id);
+  reply.header("Cache-Control", "no-store");
+  return audited(() => pendingForAgent(id));
+});
+app.post("/api/agent/projects/:id/requests/:rid/claim", (req, reply) => {
+  const id = idParam(req);
+  const auth = requestTokenAuth(req, id);
+  reply.header("Cache-Control", "no-store");
+  const r = audited(() => claimRequest(id, idParam(req, "rid"), auth));
+  requestAudit(req, "agent_request.claimed", r, `agent: ${auth.name}`, null);
+  return r;
+});
+app.post("/api/agent/projects/:id/requests/:rid/complete", (req, reply) => {
+  const id = idParam(req);
+  const auth = requestTokenAuth(req, id);
+  const body = z.object({ note: z.string().max(5000).optional(), resultRunId: z.number().int().nullable().optional() }).parse(req.body ?? {});
+  reply.header("Cache-Control", "no-store");
+  const r = audited(() => completeRequest(id, idParam(req, "rid"), auth, body));
+  requestAudit(req, "agent_request.completed", r, `agent: ${auth.name}`, null);
+  return r;
 });
 
 app.get("/api/projects/:id/requirement-proposals", (req) => requirementsApi(() => listProposals(idParam(req), (req.query as { status?: string }).status || undefined)));

@@ -54,7 +54,7 @@ export function SettingsPage() {
           <BackupPage embedded />
         ) : (
           <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16, maxWidth: 760 }}>
-            {id === "agent" && <><AgentAccess pid={Number(pid)} /><ProposalAccess pid={Number(pid)} /></>}
+            {id === "agent" && <><AgentAccess pid={Number(pid)} /><ProposalAccess pid={Number(pid)} /><RequestAccess pid={Number(pid)} /></>}
             {id === "project" && <ProjectSection pid={Number(pid)} />}
             {id === "members" && <MembersSection pid={Number(pid)} />}
             {id === "shortcuts" && <Shortcuts />}
@@ -302,6 +302,105 @@ Content-Type: application/json
           </pre>
         </Card>
       )}
+
+      {revoking && (
+        <ConfirmModal title={`Revoke "${revoking.name}"?`} confirmLabel="Revoke token" busy={revoke.isPending} onConfirm={() => revoke.mutate(revoking.id)} onClose={() => setRevoking(null)}>
+          <p style={{ margin: 0 }}>An agent using <code className="inline">{revoking.prefix}…</code> gets an error from the next request. This cannot be undone; make a new token if it is still needed.</p>
+        </ConfirmModal>
+      )}
+    </>
+  );
+}
+
+/**
+ * Lets a test agent work through the requests people make of it (Automated tests, Requests): fetch the waiting ones, take one, say it is done. A request token opens
+ * those three routes of this project and nothing else: it cannot make or cancel a request, read requirements, or decide anything. Like the other tokens it is shown once
+ * and only its hash is kept.
+ */
+function RequestAccess({ pid }: { pid: number }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [name, setName] = useState("");
+  const [fresh, setFresh] = useState<NewProposeToken | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [revoking, setRevoking] = useState<ProposeToken | null>(null);
+  const key = ["request-tokens", pid];
+  const { data: tokens } = useQuery({ queryKey: key, queryFn: () => api.get<ProposeToken[]>(`/api/projects/${pid}/request-tokens`), refetchInterval: 15_000 });
+  const create = useMutation({ mutationFn: (n: string) => api.post<NewProposeToken>(`/api/projects/${pid}/request-tokens`, { name: n }) });
+  const revoke = useMutation({
+    mutationFn: (id: number) => api.post(`/api/request-tokens/${id}/revoke`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: key }); setRevoking(null); toast("success", "Token revoked"); },
+    onError: (e: Error) => toast("error", e.message),
+  });
+  const submit = async () => {
+    if (!name.trim()) return;
+    try {
+      const t = await create.mutateAsync(name.trim());
+      create.reset(); // drop the answer, which holds the token, from the mutation cache
+      setFresh(t); setCopied(false); setName("");
+      qc.invalidateQueries({ queryKey: key });
+    } catch (e) {
+      toast("error", (e as Error).message);
+    }
+  };
+  const copy = async () => {
+    if (!fresh) return;
+    try { await navigator.clipboard.writeText(fresh.token); setCopied(true); } catch { toast("error", "Could not copy. Select the token and copy it by hand."); }
+  };
+  const active = tokens?.filter((t) => !t.revokedAt) ?? [];
+  return (
+    <>
+      <Card icon={<KeyRound size={15} />} title="Requests to a test agent">
+        <div className="muted">
+          People can ask a test agent to look at a web address, or to run the failed tests of a run again (Automated tests, Requests). <strong>Testbench starts nothing.</strong> An agent with a
+          request token fetches the waiting requests, takes one and says when it is done. The token cannot make or cancel a request, read requirements, or decide anything.
+        </div>
+        <form className="row" style={{ gap: 8, flexWrap: "wrap" }} onSubmit={(e) => { e.preventDefault(); submit(); }}>
+          <input aria-label="Request token name" className="input" style={{ flex: "1 1 220px", maxWidth: 320 }} value={name} maxLength={200} onChange={(e) => setName(e.target.value)} placeholder="Name, for example qa-agent" />
+          <Button variant="primary" type="submit" disabled={!name.trim() || create.isPending}><KeyRound size={14} /> Create request token</Button>
+        </form>
+        {fresh && (
+          <div role="status" className="card" style={{ padding: 12, background: "var(--bg)", borderColor: "var(--blocked-fg)" }}>
+            <div className="row" style={{ gap: 8, alignItems: "flex-start", color: "var(--blocked-fg)" }}>
+              <ShieldAlert size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+              <span style={{ color: "var(--text-2)" }}>Copy <strong>{fresh.name}</strong> now. It is not shown again. Keep it in an environment variable or a secret, never in a file in a repository.</span>
+            </div>
+            <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+              <code className="inline mono" style={{ wordBreak: "break-all", userSelect: "all" }}>{fresh.token}</code>
+              <Button size="sm" onClick={copy}>{copied ? <Check size={13} /> : <Copy size={13} />} {copied ? "Copied" : "Copy"}</Button>
+              <Button variant="ghost" size="sm" onClick={() => setFresh(null)}>I have saved it</Button>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      <Card title={`Request tokens for this project${tokens ? ` (${active.length} active)` : ""}`}>
+        {!tokens?.length ? (
+          <Empty icon={<KeyRound size={20} />} title="No request tokens yet">Create one above, then give it to your agent as an environment variable.</Empty>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table className="table" style={{ width: "100%" }}>
+              <thead><tr><th style={{ textAlign: "left" }}>Name</th><th style={{ textAlign: "left" }}>Token</th><th style={{ textAlign: "left" }}>Created</th><th style={{ textAlign: "left" }}>Last used</th><th style={{ textAlign: "left" }}>Status</th><th /></tr></thead>
+              <tbody>
+                {tokens.map((t) => (
+                  <tr key={t.id} style={t.revokedAt ? { color: "var(--text-3)" } : undefined}>
+                    <td>{t.name}</td><td><code className="inline">{t.prefix}…</code></td><td>{timeAgo(t.createdAt)}</td><td>{t.lastUsedAt ? timeAgo(t.lastUsedAt) : "never"}</td>
+                    <td>{t.revokedAt ? `Revoked ${timeAgo(t.revokedAt)}` : "Active"}</td>
+                    <td style={{ textAlign: "right" }}>{!t.revokedAt && <Button size="sm" aria-label={`Revoke ${t.name}`} onClick={() => setRevoking(t)}><Trash2 size={13} /> Revoke</Button>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div className="faint" style={{ fontSize: "var(--fs-md)" }}>A project can have three active request tokens. Revoking is the only way to end one.</div>
+        <pre className="mono" style={{ margin: 0, padding: 10, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--radius)", overflowX: "auto" }}>
+{`GET  ${window.location.origin}/api/agent/projects/${pid}/requests
+POST ${window.location.origin}/api/agent/projects/${pid}/requests/<id>/claim
+POST ${window.location.origin}/api/agent/projects/${pid}/requests/<id>/complete   {"note": "...", "resultRunId": 12}
+Authorization: Bearer $TESTBENCH_REQUEST_TOKEN`}
+        </pre>
+      </Card>
 
       {revoking && (
         <ConfirmModal title={`Revoke "${revoking.name}"?`} confirmLabel="Revoke token" busy={revoke.isPending} onConfirm={() => revoke.mutate(revoking.id)} onClose={() => setRevoking(null)}>

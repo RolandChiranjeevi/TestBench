@@ -328,6 +328,42 @@ CREATE TABLE IF NOT EXISTS propose_tokens (
   revoked_at TEXT
 );
 CREATE INDEX IF NOT EXISTS propose_tokens_project ON propose_tokens(project_id);
+-- Tokens that let a test agent work through the requests below (tbrq_): fetch the waiting ones, take one, say it is done. A fourth kind, apart from tbag_, tbpr_ and tbci_.
+-- It opens three routes and nothing else. Only a hash is stored.
+CREATE TABLE IF NOT EXISTS request_tokens (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  prefix TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_used_at TEXT,
+  revoked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS request_tokens_project ON request_tokens(project_id);
+-- What a person asks a test agent to do: look at a target (discover) or run the failed automated tests of a run again (rerun). Testbench runs nothing; the request waits
+-- until an agent takes it (server/agentrequests.ts). payload holds the failed tests of a rerun as they were when it was asked for.
+CREATE TABLE IF NOT EXISTS agent_requests (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('discover', 'rerun')),
+  target_url TEXT NOT NULL DEFAULT '',
+  environment TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  run_id INTEGER REFERENCES runs(id) ON DELETE SET NULL,
+  payload TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'claimed', 'done', 'cancelled')),
+  created_by TEXT NOT NULL DEFAULT '',
+  created_by_user_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  claimed_by TEXT,
+  claimed_token_id INTEGER,
+  claimed_at TEXT,
+  finished_at TEXT,
+  result_run_id INTEGER REFERENCES runs(id) ON DELETE SET NULL,
+  result_note TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS agent_requests_project ON agent_requests(project_id, status);
 -- What a person has linked an observation to. An observation with neither is on the coverage gap list.
 CREATE TABLE IF NOT EXISTS observation_requirements (
   observation_id INTEGER NOT NULL REFERENCES observations(id) ON DELETE CASCADE,

@@ -4,14 +4,17 @@ import { Flame, Gauge, Sparkles } from "lucide-react";
 import { api, formatDateTime, formatDuration, timeAgo, type Insights, type Project } from "../api";
 import { DurationChart } from "../components/charts";
 import { Empty, PriorityIcon } from "../components/ui";
+import { openRequests, useAgentRequests } from "../useAgentRequests";
 
 /** Switch between the test list and the insights on the Automated tests page. */
-export function ViewTabs({ view }: { view: "tests" | "insights" }) {
+export function ViewTabs({ view }: { view: "tests" | "insights" | "requests" }) {
   const { pid } = useParams();
+  const open = openRequests(useAgentRequests().data);
   return (
     <div className="tabs" role="tablist" aria-label="View">
       <Link role="tab" aria-selected={view === "tests"} className={`tab${view === "tests" ? " active" : ""}`} to={`/p/${pid}/automated`}>Tests</Link>
       <Link role="tab" aria-selected={view === "insights"} className={`tab${view === "insights" ? " active" : ""}`} to={`/p/${pid}/automated?view=insights`}>Insights</Link>
+      <Link role="tab" aria-selected={view === "requests"} className={`tab${view === "requests" ? " active" : ""}`} to={`/p/${pid}/automated?view=requests`}>Requests{open > 0 && <> <span className="count">{open}</span></>}</Link>
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { Bot, Download, Link2, Search, Sparkles } from "lucide-react";
 import { api, formatDuration, timeAgo, type AutomatedTest, type CaseSummary, type Project } from "../api";
 import { Empty, FrameworkBadge, StatusIcon, useToast, ListSkeleton } from "../components/ui";
 import { InsightsPage, ViewTabs } from "./Insights";
+import { RequestsPage } from "./AgentRequests";
 import { Button } from "../components/Button";
 import { useCan } from "../components/Access";
 
@@ -59,6 +60,7 @@ export function AutomatedPage() {
   const linkedPct = tests?.length ? Math.round(((tests.length - (tests ?? []).filter((t) => !t.case_id).length) / tests.length) * 100) : 0;
 
   if (params.get("view") === "insights") return <InsightsPage />;
+  if (params.get("view") === "requests") return <RequestsPage />;
 
   return (
     <>

@@ -26,11 +26,12 @@ export const isAgentPropose = (method: string, url: string) => method === "POST"
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
 /** Which kind of agent credential an Authorization header carries, judged by its prefix alone, or null. */
-export function agentCredentialKind(header: string | undefined): "read" | "propose" | "ci" | null {
+export function agentCredentialKind(header: string | undefined): "read" | "propose" | "request" | "ci" | null {
   const m = /^Bearer\s+(\S+)$/i.exec(header ?? "");
   if (!m) return null;
   if (m[1].startsWith("tbag_")) return "read";
   if (m[1].startsWith(PROPOSE_TOKEN_PREFIX)) return "propose";
+  if (m[1].startsWith("tbrq_")) return "request";
   if (m[1].startsWith("tbci_")) return "ci";
   return null;
 }
