@@ -130,6 +130,7 @@ export function listSuites(projectId: number, onlyId?: number) {
   const rows = db
     .prepare(`
       SELECT t.id, t.project_id, t.name, t.description, t.environment, t.created_at, t.updated_at,
+        t.schedule, t.schedule_tz, t.next_run_at, t.schedule_set_by, t.schedule_set_at,
         (SELECT COUNT(*) FROM runs r WHERE r.template_id = t.id) AS run_count,
         (SELECT MAX(r.started_at) FROM runs r WHERE r.template_id = t.id) AS last_used
       FROM run_templates t WHERE t.project_id = ? ${onlyId ? "AND t.id = ?" : ""} ORDER BY t.name COLLATE NOCASE`)
@@ -248,6 +249,8 @@ export interface ManualRunInput {
   templateId?: number | null;
   /** The run this one re-tests, e.g. the failures of last night's run. */
   rerunOf?: number | null;
+  /** Set by the scheduler (server/scheduler.ts): the time the schedule said, in UTC. Written to meta.scheduled, which is how a scheduled run is told from one started by hand. */
+  scheduledFor?: string;
 }
 
 /**
@@ -271,7 +274,11 @@ export function createManualRun(projectId: number, input: ManualRunInput) {
       .all(projectId, json(input.caseIds)) as { id: number }[];
     const members = suite ? new Set(suiteCaseIds(suite.id)) : null;
     const partial = !!members && (cases.length !== members.size || cases.some((c) => !members.has(c.id)));
-    const meta = { ...(source ? { rerunOf: source } : {}), ...(suite ? { suite: { id: suite.id, name: suite.name, ...(partial ? { partial: true } : {}) } } : {}) };
+    const meta = {
+      ...(source ? { rerunOf: source } : {}),
+      ...(suite ? { suite: { id: suite.id, name: suite.name, ...(partial ? { partial: true } : {}) } } : {}),
+      ...(input.scheduledFor ? { scheduled: { for: input.scheduledFor } } : {}),
+    };
     const run = db
       .prepare(`
         INSERT INTO runs (project_id, title, kind, source, environment, milestone, template_id, meta)
@@ -284,7 +291,7 @@ export function createManualRun(projectId: number, input: ManualRunInput) {
   })();
 }
 
-export interface SuiteRunInput { title?: string; environment?: string; milestone?: string }
+export interface SuiteRunInput { title?: string; environment?: string; milestone?: string; scheduledFor?: string }
 
 /** Runs a suite again or for the first time: a manual run of the cases it holds NOW (not of the cases of the last run). */
 export function startSuiteRun(id: number, input: SuiteRunInput = {}) {
@@ -292,7 +299,7 @@ export function startSuiteRun(id: number, input: SuiteRunInput = {}) {
   const caseIds = suiteCaseIds(id);
   if (!caseIds.length) throw new SuiteError(400, "The suite has no test cases");
   const title = input.title?.trim() || `${suite.name} · ${new Date().toISOString().slice(0, 10)}`;
-  return createManualRun(suite.project_id, { title, environment: input.environment ?? suite.environment, milestone: input.milestone, caseIds, templateId: id });
+  return createManualRun(suite.project_id, { title, environment: input.environment ?? suite.environment, milestone: input.milestone, caseIds, templateId: id, scheduledFor: input.scheduledFor });
 }
 
 export interface RunSuiteInfo {

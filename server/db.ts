@@ -732,6 +732,26 @@ CREATE TABLE IF NOT EXISTS run_template_cases (
   // A run template is what the app calls a Suite: a runnable group of cases (the folders of `suites` only organise cases). See server/runsuites.ts.
   if (!hasColumn("run_templates", "description")) d.exec("ALTER TABLE run_templates ADD COLUMN description TEXT NOT NULL DEFAULT ''");
   d.exec("CREATE INDEX IF NOT EXISTS runs_template ON runs(template_id)");
+  // A suite can be run on a schedule (server/scheduler.ts). schedule is a 5-field cron expression, NULL = never run automatically. The time zone is the suite's own,
+  // never the server's. next_run_at is the next time it is due, in UTC like every other time here. Each time one is due is written once to suite_schedule_fires,
+  // whatever came of it, and UNIQUE (template_id, scheduled_for) is what keeps two ticks, or two processes, from starting the same run twice.
+  if (!hasColumn("run_templates", "schedule")) d.exec("ALTER TABLE run_templates ADD COLUMN schedule TEXT");
+  if (!hasColumn("run_templates", "schedule_tz")) d.exec("ALTER TABLE run_templates ADD COLUMN schedule_tz TEXT NOT NULL DEFAULT 'UTC'");
+  if (!hasColumn("run_templates", "next_run_at")) d.exec("ALTER TABLE run_templates ADD COLUMN next_run_at TEXT");
+  if (!hasColumn("run_templates", "schedule_set_by")) d.exec("ALTER TABLE run_templates ADD COLUMN schedule_set_by TEXT");
+  if (!hasColumn("run_templates", "schedule_set_at")) d.exec("ALTER TABLE run_templates ADD COLUMN schedule_set_at TEXT");
+  d.exec(`
+CREATE INDEX IF NOT EXISTS run_templates_due ON run_templates(next_run_at) WHERE schedule IS NOT NULL;
+CREATE TABLE IF NOT EXISTS suite_schedule_fires (
+  id INTEGER PRIMARY KEY,
+  template_id INTEGER NOT NULL REFERENCES run_templates(id) ON DELETE CASCADE,
+  scheduled_for TEXT NOT NULL,
+  outcome TEXT NOT NULL CHECK (outcome IN ('started', 'skipped_overlap', 'skipped_empty', 'missed', 'error')),
+  run_id INTEGER REFERENCES runs(id) ON DELETE SET NULL,
+  note TEXT NOT NULL DEFAULT '',
+  fired_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (template_id, scheduled_for)
+);`);
 
   // Requirements, linked many-to-many to test cases. Numbers (REQ-1, REQ-2...) are per project.
   d.exec(`
