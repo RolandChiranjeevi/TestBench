@@ -1,10 +1,13 @@
+import type { Automation, LastAutomated, RunSuiteInfo } from "./automation";
+
 export type Status = "untested" | "passed" | "failed" | "blocked" | "skipped";
 export type Priority = "low" | "medium" | "high" | "critical";
 
 /** `role` is the person's role in the project (the owner is an admin everywhere); the server sends it with the list. */
 export interface Project { id: number; name: string; key: string; case_count: number; run_count: number; role?: "admin" | "tester" | "viewer" }
+/** A FOLDER of the test case tree (table `suites`). It only organises cases and cannot be run; a runnable group of cases is a RunTemplate, which the app calls a Suite. */
 export interface Suite { id: number; project_id: number; parent_id: number | null; name: string; description: string; position: number; case_count: number }
-/** Suites in the order the tree shows them: each suite followed by its children, siblings by position. */
+/** Folders in the order the tree shows them: each folder followed by its children, siblings by position. */
 export function orderSuites<T extends { id: number; parent_id: number | null }>(suites: T[]): T[] {
   const out: T[] = [];
   const walk = (parent: number | null) => {
@@ -74,13 +77,18 @@ export interface Counts { total: number; passed: number; failed: number; blocked
 export interface RunSummary extends Counts {
   id: number; title: string; kind: "manual" | "automated"; source: "manual" | "upload" | "github"; status: "in_progress" | "completed";
   environment: string; milestone: string; framework: string | null; meta: Record<string, any>; started_at: string; finished_at: string | null;
+  /** The suite (a run template) the run was started from; the name is the one it had when the run started if the suite has been deleted since. */
+  template_id: number | null; template_name: string | null;
 }
 export interface RunResult {
   id: number; case_id: number | null; automated_test_id: number | null; status: Status; flaky: number; duration_ms: number | null;
   error: string; notes: string; jira_key: string | null; attachment_count: number; has_detail: number; executed_at: string | null; case_number: number | null; case_title: string | null; case_priority: Priority | null;
+  /** The name of the FOLDER the case is in (the table is called suites; the app says folder). */
   suite_name: string | null; test_title: string | null; test_file: string | null; test_suite_path: string | null; test_full_name: string | null; step_count: number;
+  /** Manual runs only: what the automated side knows about the case. Information; nothing is started. */
+  automation?: Automation; automated_tests?: number; last_automated?: LastAutomated | null;
 }
-export interface RunDetail extends Omit<RunSummary, keyof Counts> { project_key: string; counts: Counts; results: RunResult[] }
+export interface RunDetail extends Omit<RunSummary, keyof Counts> { project_key: string; counts: Counts; results: RunResult[]; suite: RunSuiteInfo | null }
 export interface Attachment { id: number; filename: string; stored_name: string; mime: string }
 export interface ResultDetail extends RunResult {
   case: CaseDetail | null;
@@ -127,10 +135,13 @@ export interface Milestone {
   id: number; project_id: number; name: string; kind: "sprint" | "release"; start_date: string | null; end_date: string | null; run_count: number;
 }
 export interface ChecklistItem { id: number; milestone_id: number; position: number; title: string; done_at: string | null; source: string }
+/** A run template is what the app calls a Suite: a saved list of cases that is run as a unit. (A folder, table `suites`, only organises cases.) */
 export interface RunTemplate {
-  id: number; project_id: number; name: string; environment: string; created_at: string; updated_at: string;
-  run_count: number; last_used: string | null; caseIds: number[];
+  id: number; project_id: number; name: string; description: string; environment: string; created_at: string; updated_at: string;
+  run_count: number; last_used: string | null; caseIds: number[]; case_count: number; last_run: SuiteRun | null;
 }
+/** One run of a suite, with its counts. */
+export interface SuiteRun { id: number; title: string; status: "in_progress" | "completed"; started_at: string; total: number; passed: number; failed: number; blocked: number; untested: number }
 export interface DashboardRun extends Counts {
   id: number; title: string; started_at: string; framework: string | null; milestone: string; run_status: string; rate: number | null;
 }

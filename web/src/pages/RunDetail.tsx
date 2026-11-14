@@ -3,8 +3,9 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Ban, Bot, Check, ChevronDown, ChevronRight, CircleSlash, ExternalLink, FileCode2, GitBranch, GitCommit,
-  ImagePlus, Loader2, Paperclip, RotateCcw, Search, Trash2, X,
+  ImagePlus, Loader2, Paperclip, Play, RotateCcw, Search, Trash2, X,
 } from "lucide-react";
+import { lastAutomatedText, suiteDriftText } from "../automation";
 import {
   api, formatDateTime, formatDuration, passRate, timeAgo,
   type Attachment, type ResultDetail, type RunDetail, type RunResult, type Status,
@@ -83,7 +84,19 @@ function RunHeader({ run, children }: { run: RunDetail; children?: ReactNode }) 
   const { pid } = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const toast = useToast();
   const [rerun, setRerun] = useState(false);
+  const suite = run.suite;
+  // A new manual run of the cases the suite holds NOW (not the cases of this run), in the same environment and sprint. Nothing is started automatically.
+  const again = useMutation({
+    mutationFn: () => api.post<{ id: number }>(`/api/templates/${suite!.id}/run`, { environment: run.environment, milestone: run.milestone }),
+    onSuccess: (r) => {
+      for (const k of ["runs", "milestones", "dashboard", "templates"]) qc.invalidateQueries({ queryKey: [k, pid] });
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      navigate(`/p/${pid}/runs/${r.id}`);
+    },
+    onError: (e: Error) => toast("error", e.message),
+  });
   // Failed or blocked results whose case still exists can be re-tested manually (for automated runs, via the case each test is linked to).
   const failing = run.results.filter((r) => r.status === "failed" || r.status === "blocked");
   const caseIds = [...new Set(failing.map((r) => r.case_id).filter((id): id is number => id != null))];
@@ -106,6 +119,20 @@ function RunHeader({ run, children }: { run: RunDetail; children?: ReactNode }) 
       </h1>
       <span className="spacer" />
       {rerunOf && <Link className="chip" to={`/p/${pid}/runs/${rerunOf.id}`} title="The run this one re-tests">Re-run of {rerunOf.title}</Link>}
+      {suite && (
+        suite.deleted ? (
+          <span className="chip" title="The suite this run was started from has been deleted. The run is kept.">Suite: {suite.name} (deleted)</span>
+        ) : (
+          <Link className="chip" to={`/p/${pid}/runs?kind=suites`} title={suite.partial ? "This run covered only part of the suite. Open the suites." : "The suite this run was started from. Open the suites."}>
+            Suite: {suite.name}{suite.partial ? " (part of it)" : ""}
+          </Link>
+        )
+      )}
+      {suite && !suite.deleted && suite.id != null && run.kind === "manual" && (
+        <Button needs="tester" size="sm" onClick={() => again.mutate()} disabled={again.isPending} title="Start a new manual run of the cases the suite holds now, in the same environment and sprint">
+          <Play size={12} /> Run suite again
+        </Button>
+      )}
       {failing.length > 0 && (
         <Button needs="tester" size="sm"
           disabled={!caseIds.length}
@@ -218,10 +245,11 @@ function ManualRun({ run }: { run: RunDetail }) {
   const c = run.counts;
   const done = c.total - c.untested;
   const rate = passRate(c);
+  const drift = run.suite ? suiteDriftText(run.suite) : null;
   const groups = useMemo(() => {
     const out: { name: string; items: RunResult[] }[] = [];
     for (const r of results) {
-      const name = r.suite_name ?? "No suite";
+      const name = r.suite_name ?? "No folder";
       const last = out.at(-1);
       if (last?.name === name) last.items.push(r);
       else out.push({ name, items: [r] });
@@ -251,6 +279,7 @@ function ManualRun({ run }: { run: RunDetail }) {
           <span className="row" style={{ gap: 4 }}><StatusIcon status="blocked" size={12} /> {c.blocked}</span>
           <span className="row" style={{ gap: 4 }}><StatusIcon status="skipped" size={12} /> {c.skipped}</span>
         </span>
+        {drift && <span className="muted" role="status" data-suite-drift style={{ fontSize: "var(--fs-sm)" }}>{drift}</span>}
         <span className="spacer" />
         {rate != null && <span className="tabular" style={{ fontWeight: 600 }}>{rate}% pass rate</span>}
         {run.status === "completed" && <span className="faint">Completed {timeAgo(run.finished_at)}</span>}
@@ -271,6 +300,11 @@ function ManualRun({ run }: { run: RunDetail }) {
                   <StatusIcon status={r.status} />
                   <span className="mono muted key-col">{run.project_key}-{r.case_number ?? "?"}</span>
                   <span className="title">{r.case_title ?? "Deleted case"}</span>
+                  {r.last_automated && (
+                    <span className="chip" title={`Last automated: ${lastAutomatedText(r.last_automated)}, ${timeAgo(r.last_automated.at)}. Information only.`} aria-label={`Last automated: ${lastAutomatedText(r.last_automated)}`}>
+                      <Bot size={10} aria-hidden="true" /> {r.last_automated.status}
+                    </span>
+                  )}
                   {r.jira_key && <span className="chip" title={`Linked Jira issue ${jiraLabel(r.jira_key)}`}><Bug size={10} /> {jiraLabel(r.jira_key)}</span>}
                 </div>
               ))}
@@ -279,7 +313,7 @@ function ManualRun({ run }: { run: RunDetail }) {
         </div>
         <div className="pane grow">
           {selectedId ? (
-            <ExecutionPanel key={selectedId} resultId={selectedId} projectKey={run.project_key} run={run} onMark={(s) => mark(s, s === "passed" || s === "skipped")} />
+            <ExecutionPanel key={selectedId} resultId={selectedId} projectKey={run.project_key} run={run} auto={run.results.find((x) => x.id === selectedId)} onMark={(s) => mark(s, s === "passed" || s === "skipped")} />
           ) : (
             <Empty icon={<Check size={20} />} title="Nothing to execute" />
           )}
@@ -289,8 +323,9 @@ function ManualRun({ run }: { run: RunDetail }) {
   );
 }
 
-function ExecutionPanel({ resultId, projectKey, run, onMark }: { resultId: number; projectKey: string; run: { title: string; environment: string; milestone: string }; onMark: (s: Status) => void }) {
+function ExecutionPanel({ resultId, projectKey, run, auto, onMark }: { resultId: number; projectKey: string; run: { title: string; environment: string; milestone: string }; auto?: RunResult; onMark: (s: Status) => void }) {
   const canEdit = useCan("tester");
+  const { pid } = useParams();
   const [bugOpen, setBugOpen] = useState(false);
   const qc = useQueryClient();
   const toast = useToast();
@@ -400,6 +435,23 @@ function ExecutionPanel({ resultId, projectKey, run, onMark }: { resultId: numbe
           </div>
         )}
         <h2 style={{ margin: 0, fontSize: 19, fontWeight: 600, letterSpacing: "-0.01em" }}>{c.title}</h2>
+        {!!auto?.automated_tests && (
+          <div className="col muted" data-last-automated style={{ gap: 2, fontSize: "var(--fs-sm)" }}>
+            <div className="row" style={{ gap: 6 }}>
+              <Bot size={12} aria-hidden="true" />
+              {auto.last_automated ? (
+                <span>
+                  Last automated: <strong style={{ color: auto.last_automated.status === "failed" ? "var(--failed-fg)" : "var(--passed-fg)" }}>{lastAutomatedText(auto.last_automated)}</strong>
+                  {" · "}{timeAgo(auto.last_automated.at)}{" · "}
+                  <Link to={`/p/${pid}/runs/${auto.last_automated.runId}`} style={{ color: "var(--accent-text)" }}>open that run</Link>
+                </span>
+              ) : (
+                <span>Last automated: no result yet</span>
+              )}
+            </div>
+            <span className="faint">{auto.automated_tests} linked {auto.automated_tests === 1 ? "test" : "tests"}. Information only: TestBench did not run it, and it does not set the result below.</span>
+          </div>
+        )}
         {c.description && <p style={{ margin: 0, color: "var(--text-2)", whiteSpace: "pre-wrap" }}>{c.description}</p>}
       </div>
 

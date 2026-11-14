@@ -939,6 +939,83 @@ for (const who of Object.keys(TABS)) {
   check("admin: and cannot be used", !usable);
   await close();
 }
+
+// Suites: runnable groups of cases. The Suites tab, who may run and edit, a run started from a suite, running it again, and what changed in the suite since.
+// The folders of the Test cases page only organise cases (they were called suites before).
+{
+  const templates = async () => (await call("GET", `/api/projects/${A}/templates`, undefined, owner)).json;
+  const smokeId = (await templates()).find((t) => t.name === "Smoke test").id;
+  const t = await open("tester", `/p/${A}/runs?kind=suites`);
+  const smoke = t.page.locator('[data-suite="Smoke test"]');
+  check("suites: the tab lists a suite with its number of cases", await eventually(async () => /\d+ cases?/.test(await smoke.innerText())));
+  check("suites: a tester can run and edit it", await eventually(async () => !(await smoke.getByRole("button", { name: "Run Smoke test" }).isDisabled()) && !(await smoke.getByRole("button", { name: "Edit Smoke test" }).isDisabled())));
+  check("suites: only an admin can delete it", await smoke.getByRole("button", { name: "Delete Smoke test" }).isDisabled());
+  await smoke.getByRole("button", { name: "Run Smoke test" }).click();
+  const dialog = t.page.getByRole("dialog");
+  check("suites: Run opens the run dialog with the suite in it", await eventually(async () => (await dialog.innerText()).includes("Run suite “Smoke test”") && (await dialog.getByLabel("Suite", { exact: true }).inputValue()) === String(smokeId)));
+  await dialog.getByRole("button", { name: /Start run/ }).click();
+  check("suites: the run page names the suite and offers Run suite again", await eventually(async () => /\/runs\/\d+/.test(t.page.url()) && (await t.page.getByRole("link", { name: /^Suite: Smoke test/ }).count()) === 1 && (await t.page.getByRole("button", { name: "Run suite again" }).count()) === 1));
+  const firstRun = Number(new URL(t.page.url()).pathname.split("/").pop());
+  const made = (await call("GET", `/api/runs/${firstRun}`, undefined, owner)).json;
+  check("suites: it is a manual run from the suite, and nothing in it has a result yet", made.kind === "manual" && made.suite?.name === "Smoke test" && made.template_id === smokeId && made.results.length > 0 && made.results.every((r) => r.status === "untested"));
+
+  // The suite changes after the run: the run says so. Run suite again starts a new run of the suite as it is now.
+  const inSuite = new Set((await templates()).find((x) => x.id === smokeId).caseIds);
+  const extra = (await call("GET", `/api/projects/${A}/cases`, undefined, owner)).json.find((c) => !inSuite.has(c.id));
+  await call("POST", `/api/templates/${smokeId}/cases`, { caseIds: [extra.id] }, owner);
+  await t.page.reload({ waitUntil: "networkidle" });
+  check("suites: the old run says a case was added to the suite since", await eventually(async () => (await t.page.locator("[data-suite-drift]").innerText()) === "1 case added to the suite since this run"));
+  await t.page.getByRole("button", { name: "Run suite again" }).click();
+  check("suites: Run suite again opens a new run", await eventually(async () => /\/runs\/\d+/.test(t.page.url()) && Number(new URL(t.page.url()).pathname.split("/").pop()) !== firstRun));
+  const secondRun = Number(new URL(t.page.url()).pathname.split("/").pop());
+  const again = (await call("GET", `/api/runs/${secondRun}`, undefined, owner)).json;
+  check("suites: it has the cases the suite holds now, in the same environment, and it is not marked as partial", again.results.length === made.results.length + 1 && again.environment === made.environment && again.suite?.partial === false && again.suite?.added === 0);
+  await t.close();
+
+  // The runs list names the suite and can be filtered by it.
+  const l = await open("tester", `/p/${A}/runs`);
+  check("suites: the runs of the suite carry its name", await eventually(async () => (await l.page.getByText("Suite: Smoke test", { exact: true }).count()) >= 2));
+  await l.page.getByLabel("Filter runs by suite").selectOption({ label: "Smoke test" });
+  check("suites: the filter keeps only the runs of that suite", await eventually(async () => { const rows = await l.page.locator("a.list-row").count(); return rows >= 2 && rows === (await l.page.getByText("Suite: Smoke test", { exact: true }).count()); }));
+  await l.close();
+
+  // A viewer sees the suites and can read them, but cannot run or edit.
+  const v = await open("viewer", `/p/${A}/runs?kind=suites`);
+  const vsmoke = v.page.locator('[data-suite="Smoke test"]');
+  check("suites: a viewer sees the suite, and Run, Edit and Delete are off", await eventually(async () => (await vsmoke.innerText()).includes("Smoke test") && (await vsmoke.getByRole("button", { name: "Run Smoke test" }).isDisabled()) && (await vsmoke.getByRole("button", { name: "Edit Smoke test" }).isDisabled()) && (await vsmoke.getByRole("button", { name: "Delete Smoke test" }).isDisabled())));
+  await v.close();
+
+  // A viewer can open the finished run, and Run suite again is off for them.
+  const vr = await open("viewer", `/p/${A}/runs/${secondRun}`);
+  check("suites: a viewer sees the run's suite, and Run suite again is off", await eventually(async () => (await vr.page.getByRole("link", { name: /^Suite: Smoke test/ }).count()) === 1 && (await vr.page.getByRole("button", { name: "Run suite again" }).isDisabled())));
+  await vr.close();
+
+  // Folders: the tree is called Folders, the menu runs a folder and saves it as a suite (a copy), and a case says whether it is manual or automated.
+  const folder = (await call("GET", `/api/projects/${A}/suites`, undefined, owner)).json.find((s) => s.case_count > 0);
+  const c = await open("tester", `/p/${A}/cases`);
+  check("folders: the tree is called Folders, and nothing there is still called a suite", await eventually(async () => (await c.page.getByRole("heading", { name: "Folders", level: 2 }).count()) === 1 && (await c.page.locator(".suite-pane").getByText(/suite/i).count()) === 0));
+  check("folders: a case says whether it is manual or automated", await eventually(async () => (await c.page.locator(".list-row .chip", { hasText: /^Manual$/ }).count()) > 0 && (await c.page.locator(".list-row .chip", { hasText: /Automated|Manual \+ automated/ }).count()) > 0));
+  const item = c.page.locator(".tree-item", { hasText: folder.name }).first();
+  await item.hover();
+  await item.getByRole("button", { name: `Folder actions for ${folder.name}` }).click();
+  check("folders: the folder menu offers Run this folder and Save folder as suite", await eventually(async () => (await c.page.getByRole("button", { name: "Run this folder" }).count()) === 1 && (await c.page.getByRole("button", { name: "Save folder as suite" }).count()) === 1));
+  await c.page.getByRole("button", { name: "Save folder as suite" }).click();
+  const save = c.page.getByRole("dialog");
+  await save.getByLabel("Suite name").fill("UI suite from a folder");
+  await save.getByRole("button", { name: "Create suite" }).click();
+  check("folders: the suite is made, and the page goes to the Suites tab", await eventually(async () => c.page.url().includes("kind=suites") && (await c.page.locator('[data-suite="UI suite from a folder"]').count()) === 1));
+  const copy = (await templates()).find((x) => x.name === "UI suite from a folder");
+  check("folders: it holds a copy of the cases the folder holds, and the folder is as it was", !!copy && copy.caseIds.length > 0 && (await call("GET", `/api/projects/${A}/suites`, undefined, owner)).json.find((s) => s.id === folder.id).case_count === folder.case_count);
+  await c.close();
+
+  // The old way still works: a run of cases picked by hand has no suite.
+  const p = await open("tester", `/p/${A}/cases`);
+  await p.page.getByLabel(/^Select .*-\d+$/).first().check();
+  await p.page.getByRole("button", { name: /Start run/ }).first().click();
+  await p.page.getByRole("dialog").getByRole("button", { name: /Start run/ }).click();
+  check("runs: a run of picked cases still works, and it has no suite", await eventually(async () => /\/runs\/\d+/.test(p.page.url()) && (await p.page.getByRole("link", { name: /^Suite:/ }).count()) === 0 && (await p.page.getByRole("button", { name: "Run suite again" }).count()) === 0));
+  await p.close();
+}
 {
   const { page, close } = await open("owner", "/admin/audit-log");
   const rows = page.locator("table tbody tr");
