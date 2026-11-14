@@ -60,6 +60,7 @@ All settings are environment variables. None are required.
 | `TESTBENCH_TRUST_PROXY` | off | Set to `1` behind a reverse proxy so HTTPS is detected and the secure cookie flag is set. |
 | `TESTBENCH_ALLOW_NO_AUTH` | off | Set to `1` to allow listening beyond localhost without a password. Only for a port that is itself published on localhost only. |
 | `TESTBENCH_AUTO_BACKUP` | on | `0` turns the daily automatic backup off. `TESTBENCH_BACKUP_DIR` and `TESTBENCH_BACKUP_KEEP` (default 7) set where and how many. |
+| `TESTBENCH_SCHEDULER` | on | `0` turns the timer of scheduled suites off: schedules are still saved, but nothing is started from them. Use it for a second instance on the same data. See [docs/suite-schedules.md](docs/suite-schedules.md). |
 | `TESTBENCH_POLL_MINUTES` | `5` | How often automatic GitHub imports check for new runs (`0` = off). |
 | `GITHUB_TOKEN` | `gh auth token` | Token for importing GitHub Actions runs. A logged-in `gh` CLI is used when it is not set. |
 | `TESTBENCH_CHROME_CHANNEL` / `_PATH` / `_NO_SANDBOX` | `chrome` | Which browser renders PDFs (see Quick start). |
@@ -477,6 +478,14 @@ your data is kept safe.
 - **Automated tests → Insights**: flaky tests (needed a retry, or keep flipping between pass and fail) with a per-run strip, test time per
   run, tests that are getting slower, and **Automate next**: manual cases without an automated test, ranked by priority, how often they
   are run by hand, how often they fail and whether they are smoke/regression cases. The top few also show on the dashboard.
+
+## Suites on a schedule
+
+A suite (the **Suites** tab under **Runs**) can run on a schedule: every day or on chosen weekdays at a time, in a time zone you pick, or on a cron expression of
+your own. When the time comes Testbench makes a **manual run** of the suite's cases, marked **Scheduled**, for a person to go through. Nothing is executed
+automatically. Set it under **Edit → When to run**, where the next five times are shown before you save. A **Schedule log** on the suite says what became of each
+time (run prepared, skipped, missed, error). A time more than 2 hours late is missed rather than run, and a schedule may not run more often than every 15 minutes.
+Details and rules: [docs/suite-schedules.md](docs/suite-schedules.md).
 
 ## Automatic GitHub imports
 
