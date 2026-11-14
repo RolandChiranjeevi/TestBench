@@ -60,6 +60,27 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 - En suite kan ha ett schema: dag eller veckodagar, tid, tidszon eller egen cron, med förhandsvisning och ett schemalogg (started, skipped_overlap, skipped_empty, missed, error). Minst 15 minuter mellan körningar, högst två timmar sen körs, annars missed. `TESTBENCH_SCHEDULER=0` stänger av timern.
 - En schemalagd körning är en manuell run märkt Scheduled. Inga automatiserade tester startas, ingen kod körs, ingen ny extern integration.
 
+### T: Trigger från UI (förfrågningar till en agent)
+**Status: klart** (mergad i #98 och #99)
+- En tester ber en agent att göra en discover av en adress, eller att köra om de failade automatiska testerna i en run (Automated tests → Requests, och på run-sidan). **TestBench startar inget:** förfrågan väntar tills en agent med en request-token (`tbrq_`, en fjärde sorts agent-token med tre routes och inget mer) tar den.
+- Tillstånd: Waiting, Taken, Done och Cancelled. Att ta en förfrågan är ett atomärt steg, så två agenter kan inte ta samma. Högst 20 väntande per projekt, adress utan lösenord, och händelserna loggas i audit-loggen.
+- Skillen `/testpilot-requests`: användaren väljer **en** förfrågan, agenten tar den och hanterar den via `discover` (med alla stopp) eller en bekräftad Playwright-omkörning (kräver `permissionMode: full`, och rapporten importeras av användaren), och markerar den klar efter användarens bekräftelse.
+- Adress och anteckning är data, aldrig instruktion, och en förfrågan bekräftar ingenting (inte produktion, inte scope, inte kommando). Se `docs/agent-requests.md`.
+
+### T-A: Släpp och audit-länk för förfrågningar
+**Status: planerad** (nästa)
+- **Släpp:** en route `release` för request-token (Taken → Waiting, bara för den token som tog förfrågan, med en anteckning om varför). Idag blir en förfrågan som en agent tagit men inte slutfört kvar som Taken tills någon avbryter den i UI. Ingen schemaändring, bara en ny övergång. Skillens steg 8 släpper den i stället för att lämna den.
+- **Audit-länk:** en kolumn `result_audit_id`, och `complete` tar `resultAuditId`, så att en klar discover länkar till sin audit i UI i stället för att audit-id:t står som text i anteckningen. Skillen skickar `auditId` från `deliver`.
+- Varför nu: de är de två skavanker vi själva pekade ut när #98 och #99 mergades. De är små och hänger ihop (samma routes, samma token-tester, samma skill-steg).
+- Request-token ändrar fortfarande bara status på en förfrågan. Den får inte skapa eller avbryta någon.
+
+### T-B: Automatisk import av re-run-rapporten
+**Status: väntar** (kräver ett säkerhetsbeslut först)
+- Idag skriver agenten en rapportfil för en omkörning och användaren importerar den, så förfrågan blir aldrig länkad till en run.
+- Förslag: en fjärde route på request-token, `POST …/requests/:rid/result`, som bara tar en rapport för en förfrågan som just den token tagit, och som återanvänder CI-importens storleks- och formatkontroller. `resultRunId` sätts då automatiskt.
+- Beslut att ta först: det ändrar request-tokens löfte "bara status" till att den också får skriva testresultat. Alternativet är att ge agenten en CI-token (`tbci_`), vilket ger en andra credential i agentens händer. Inget byggs innan det är avgjort.
+- Gäller bara re-run. Att starta en CI-körning (GitHub Actions) för en omkörning är ett separat alternativ, och väntar tills någon har sina tester i CI och inte lokalt.
+
 ## Backlog
 
 ### Bug screenshot → AI-förslag (AI-delen)
@@ -129,7 +150,8 @@ Separat fas, inte en del av D.
 
 ### Testkörning
 - AI kör tester.
-- Ej påbörjad.
+- Ej påbörjad **i TestBench**: TestBench kör inga tester själv, varken på servern eller åt en AI.
+- Notis: en agent kan nu köra *användarens egna* Playwright-tester i användarens miljö, efter att användaren bekräftat det exakta kommandot och miljön, och bara med `permissionMode: full` (`/testpilot-requests`, se T). Det är agentens körning på användarens maskin och inte TestBench, så raden ovan gäller fortfarande.
 
 ### Extern AI-integration
 - Modell bakom förslag.
