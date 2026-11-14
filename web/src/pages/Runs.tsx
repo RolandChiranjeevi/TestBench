@@ -108,6 +108,7 @@ function RunRow({ run }: { run: RunSummary }) {
         <div className="row" style={{ gap: 8 }}>
           <span className="truncate" style={{ fontWeight: 500 }}>{run.title}</span>
           {run.template_name && <span className="chip" title="This run was started from a suite">Suite: {run.template_name}</span>}
+          {run.meta?.scheduled && <span className="chip" title="Prepared by the suite's schedule, not started by a person">Scheduled</span>}
           {run.kind === "manual" && run.status === "in_progress" && <Badge tone="accent" icon="eye">In progress</Badge>}
           {run.flaky > 0 && <CiStatusBadge value="flaky" label={`${run.flaky} flaky`} />}
         </div>

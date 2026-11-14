@@ -59,11 +59,11 @@ export function TemplatesPanel({ templates, onStart, onEdit, onNew }: { template
           <div className="list-row" style={{ height: "auto", minHeight: 58, padding: "8px 16px", cursor: "default" }} data-suite={t.name}>
             <ClipboardList size={15} className="faint" />
             <div className="grow col" style={{ gap: 2, minWidth: 0 }}>
-              <div className="row" style={{ gap: 8 }}>
-                <span className="truncate" style={{ fontWeight: 500 }}>{t.name}</span>
+              <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                <span className="truncate" style={{ fontWeight: 500, maxWidth: "100%" }}>{t.name}</span>
                 {t.environment && <span className="chip">{t.environment}</span>}
                 {t.schedule && (
-                  <span className="chip" title="This suite prepares a manual run on a schedule" data-schedule-chip>
+                  <span className="chip chip-long" title="This suite prepares a manual run on a schedule" data-schedule-chip>
                     <CalendarClock size={11} /> {describeSchedule(t.schedule, t.schedule_tz)}
                   </span>
                 )}

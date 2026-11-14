@@ -253,6 +253,8 @@ input.bare { min-height: 24px; }
   border: 1px solid var(--border-strong); color: var(--text-2); font-size: var(--fs-sm); white-space: nowrap; background: var(--bg);
 }
 button.chip { min-height: 24px; }
+/* a chip that holds a name of any length: cut off with … rather than wider than the screen */
+.chip-long { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; line-height: 18px; }
 .chip .dot { width: 6px; height: 6px; border-radius: 50%; }
 .chip.accent { border-color: transparent; background: var(--accent-soft); color: var(--accent-text); }
 
