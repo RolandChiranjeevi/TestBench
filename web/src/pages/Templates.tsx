@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ClipboardList, Pencil, Play, Plus, Trash2 } from "lucide-react";
-import { api, parseDate, timeAgo, type RunTemplate, type SchedulePreview, type Suite } from "../api";
-import { DAY_NAMES, DEFAULT_FORM, WEEK, browserTimezone, fromCron, timezoneNames, toCron, type Preset, type ScheduleForm } from "../schedule";
+import { CalendarClock, ChevronDown, ChevronRight, ClipboardList, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { api, parseDate, timeAgo, type RunTemplate, type ScheduleDetails, type SchedulePreview, type Suite } from "../api";
+import { DAY_NAMES, DEFAULT_FORM, WEEK, OUTCOME_LABEL, browserTimezone, describeSchedule, fromCron, nextText, timezoneNames, toCron, type Preset, type ScheduleForm } from "../schedule";
 import { casesInFolder } from "../folders";
 import { CasePicker, useRunnableCases } from "../components/CasePicker";
 import { Empty, Modal, useToast } from "../components/ui";
@@ -25,6 +25,7 @@ export function TemplatesPanel({ templates, onStart, onEdit, onNew }: { template
   const toast = useToast();
   const runnable = useRunnableCases();
   const runnableIds = new Set(runnable.map((c) => c.id));
+  const [logOpen, setLogOpen] = useState<number | null>(null);
 
   const remove = useMutation({
     mutationFn: (id: number) => api.del(`/api/templates/${id}`),
@@ -54,12 +55,18 @@ export function TemplatesPanel({ templates, onStart, onEdit, onNew }: { template
         const count = t.caseIds.filter((id) => runnableIds.has(id)).length;
         const lr = t.last_run;
         return (
-          <div key={t.id} className="list-row" style={{ height: "auto", minHeight: 58, padding: "8px 16px", cursor: "default" }} data-suite={t.name}>
+          <Fragment key={t.id}>
+          <div className="list-row" style={{ height: "auto", minHeight: 58, padding: "8px 16px", cursor: "default" }} data-suite={t.name}>
             <ClipboardList size={15} className="faint" />
             <div className="grow col" style={{ gap: 2, minWidth: 0 }}>
               <div className="row" style={{ gap: 8 }}>
                 <span className="truncate" style={{ fontWeight: 500 }}>{t.name}</span>
                 {t.environment && <span className="chip">{t.environment}</span>}
+                {t.schedule && (
+                  <span className="chip" title="This suite prepares a manual run on a schedule" data-schedule-chip>
+                    <CalendarClock size={11} /> {describeSchedule(t.schedule, t.schedule_tz)}
+                  </span>
+                )}
               </div>
               {t.description && <span className="muted truncate" style={{ fontSize: "var(--fs-sm)" }}>{t.description}</span>}
               <span className="faint row" style={{ fontSize: "var(--fs-sm)", gap: 6, flexWrap: "wrap" }}>
@@ -82,6 +89,18 @@ export function TemplatesPanel({ templates, onStart, onEdit, onNew }: { template
                 ) : (
                   <span>never run</span>
                 )}
+                {t.schedule && (
+                  <>
+                    <span>·</span>
+                    <span data-next-run>{t.next_run_at ? `next ${nextText(t.next_run_at, new Date(), t.schedule_tz)}` : "no next run"}</span>
+                    <span style={{ whiteSpace: "nowrap" }}>
+                      ·{" "}
+                      <button type="button" className="link-button" aria-expanded={logOpen === t.id} onClick={() => setLogOpen(logOpen === t.id ? null : t.id)}>
+                        {logOpen === t.id ? <ChevronDown size={11} /> : <ChevronRight size={11} />} Schedule log
+                      </button>
+                    </span>
+                  </>
+                )}
               </span>
             </div>
             <Button needs="tester" variant="primary" size="sm" disabled={count === 0} onClick={() => onStart(t)} aria-label={`Run ${t.name}`} title={count === 0 ? "This suite has no runnable cases" : "Start a manual run of this suite"}>
@@ -96,6 +115,8 @@ export function TemplatesPanel({ templates, onStart, onEdit, onNew }: { template
               <Trash2 size={13} />
             </Button>
           </div>
+          {logOpen === t.id && t.schedule && <ScheduleLog template={t} />}
+          </Fragment>
         );
       })}
     </>
@@ -175,6 +196,30 @@ export function TemplateModal({ template, initialCaseIds = [], onClose }: { temp
       </div>
       <CasePicker selected={selected} onChange={setSelected} />
     </Modal>
+  );
+}
+
+/** What became of the latest times a suite's schedule fell due. Anyone who can see the suite can read it. */
+function ScheduleLog({ template }: { template: RunTemplate }) {
+  const { pid } = useParams();
+  const { data, isLoading, error } = useQuery({ queryKey: ["template-schedule", template.id], queryFn: () => api.get<ScheduleDetails>(`/api/templates/${template.id}`), refetchOnMount: "always" });
+  return (
+    <div className="col" style={{ gap: 4, padding: "4px 16px 12px 47px", fontSize: "var(--fs-sm)" }} data-schedule-log={template.name}>
+      {isLoading && <span className="muted">Loading…</span>}
+      {error && <span role="alert" style={{ color: "var(--failed-fg)" }}>{(error as Error).message}</span>}
+      {data && !data.scheduler_enabled && (
+        <span style={{ color: "var(--blocked-fg)" }}>The scheduler is turned off on this server (TESTBENCH_SCHEDULER=0): nothing is started from this schedule.</span>
+      )}
+      {data && data.fires.length === 0 && <span className="muted">Nothing has fallen due yet.{data.next_runs[0] ? ` The first time is ${inZone(data.next_runs[0], template.schedule_tz)}.` : ""}</span>}
+      {data?.fires.map((f) => (
+        <div key={f.scheduled_for} className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
+          <span className="tabular">{inZone(f.scheduled_for, template.schedule_tz)}</span>
+          <span style={{ color: f.outcome === "started" ? "var(--passed-fg)" : f.outcome === "error" ? "var(--failed-fg)" : undefined, fontWeight: 500 }} title={f.outcome}>{OUTCOME_LABEL[f.outcome] ?? f.outcome}</span>
+          {f.note && <span className="muted" style={{ minWidth: 0, overflowWrap: "anywhere" }}>{f.note}</span>}
+          {f.run_id && <Link to={`/p/${pid}/runs/${f.run_id}`} style={{ color: "var(--accent-text)" }}>Run #{f.run_id}</Link>}
+        </div>
+      ))}
+    </div>
   );
 }
 

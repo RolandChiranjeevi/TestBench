@@ -46,6 +46,18 @@ export function describeSchedule(expression: string, timezone: string): string {
   return `${when} ${f.time} (${timezone})`;
 }
 
+/** When a schedule runs next, as a person says it: "in 25 min", "in 3 h", or the weekday and time in the suite's own zone ("Mon 08:00"). `next` is UTC as the database writes it. */
+export function nextText(next: string, now: Date, timezone: string): string {
+  const at = new Date(`${next.replace(" ", "T")}Z`);
+  if (Number.isNaN(at.getTime())) return "";
+  const minutes = Math.round((at.getTime() - now.getTime()) / 60_000);
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `in ${minutes} min`;
+  if (minutes < 24 * 60) return `in ${Math.floor(minutes / 60)} h`;
+  const part = (type: string) => new Intl.DateTimeFormat("en-GB", { timeZone: timezone, weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(at).find((x) => x.type === type)?.value ?? "";
+  return `${part("weekday")} ${part("hour")}:${part("minute")}`;
+}
+
 /** The time zone of this browser, or UTC when it cannot say. */
 export function browserTimezone(): string {
   try {

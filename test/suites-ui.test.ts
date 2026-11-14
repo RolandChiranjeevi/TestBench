@@ -88,7 +88,7 @@ describe("the cases of a folder", () => {
   });
 });
 
-import { describeSchedule, fromCron, toCron, DEFAULT_FORM } from "../web/src/schedule.ts";
+import { describeSchedule, fromCron, nextText, toCron, DEFAULT_FORM } from "../web/src/schedule.ts";
 
 describe("the schedule form (web/src/schedule.ts)", () => {
   it("makes the cron of a daily or weekly time, and Mon-Fri as 1-5", () => {
@@ -127,5 +127,15 @@ describe("the schedule form (web/src/schedule.ts)", () => {
     assert.equal(describeSchedule("30 14 * * 1,3", "UTC"), "Mon, Wed 14:30 (UTC)");
     assert.equal(describeSchedule("5 6 * * *", "UTC"), "Every day 06:05 (UTC)");
     assert.equal(describeSchedule("*/20 * * * *", "UTC"), "*/20 * * * * (UTC)");
+  });
+
+  it("says when it runs next: soon as minutes or hours, later as the weekday and time in the suite's own zone", () => {
+    const now = new Date("2026-11-14T10:00:00Z");
+    assert.equal(nextText("2026-11-14 10:25:00", now, "UTC"), "in 25 min");
+    assert.equal(nextText("2026-11-14 13:30:00", now, "UTC"), "in 3 h");
+    assert.equal(nextText("2026-11-16 07:00:00", now, "Europe/Stockholm"), "Mon 08:00");
+    assert.equal(nextText("2026-11-16 07:00:00", now, "UTC"), "Mon 07:00");
+    assert.equal(nextText("2026-11-14 09:59:00", now, "UTC"), "now");
+    assert.equal(nextText("garbage", now, "UTC"), "");
   });
 });
