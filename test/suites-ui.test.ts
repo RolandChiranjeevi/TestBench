@@ -87,3 +87,55 @@ describe("the cases of a folder", () => {
     assert.deepEqual(casesInFolder(cases, folders, 99).map((c) => c.id), []);
   });
 });
+
+import { describeSchedule, fromCron, nextText, toCron, DEFAULT_FORM } from "../web/src/schedule.ts";
+
+describe("the schedule form (web/src/schedule.ts)", () => {
+  it("makes the cron of a daily or weekly time, and Mon-Fri as 1-5", () => {
+    assert.equal(toCron({ ...DEFAULT_FORM, preset: "daily", time: "06:05" }), "5 6 * * *");
+    assert.equal(toCron({ ...DEFAULT_FORM, preset: "weekly", time: "08:00", days: [5, 1, 2, 4, 3] }), "0 8 * * 1-5");
+    assert.equal(toCron({ ...DEFAULT_FORM, preset: "weekly", time: "14:30", days: [0, 3, 1] }), "30 14 * * 1,3,0");
+    assert.equal(toCron({ ...DEFAULT_FORM, preset: "weekly", time: "09:00", days: [0, 1, 2, 3, 4, 5, 6] }), "0 9 * * *");
+  });
+
+  it("is empty while it is not complete", () => {
+    assert.equal(toCron({ ...DEFAULT_FORM, time: "" }), "");
+    assert.equal(toCron({ ...DEFAULT_FORM, time: "25:00" }), "");
+    assert.equal(toCron({ ...DEFAULT_FORM, days: [] }), "");
+    assert.equal(toCron({ ...DEFAULT_FORM, preset: "custom", cron: "  " }), "");
+  });
+
+  it("reads back what it wrote, and shows anything else as Custom, untouched", () => {
+    for (const f of [
+      { ...DEFAULT_FORM, preset: "daily" as const, time: "06:05" },
+      { ...DEFAULT_FORM, preset: "weekly" as const, time: "08:00", days: [1, 2, 3, 4, 5] },
+      { ...DEFAULT_FORM, preset: "weekly" as const, time: "14:30", days: [1, 3, 0] },
+    ]) {
+      const back = fromCron(toCron(f));
+      assert.equal(toCron(back), toCron(f));
+      assert.equal(back.preset, f.preset);
+    }
+    for (const odd of ["*/20 * * * *", "0 8 1 * *", "0 8 * * 7", "61 8 * * *", "0 8-18 * * 1-5", "0 8 * * MON"]) {
+      const f = fromCron(odd);
+      assert.equal(f.preset, "custom");
+      assert.equal(toCron(f), odd);
+    }
+  });
+
+  it("describes a schedule in words, and a custom one as it is", () => {
+    assert.equal(describeSchedule("0 8 * * 1-5", "Europe/Stockholm"), "Weekdays 08:00 (Europe/Stockholm)");
+    assert.equal(describeSchedule("30 14 * * 1,3", "UTC"), "Mon, Wed 14:30 (UTC)");
+    assert.equal(describeSchedule("5 6 * * *", "UTC"), "Every day 06:05 (UTC)");
+    assert.equal(describeSchedule("*/20 * * * *", "UTC"), "*/20 * * * * (UTC)");
+  });
+
+  it("says when it runs next: soon as minutes or hours, later as the weekday and time in the suite's own zone", () => {
+    const now = new Date("2026-11-14T10:00:00Z");
+    assert.equal(nextText("2026-11-14 10:25:00", now, "UTC"), "in 25 min");
+    assert.equal(nextText("2026-11-14 13:30:00", now, "UTC"), "in 3 h");
+    assert.equal(nextText("2026-11-16 07:00:00", now, "Europe/Stockholm"), "Mon 08:00");
+    assert.equal(nextText("2026-11-16 07:00:00", now, "UTC"), "Mon 07:00");
+    assert.equal(nextText("2026-11-14 09:59:00", now, "UTC"), "now");
+    assert.equal(nextText("garbage", now, "UTC"), "");
+  });
+});

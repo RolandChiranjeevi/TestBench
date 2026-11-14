@@ -1,13 +1,15 @@
-import { useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ClipboardList, Pencil, Play, Plus, Trash2 } from "lucide-react";
-import { api, timeAgo, type RunTemplate, type Suite } from "../api";
+import { CalendarClock, ChevronDown, ChevronRight, ClipboardList, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { api, parseDate, timeAgo, type RunTemplate, type ScheduleDetails, type SchedulePreview, type Suite } from "../api";
+import { DAY_NAMES, DEFAULT_FORM, WEEK, OUTCOME_LABEL, browserTimezone, describeSchedule, fromCron, nextText, timezoneNames, toCron, type Preset, type ScheduleForm } from "../schedule";
 import { casesInFolder } from "../folders";
 import { CasePicker, useRunnableCases } from "../components/CasePicker";
 import { Empty, Modal, useToast } from "../components/ui";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
+import { EditScope } from "../components/Access";
 
 // A run template is what the app calls a SUITE: a saved list of cases that is run as a unit, as a manual run. (The tree on the Test cases page is made of FOLDERS,
 // which only organise cases.) The table and the routes keep the old name, so these components keep it too.
@@ -23,6 +25,7 @@ export function TemplatesPanel({ templates, onStart, onEdit, onNew }: { template
   const toast = useToast();
   const runnable = useRunnableCases();
   const runnableIds = new Set(runnable.map((c) => c.id));
+  const [logOpen, setLogOpen] = useState<number | null>(null);
 
   const remove = useMutation({
     mutationFn: (id: number) => api.del(`/api/templates/${id}`),
@@ -52,12 +55,18 @@ export function TemplatesPanel({ templates, onStart, onEdit, onNew }: { template
         const count = t.caseIds.filter((id) => runnableIds.has(id)).length;
         const lr = t.last_run;
         return (
-          <div key={t.id} className="list-row" style={{ height: "auto", minHeight: 58, padding: "8px 16px", cursor: "default" }} data-suite={t.name}>
+          <Fragment key={t.id}>
+          <div className="list-row" style={{ height: "auto", minHeight: 58, padding: "8px 16px", cursor: "default" }} data-suite={t.name}>
             <ClipboardList size={15} className="faint" />
             <div className="grow col" style={{ gap: 2, minWidth: 0 }}>
-              <div className="row" style={{ gap: 8 }}>
-                <span className="truncate" style={{ fontWeight: 500 }}>{t.name}</span>
+              <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                <span className="truncate" style={{ fontWeight: 500, maxWidth: "100%" }}>{t.name}</span>
                 {t.environment && <span className="chip">{t.environment}</span>}
+                {t.schedule && (
+                  <span className="chip chip-long" title="This suite prepares a manual run on a schedule" data-schedule-chip>
+                    <CalendarClock size={11} /> {describeSchedule(t.schedule, t.schedule_tz)}
+                  </span>
+                )}
               </div>
               {t.description && <span className="muted truncate" style={{ fontSize: "var(--fs-sm)" }}>{t.description}</span>}
               <span className="faint row" style={{ fontSize: "var(--fs-sm)", gap: 6, flexWrap: "wrap" }}>
@@ -80,6 +89,18 @@ export function TemplatesPanel({ templates, onStart, onEdit, onNew }: { template
                 ) : (
                   <span>never run</span>
                 )}
+                {t.schedule && (
+                  <>
+                    <span>·</span>
+                    <span data-next-run>{t.next_run_at ? `next ${nextText(t.next_run_at, new Date(), t.schedule_tz)}` : "no next run"}</span>
+                    <span style={{ whiteSpace: "nowrap" }}>
+                      ·{" "}
+                      <button type="button" className="link-button" aria-expanded={logOpen === t.id} onClick={() => setLogOpen(logOpen === t.id ? null : t.id)}>
+                        {logOpen === t.id ? <ChevronDown size={11} /> : <ChevronRight size={11} />} Schedule log
+                      </button>
+                    </span>
+                  </>
+                )}
               </span>
             </div>
             <Button needs="tester" variant="primary" size="sm" disabled={count === 0} onClick={() => onStart(t)} aria-label={`Run ${t.name}`} title={count === 0 ? "This suite has no runnable cases" : "Start a manual run of this suite"}>
@@ -94,6 +115,8 @@ export function TemplatesPanel({ templates, onStart, onEdit, onNew }: { template
               <Trash2 size={13} />
             </Button>
           </div>
+          {logOpen === t.id && t.schedule && <ScheduleLog template={t} />}
+          </Fragment>
         );
       })}
     </>
@@ -110,17 +133,35 @@ export function TemplateModal({ template, initialCaseIds = [], onClose }: { temp
   const [description, setDescription] = useState(template?.description ?? "");
   const [environment, setEnvironment] = useState(template?.environment ?? "");
   const [selected, setSelected] = useState<Set<number>>(() => new Set(template ? template.caseIds : initialCaseIds));
+  const [onSchedule, setOnSchedule] = useState(!!template?.schedule);
+  const [form, setForm] = useState<ScheduleForm>(() => (template?.schedule ? fromCron(template.schedule) : DEFAULT_FORM));
+  const [timezone, setTimezone] = useState(template?.schedule_tz ?? browserTimezone());
+  const [startRun, setStartRun] = useState(false);
+  const navigate = useNavigate();
   const runnableIds = new Set(runnable.map((c) => c.id));
   const count = [...selected].filter((id) => runnableIds.has(id)).length;
+  const cron = onSchedule ? toCron(form) : "";
+  const preview = useSchedulePreview(onSchedule ? cron : "", timezone);
+  const scheduleBad = onSchedule && (!cron || preview.data?.ok === false);
 
   const save = useMutation({
-    mutationFn: () => {
-      const body = { name, description, environment, caseIds: [...selected].filter((id) => runnableIds.has(id)) };
-      return template ? api.patch<RunTemplate>(`/api/templates/${template.id}`, body) : api.post<RunTemplate>(`/api/projects/${pid}/templates`, body);
+    // Two steps: the suite and its schedule are saved, then (if asked) a manual run is started. A run that cannot start does not undo the first step.
+    mutationFn: async () => {
+      const body = { name, description, environment, caseIds: [...selected].filter((id) => runnableIds.has(id)), schedule: onSchedule ? cron : null, scheduleTimezone: timezone };
+      const saved = await (template ? api.patch<RunTemplate>(`/api/templates/${template.id}`, body) : api.post<RunTemplate>(`/api/projects/${pid}/templates`, body));
+      if (!startRun) return { started: null, startError: null };
+      try {
+        return { started: await api.post<{ id: number }>(`/api/templates/${saved.id}/run`, {}), startError: null };
+      } catch (e) {
+        return { started: null, startError: (e as Error).message };
+      }
     },
-    onSuccess: () => {
+    onSuccess: ({ started, startError }) => {
       qc.invalidateQueries({ queryKey: ["templates", pid] });
+      qc.invalidateQueries({ queryKey: ["runs", pid] });
+      if (startError) toast("error", `The suite${onSchedule ? " and its schedule are" : " is"} saved, but the run did not start: ${startError}`);
       onClose();
+      if (started) navigate(`/p/${pid}/runs/${started.id}`);
     },
     onError: (e: Error) => toast("error", e.message),
   });
@@ -134,7 +175,7 @@ export function TemplateModal({ template, initialCaseIds = [], onClose }: { temp
         <>
           <span className="muted" style={{ marginRight: "auto" }}>{count} of {runnable.length} cases</span>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button needs="tester" variant="primary" disabled={!name.trim() || count === 0 || save.isPending} onClick={() => save.mutate()}>
+          <Button needs="tester" variant="primary" disabled={!name.trim() || count === 0 || scheduleBad || save.isPending} onClick={() => save.mutate()}>
             {template ? "Save changes" : "Create suite"}
           </Button>
         </>
@@ -149,11 +190,146 @@ export function TemplateModal({ template, initialCaseIds = [], onClose }: { temp
         <label htmlFor="tenv">Default environment (optional)</label>
         <input id="tenv" className="input" placeholder="staging, prod…" value={environment} onChange={(e) => setEnvironment(e.target.value)} />
       </div>
+      <WhenToRun onSchedule={onSchedule} setOnSchedule={setOnSchedule} form={form} setForm={setForm} timezone={timezone} setTimezone={setTimezone} preview={preview} startRun={startRun} setStartRun={setStartRun} />
       <div className="muted" style={{ fontSize: "var(--fs-sm)" }}>
-        Tick the cases in the suite. A run takes them in the order of the case list. The chip on each case shows whether an automated test is linked to it; the suite is run by hand, and nothing is started automatically.
+        Tick the cases in the suite. A run takes them in the order of the case list. The chip on each case shows whether an automated test is linked to it.
       </div>
       <CasePicker selected={selected} onChange={setSelected} />
     </Modal>
+  );
+}
+
+/** What became of the latest times a suite's schedule fell due. Anyone who can see the suite can read it. */
+function ScheduleLog({ template }: { template: RunTemplate }) {
+  const { pid } = useParams();
+  const { data, isLoading, error } = useQuery({ queryKey: ["template-schedule", template.id], queryFn: () => api.get<ScheduleDetails>(`/api/templates/${template.id}`), refetchOnMount: "always" });
+  return (
+    <div className="col" style={{ gap: 4, padding: "4px 16px 12px 47px", fontSize: "var(--fs-sm)" }} data-schedule-log={template.name}>
+      {isLoading && <span className="muted">Loading…</span>}
+      {error && <span role="alert" style={{ color: "var(--failed-fg)" }}>{(error as Error).message}</span>}
+      {data && !data.scheduler_enabled && (
+        <span style={{ color: "var(--blocked-fg)" }}>The scheduler is turned off on this server (TESTBENCH_SCHEDULER=0): nothing is started from this schedule.</span>
+      )}
+      {data && data.fires.length === 0 && <span className="muted">Nothing has fallen due yet.{data.next_runs[0] ? ` The first time is ${inZone(data.next_runs[0], template.schedule_tz)}.` : ""}</span>}
+      {data?.fires.map((f) => (
+        <div key={f.scheduled_for} className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
+          <span className="tabular">{inZone(f.scheduled_for, template.schedule_tz)}</span>
+          <span style={{ color: f.outcome === "started" ? "var(--passed-fg)" : f.outcome === "error" ? "var(--failed-fg)" : undefined, fontWeight: 500 }} title={f.outcome}>{OUTCOME_LABEL[f.outcome] ?? f.outcome}</span>
+          {f.note && <span className="muted" style={{ minWidth: 0, overflowWrap: "anywhere" }}>{f.note}</span>}
+          {f.run_id && <Link to={`/p/${pid}/runs/${f.run_id}`} style={{ color: "var(--accent-text)" }}>Run #{f.run_id}</Link>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The next times of a schedule, or what is wrong with it, as the server works them out (GET .../schedule-preview). Waits until the typing has stopped. */
+function useSchedulePreview(cron: string, timezone: string) {
+  const { pid } = useParams();
+  const [wanted, setWanted] = useState({ cron, timezone });
+  useEffect(() => {
+    const t = setTimeout(() => setWanted({ cron, timezone }), 400);
+    return () => clearTimeout(t);
+  }, [cron, timezone]);
+  return useQuery({
+    queryKey: ["schedule-preview", pid, wanted.cron, wanted.timezone],
+    queryFn: () => api.get<SchedulePreview>(`/api/projects/${pid}/schedule-preview?cron=${encodeURIComponent(wanted.cron)}&tz=${encodeURIComponent(wanted.timezone)}`),
+    enabled: !!wanted.cron && wanted.cron === cron && wanted.timezone === timezone,
+  });
+}
+
+const inZone = (utc: string, timezone: string) =>
+  parseDate(utc)?.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: timezone }) ?? utc;
+
+/** "When to run" in the suite form: by hand, or on a schedule (a preset, a time and weekdays, or a cron expression of one's own). */
+function WhenToRun({ onSchedule, setOnSchedule, form, setForm, timezone, setTimezone, preview, startRun, setStartRun }: {
+  onSchedule: boolean; setOnSchedule: (v: boolean) => void; form: ScheduleForm; setForm: (f: ScheduleForm) => void; timezone: string; setTimezone: (z: string) => void;
+  preview: { data?: SchedulePreview; isFetching: boolean }; startRun: boolean; setStartRun: (v: boolean) => void;
+}) {
+  const zones = timezoneNames();
+  const set = (patch: Partial<ScheduleForm>) => setForm({ ...form, ...patch });
+  const toggleDay = (d: number) => set({ days: form.days.includes(d) ? form.days.filter((x) => x !== d) : [...form.days, d] });
+  const p = preview.data;
+  return (
+    <EditScope>
+      <fieldset className="col" style={{ gap: 10, border: 0, padding: 0, margin: 0, minWidth: 0 }} data-when-to-run>
+        <legend className="field" style={{ padding: 0, fontSize: "var(--fs-sm)", color: "var(--text-3)", fontWeight: 500 }}>When to run</legend>
+        <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
+          <label className="row" style={{ gap: 6 }}><input type="radio" name="when" checked={!onSchedule} onChange={() => setOnSchedule(false)} /> Run by hand</label>
+          <label className="row" style={{ gap: 6 }}><input type="radio" name="when" checked={onSchedule} onChange={() => setOnSchedule(true)} /> On a schedule</label>
+        </div>
+        {onSchedule && (
+          <>
+            <div className="row" style={{ gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+              <div className="field">
+                <label htmlFor="wpreset">Repeat</label>
+                <select id="wpreset" className="select" value={form.preset} onChange={(e) => set({ preset: e.target.value as Preset, cron: form.preset === "custom" ? form.cron : toCron(form) })}>
+                  <option value="daily">Every day</option>
+                  <option value="weekly">Certain weekdays</option>
+                  <option value="custom">Custom (cron)</option>
+                </select>
+              </div>
+              {form.preset !== "custom" && (
+                <div className="field">
+                  <label htmlFor="wtime">At</label>
+                  <input id="wtime" className="input" type="time" value={form.time} onChange={(e) => set({ time: e.target.value })} />
+                </div>
+              )}
+              <div className="field" style={{ minWidth: 0, flex: "1 1 180px" }}>
+                <label htmlFor="wtz">Time zone</label>
+                <select id="wtz" className="select" value={timezone} onChange={(e) => setTimezone(e.target.value)}>
+                  {(zones.includes(timezone) ? zones : [timezone, ...zones]).map((z) => <option key={z} value={z}>{z}</option>)}
+                </select>
+              </div>
+            </div>
+            {form.preset === "weekly" && (
+              <div className="row" style={{ gap: 12, flexWrap: "wrap" }} role="group" aria-label="Weekdays">
+                {WEEK.map((d) => (
+                  <label key={d} className="row" style={{ gap: 4 }}>
+                    <input type="checkbox" className="checkbox" checked={form.days.includes(d)} onChange={() => toggleDay(d)} /> {DAY_NAMES[d].slice(0, 3)}
+                  </label>
+                ))}
+              </div>
+            )}
+            {form.preset === "custom" && (
+              <div className="field">
+                <label htmlFor="wcron">Cron expression (minute hour day-of-month month day-of-week)</label>
+                <input id="wcron" className="input mono" placeholder="0 8 * * 1-5" value={form.cron} onChange={(e) => set({ cron: e.target.value })} spellCheck={false} />
+              </div>
+            )}
+            <div aria-live="polite" style={{ fontSize: "var(--fs-sm)" }}>
+              {!toCron(form) ? (
+                <span className="muted">{form.preset === "custom" ? "Write a schedule to see when it runs." : "Choose a time and at least one weekday."}</span>
+              ) : !p ? (
+                <span className="muted">{preview.isFetching ? "Working out the next times…" : ""}</span>
+              ) : p.ok ? (
+                <div className="col" style={{ gap: 2 }}>
+                  <span className="muted">Next runs ({timezone}):</span>
+                  {p.next.map((t) => <span key={t} className="tabular">{inZone(t, timezone)}</span>)}
+                </div>
+              ) : (
+                <span role="alert" style={{ color: "var(--failed-fg)" }}>{p.error}</span>
+              )}
+              {p && !p.schedulerEnabled && (
+                <div style={{ color: "var(--blocked-fg)", marginTop: 4 }}>The scheduler is turned off on this server (TESTBENCH_SCHEDULER=0): the schedule is saved, but nothing is started from it.</div>
+              )}
+            </div>
+            <div className="muted" style={{ fontSize: "var(--fs-sm)" }}>
+              A scheduled run prepares a manual run with the suite's cases, ready for a person to go through. Nothing is run automatically.
+            </div>
+          </>
+        )}
+        <label className="row" style={{ gap: 6, alignItems: "flex-start" }}>
+          <input type="checkbox" className="checkbox" checked={startRun} onChange={(e) => setStartRun(e.target.checked)} style={{ marginTop: 3 }} />
+          <span>
+            Start a run when I save
+            <span className="muted" style={{ display: "block", fontSize: "var(--fs-sm)" }}>
+              Two steps: first the suite{onSchedule ? " and its schedule are" : " is"} saved, then a manual run is started. If the run cannot start, the save still stands.
+            </span>
+          </span>
+        </label>
+      </fieldset>
+    </EditScope>
   );
 }
 

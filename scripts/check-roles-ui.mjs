@@ -985,6 +985,22 @@ for (const who of Object.keys(TABS)) {
   check("suites: a viewer sees the suite, and Run, Edit and Delete are off", await eventually(async () => (await vsmoke.innerText()).includes("Smoke test") && (await vsmoke.getByRole("button", { name: "Run Smoke test" }).isDisabled()) && (await vsmoke.getByRole("button", { name: "Edit Smoke test" }).isDisabled()) && (await vsmoke.getByRole("button", { name: "Delete Smoke test" }).isDisabled())));
   await v.close();
 
+  // A suite on a schedule: the chip, the next run and the schedule log are for everyone who can see the suite; only a tester can change the schedule.
+  // (1 January, so that it cannot fall due while this check runs.)
+  await call("PATCH", `/api/templates/${smokeId}`, { schedule: "0 8 1 1 *", scheduleTimezone: "Europe/Stockholm" }, owner);
+  const vsch = await open("viewer", `/p/${A}/runs?kind=suites`);
+  const vrow = vsch.page.locator('[data-suite="Smoke test"]');
+  check("schedule: a viewer sees the schedule chip and the next run", await eventually(async () => (await vrow.locator("[data-schedule-chip]").count()) === 1 && /^next /.test(await vrow.locator("[data-next-run]").innerText())));
+  await vrow.getByRole("button", { name: "Schedule log" }).click();
+  check("schedule: a viewer can open the schedule log", await eventually(async () => (await vsch.page.locator('[data-schedule-log="Smoke test"]').count()) === 1 && !/Loading/.test(await vsch.page.locator('[data-schedule-log="Smoke test"]').innerText())));
+  check("schedule: a viewer cannot edit the suite, so not its schedule", await vrow.getByRole("button", { name: "Edit Smoke test" }).isDisabled());
+  await vsch.close();
+  const tsch = await open("tester", `/p/${A}/runs?kind=suites`);
+  await tsch.page.locator('[data-suite="Smoke test"]').getByRole("button", { name: "Edit Smoke test" }).click();
+  check("schedule: a tester sees When to run in the suite, set to the schedule", await eventually(async () => (await tsch.page.getByRole("radio", { name: "On a schedule" }).isChecked()) && (await tsch.page.locator("#wpreset").inputValue()) === "custom"));
+  await tsch.close();
+  await call("PATCH", `/api/templates/${smokeId}`, { schedule: null }, owner);
+
   // A viewer can open the finished run, and Run suite again is off for them.
   const vr = await open("viewer", `/p/${A}/runs/${secondRun}`);
   check("suites: a viewer sees the run's suite, and Run suite again is off", await eventually(async () => (await vr.page.getByRole("link", { name: /^Suite: Smoke test/ }).count()) === 1 && (await vr.page.getByRole("button", { name: "Run suite again" }).isDisabled())));

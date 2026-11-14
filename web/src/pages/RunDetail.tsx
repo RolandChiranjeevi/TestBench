@@ -119,11 +119,12 @@ function RunHeader({ run, children }: { run: RunDetail; children?: ReactNode }) 
       </h1>
       <span className="spacer" />
       {rerunOf && <Link className="chip" to={`/p/${pid}/runs/${rerunOf.id}`} title="The run this one re-tests">Re-run of {rerunOf.title}</Link>}
+      {!!(run.meta as { scheduled?: unknown }).scheduled && <span className="chip" title="Prepared by the suite's schedule, not started by a person">Scheduled</span>}
       {suite && (
         suite.deleted ? (
-          <span className="chip" title="The suite this run was started from has been deleted. The run is kept.">Suite: {suite.name} (deleted)</span>
+          <span className="chip chip-long" title="The suite this run was started from has been deleted. The run is kept.">Suite: {suite.name} (deleted)</span>
         ) : (
-          <Link className="chip" to={`/p/${pid}/runs?kind=suites`} title={suite.partial ? "This run covered only part of the suite. Open the suites." : "The suite this run was started from. Open the suites."}>
+          <Link className="chip chip-long" to={`/p/${pid}/runs?kind=suites`} title={suite.partial ? "This run covered only part of the suite. Open the suites." : "The suite this run was started from. Open the suites."}>
             Suite: {suite.name}{suite.partial ? " (part of it)" : ""}
           </Link>
         )

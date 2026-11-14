@@ -253,6 +253,8 @@ input.bare { min-height: 24px; }
   border: 1px solid var(--border-strong); color: var(--text-2); font-size: var(--fs-sm); white-space: nowrap; background: var(--bg);
 }
 button.chip { min-height: 24px; }
+/* a chip that holds a name of any length: cut off with … rather than wider than the screen */
+.chip-long { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; line-height: 18px; }
 .chip .dot { width: 6px; height: 6px; border-radius: 50%; }
 .chip.accent { border-color: transparent; background: var(--accent-soft); color: var(--accent-text); }
 
@@ -522,6 +524,9 @@ button.plan-row:hover { background: var(--bg-hover); }
 .badge--accent { color: var(--accent-text); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
 .badge--crit { color: #fff; background: var(--crit-solid); border-color: var(--crit-solid); font-weight: 600; }
 .chip-check { color: var(--accent); }
+/* a button that reads as a link, for small toggles inside a line of text */
+.link-button { background: none; border: 0; padding: 0; font: inherit; color: var(--accent-text); cursor: pointer; display: inline-flex; align-items: center; gap: 3px; }
+.link-button:hover { text-decoration: underline; }
 .chip-n { color: var(--text-3); font-family: var(--mono); font-size: var(--fs-sm); }
 .plan-auto { display: inline-flex; align-items: center; gap: 4px; color: var(--passed-fg, var(--text)); }
 .plan-detail { padding: 4px 14px 14px 52px; border-top: 1px solid var(--border); background: var(--bg-panel); line-height: 1.6; }
