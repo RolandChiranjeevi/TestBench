@@ -139,7 +139,15 @@ export interface ChecklistItem { id: number; milestone_id: number; position: num
 export interface RunTemplate {
   id: number; project_id: number; name: string; description: string; environment: string; created_at: string; updated_at: string;
   run_count: number; last_used: string | null; caseIds: number[]; case_count: number; last_run: SuiteRun | null;
+  /** A 5-field cron expression in the suite's own time zone, or null: never run automatically. next_run_at is UTC like every other time. See server/scheduler.ts. */
+  schedule: string | null; schedule_tz: string; next_run_at: string | null; schedule_set_by: string | null; schedule_set_at: string | null;
 }
+/** What became of one time a schedule fell due. */
+export interface ScheduleFire { scheduled_for: string; outcome: "started" | "skipped_overlap" | "skipped_empty" | "missed" | "error"; run_id: number | null; note: string; fired_at: string }
+/** GET /api/templates/:id adds these to the suite. */
+export interface ScheduleDetails { next_runs: string[]; fires: ScheduleFire[]; scheduler_enabled: boolean }
+/** GET /api/projects/:id/schedule-preview: the next times, or what is wrong with the schedule. Saves nothing. */
+export type SchedulePreview = { ok: true; next: string[]; schedulerEnabled: boolean } | { ok: false; error: string; schedulerEnabled: boolean };
 /** One run of a suite, with its counts. */
 export interface SuiteRun { id: number; title: string; status: "in_progress" | "completed"; started_at: string; total: number; passed: number; failed: number; blocked: number; untested: number }
 export interface DashboardRun extends Counts {
