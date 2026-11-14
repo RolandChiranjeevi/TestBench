@@ -74,6 +74,8 @@ export const ACCESS: Record<string, Need> = {
   // templates are what the app calls Suites: runnable groups of cases (server/runsuites.ts)
   "GET /api/templates/:id": v("template"), "POST /api/projects/:id/templates/from-folder": t(), "POST /api/templates/:id/cases": t("template"),
   "DELETE /api/templates/:id/cases/:caseId": t("template"), "POST /api/templates/:id/run": t("template"),
+  // what a schedule means (the next times it runs). Reads and saves nothing; setting a schedule is PATCH /api/templates/:id, which takes the tester role like running the suite
+  "GET /api/projects/:id/schedule-preview": v(),
   // runs and results
   "GET /api/projects/:id/runs": v(), "POST /api/projects/:id/runs": t(), "GET /api/runs/:id": v("run"), "PATCH /api/runs/:id": t("run"), "DELETE /api/runs/:id": t("run"),
   "GET /api/results/:id": v("result"), "PATCH /api/results/:id": t("result"), "GET /api/results/:id/automated": v("result"), "GET /api/results/:id/attachments.zip": v("result"),

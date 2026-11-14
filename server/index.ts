@@ -43,6 +43,7 @@ import { normViewports, normWcag, viewportSchema, wcagCriterion, type Viewport }
 import { LIMITS as AUDIT_LIMITS, PackageError } from "./importers/auditpackage.ts";
 import { archiveObservation, convertToBug, getObservation, importObservations, listObservations, ObservationError, observationSummary, reopenObservation, resolveObservation, setObservationStatus } from "./observations.ts";
 import { listCases } from "./newcases.ts";
+import { previewSchedule, scheduleDetails, setSchedule, startScheduler } from "./scheduler.ts";
 import { addSuiteCases, createManualRun, getSuite, listSuites, removeSuiteCase, runSuiteInfo, setSuiteCases, startSuiteRun, SuiteError, suiteFromFolder, withAutomation } from "./runsuites.ts";
 import { LOGGER_OPTIONS } from "./logging.ts";
 import { authenticateAgentToken, createAgentToken, isAgentRead, listAgentTokens, revokeAgentToken } from "./agenttokens.ts";
@@ -1494,9 +1495,19 @@ const templateBody = z.object({
   description: z.string().max(10000).optional(),
   environment: z.string().max(200).optional(),
   caseIds: z.array(z.number().int()).max(5000),
+  /** A 5-field cron expression, or null (or empty) for no schedule. See server/scheduler.ts. The time zone is the suite's own. */
+  schedule: z.string().max(100).nullable().optional(),
+  scheduleTimezone: z.string().max(64).optional(),
 });
 
 app.get("/api/projects/:id/templates", (req) => listSuites(idParam(req)));
+
+// What a schedule means: the next times it runs, or what is wrong with it. Saves nothing.
+app.get("/api/projects/:id/schedule-preview", (req) => {
+  idParam(req);
+  const q = req.query as { cron?: string; tz?: string };
+  return previewSchedule(q.cron ?? "", q.tz ?? "UTC");
+});
 
 // A copy of the cases a folder holds now. Later changes to the folder do not change the suite.
 app.post("/api/projects/:id/templates/from-folder", (req) => {
@@ -1517,18 +1528,19 @@ app.post("/api/projects/:id/templates", (req) => {
   const projectId = idParam(req);
   const body = templateBody.parse(req.body);
   if (db.prepare("SELECT 1 FROM run_templates WHERE project_id = ? AND name = ?").get(projectId, body.name)) throw new HttpError(409, `A template named "${body.name}" already exists`);
-  const id = db.transaction(() => {
+  const id = suitesApi(() => db.transaction(() => {
     const t = db
       .prepare("INSERT INTO run_templates (project_id, name, description, environment) VALUES (?, ?, ?, ?) RETURNING id")
       .get(projectId, body.name, body.description ?? "", body.environment ?? "") as { id: number };
     setSuiteCases(t.id, projectId, body.caseIds);
+    if (body.schedule !== undefined || body.scheduleTimezone !== undefined) setSchedule(t.id, { schedule: body.schedule, timezone: body.scheduleTimezone }, actorName());
     return t.id;
-  })();
+  })());
   return listSuites(projectId, id)[0];
 });
 
-// One suite with its cases (in run order), what the automated side knows about each, and its latest runs.
-app.get("/api/templates/:id", (req) => suitesApi(() => getSuite(idParam(req))));
+// One suite with its cases (in run order), what the automated side knows about each, its latest runs, and its schedule: the next times and what became of the latest ones.
+app.get("/api/templates/:id", (req) => suitesApi(() => { const id = idParam(req); return { ...getSuite(id), ...scheduleDetails(id) }; }));
 
 app.patch("/api/templates/:id", (req) => {
   const id = idParam(req);
@@ -1536,11 +1548,12 @@ app.patch("/api/templates/:id", (req) => {
   const cur = must(db.prepare("SELECT * FROM run_templates WHERE id = ?").get(id) as Record<string, any> | undefined, "Template");
   const name = body.name ?? cur.name;
   if (name !== cur.name && db.prepare("SELECT 1 FROM run_templates WHERE project_id = ? AND name = ?").get(cur.project_id, name)) throw new HttpError(409, `A template named "${name}" already exists`);
-  db.transaction(() => {
+  suitesApi(() => db.transaction(() => {
     db.prepare("UPDATE run_templates SET name = ?, description = ?, environment = ?, updated_at = datetime('now') WHERE id = ?")
       .run(name, body.description ?? cur.description, body.environment ?? cur.environment, id);
     if (body.caseIds) setSuiteCases(id, cur.project_id, body.caseIds);
-  })();
+    if (body.schedule !== undefined || body.scheduleTimezone !== undefined) setSchedule(id, { schedule: body.schedule, timezone: body.scheduleTimezone }, actorName());
+  })());
   return listSuites(cur.project_id, id)[0];
 });
 
@@ -2075,6 +2088,7 @@ export { app };
 if (process.env.TESTBENCH_NO_LISTEN !== "1") {
   startAutoImport();
   startAutoBackup();
+  startScheduler();
   await app.listen({ port: PORT, host: HOST });
   const state = accountsState();
   console.log(`Testbench API on http://${HOST}:${PORT}${state === "accounts" ? " (accounts: sign in required)" : state === "locked" ? " (LOCKED: accounts are on but none exists; run npm run accounts -- create-owner)" : auth ? " (password login on)" : " (no login: anyone who reaches this port has full access)"}`);
