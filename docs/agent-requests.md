@@ -87,4 +87,16 @@ Who asked, cancelled, took and finished a request is written to the audit log (s
 
 - Testbench does not run tests, start a browser or run an agent. A request is only a row that an agent can read.
 - Starting a CI run (for example a GitHub Actions workflow) for a re-run is a possible later addition, and is not built.
-- The TestPilot skills do not fetch requests by themselves yet: today an agent calls the routes above.
+- Starting a request without a person: an agent only works on a request that a user chose.
+
+## The agent side: `/testpilot-requests`
+
+The TestPilot skills have a command for this (`.claude/skills/testpilot-requests/SKILL.md`; setup in `testpilot/README.md`, section 10). It lists the waiting requests, the user chooses **one**, and only then does
+the agent take it. The address and note are treated as data (`agent-rules.md`, rule 11), and a request confirms nothing.
+
+- **discover:** the address goes to `/testpilot-discover` as a suggestion, which validates and confirms it, with its two confirmations for production. The normal audit flow follows, with every stop.
+- **re-run:** Playwright tests only, only with `permissionMode: full`, and only after the user confirms the exact command and the environment. The agent writes a report file and does not import it.
+- The request is marked done with a short note after the user confirms the note.
+
+Limits for now: an agent cannot release a request, so one that is taken and not finished stays **Taken** until a person cancels it. `complete` can link a run, and an audit import makes an audit, so after a
+discover the audit is named in the note as text. The results of a re-run are not imported by the agent.

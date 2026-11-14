@@ -4,6 +4,7 @@ Real configuration lives in .testpilot/ (git-ignored). Secrets are only ever nam
 Run: python3 -m unittest discover -s testpilot/tests
 """
 import json
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -33,6 +34,22 @@ class ConfigTemplateTests(unittest.TestCase):
             with self.subTest(path=path.name):
                 self.assertEqual(profile["permissionMode"], "observe_only")
                 self.assertIs(profile["deliveryEnabled"], False)
+
+    def test_request_token_is_only_a_variable_name(self):
+        for path in sorted((CONFIG / "projects").glob("*.example.json")):
+            profile = json.loads(path.read_text())
+            with self.subTest(path=path.name):
+                name = profile.get("requestTokenEnvVar")
+                if name is not None:
+                    self.assertRegex(name, r"^[A-Z][A-Z0-9_]*$", "an environment variable name, never a token")
+                    self.assertFalse(name.lower().startswith(("tbrq_", "tbag_", "tbci_", "tbpr_")))
+
+    def test_skills_hold_no_literal_token(self):
+        root = Path(__file__).resolve().parent.parent.parent / ".claude"
+        pattern = re.compile(r"tb(?:rq|ag|ci|pr)_[A-Za-z0-9_-]{20,}")
+        for path in sorted(root.rglob("*.md")):
+            with self.subTest(path=path.relative_to(root).as_posix()):
+                self.assertIsNone(pattern.search(path.read_text()), "a skill must name a token variable, never hold a token")
 
 
 if __name__ == "__main__":
