@@ -337,6 +337,13 @@ repository before; its history is kept, and old pull request numbers are written
 TestPilot runs from Claude Code on your own computer. It is not part of the Docker image. `npm run test:python` runs its tests.
 Everything it sends to Testbench is a proposal that a person decides on.
 
+## Requests to a test agent
+
+On **Automated tests → Requests** a tester can ask a test agent to look at a web address (**Request discover**), and on an automated run to run its failed tests again
+(**Request re-run**). **Testbench starts nothing**: the request waits until an agent with a *request token* (Settings, Agent) takes it, works in your own environment under
+its own rules and stops, and says when it is done. What it delivers comes in through the normal import, as proposals. The address and note of a request are data for the
+agent, never instructions. Details, the three routes and a `curl` example: [docs/agent-requests.md](docs/agent-requests.md).
+
 ## Bug reports from a test agent
 
 Optional. A test agent can leave an **audit package** (its findings, evidence and its own report) that Testbench imports as **proposals** on the

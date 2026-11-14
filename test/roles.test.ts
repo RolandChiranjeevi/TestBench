@@ -115,6 +115,8 @@ function fixture(kind: Kind, project: number): { id: number | string } {
     case "agenttoken": return { id: token("agent_tokens") };
     case "citoken": return { id: token("ci_tokens") };
     case "proposetoken": return { id: token("propose_tokens") };
+    case "requesttoken": return { id: token("request_tokens") };
+    case "agentrequest": return { id: one("INSERT INTO agent_requests (project_id, kind, target_url) VALUES (?, 'discover', 'https://example.com') RETURNING id", project) };
     case "file": {
       const name = `file-${n}.txt`;
       db.prepare("INSERT INTO attachments (result_id, filename, stored_name, mime) VALUES (?, 'f.txt', ?, 'text/plain')").run(result(), name);

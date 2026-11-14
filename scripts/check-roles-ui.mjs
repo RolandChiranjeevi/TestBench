@@ -1006,6 +1006,20 @@ for (const who of Object.keys(TABS)) {
   check("suites: a viewer sees the run's suite, and Run suite again is off", await eventually(async () => (await vr.page.getByRole("link", { name: /^Suite: Smoke test/ }).count()) === 1 && (await vr.page.getByRole("button", { name: "Run suite again" }).isDisabled())));
   await vr.close();
 
+  // Requests to a test agent: everyone who can see the project sees the list; a tester asks and withdraws; a viewer cannot. Testbench starts nothing.
+  const asked = (await call("POST", `/api/projects/${A}/agent-requests`, { kind: "discover", targetUrl: "https://staging.example.com", note: "roles check" }, owner)).json;
+  const vq = await open("viewer", `/p/${A}/automated?view=requests`);
+  check("requests: a viewer sees the Requests tab and the request, and Request discover and Cancel are off", await eventually(async () =>
+    (await vq.page.getByRole("tab", { name: /^Requests/ }).count()) === 1 && (await vq.page.locator(`[data-request="${asked.id}"]`).count()) === 1 &&
+    (await vq.page.getByRole("button", { name: "Request discover" }).first().isDisabled()) && (await vq.page.getByRole("button", { name: `Cancel request ${asked.id}` }).isDisabled())));
+  await vq.close();
+  const tq = await open("tester", `/p/${A}/automated?view=requests`);
+  check("requests: a tester can ask for a discover and withdraw a request", await eventually(async () =>
+    !(await tq.page.getByRole("button", { name: "Request discover" }).first().isDisabled()) && !(await tq.page.getByRole("button", { name: `Cancel request ${asked.id}` }).isDisabled())));
+  await tq.page.getByRole("button", { name: `Cancel request ${asked.id}` }).click();
+  check("requests: withdrawing it marks it Cancelled", await eventually(async () => (await tq.page.locator(`[data-request="${asked.id}"]`).getAttribute("data-status")) === "cancelled"));
+  await tq.close();
+
   // Folders: the tree is called Folders, the menu runs a folder and saves it as a suite (a copy), and a case says whether it is manual or automated.
   const folder = (await call("GET", `/api/projects/${A}/suites`, undefined, owner)).json.find((s) => s.case_count > 0);
   const c = await open("tester", `/p/${A}/cases`);

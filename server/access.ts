@@ -22,7 +22,7 @@ export const levelRank = (l: Level) => LEVELS.indexOf(l);
 
 export const KINDS = [
   "project", "case", "run", "result", "attachment", "automated", "requirement", "reqattachment", "proposal", "observation", "bug", "bugpublication", "manualtest", "automationsuggestion", "bugdraft",
-  "audit", "milestone", "checklist", "suite", "template", "githubsource", "agenttoken", "citoken", "proposetoken", "file",
+  "audit", "milestone", "checklist", "suite", "template", "githubsource", "agenttoken", "citoken", "proposetoken", "requesttoken", "agentrequest", "file",
 ] as const;
 export type Kind = (typeof KINDS)[number];
 export type Need = "anon" | "user" | "owner" | "token" | "custom" | { level: Level; kind: Kind; via?: string };
@@ -50,6 +50,7 @@ export const ACCESS: Record<string, Need> = {
   "GET /api/invitations": "custom", "POST /api/invitations": "custom", "POST /api/invitations/:id/revoke": "custom",
   // ---- machine tokens: each opens one route of one project and nothing else ----
   "POST /api/projects/:id/ci/test-results": "token", "GET /api/agent/projects/:id/requirements": "token", "POST /api/agent/projects/:id/requirement-proposals": "token",
+  "GET /api/agent/projects/:id/requests": "token", "POST /api/agent/projects/:id/requests/:rid/claim": "token", "POST /api/agent/projects/:id/requests/:rid/complete": "token",
 
   // ---- a project ----
   "PATCH /api/projects/:id": a(), "POST /api/projects/:id/delete": a(), "GET /api/projects/:id/deletion-preview": a(),
@@ -63,6 +64,9 @@ export const ACCESS: Record<string, Need> = {
   "GET /api/projects/:id/agent/tokens": a(), "POST /api/projects/:id/agent/tokens": a(), "POST /api/agent-tokens/:id/revoke": a("agenttoken"),
   "GET /api/projects/:id/ci/tokens": a(), "POST /api/projects/:id/ci/tokens": a(), "POST /api/ci-tokens/:id/revoke": a("citoken"),
   "GET /api/projects/:id/propose-tokens": a(), "POST /api/projects/:id/propose-tokens": a(), "POST /api/propose-tokens/:id/revoke": a("proposetoken"),
+  "GET /api/projects/:id/request-tokens": a(), "POST /api/projects/:id/request-tokens": a(), "POST /api/request-tokens/:id/revoke": a("requesttoken"),
+  // what people ask a test agent to do (server/agentrequests.ts): everyone sees the list, a tester asks for something and withdraws it. Testbench runs nothing.
+  "GET /api/projects/:id/agent-requests": v(), "POST /api/projects/:id/agent-requests": t(), "POST /api/agent-requests/:id/cancel": t("agentrequest"),
   "GET /api/projects/:id/destination": a(), "PUT /api/projects/:id/destination": a(), "DELETE /api/projects/:id/destination": a(), "POST /api/projects/:id/destination/teams": a(),
   "GET /api/projects/:id/github-sources": a(), "POST /api/projects/:id/github-sources": a(), "PATCH /api/github-sources/:id": a("githubsource"), "DELETE /api/github-sources/:id": a("githubsource"),
   "POST /api/github-sources/:id/check": a("githubsource"), "GET /api/github-sources/:id/runs": t("githubsource"), "POST /api/github-sources/:id/runs/:runId/import": t("githubsource"),

@@ -148,6 +148,16 @@ export interface ScheduleFire { scheduled_for: string; outcome: "started" | "ski
 export interface ScheduleDetails { next_runs: string[]; fires: ScheduleFire[]; scheduler_enabled: boolean }
 /** GET /api/projects/:id/schedule-preview: the next times, or what is wrong with the schedule. Saves nothing. */
 export type SchedulePreview = { ok: true; next: string[]; schedulerEnabled: boolean } | { ok: false; error: string; schedulerEnabled: boolean };
+/** What a person asked a test agent to do (server/agentrequests.ts). Testbench runs nothing: an agent with a request token takes the request and says when it is done. */
+export interface AgentRequest {
+  id: number; projectId: number; kind: "discover" | "rerun"; targetUrl: string; environment: string; note: string;
+  /** The run a re-run is about; null when the run has been deleted since. */
+  runId: number | null;
+  /** The failed or blocked automated tests of that run, as they were when it was asked for. */
+  tests: { id: number; framework: string; file: string; title: string; fullName: string }[];
+  status: "pending" | "claimed" | "done" | "cancelled";
+  createdBy: string; createdAt: string; claimedBy: string | null; claimedAt: string | null; finishedAt: string | null; resultRunId: number | null; resultNote: string;
+}
 /** One run of a suite, with its counts. */
 export interface SuiteRun { id: number; title: string; status: "in_progress" | "completed"; started_at: string; total: number; passed: number; failed: number; blocked: number; untested: number }
 export interface DashboardRun extends Counts {

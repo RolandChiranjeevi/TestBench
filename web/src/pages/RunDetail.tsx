@@ -11,6 +11,7 @@ import {
   type Attachment, type ResultDetail, type RunDetail, type RunResult, type Status,
 } from "../api";
 import { Bug, Pencil } from "lucide-react";
+import { RerunRequestModal } from "./AgentRequests";
 import { Empty, FrameworkBadge, Github, Kbd, PriorityIcon, ProgressBar, StatusIcon, STATUS_LABEL, rowActivation, useConfirm, useHotkeys, useToast, ListSkeleton } from "../components/ui";
 import { CiStatusBadge } from "../components/Badge";
 import { Button, buttonClass } from "../components/Button";
@@ -86,6 +87,7 @@ function RunHeader({ run, children }: { run: RunDetail; children?: ReactNode }) 
   const qc = useQueryClient();
   const toast = useToast();
   const [rerun, setRerun] = useState(false);
+  const [requestRerun, setRequestRerun] = useState(false);
   const suite = run.suite;
   // A new manual run of the cases the suite holds NOW (not the cases of this run), in the same environment and sprint. Nothing is started automatically.
   const again = useMutation({
@@ -101,6 +103,7 @@ function RunHeader({ run, children }: { run: RunDetail; children?: ReactNode }) 
   const failing = run.results.filter((r) => r.status === "failed" || r.status === "blocked");
   const caseIds = [...new Set(failing.map((r) => r.case_id).filter((id): id is number => id != null))];
   const unlinked = failing.filter((r) => r.case_id == null).length;
+  const failingAutomated = run.kind === "automated" ? failing.filter((r) => r.automated_test_id != null).length : 0;
   const rerunOf = (run.meta as { rerunOf?: { id: number; title: string } }).rerunOf;
   const remove = async () => {
     if (!(await confirm({ title: `Delete run "${run.title}"?`, body: <p style={{ margin: 0 }}>The run and all its results are deleted.</p>, confirmLabel: "Delete run" }))) return;
@@ -143,6 +146,11 @@ function RunHeader({ run, children }: { run: RunDetail; children?: ReactNode }) 
           <RotateCcw size={12} /> Re-run failed ({caseIds.length})
         </Button>
       )}
+      {failingAutomated > 0 && (
+        <Button needs="tester" size="sm" onClick={() => setRequestRerun(true)} title="Ask a test agent to run the failed automated tests again. Testbench starts nothing: an agent takes the request in your own environment.">
+          <Bot size={12} /> Request re-run ({failingAutomated})
+        </Button>
+      )}
       {children}
       <Button needs="tester" variant="danger" size="sm" icon onClick={remove} title="Delete run" aria-label="Delete run">
         <Trash2 size={14} />
@@ -154,6 +162,7 @@ function RunHeader({ run, children }: { run: RunDetail; children?: ReactNode }) 
           onClose={() => setRerun(false)}
         />
       )}
+      {requestRerun && <RerunRequestModal run={run} onClose={() => setRequestRerun(false)} />}
     </div>
   );
 }
