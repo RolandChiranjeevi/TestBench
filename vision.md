@@ -38,7 +38,7 @@ En användare kan:
 - Konvertera observationer till **buggrapporter** med beskrivning av felet och eventuell föreslagen fix.
 - Se **spårbarhet**: när en körning gjordes, vad som framkom, vilka testfall som kördes, vilka som failade.
 - Hantera **konton och roller** (Owner, Admin, Tester, Viewer) med rätt behörigheter.
-- Trigga **TestPilot** direkt från UI:t — starta en ny discover, eller köra om automatiska testfall.
+- Be **TestPilot** om en discover, eller om en omkörning av failade automatiska testfall, direkt från UI:t. Förfrågan väntar i en kö tills en agent plockar upp den (se "Trigger från TestBench UI"); TestBench startar inget själv.
 
 ## Suites och runs
 
@@ -53,7 +53,7 @@ Orden "suite" och "run" betyder olika saker och ska hållas isär:
 - **Run som enskild eller vald körning — finns för manuella tester.**
   En körning av ett enskilt testfall, ett urval eller en suite, med resultat per testfall och per steg. Automatiserade runs kommer in som importerade resultat (CI, uppladdning, GitHub Actions), men TestBench startar dem inte själv.
 
-Båda finns nu: körbara suites för stora grupper, och runs för enskilda eller valda testfall. Det som återstår är att TestBench startar *automatiserade* körningar själv (se Trigger från UI).
+Båda finns nu: körbara suites för stora grupper, och runs för enskilda eller valda testfall. TestBench startar fortfarande inga *automatiserade* körningar själv. En användare kan i stället be en agent om det (se Trigger från UI), och agenten kör då i användarens egen miljö.
 
 ## TestPilot — AI-agenten
 
@@ -99,9 +99,9 @@ Automatiserade testfall ska skrivas i **Playwright-format (`*.spec.ts`)**, så a
 
 ## Arkitektur
 
-- **TestBench och TestPilot är sammanslagna till ett repo.** TestPilots skills ligger i `.claude/skills/` och dess verktyg under `testpilot/`. Triggern från UI och spec.ts-stödet byggs mot den strukturen. Suite-modellen är byggd.
+- **TestBench och TestPilot är sammanslagna till ett repo.** TestPilots skills ligger i `.claude/skills/` och dess verktyg under `testpilot/`. Spec.ts-stödet byggs mot den strukturen. Suite-modellen och triggern från UI är byggda.
 - **TestBench är en lokal app** på användarens dator, med tillgång till internet.
-- **Trigger från TestBench UI** till TestPilot är nyckel-UX — användaren ska kunna starta discover eller köra om automatiska tester direkt från TestBench.
+- **Trigger från TestBench UI** till TestPilot är nyckel-UX. Den är byggd som en kö: användaren ber om en discover eller en omkörning av failade automatiska tester direkt i TestBench, och en agent med en request-token plockar upp förfrågan i användarens egen miljö (`/testpilot-requests`). TestBench startar ingenting själv. Agenten körs av användaren (till exempel Claude Code) och användaren betalar själv.
 
 ## Vad som redan är byggt
 
@@ -110,6 +110,7 @@ Automatiserade testfall ska skrivas i **Playwright-format (`*.spec.ts`)**, så a
 - **Manuell testkörning — komplett:** runs med status, resultat per testfall och per steg, run-mallar, omkörning av misslyckade och manuella testförslag från agenten som kan bli testfall.
 - **Suites som mappträd** för testfall.
 - **Körbara suites och schemaläggning** (#91–#93, #95): en suite körs som en manuell run, eller på schema med ett schemalogg.
+- **Trigger från UI, som en kö** (#98, #99): en tester ber en agent om en discover eller en omkörning av failade automatiska tester. En agent med en request-token (`tbrq_`) plockar upp förfrågan i användarens egen miljö, och användaren bekräftar varje stopp. TestBench startar inget själv.
 - Import av automatiska testresultat (Playwright, TestCafe, Selenium, Bruno, JUnit) via CI, uppladdning och GitHub Actions.
 - **Jira- och Linear-export av buggar.**
 - API-testing skill (PR #10 + säkerhetsfixar).
@@ -121,18 +122,17 @@ Automatiserade testfall ska skrivas i **Playwright-format (`*.spec.ts`)**, så a
 
 ## Vad som saknas / behöver byggas
 
-- **Trigger från TestBench UI** — kör discover / kör om automatiska tester.
+- **Förfrågningar till en agent: släpp, audit-länk och automatisk import av omkörningens rapport** — små skavanker och ett säkerhetsbeslut, se backlogg T-A och T-B.
 - **Användarskapade automatiserade testfall (spec.ts)** — ej byggt.
 - **Azure DevOps-export** — framtida.
 - **Mobilappstest** — framtida.
 
 ## Nästa steg
 
-1. **Trigger från UI** — nyckel-feature för att knyta ihop allt.
+1. **Förfrågningar: släpp och audit-länk (T-A)** — de två skavanker som finns kvar i triggern. Automatisk import av omkörningens rapport (T-B) väntar på ett säkerhetsbeslut.
 2. **Användarskapade automatiserade testfall (spec.ts)** — bygg efter triggern.
 3. **Integrationer (Azure DevOps, mobil)** — senare.
 
 ## Frågor att förtydliga
 
-- **Körmiljö för triggern** — vad startar agenten (Claude Code CLI, Agent SDK eller API), var körs den, och vem betalar?
 - **Ägande av spec.ts** — i databasen, som filer på disk eller i användarens git-repo? Hur isoleras de när de körs?
