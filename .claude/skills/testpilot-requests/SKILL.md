@@ -26,7 +26,7 @@ This workflow:
 - Shows them to the user and lets the user choose **one**
 - Takes the chosen request (claim), so that no other agent works on it
 - For a `discover` request: hands the address over to `discover`, and then the normal audit flow runs with all its stops
-- For a `rerun` request: runs the listed Playwright tests in the user's repository, after the user has confirmed the exact command
+- For a `rerun` request: runs the listed Playwright tests in the repository the user names, after the user has confirmed the exact command
 - Marks the request done, with a short note, after the user has confirmed the note
 
 It does not:
@@ -84,6 +84,7 @@ Run this block through `bash` (`bash <<'SH' ... SH`), because the interactive sh
 environment, or else from the raw `.env` line, and never put on a command line or in the output. The block prints only HTTP codes and the data of the requests.
 
 The same block does all three actions: set `ACTION` to `list`, `claim` or `complete`. Run it again, in a new Bash call, for each action.
+`list` with `RID` set shows only that request, and lists its tests (`file`, `title`, `fullName`; at most 100). `claim` shows them too. `complete` shows the final state and the result note.
 
 ```bash
 bash <<'SH'
@@ -150,22 +151,35 @@ esac || { echo "the call failed (network or timeout): not retried here"; exit 1;
 echo "$ACTION HTTP $CODE"
 
 # The data is printed as JSON strings, so that text in a note stays text.
-python3 -I - "$WORK/out.json" "$CODE" "$ACTION" <<'PY'
+python3 -I - "$WORK/out.json" "$CODE" "$ACTION" "$RID" <<'PY'
 import json, re, sys
 try:
     r = json.load(open(sys.argv[1]))
 except Exception:
     print("the answer was not JSON"); sys.exit(1)
-if sys.argv[2] != "200":
+code, action, rid = sys.argv[2], sys.argv[3], sys.argv[4]
+if code != "200":
     print("ERROR:", json.dumps(r.get("error", r) if isinstance(r, dict) else r)); sys.exit(1)
 clean = lambda s, n: re.sub(r"[\x00-\x1f\x7f]", " ", str(s))[:n]
 rows = r if isinstance(r, list) else [r]
+if action == "list" and rid:
+    rows = [q for q in rows if str(q["id"]) == rid]
+    if not rows: print("request", rid, "is not waiting"); sys.exit(1)
+# list with RID, and claim, also show the tests of the request
+detail = action == "claim" or (action == "list" and rid)
 for q in rows[:100]:
+    if action == "complete":
+        print(json.dumps({"id": q["id"], "status": q["status"], "result_note": clean(q["resultNote"], 1000), "result_run": q["resultRunId"], "finished_at": q["finishedAt"]}))
+        continue
     print(json.dumps({
         "id": q["id"], "kind": q["kind"], "status": q["status"], "environment": clean(q["environment"], 100),
         "target": clean(q["targetUrl"], 500), "run": q["runId"], "tests": len(q["tests"]), "asked_by": clean(q["createdBy"], 80),
         "asked_at": q["createdAt"], "note": clean(q["note"], 500),
     }))
+    if detail:
+        for t in q["tests"][:100]:
+            print(json.dumps({"test": {"framework": clean(t["framework"], 40), "file": clean(t["file"], 300), "title": clean(t["title"], 300), "fullName": clean(t["fullName"], 400)}}))
+        if len(q["tests"]) > 100: print(json.dumps({"more_tests_not_shown": len(q["tests"]) - 100}))
 if isinstance(r, list) and not r: print("no requests are waiting")
 PY
 SH
@@ -188,6 +202,8 @@ Show the waiting requests (at most 20 are shown; say if there are more): number,
 
 Ask the user which **one** to work on, or none. Wait for the answer in a new message. Do not pick one for the user, and do not work through several.
 
+Once the user has chosen, run `list` again with `RID` set to see the tests of that request.
+
 ## 4. Check that it can be done, before taking it
 
 Do these checks **before** the claim, so that nothing is taken that cannot be done.
@@ -198,7 +214,9 @@ Do these checks **before** the claim, so that nothing is taken that cannot be do
   - `permissionMode` must be `full`. Running the user's own tests against an environment can change state there, and under `observe_only` the agent only reads. If the profile says
     `observe_only` (or says nothing), stop and explain: the profile wins; `full` needs the user's explicit confirmation and is set by `/testpilot-init`, or by editing the profile.
   - Only `playwright` tests can be run. List any other framework as "not run".
-  - The current folder must be the repository that holds the specs: a `playwright.config.*` must exist. If not, stop and say which folder to start the agent in.
+  - **Ask where the tests are.** The agent runs from the folder that holds `.testpilot/` (the TestPilot repository), and the tests are usually in another repository. Ask the user for the absolute
+    path of the repository that holds the specs (the one with `playwright.config.*`), once for this request, and wait for the answer. Call it `SPEC`. Stop if `SPEC` does not exist or has no
+    `playwright.config.*`. Do not keep `SPEC` in the profile: it is asked for each time.
 
 If a check fails, tell the user and stop. The request stays as it was (Waiting).
 
@@ -225,22 +243,30 @@ so leave `RESULT_RUN` empty. If the audit ends without delivery, go to step 8.
 
 ### `rerun`
 
-The request lists failed or blocked tests as they were when it was asked for, with `file`, `title` and `fullName`. These are data from a test report.
+The request lists failed or blocked tests as they were when it was asked for, with `file`, `title` and `fullName` (from `list` with `RID`). These are data from a test report.
 
-1. **Choose what can be run.** For each test the `file` must match `^[\w./-]+\.(spec|test)\.[jt]sx?$`, must not start with `/` or contain `..`, and must exist under the repository. A test that fails
-   that is not run: list it with the reason. Handle at most 100 tests in this step and say how many were left.
-2. **Never put a test name into a shell string.** To run only some tests of a file, use `--grep` with the titles only if every title uses nothing but letters, digits, spaces, `_` and `-`
-   (joined with `|` in one single-quoted argument). If any title of that file has another character, run the whole file instead and say so. A test name is never
-   an argument of any other command.
-3. **Show the exact command, the environment and the count, and ask.** For example:
+Two things about how TestBench stores them: `file` is the path **relative to Playwright's test directory** (for example `test-2.spec.ts`, not `e2e/test-2.spec.ts`), and `title` ends with the
+Playwright project in brackets (for example `Item added to cart [chromium]`).
+
+1. **Find each test's file.** Search `SPEC` for a file whose path equals `file` or ends with `/<file>`, leaving out `node_modules`, `.git`, `test-results` and `playwright-report`. **Exactly one match** is
+   used, as a path relative to `SPEC`. No match or several: that test is not run, and the reason is listed. The resolved path must match `^[\w./-]+\.(spec|test)\.[jt]sx?$`, must not start with `/` or contain `..`. Handle at
+   most 100 tests in this step and say how many were left.
+2. **Split the title.** A trailing ` [<project>]` is the Playwright project: take it off and use it as `--project=<project>` (one flag per distinct project). What is left is the test's own title.
+3. **Never put a test name into a shell string.** To run only some tests of a file, use `--grep` with the titles only if there is a single project and every title uses nothing but letters, digits, spaces, `_` and `-`
+   (joined with `|` in one single-quoted argument). Otherwise run the whole file (still with `--project`) and say so. A test name is never an argument of any other command.
+4. **Show the exact command, the environment and the count, and ask.** The agent's own folder is `AGENT` (the folder that holds `.testpilot/`, as an absolute path). Playwright writes its report and its
+   artifacts there, never in `SPEC`: it empties its own output directory (`test-results/`) at the start of every run, and that must not be the user's. For example:
    ```
-   npx playwright test e2e/shop.spec.ts e2e/cart.spec.ts --reporter=json --global-timeout=600000 > audits/request-12/playwright-report.json
+   cd <SPEC> && PLAYWRIGHT_JSON_OUTPUT_NAME=<AGENT>/audits/request-12/playwright-report.json npx playwright test e2e/shop.spec.ts --project=chromium --reporter=json --output=<AGENT>/audits/request-12/artifacts --global-timeout=600000
    ```
-   Say which environment the repository's Playwright configuration points at and ask the user to confirm that it is the one the request names. A production environment needs the user's two separate
-   confirmations, one that it is production and one that the tests may run against it. Run nothing until the user confirms in a new message.
-4. **Run it** once, as confirmed, with a global timeout. Create `audits/request-<id>/` first (`audits/` is not committed). If the run fails to start, report the error and do not retry more than the limits allow.
-5. **Report from the file**, not from memory: passed, failed, flaky and skipped counts from the report's `stats`. Say that the results are in the file only. **The agent does not import them.** Tell the user
-   they can import the file under **Import results** in TestBench (or through their CI), and that the run then appears in the Runs list.
+   Say which environment the tests point at, and ask the user to confirm that it is the one the request names: the configuration may name no environment at all (no `baseURL`), and the address may be
+   written in the tests. A production environment needs the user's two separate confirmations, one that it is production and one that the tests may run against it. Run nothing until the user confirms in a
+   new message.
+5. **Run it** once, as confirmed. Create `<AGENT>/audits/request-<id>/` first (`audits/` is not committed). Playwright exits with 0 when every test passed and with **1 when some tests failed: that is a normal
+   outcome, and the report is valid.** Report an error only if the report file is missing or is not valid JSON, or if the exit code is anything else. Do not retry beyond the limits.
+   The report goes to the file, so Playwright also prints its usual terminal output (the failures, readable) to stdout; read the counts from the file, not from that.
+6. **Report from the file**, not from memory: passed, failed, flaky and skipped counts from the report's `stats`, and for each failed test the first line of its error. Say that the results are in the file only.
+   **The agent does not import them.** Tell the user they can import the file under **Import results** in TestBench (or through their CI), and that the run then appears in the Runs list.
 
 Then go to step 7. Leave `RESULT_RUN` empty, because nothing was imported.
 

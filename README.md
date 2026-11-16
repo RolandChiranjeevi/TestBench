@@ -340,7 +340,7 @@ Everything it sends to Testbench is a proposal that a person decides on.
 ## Requests to a test agent
 
 On **Automated tests → Requests** a tester can ask a test agent to look at a web address (**Request discover**), and on an automated run to run its failed tests again
-(**Request re-run**). **Testbench starts nothing**: the request waits until an agent with a *request token* (Settings, Agent) takes it, works in your own environment under
+(**Ask agent to re-run**). **Testbench starts nothing**: the request waits until an agent with a *request token* (Settings, Agent) takes it, works in your own environment under
 its own rules and stops, and says when it is done. What it delivers comes in through the normal import, as proposals. The address and note of a request are data for the
 agent, never instructions. Details, the three routes and a `curl` example: [docs/agent-requests.md](docs/agent-requests.md).
 
@@ -480,7 +480,7 @@ your data is kept safe.
 
 ## Re-run, insights and automation candidates
 
-- **Re-run failed** (button in any run): starts a manual run with the failed and blocked cases, carrying over title, environment and
+- **Re-run failed cases** (button in any run): starts a manual run with the failed and blocked cases, carrying over title, environment and
   sprint. For an automated run it uses the cases its failing tests are linked to.
 - **Automated tests → Insights**: flaky tests (needed a retry, or keep flipping between pass and fail) with a per-run strip, test time per
   run, tests that are getting slower, and **Automate next**: manual cases without an automated test, ranked by priority, how often they

@@ -14,6 +14,8 @@ git push → CI runs the tests → CI sends the results → Testbench makes or u
 3. Send the results. For GitHub Actions and Playwright see [the example](../examples/github-actions/testbench-report.yml) and
    [`scripts/ci-report.mjs`](../scripts/ci-report.mjs): one file without dependencies that reads `test-results/results.json` (Playwright's JSON reporter).
 
+The CI route makes **bugs**, not a run. For a run in the Runs list (and so for **Ask agent to re-run**, see [agent-requests.md](agent-requests.md)), import the results under **Import results**, or use the GitHub Actions import.
+
 The script reads its settings from the environment: `TESTBENCH_URL` and `TESTBENCH_API_TOKEN` (both as GitHub secrets), `TESTBENCH_PROJECT_ID` (a variable),
 and optionally `TESTBENCH_STRICT=1` (reporting problems fail the build), `TESTBENCH_RUN_SUFFIX`, `TESTBENCH_ARTIFACT_URL` and `TESTBENCH_TAGS`. It always
 runs with `if: always()` so that failed tests are reported too. It handles problems like this, and never prints the token:

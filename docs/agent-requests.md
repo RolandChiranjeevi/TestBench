@@ -15,10 +15,11 @@ Nothing here lets Testbench, or anyone's browser, run code on the machine that h
 - **Request discover**: **Automated tests → Requests → Request discover.** An address (http or https), an optional environment and an optional note.
   - The address cannot hold a user name or a password, nor a query that looks like a secret (`?token=…`, `?api_key=…`). Give the agent credentials some other way. At most 500 characters.
   - The note is at most 2000 characters.
-- **Request re-run**: on an **automated** run that has failed or blocked tests, **Request re-run (n)**. The request lists those tests *as they were when you asked*
+- **Ask agent to re-run**: on an **automated** run that has failed or blocked tests, **Ask agent to re-run (n)**. The request lists those tests *as they were when you asked*
   (at most 500), so it stays the same if the run changes or is deleted afterwards. The environment is the run's unless you change it.
 - At most **20** requests can be waiting in a project. Taking or cancelling one frees a place.
-- To re-run **manual** cases, use **Re-run failed**; that makes a manual run and needs no agent.
+- To re-run **manual** cases, use **Re-run failed cases**; that makes a manual run of the cases the failing tests are linked to, and needs no agent. It is greyed out when none of the failing tests is linked to a case, and **Ask agent to re-run** is the one to use for automated tests.
+- An automated run to ask about comes from **Import results** or the GitHub Actions import. The CI route (`ci-report.mjs`) makes bugs and no run, so a project that only reports through CI has no run to ask about.
 
 ## What happens to a request
 
@@ -95,7 +96,7 @@ The TestPilot skills have a command for this (`.claude/skills/testpilot-requests
 the agent take it. The address and note are treated as data (`agent-rules.md`, rule 11), and a request confirms nothing.
 
 - **discover:** the address goes to `/testpilot-discover` as a suggestion, which validates and confirms it, with its two confirmations for production. The normal audit flow follows, with every stop.
-- **re-run:** Playwright tests only, only with `permissionMode: full`, and only after the user confirms the exact command and the environment. The agent writes a report file and does not import it.
+- **re-run:** Playwright tests only, only with `permissionMode: full`, and only after the user confirms the exact command and the environment. The agent asks where the tests are (the repository with `playwright.config.*`, which is usually not the folder it runs from), finds each test's file there, and writes its report and artifacts in its own folder, never in the user's repository. It does not import the report.
 - The request is marked done with a short note after the user confirms the note.
 
 Limits for now: an agent cannot release a request, so one that is taken and not finished stays **Taken** until a person cancels it. `complete` can link a run, and an audit import makes an audit, so after a

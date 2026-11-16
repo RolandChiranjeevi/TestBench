@@ -141,14 +141,14 @@ function RunHeader({ run, children }: { run: RunDetail; children?: ReactNode }) 
         <Button needs="tester" size="sm"
           disabled={!caseIds.length}
           onClick={() => setRerun(true)}
-          title={caseIds.length ? `Start a manual run with the ${caseIds.length} failed or blocked ${caseIds.length === 1 ? "case" : "cases"}${unlinked ? `. ${unlinked} failing ${unlinked === 1 ? "test isn't" : "tests aren't"} linked to a case and can't be included` : ""}` : "None of the failing tests are linked to a case"}
+          title={caseIds.length ? `Start a manual run with the ${caseIds.length} failed or blocked ${caseIds.length === 1 ? "case" : "cases"}${unlinked ? `. ${unlinked} failing ${unlinked === 1 ? "test isn't" : "tests aren't"} linked to a case and can't be included` : ""}` : `None of the failing tests are linked to a case${failingAutomated > 0 ? ". Use \u201cAsk agent to re-run\u201d to run the failing automated tests again" : ""}`}
         >
-          <RotateCcw size={12} /> Re-run failed ({caseIds.length})
+          <RotateCcw size={12} /> Re-run failed cases ({caseIds.length})
         </Button>
       )}
       {failingAutomated > 0 && (
         <Button needs="tester" size="sm" onClick={() => setRequestRerun(true)} title="Ask a test agent to run the failed automated tests again. Testbench starts nothing: an agent takes the request in your own environment.">
-          <Bot size={12} /> Request re-run ({failingAutomated})
+          <Bot size={12} /> Ask agent to re-run ({failingAutomated})
         </Button>
       )}
       {children}
