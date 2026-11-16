@@ -13,7 +13,8 @@ Input:
 - audit ID (required), format `AUD-<YYYYMMDD>-<nn>`; it is also the package folder
   name. For a new audit, propose the next free ID and ask the user to confirm it.
 - the inputs listed in step 1
-- optional: the scope proposed by `discover`
+- optional: the discovery context, `audits/discovery-context.json`, which `discover` writes once the user has approved its scope (target URL, environment, permission mode,
+  confirmed scope). It does not replace the approval of the scope or of the test plan here: both are still asked.
 
 Paths in this file are relative to this file. The contract is
 `../../references/audit-contract.md`.

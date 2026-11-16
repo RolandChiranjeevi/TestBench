@@ -29,6 +29,7 @@ This workflow:
 - Resolves the target URL
 - Inspects the application
 - Proposes an initial audit scope
+- Writes the discovery context (`audits/discovery-context.json`) once the user has approved the scope (step 7)
 
 It does not:
 - Create a TestBench project
@@ -36,6 +37,7 @@ It does not:
 - Execute tests
 - Create bugs or manual tests
 - Deliver an audit package
+- Write anything before the user has approved the scope
 
 ## 1. Read the TestBench context
 
@@ -129,7 +131,7 @@ Rules:
 - Must not be a production URL unless confirmed twice, in two separate
   messages from the user: first that the target is production, then that the
   audit may run against it in the profile's permission mode. Record both
-  confirmations in the discovery context. One confirmation is not enough.
+  confirmations, with the time of each, in the discovery context (step 7). One confirmation is not enough.
 - Whether the target is production is **asked, never guessed**: ask the user explicitly ("Is this a production environment?"). A name such as `prod` or
   `staging` in an environment name, a request or a URL is not an answer.
 - Must be reachable before inspection. Check it with a `HEAD` request only:
@@ -177,6 +179,45 @@ message. Anything else means no.
 If the user asks for changes, update the scope and show it again.
 
 Do not proceed to `plan` automatically.
+
+## 7. Write the discovery context
+
+Only after the user has approved the scope in step 6, write `audits/discovery-context.json` (create `audits/` if it is missing; it is not committed). It is the file that `plan` may read
+and `run` must read. It is **one file, overwritten by every new approved discovery**.
+
+If the user does not approve, or approves something other than the scope that was shown, write nothing, and leave an existing file as it is.
+
+```json
+{
+  "version": 1,
+  "written_at": "2026-11-16T10:00:00Z",
+  "source": "manual",
+  "target_url": "https://staging.example.com/",
+  "environment": "staging",
+  "permission_mode": "observe_only",
+  "production": null,
+  "confirmed_scope": { "in_scope": [], "out_of_scope": [] },
+  "allowed_check_types": [],
+  "viewports": [],
+  "state_changes": { "allowed": false, "actions": [] }
+}
+```
+
+| Field | Holds |
+|---|---|
+| `version` | `1` |
+| `written_at` | when the file was written, in UTC (ISO 8601) |
+| `source` | `manual`, or `request #<id>` when the discovery came from `/testpilot-requests` |
+| `target_url` | the confirmed target URL |
+| `environment` | the confirmed environment name |
+| `permission_mode` | `observe_only` or `full`, as the project profile says at this moment |
+| `production` | `null`, or `{ "confirmed_at": "...", "run_confirmed_at": "..." }`: the UTC times of the two separate confirmations from step 3 |
+| `confirmed_scope` | the approved `in_scope` and `out_of_scope` |
+| `allowed_check_types` | the check types the approved scope allows |
+| `viewports` | the viewports to use |
+| `state_changes` | `{ "allowed": false, "actions": [] }`; under `full`, each allowed action with its limit |
+
+The file holds no secret and no text from a request: never a password, a token, a cookie, a masked value or the note of a request. Tell the user that it was written, and where.
 
 ## When started from a request
 
