@@ -78,7 +78,7 @@ For a `rerun`, `runId` is the run and `tests` lists `{ id, framework, file, titl
 ## Handing in the report of a re-run
 
 An agent that ran the failed tests again can hand in the Playwright JSON report, and Testbench makes a run of it, linked to the request. This writes test results (facts, not proposals), so it
-is **off by default**. The owner switches it on for the installation (`PUT /api/settings/agent-results` with `{"enabled": true}`; the Settings page gets its toggle in the next change). While it is off the route answers 409 and writes nothing.
+is **off by default**. The owner switches it on for the installation (**Settings → Agent → Requests to a test agent → Agent results → Switch on**, or `PUT /api/settings/agent-results` with `{"enabled": true}`). While it is off the route answers 409 and writes nothing.
 
 ```sh
 curl -X POST -H "Authorization: Bearer $TESTBENCH_REQUEST_TOKEN" -H "Content-Type: application/json" \
@@ -122,7 +122,7 @@ The TestPilot skills have a command for this (`.claude/skills/testpilot-requests
 the agent take it. The address and note are treated as data (`agent-rules.md`, rule 11), and a request confirms nothing.
 
 - **discover:** the address goes to `/testpilot-discover` as a suggestion, which validates and confirms it, with its two confirmations for production. The normal audit flow follows, with every stop.
-- **re-run:** Playwright tests only, only with `permissionMode: full`, and only after the user confirms the exact command and the environment. The agent asks where the tests are (the repository with `playwright.config.*`, which is usually not the folder it runs from), finds each test's file there, and writes its report and artifacts in its own folder, never in the user's repository. It does not import the report (a later change lets it hand the report in with the `result` route, when a person has switched that on).
+- **re-run:** Playwright tests only, only with `permissionMode: full`, and only after the user confirms the exact command and the environment. The agent asks where the tests are (the repository with `playwright.config.*`, which is usually not the folder it runs from), finds each test's file there, and writes its report and artifacts in its own folder, never in the user's repository. It then **offers to hand the report in** and shows exactly what would be sent: the file, its size and test count, the request, the address, and that TestBench makes a run marked as the agent's. It sends nothing until the user answers yes in a **new message**, and it sends **once**, only that file, only the report it just wrote. If agent results are switched off (409), or the user says no, nothing is lost: the report stays in `audits/request-<id>/` and the user imports it under **Import results**. After a successful hand-in the request already links the run, so the note carries no run number.
 - The request is marked done with a short note after the user confirms the note.
 
 Limits for now: an agent cannot release a request, so one that is taken and not finished stays **Taken** until a person cancels it. `complete` can link a run, and an audit import makes an audit, so after a

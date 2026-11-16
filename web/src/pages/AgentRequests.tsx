@@ -98,9 +98,10 @@ function RequestCard({ r, onCancel, cancelling }: { r: AgentRequest; onCancel: (
           </ul>
         </details>
       )}
-      {(r.resultNote || r.resultRunId) && (
+      {(r.resultNote || r.resultRunId || r.resultDeliveredAt) && (
         <div style={{ overflowWrap: "anywhere" }}>
           {r.resultNote && <span>{r.resultNote} </span>}
+          {r.resultDeliveredAt && <span>Report handed in by the agent. </span>}
           {r.resultRunId && <Link to={`/p/${pid}/runs/${r.resultRunId}`} style={{ color: "var(--accent-text)" }}>Run #{r.resultRunId}</Link>}
         </div>
       )}

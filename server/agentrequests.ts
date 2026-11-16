@@ -206,10 +206,12 @@ export function submitResult(projectId: number, id: number, token: { id: number;
   }
   if (strangers.length) throw bad(`The report holds ${strangers.length} test(s) that this request did not name or that appear twice, so none of it was taken. First: ${strangers.slice(0, 3).join("; ").slice(0, 300)}`);
 
+  // The same shape as a manual re-run keeps (meta.rerunOf = { id, title }), so the run page shows "Re-run of ..." for both.
+  const original = cur.run_id ? (db.prepare("SELECT id, title FROM runs WHERE id = ? AND project_id = ?").get(cur.run_id, projectId) as { id: number; title: string } | undefined) : undefined;
   return db.transaction(() => {
     const res = importReport(report, {
       projectId, source: "agent", title: `Re-run of run #${cur.run_id ?? "?"} (request #${cur.id})`, environment: cur.environment,
-      meta: { agentRequest: cur.id, rerunOf: cur.run_id, deliveredBy: token.name }, relinkOthers: false,
+      meta: { agentRequest: cur.id, ...(original ? { rerunOf: original } : {}), deliveredBy: token.name }, relinkOthers: false,
     });
     const marked = db.prepare("UPDATE agent_requests SET result_run_id = ?, result_delivered_at = datetime('now') WHERE id = ? AND project_id = ? AND status = 'claimed' AND claimed_token_id = ? AND result_delivered_at IS NULL").run(res.runId, id, projectId, token.id);
     if (!marked.changes) throw new AuditError(409, "The request changed while the report was being taken");

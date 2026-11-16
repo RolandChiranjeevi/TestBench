@@ -45,7 +45,7 @@ let tokenB = "";
 let readTokenA = "";
 let ciTokenA = "";
 
-const runsOf = async (projectId: number) => ok<{ id: number; source: string; environment: string; meta: Record<string, unknown> }[]>(await person(`/api/projects/${projectId}/runs`, undefined, "GET"));
+const runsOf = async (projectId: number) => ok<{ id: number; title: string; source: string; environment: string; meta: Record<string, unknown> }[]>(await person(`/api/projects/${projectId}/runs`, undefined, "GET"));
 const tests = async (projectId: number) => ok<{ full_name: string; last_status: string; case_id: number | null }[]>(await person(`/api/projects/${projectId}/automated`, undefined, "GET"));
 const view = async (projectId: number, id: number) => (await ok<{ id: number; status: string; resultRunId: number | null; resultDeliveredAt: string | null }[]>(await person(`/api/projects/${projectId}/agent-requests`, undefined, "GET"))).find((x) => x.id === id)!;
 
@@ -120,6 +120,8 @@ describe("a report that is taken", () => {
     assert.deepEqual([run.source, run.environment], ["agent", "staging"]);
     assert.equal(run.meta.agentRequest, r.id);
     assert.equal(run.meta.deliveredBy, "qa-agent");
+    const original = (await runsOf(a)).find((x) => x.id === r.runId)!;
+    assert.deepEqual(run.meta.rerunOf, { id: original.id, title: original.title }, "the run page shows 'Re-run of ...' as it does for a manual re-run");
     const mine = await view(a, r.id);
     assert.equal(mine.resultRunId, out.runId);
     assert.ok(mine.resultDeliveredAt);
