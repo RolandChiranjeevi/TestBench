@@ -16,8 +16,8 @@ Paths in this file are relative to this `SKILL.md`.
 - `init`: select or create a TestBench project and establish the requirements
   source. See `../testpilot-init/SKILL.md`.
   Target URL and environment belong to discover, not init.
-- `discover`: inspect a target and propose a test scope. See
-  `../testpilot-discover/SKILL.md`.
+- `discover`: inspect a target and propose a test scope. Once the user approves the scope it writes the discovery context (`audits/discovery-context.json`), which `plan` may
+  read and `run` must read. See `../testpilot-discover/SKILL.md`.
 - `plan`: collect inputs and requirements, agree on a scope and build the test
   plan; stops for scope approval and for test plan approval. See
   `../testpilot-plan/SKILL.md`.

@@ -42,6 +42,7 @@ TestPilot is part of the TestBench repository. Start Claude Code in the reposito
 | `testpilot/config/*.example.json` | Templates for the configuration | yes |
 | `.testpilot/` | **Your** configuration: `testbench.json`, `projects/<key>.json`, `targets/<name>.json` | no (git-ignored) |
 | `audits/<audit-id>/` | The audit package of a run, and `<audit-id>-testbench.zip` in the repository root | no (git-ignored) |
+| `audits/discovery-context.json` | What `discover` was told and the user approved: target, environment, permission mode, the two confirmations for a production target, and the scope. One file, overwritten by every new approved discovery; `run` reads it | no (git-ignored) |
 | `examples/testpilot-audits/` | Three finished audit packages kept as references | yes |
 
 First time: `cp -R testpilot/config .testpilot`, rename the two `*.example.json` files (drop `.example`), and edit them. `init` can also write them for you.

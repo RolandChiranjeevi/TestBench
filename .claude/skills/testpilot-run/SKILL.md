@@ -72,7 +72,7 @@ Rules:
 
 ## 2. Read the discovery context
 
-Read the discovery context produced by `/testpilot-discover`.
+Read the discovery context, `audits/discovery-context.json`, which `/testpilot-discover` writes once the user has approved the scope.
 
 It must contain:
 - target URL
@@ -81,6 +81,11 @@ It must contain:
 - allowed check types
 - viewports
 - state-changing action limits
+
+In the file these are `target_url`, `environment`, `confirmed_scope`, `allowed_check_types`, `viewports` and `state_changes` (`../testpilot-discover/SKILL.md`, step 7).
+
+`permission_mode` in the file must not be less restrictive than `permissionMode` in the project profile now (`full` in the file and `observe_only` in the profile): the profile wins.
+Stop and tell the user, and ask them to run `/testpilot-discover` again or to change the profile (`../../references/agent-rules.md`, rule 4).
 
 If the discovery context is missing or invalid, pause and ask the user to run
 `/testpilot-discover` first.
