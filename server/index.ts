@@ -51,7 +51,7 @@ import { agentCredentialKind, agentProposalsEnabled, authenticateProposeToken, c
 import { approveProposal, createProposals, editProposal, getProposal, listProposals, rejectProposal } from "./reqproposals.ts";
 import { actorName, actorUserId, getDisplayName, setDisplayName } from "./actor.ts";
 import { accountsState, AccountError, audit, revokeAllSessions, updateProfile } from "./accounts.ts";
-import { cancelRequest, claimRequest, completeRequest, createRequest, listRequests, pendingForAgent } from "./agentrequests.ts";
+import { agentResultsEnabled, cancelRequest, claimRequest, completeRequest, createRequest, listRequests, pendingForAgent, RESULT_LIMITS, setAgentResultsEnabled, submitResult } from "./agentrequests.ts";
 import { authenticateRequestToken, createRequestToken, isAgentRequestRoute, listRequestTokens, revokeRequestToken } from "./requesttokens.ts";
 import { currentUser } from "./accountcontext.ts";
 import { checkAccessTable, trackRoutes } from "./access.ts";
@@ -1792,6 +1792,14 @@ app.put("/api/settings/agent-proposals", (req) => {
   setAgentProposalsEnabled(enabled);
   return { enabled: agentProposalsEnabled() };
 });
+// Whether a request token may hand in the report of a re-run (it then makes a run). Off until a person switches it on.
+app.get("/api/settings/agent-results", () => ({ enabled: agentResultsEnabled() }));
+app.put("/api/settings/agent-results", (req) => {
+  ownerOnly();
+  const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
+  setAgentResultsEnabled(enabled);
+  return { enabled: agentResultsEnabled() };
+});
 app.get("/api/projects/:id/propose-tokens", (req) => listProposeTokens(idParam(req)));
 app.post("/api/projects/:id/propose-tokens", (req, reply) => {
   const id = idParam(req);
@@ -1892,6 +1900,14 @@ app.post("/api/agent/projects/:id/requests/:rid/claim", (req, reply) => {
   const r = audited(() => claimRequest(id, idParam(req, "rid"), auth));
   requestAudit(req, "agent_request.claimed", r, `agent: ${auth.name}`, null);
   return r;
+});
+app.post("/api/agent/projects/:id/requests/:rid/result", { bodyLimit: RESULT_LIMITS.bodyBytes }, (req, reply) => {
+  const id = idParam(req);
+  const auth = requestTokenAuth(req, id);
+  reply.header("Cache-Control", "no-store");
+  const out = audited(() => submitResult(id, idParam(req, "rid"), auth, req.body));
+  requestAudit(req, "agent_request.result_delivered", out.request, `agent: ${auth.name}`, null);
+  return { runId: out.runId, total: out.total, linked: out.linked };
 });
 app.post("/api/agent/projects/:id/requests/:rid/complete", (req, reply) => {
   const id = idParam(req);
