@@ -110,7 +110,7 @@ Automatiserade testfall ska skrivas i **Playwright-format (`*.spec.ts`)**, så a
 - **Manuell testkörning — komplett:** runs med status, resultat per testfall och per steg, run-mallar, omkörning av misslyckade och manuella testförslag från agenten som kan bli testfall.
 - **Suites som mappträd** för testfall.
 - **Körbara suites och schemaläggning** (#91–#93, #95): en suite körs som en manuell run, eller på schema med ett schemalogg.
-- **Trigger från UI, som en kö** (#98, #99): en tester ber en agent om en discover eller en omkörning av failade automatiska tester. En agent med en request-token (`tbrq_`) plockar upp förfrågan i användarens egen miljö, och användaren bekräftar varje stopp. TestBench startar inget själv. En omkörnings rapport kan agenten lämna in själv (#104 och efterföljaren): av som standard, bara för förfrågans egna tester, en gång, och användaren bekräftar uppladdningen.
+- **Trigger från UI, som en kö** (#98, #99): en tester ber en agent om en discover eller en omkörning av failade automatiska tester. En agent med en request-token (`tbrq_`) plockar upp förfrågan i användarens egen miljö, och användaren bekräftar varje stopp. TestBench startar inget själv. En omkörnings rapport kan agenten lämna in själv (#104, #105): av som standard, bara för förfrågans egna tester, en gång, och användaren bekräftar uppladdningen. En agent kan lämna tillbaka en förfrågan (släpp), och en klar discover länkar till sin audit.
 - Import av automatiska testresultat (Playwright, TestCafe, Selenium, Bruno, JUnit) via CI, uppladdning och GitHub Actions.
 - **Jira- och Linear-export av buggar.**
 - API-testing skill (PR #10 + säkerhetsfixar).
@@ -122,16 +122,14 @@ Automatiserade testfall ska skrivas i **Playwright-format (`*.spec.ts`)**, så a
 
 ## Vad som saknas / behöver byggas
 
-- **Förfrågningar till en agent: släpp och audit-länk** — två små skavanker, se backlogg T-A.
 - **Användarskapade automatiserade testfall (spec.ts)** — ej byggt.
 - **Azure DevOps-export** — framtida.
 - **Mobilappstest** — framtida.
 
 ## Nästa steg
 
-1. **Förfrågningar: släpp och audit-länk (T-A)** — de två skavanker som finns kvar i triggern.
-2. **Användarskapade automatiserade testfall (spec.ts)** — bygg efter triggern.
-3. **Integrationer (Azure DevOps, mobil)** — senare.
+1. **Användarskapade automatiserade testfall (spec.ts)** — bygg efter triggern.
+2. **Integrationer (Azure DevOps, mobil)** — senare.
 
 ## Frågor att förtydliga
 

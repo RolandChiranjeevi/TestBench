@@ -151,7 +151,7 @@ export function Severity({ value }: { value: Priority | null }) {
 export function BugReportsPage() {
   const { pid } = useParams();
   const [params, setParams] = useSearchParams();
-  const [tab, setTab] = useState<Tab>("proposed");
+  const [tab, setTab] = useState<Tab>(params.get("audit") ? "audits" : "proposed");
   const [importing, setImporting] = useState(false);
   const [destinationOpen, setDestinationOpen] = useState(false);
   const [presence, setPresence] = useState<"" | Presence>("");
@@ -245,7 +245,7 @@ export function BugReportsPage() {
       )}
       <div className="content">
         {tab === "audits" ? (
-          <AuditsPanel pid={pid!} />
+          <AuditsPanel pid={pid!} highlight={Number(params.get("audit")) || null} />
         ) : isLoading ? (
           <ListSkeleton />
         ) : !data?.items.length ? (
@@ -1054,7 +1054,7 @@ function DestinationModal({ pid, onClose }: { pid: string; onClose: () => void }
 
 // ---------- Audits ----------
 
-function AuditsPanel({ pid }: { pid: string }) {
+function AuditsPanel({ pid, highlight }: { pid: string; highlight: number | null }) {
   const toast = useToast();
   const refresh = useRefresh(pid);
   const { data: audits, isLoading } = useQuery({ queryKey: ["audits", pid], queryFn: () => api.get<Audit[]>(`/api/projects/${pid}/audits`) });
@@ -1072,7 +1072,7 @@ function AuditsPanel({ pid }: { pid: string }) {
   return (
     <div className="col" style={{ gap: 16, padding: "12px 20px" }}>
       {!audits?.length ? <Empty icon={<Bug size={20} />} title="No audits imported yet">An audit is the package a test agent leaves behind: its reports, evidence and its own readable report.</Empty> : audits.map((a) => (
-        <div key={a.id} className="card" style={{ padding: 12 }}>
+        <div key={a.id} id={`audit-${a.id}`} ref={a.id === highlight ? (el) => el?.scrollIntoView({ block: "center" }) : undefined} className="card" style={{ padding: 12, ...(a.id === highlight ? { outline: "2px solid var(--accent-text)" } : {}) }} aria-current={a.id === highlight ? "true" : undefined}>
           <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
             <strong style={{ overflowWrap: "anywhere" }}>{a.title || a.agentAuditId}</strong>
             <span className="chip">{a.source === "github" ? "GitHub" : "Upload"}</span>

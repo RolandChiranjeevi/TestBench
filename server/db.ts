@@ -377,6 +377,11 @@ CREATE TABLE IF NOT EXISTS observation_cases (
 );`);
   // Set once when an agent delivers the report of a re-run. Kept apart from result_run_id, which goes empty if a person deletes the run, so a second delivery stays refused.
   if (!hasColumn("agent_requests", "result_delivered_at")) d.exec("ALTER TABLE agent_requests ADD COLUMN result_delivered_at TEXT");
+  // An agent can give a request back (release): the note says why, and who and when are kept for the card. A finished discover links the audit it made; deleting the audit empties the link.
+  if (!hasColumn("agent_requests", "release_note")) d.exec("ALTER TABLE agent_requests ADD COLUMN release_note TEXT NOT NULL DEFAULT ''");
+  if (!hasColumn("agent_requests", "released_by")) d.exec("ALTER TABLE agent_requests ADD COLUMN released_by TEXT");
+  if (!hasColumn("agent_requests", "released_at")) d.exec("ALTER TABLE agent_requests ADD COLUMN released_at TEXT");
+  if (!hasColumn("agent_requests", "result_audit_id")) d.exec("ALTER TABLE agent_requests ADD COLUMN result_audit_id INTEGER REFERENCES audits(id) ON DELETE SET NULL");
   // Which coverage gap a generated proposal came from (case:12, obs:7). A gap gets one proposal, ever; empty for proposals an agent made.
   if (!hasColumn("requirement_proposals", "gap_key")) d.exec("ALTER TABLE requirement_proposals ADD COLUMN gap_key TEXT NOT NULL DEFAULT ''");
   d.exec("CREATE UNIQUE INDEX IF NOT EXISTS requirement_proposals_gap ON requirement_proposals(project_id, gap_key) WHERE gap_key != ''");

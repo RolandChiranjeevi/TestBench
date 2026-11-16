@@ -68,7 +68,7 @@ export interface AuditEntry {
 
 /** Every action the server writes to the audit log (test/web-accounts.test.ts checks this list against the server's source, so a new action cannot be left without words). */
 export const AUDIT_ACTIONS = [
-  "agent_request.cancelled", "agent_request.claimed", "agent_request.completed", "agent_request.created", "agent_request.result_delivered", "account.created", "account.disabled", "account.enabled", "account.setup", "invitation.created", "invitation.revoked", "invitation.used", "login.failed", "login.succeeded",
+  "agent_request.cancelled", "agent_request.claimed", "agent_request.completed", "agent_request.created", "agent_request.released", "agent_request.result_delivered", "account.created", "account.disabled", "account.enabled", "account.setup", "invitation.created", "invitation.revoked", "invitation.used", "login.failed", "login.succeeded",
   "member.added", "member.removed", "member.role_changed", "members.migrated", "password.changed", "password.reset", "password.reset_link_created", "profile.changed", "requirements.bulk_approved", "sessions.revoked_others",
 ] as const;
 
@@ -117,6 +117,7 @@ export function describeAudit(e: Pick<AuditEntry, "action" | "actor" | "targetUs
     case "agent_request.created": return `${who} asked an agent to ${d.kind === "rerun" ? "run failed automated tests again" : "look at a target"} in ${project}`;
     case "agent_request.cancelled": return `${who} cancelled a request to an agent in ${project}`;
     case "agent_request.claimed": return `${who} took a request in ${project}`;
+    case "agent_request.released": return `${who} gave a request back in ${project}`;
     case "agent_request.result_delivered": return `${who} handed in the report of a re-run in ${project}`;
     case "agent_request.completed": return `${who} finished a request in ${project}`;
     case "requirements.bulk_approved": return `${who} approved ${plural(d.count, "imported requirement")} in ${project}`;

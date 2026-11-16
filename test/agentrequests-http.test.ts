@@ -1,10 +1,11 @@
 import "./env.ts";
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
+import { strToU8, zipSync } from "fflate";
 
 // The real server, started as a separate process with a password set. A request token (tbrq_) opens three routes: the waiting requests, taking one and finishing it,
 // with no login cookie and no X-Testbench header. It opens nothing else, no other kind of token opens these, and a person (with the login) is the only one who asks.
@@ -196,6 +197,89 @@ describe("what a request token is, and is not", () => {
       assert.equal(list.includes(t), false, "the list holds no token");
       assert.equal(output.includes(t), false, "the server did not print a token");
     }
+  });
+});
+
+/** A real audit package (the one in examples/), made for this project, imported by a person with the login, as `deliver` does. Returns the id TestBench gave the audit. */
+async function importAudit(projectId: number, projectKey: string) {
+  const dir = join(ROOT, "examples", "audit-package");
+  const files: Record<string, Uint8Array> = {};
+  for (const rel of ["manifest.json", "bugs.json", "report.md", "manual-tests.json", "evidence/card-field.txt", "evidence/discount-total.png"]) files[rel] = new Uint8Array(readFileSync(join(dir, rel)));
+  const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
+  manifest.audit.project = projectKey;
+  manifest.audit.id = `link-${Math.random().toString(36).slice(2, 8)}`;
+  files["manifest.json"] = strToU8(JSON.stringify(manifest));
+  const form = new FormData();
+  form.set("file", new Blob([Buffer.from(zipSync(files))], { type: "application/zip" }), "audit.zip");
+  const res = await call(`/api/projects/${projectId}/audit-import`, { method: "POST", headers: { "X-Testbench": "1", Cookie: cookie }, body: form });
+  return (await ok<{ auditId: number }>(res)).auditId;
+}
+
+describe("giving a request back, and linking the audit a discover made", () => {
+  const release = (token: string, id: number, body?: unknown, projectId = a) => agent(`Bearer ${token}`, `/api/agent/projects/${projectId}/requests/${id}/release`, "POST", body ?? {});
+  const claim = (token: string, id: number, projectId = a) => agent(`Bearer ${token}`, `/api/agent/projects/${projectId}/requests/${id}/claim`, "POST");
+  const finish = (token: string, id: number, body: unknown) => agent(`Bearer ${token}`, `/api/agent/projects/${a}/requests/${id}/complete`, "POST", body);
+  const mine = async (id: number) => (await ok<{ id: number; status: string; releaseNote: string; releasedBy: string | null; claimedBy: string | null; resultAuditId: number | null; resultAudit: { title: string } | null }[]>(await person(`/api/projects/${a}/agent-requests`, undefined, "GET"))).find((x) => x.id === id)!;
+
+  it("the agent that took a request gives it back with a note, with its token alone, and another agent can take it", async () => {
+    const r = await ask(a, { kind: "discover", targetUrl: "https://giveback.example.com" });
+    assert.equal((await claim(tokenA, r.id)).status, 200);
+    const res = await release(tokenA, r.id, { note: "the site needs a login I do not have" });
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const back = await ok<{ status: string; releaseNote: string; claimedBy: string | null }>(res);
+    assert.deepEqual([back.status, back.releaseNote, back.claimedBy], ["pending", "the site needs a login I do not have", null]);
+    assert.equal((await waiting(tokenA)).some((x) => x.id === r.id), true, "it waits again");
+    const card = await mine(r.id);
+    assert.deepEqual([card.status, card.releasedBy, card.releaseNote], ["pending", "agent: qa-agent", "the site needs a login I do not have"]);
+    assert.equal((await claim(tokenA2, r.id)).status, 200);
+    assert.equal((await release(tokenA, r.id)).status, 409, "the first agent no longer holds it");
+    assert.equal((await release(tokenA2, r.id)).status, 200);
+  });
+
+  it("is refused for a request that is not taken, and for another project's token, and by every other kind of token", async () => {
+    const r = await ask(a, { kind: "discover", targetUrl: "https://notmine.example.com" });
+    assert.equal((await release(tokenA, r.id)).status, 409, "not taken yet");
+    await claim(tokenA, r.id);
+    assert.equal((await release(tokenB, r.id)).status, 403);
+    for (const t of [readTokenA, ciTokenA]) assert.equal((await release(t, r.id)).status, 401);
+    assert.equal((await call(`/api/agent/projects/${a}/requests/${r.id}/release`, { method: "POST", headers: JSON_H, body: "{}" })).status, 401);
+    assert.equal((await person(`/api/agent/projects/${a}/requests/${r.id}/release`, {})).status, 401, "a login is not a token");
+    assert.equal((await mine(r.id)).status, "claimed", "none of that gave it back");
+    assert.equal((await person(`/api/agent-requests/${r.id}/cancel`, {})).status, 200, "a person can still withdraw it");
+  });
+
+  it("giving back and finishing at the same time leave one answer: either it waits or it is done, never both", async () => {
+    const r = await ask(a, { kind: "discover", targetUrl: "https://race.example.com" });
+    await claim(tokenA, r.id);
+    const codes = (await Promise.all([release(tokenA, r.id), finish(tokenA, r.id, { note: "done" })])).map((x) => x.status).sort();
+    assert.deepEqual(codes, [200, 409]);
+    const end = await mine(r.id);
+    assert.ok(["pending", "done"].includes(end.status));
+  });
+
+  it("a finished discover links the audit that came in after it was taken, and the person's list names it", async () => {
+    const r = await ask(a, { kind: "discover", targetUrl: "https://audited.example.com" });
+    await claim(tokenA, r.id);
+    const auditId = await importAudit(a, "RQA");
+    const done = await ok<{ status: string; resultAuditId: number }>(await finish(tokenA, r.id, { note: "audit delivered", resultAuditId: auditId }));
+    assert.deepEqual([done.status, done.resultAuditId], ["done", auditId]);
+    const card = await mine(r.id);
+    assert.equal(card.resultAudit?.title, "Example checkout audit");
+  });
+
+  it("refuses an audit that was imported before the request was taken, or belongs to another project, and the request stays taken", async () => {
+    const old = await importAudit(a, "RQA");
+    const foreign = await importAudit(b, "RQB");
+    await new Promise((r) => setTimeout(r, 1100)); // audits are stamped to the second
+    const r = await ask(a, { kind: "discover", targetUrl: "https://stale.example.com" });
+    await claim(tokenA, r.id);
+    const tooOld = await finish(tokenA, r.id, { resultAuditId: old });
+    assert.equal(tooOld.status, 400);
+    assert.match(((await tooOld.json()) as { error: string }).error, /before this request was taken/);
+    assert.equal((await finish(tokenA, r.id, { resultAuditId: foreign })).status, 400);
+    assert.equal((await finish(tokenA, r.id, { resultAuditId: "7" })).status, 400);
+    assert.equal((await mine(r.id)).status, "claimed");
+    assert.equal((await finish(tokenA, r.id, { note: "no audit" })).status, 200);
   });
 });
 

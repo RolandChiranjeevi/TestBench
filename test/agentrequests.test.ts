@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { db } from "../server/db.ts";
 import { AuditError } from "../server/auditcommon.ts";
-import { cancelRequest, claimRequest, cleanTargetUrl, completeRequest, createRequest, listRequests, pendingForAgent, REQUEST_LIMITS } from "../server/agentrequests.ts";
+import { cancelRequest, claimRequest, cleanTargetUrl, completeRequest, createRequest, listRequests, pendingForAgent, releaseRequest, REQUEST_LIMITS } from "../server/agentrequests.ts";
 import { makeProject } from "./helpers.ts";
 
 // What a person can ask of a test agent, and what the agent can do with it (server/agentrequests.ts). Testbench starts nothing; these are rows and their states.
@@ -180,6 +180,112 @@ describe("what happens to a request", () => {
     completeRequest(c.p.id, c.r.id, token(), {});
     refused(() => cancelRequest(c.r.id), 409, /already done or cancelled/);
     refused(() => cancelRequest(999999), 404, /not found/);
+  });
+});
+
+describe("giving a request back (release)", () => {
+  const taken = (kind: "discover" | "rerun" = "discover", tok = token(1)) => {
+    const p = makeProject(key());
+    const r = kind === "discover" ? createRequest(p.id, { kind, targetUrl: "https://staging.example.com" }, me) : createRequest(p.id, { kind, runId: automatedRun(p.id, { a: "failed" }) }, me);
+    claimRequest(p.id, r.id, tok);
+    return { p, r };
+  };
+
+  it("makes it wait again, with the note, who gave it back and when, and nothing of who took it", () => {
+    const { p, r } = taken();
+    const back = releaseRequest(p.id, r.id, token(1, "qa-agent"), { note: "  the target asked for a login I do not have  " });
+    assert.deepEqual([back.status, back.releaseNote, back.releasedBy, back.claimedBy, back.claimedAt], ["pending", "the target asked for a login I do not have", "agent: qa-agent", null, null]);
+    assert.ok(back.releasedAt);
+    assert.deepEqual(pendingForAgent(p.id).map((x) => x.id), [r.id], "it is in the waiting list again");
+  });
+
+  it("another agent can take it, and only that agent can give it back or finish it", () => {
+    const { p, r } = taken("discover", token(1));
+    releaseRequest(p.id, r.id, token(1), {});
+    assert.equal(claimRequest(p.id, r.id, token(2, "other")).claimedBy, "agent: other");
+    refused(() => releaseRequest(p.id, r.id, token(1), {}), 409, /Another token/);
+    refused(() => completeRequest(p.id, r.id, token(1), {}), 409, /Another token/);
+    assert.equal(completeRequest(p.id, r.id, token(2), {}).status, "done");
+  });
+
+  it("is refused for a request that is not taken, is done or cancelled, is taken by another token, or in another project", () => {
+    const { p, r } = taken("discover", token(1));
+    refused(() => releaseRequest(p.id, r.id, token(2, "other"), {}), 409, /Another token/);
+    refused(() => releaseRequest(makeProject(key()).id, r.id, token(1), {}), 404, /not found/);
+    releaseRequest(p.id, r.id, token(1), {});
+    refused(() => releaseRequest(p.id, r.id, token(1), {}), 409, /not taken/);
+    claimRequest(p.id, r.id, token(1));
+    completeRequest(p.id, r.id, token(1), {});
+    refused(() => releaseRequest(p.id, r.id, token(1), {}), 409, /already done or cancelled/);
+    const c = taken();
+    cancelRequest(c.r.id);
+    refused(() => releaseRequest(c.p.id, c.r.id, token(1), {}), 409, /already done or cancelled/);
+  });
+
+  it("is refused once a report was handed in, because a re-run that has its result is finished, not repeated", () => {
+    const { p, r } = taken("rerun");
+    db.prepare("UPDATE agent_requests SET result_delivered_at = datetime('now') WHERE id = ?").run(r.id);
+    refused(() => releaseRequest(p.id, r.id, token(1), {}), 409, /already handed in/);
+    assert.equal(listRequests(p.id)[0].status, "claimed");
+  });
+
+  it("checks the note, and a refused release changes nothing", () => {
+    const { p, r } = taken();
+    refused(() => releaseRequest(p.id, r.id, token(1), { note: 5 }), 400, /must be text/);
+    refused(() => releaseRequest(p.id, r.id, token(1), { note: "x".repeat(REQUEST_LIMITS.resultNoteMax + 1) }), 400, /at most/);
+    assert.deepEqual([listRequests(p.id)[0].status, listRequests(p.id)[0].releasedAt], ["claimed", null]);
+  });
+
+  it("when it is taken again the history stays on the row (the screen shows it only while the request waits)", () => {
+    const { p, r } = taken("discover", token(1));
+    releaseRequest(p.id, r.id, token(1), { note: "later" });
+    claimRequest(p.id, r.id, token(1));
+    const row = listRequests(p.id)[0];
+    assert.equal(row.status, "claimed");
+    assert.equal(row.releaseNote, "later");
+  });
+});
+
+describe("a discover that links the audit it made", () => {
+  const audit = (projectId: number, imported = "2999-01-01 00:00:00") =>
+    (db.prepare("INSERT INTO audits (project_id, agent_audit_id, title, source, last_imported_at) VALUES (?, ?, 'The audit', 'upload', ?) RETURNING id").get(projectId, `a-${Math.random()}`, imported) as { id: number }).id;
+  const taken = (kind: "discover" | "rerun" = "discover") => {
+    const p = makeProject(key());
+    const r = kind === "discover" ? createRequest(p.id, { kind, targetUrl: "https://staging.example.com" }, me) : createRequest(p.id, { kind, runId: automatedRun(p.id, { a: "failed" }) }, me);
+    claimRequest(p.id, r.id, token());
+    return { p, r };
+  };
+
+  it("keeps the audit, and the person's list names it", () => {
+    const { p, r } = taken();
+    const id = audit(p.id);
+    const done = completeRequest(p.id, r.id, token(), { note: "done", resultAuditId: id });
+    assert.equal(done.resultAuditId, id);
+    const shown = listRequests(p.id)[0];
+    assert.equal(shown.resultAudit?.title, "The audit");
+    assert.equal(shown.resultAudit?.id, id);
+  });
+
+  it("is refused for a re-run, an audit of another project, one imported before the request was taken, and something that is not a whole number", () => {
+    const d = taken();
+    refused(() => completeRequest(d.p.id, d.r.id, token(), { resultAuditId: audit(makeProject(key()).id) }), 400, /not an audit in this project/);
+    refused(() => completeRequest(d.p.id, d.r.id, token(), { resultAuditId: audit(d.p.id, "2000-01-01 00:00:00") }), 400, /before this request was taken/);
+    refused(() => completeRequest(d.p.id, d.r.id, token(), { resultAuditId: 1.5 }), 400, /whole number/);
+    refused(() => completeRequest(d.p.id, d.r.id, token(), { resultAuditId: 999999 }), 400, /not an audit in this project/);
+    assert.equal(listRequests(d.p.id)[0].status, "claimed", "none of that finished it");
+    const rr = taken("rerun");
+    refused(() => completeRequest(rr.p.id, rr.r.id, token(), { resultAuditId: audit(rr.p.id) }), 400, /Only a discover/);
+  });
+
+  it("a request finished without an audit has none, and removing the audit empties the link but keeps the request", () => {
+    const a = taken();
+    assert.equal(completeRequest(a.p.id, a.r.id, token(), {}).resultAuditId, null);
+    const b = taken();
+    const id = audit(b.p.id);
+    completeRequest(b.p.id, b.r.id, token(), { resultAuditId: id });
+    db.prepare("DELETE FROM audits WHERE id = ?").run(id);
+    const row = listRequests(b.p.id)[0];
+    assert.deepEqual([row.status, row.resultAuditId, row.resultAudit], ["done", null, null]);
   });
 });
 

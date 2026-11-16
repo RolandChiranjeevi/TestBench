@@ -68,11 +68,10 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 - Adress och anteckning är data, aldrig instruktion, och en förfrågan bekräftar ingenting (inte produktion, inte scope, inte kommando). Se `docs/agent-requests.md`.
 
 ### T-A: Släpp och audit-länk för förfrågningar
-**Status: planerad** (nästa)
-- **Släpp:** en route `release` för request-token (Taken → Waiting, bara för den token som tog förfrågan, med en anteckning om varför). Idag blir en förfrågan som en agent tagit men inte slutfört kvar som Taken tills någon avbryter den i UI. Ingen schemaändring, bara en ny övergång. Skillens steg 8 släpper den i stället för att lämna den.
-- **Audit-länk:** en kolumn `result_audit_id`, och `complete` tar `resultAuditId`, så att en klar discover länkar till sin audit i UI i stället för att audit-id:t står som text i anteckningen. Skillen skickar `auditId` från `deliver`.
-- Varför nu: de är de två skavanker vi själva pekade ut när #98 och #99 mergades. De är små och hänger ihop (samma routes, samma token-tester, samma skill-steg).
-- Request-token ändrar fortfarande bara status på en förfrågan. Den får inte skapa eller avbryta någon.
+**Status: klart** (mergad i nästa PR)
+- **Släpp:** en femte route `release` på request-token (Taken → Waiting). Bara den token som tog förfrågan, bara medan den är Taken, och inte efter att en omkörnings rapport lämnats in (då avslutas den med `complete`). En anteckning om varför, vem och när sparas (`release_note`, `released_by`, `released_at`) och visas på kortet medan förfrågan väntar. Audit-händelsen `agent_request.released`. Skillen frågar användaren före släpp, i ett nytt meddelande, och gör inget utan ett ja.
+- **Audit-länk:** kolumnen `result_audit_id` (töms om auditen tas bort), och `complete` tar `resultAuditId` för en discover. Auditen måste vara i samma projekt och ha importerats efter att förfrågan togs (importen görs med en persons inloggning, så servern kan inte veta vems den är, men den kan neka en äldre). Kortet visar "Audit: titeln" som länk till Bug reports → Audits (`?audit=<id>`). Skillen skickar `auditId` från `deliver`.
+- Request-token ändrar fortfarande bara status på en förfrågan (och en släpp-anteckning, och länken till en audit). Den får inte skapa eller avbryta någon.
 
 ### T-B: Automatisk import av re-run-rapporten
 **Status: klart** (mergad i #104 och nästa PR)

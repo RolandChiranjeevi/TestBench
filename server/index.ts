@@ -51,7 +51,7 @@ import { agentCredentialKind, agentProposalsEnabled, authenticateProposeToken, c
 import { approveProposal, createProposals, editProposal, getProposal, listProposals, rejectProposal } from "./reqproposals.ts";
 import { actorName, actorUserId, getDisplayName, setDisplayName } from "./actor.ts";
 import { accountsState, AccountError, audit, revokeAllSessions, updateProfile } from "./accounts.ts";
-import { agentResultsEnabled, cancelRequest, claimRequest, completeRequest, createRequest, listRequests, pendingForAgent, RESULT_LIMITS, setAgentResultsEnabled, submitResult } from "./agentrequests.ts";
+import { agentResultsEnabled, cancelRequest, claimRequest, completeRequest, createRequest, listRequests, pendingForAgent, releaseRequest, RESULT_LIMITS, setAgentResultsEnabled, submitResult } from "./agentrequests.ts";
 import { authenticateRequestToken, createRequestToken, isAgentRequestRoute, listRequestTokens, revokeRequestToken } from "./requesttokens.ts";
 import { currentUser } from "./accountcontext.ts";
 import { checkAccessTable, trackRoutes } from "./access.ts";
@@ -1901,6 +1901,15 @@ app.post("/api/agent/projects/:id/requests/:rid/claim", (req, reply) => {
   requestAudit(req, "agent_request.claimed", r, `agent: ${auth.name}`, null);
   return r;
 });
+app.post("/api/agent/projects/:id/requests/:rid/release", (req, reply) => {
+  const id = idParam(req);
+  const auth = requestTokenAuth(req, id);
+  const body = z.object({ note: z.string().max(5000).optional() }).parse(req.body ?? {});
+  reply.header("Cache-Control", "no-store");
+  const r = audited(() => releaseRequest(id, idParam(req, "rid"), auth, body));
+  requestAudit(req, "agent_request.released", r, `agent: ${auth.name}`, null);
+  return r;
+});
 app.post("/api/agent/projects/:id/requests/:rid/result", { bodyLimit: RESULT_LIMITS.bodyBytes }, (req, reply) => {
   const id = idParam(req);
   const auth = requestTokenAuth(req, id);
@@ -1912,7 +1921,7 @@ app.post("/api/agent/projects/:id/requests/:rid/result", { bodyLimit: RESULT_LIM
 app.post("/api/agent/projects/:id/requests/:rid/complete", (req, reply) => {
   const id = idParam(req);
   const auth = requestTokenAuth(req, id);
-  const body = z.object({ note: z.string().max(5000).optional(), resultRunId: z.number().int().nullable().optional() }).parse(req.body ?? {});
+  const body = z.object({ note: z.string().max(5000).optional(), resultRunId: z.number().int().nullable().optional(), resultAuditId: z.number().int().nullable().optional() }).parse(req.body ?? {});
   reply.header("Cache-Control", "no-store");
   const r = audited(() => completeRequest(id, idParam(req, "rid"), auth, body));
   requestAudit(req, "agent_request.completed", r, `agent: ${auth.name}`, null);

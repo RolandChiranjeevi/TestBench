@@ -64,7 +64,7 @@ describe("the table is sensible", () => {
   it("changes need a project role or the owner; the other cases are named one by one", () => {
     const own = new Set(["POST /api/logout", "PATCH /api/me", "POST /api/me/password", "POST /api/me/sessions/:id/revoke", "POST /api/me/sessions/revoke-others", "PUT /api/settings/display-name"]);
     const way = new Set(["POST /api/login", "POST /api/setup", "POST /api/join/:token", "POST /api/reset/:token"]);
-    const tokenRoutes = new Set(["POST /api/projects/:id/ci/test-results", "POST /api/agent/projects/:id/requirement-proposals", "POST /api/agent/projects/:id/requests/:rid/claim", "POST /api/agent/projects/:id/requests/:rid/result", "POST /api/agent/projects/:id/requests/:rid/complete"]);
+    const tokenRoutes = new Set(["POST /api/projects/:id/ci/test-results", "POST /api/agent/projects/:id/requirement-proposals", "POST /api/agent/projects/:id/requests/:rid/claim", "POST /api/agent/projects/:id/requests/:rid/release", "POST /api/agent/projects/:id/requests/:rid/result", "POST /api/agent/projects/:id/requests/:rid/complete"]);
     const custom = new Set(["POST /api/invitations", "POST /api/invitations/:id/revoke"]);
     for (const r of routes.filter(mutating)) {
       const n = need(r);
@@ -104,6 +104,6 @@ describe("the table is sensible", () => {
     const concrete = (r: string) => { const [m, p] = r.split(" "); return [m, p.replace(/:\w+/g, "1")] as const; };
     const recognised = routes.filter((r) => { const [m, u] = concrete(r); return isCiIngest(m, u) || isAgentRead(m, u) || isAgentPropose(m, u) || isAgentRequestRoute(m, u); });
     assert.deepEqual(recognised, list((n) => n === "token"));
-    assert.equal(recognised.length, 7);
+    assert.equal(recognised.length, 8);
   });
 });
