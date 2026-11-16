@@ -314,7 +314,7 @@ describe("invitations for a project", () => {
 
 describe("only the owner makes projects and runs the installation", () => {
   it("an admin of a project cannot make a project, back up, restore, load the demo or read the accounts", async () => {
-    for (const [m, url] of [["POST", "/api/projects"], ["POST", "/api/demo"], ["GET", "/api/backup"], ["POST", "/api/restore"], ["GET", "/api/users"], ["GET", "/api/audit-log"], ["PUT", "/api/settings/agent-proposals"], ["POST", `/api/users/${people.tes.id}/disable`]] as const) {
+    for (const [m, url] of [["POST", "/api/projects"], ["POST", "/api/demo"], ["GET", "/api/backup"], ["POST", "/api/restore"], ["GET", "/api/users"], ["GET", "/api/audit-log"], ["PUT", "/api/settings/agent-proposals"], ["PUT", "/api/settings/agent-results"], ["POST", `/api/users/${people.tes.id}/disable`]] as const) {
       const r = await call(m, url, { cookie: people.adm.cookie, body: m === "GET" ? undefined : { name: "X", key: "XX" } });
       assert.equal(r.statusCode, 403, `${m} ${url}`);
       assert.equal(r.json().error, "Only the owner can do this");

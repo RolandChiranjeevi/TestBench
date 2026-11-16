@@ -215,7 +215,7 @@ describe("restoring a backup through the real route", () => {
 describe("the browser guard covers every write route", () => {
   it("without the X-Testbench header, each of these gets 403 for a signed-in owner, and nothing changes", async () => {
     const routes: ["POST" | "PUT" | "PATCH" | "DELETE", string, unknown?][] = [
-      ["POST", "/api/projects", { name: "x", key: "XX" }], ["POST", "/api/demo"], ["POST", "/api/restore"], ["PUT", "/api/settings/agent-proposals", { enabled: true }],
+      ["POST", "/api/projects", { name: "x", key: "XX" }], ["POST", "/api/demo"], ["POST", "/api/restore"], ["PUT", "/api/settings/agent-proposals", { enabled: true }], ["PUT", "/api/settings/agent-results", { enabled: true }],
       ["PUT", "/api/settings/display-name", { name: "x" }], ["PATCH", "/api/me", { name: "x" }], ["POST", "/api/me/password", { current: GOOD, next: "x".repeat(12) }],
       ["POST", "/api/me/sessions/1/revoke"], ["POST", "/api/me/sessions/revoke-others"], ["POST", "/api/users/2/disable"], ["POST", "/api/users/2/enable"], ["POST", "/api/users/2/reset-link"],
       ["POST", "/api/invitations", { email: "a@b.co" }], ["POST", "/api/invitations/1/revoke"], ["POST", "/api/logout"], ["POST", "/api/login", { email: "a@b.co", password: GOOD }],

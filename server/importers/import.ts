@@ -12,12 +12,14 @@ const MAX_TOTAL_ATTACHMENT_BYTES = 500 * 1024 * 1024;
 
 export interface ImportOptions {
   projectId: number;
-  source: "upload" | "github";
+  source: "upload" | "github" | "agent";
   title: string;
   externalId?: string | null;
   environment?: string;
   milestone?: string;
   meta?: Record<string, unknown>;
+  /** Link other, unlinked tests of the project by the case ID in their name afterwards (default). An agent's report must touch only the tests it carries, so it sets false. */
+  relinkOthers?: boolean;
 }
 
 export interface ImportResult {
@@ -168,7 +170,7 @@ export function importReport(report: ParsedReport, opts: ImportOptions, files?: 
       if (t.attachments?.length) storeAttachments(row.id, t.attachments);
     });
     ensureMilestone(project.id, opts.milestone ?? "");
-    linked += relinkAutomatedTests(project.id);
+    if (opts.relinkOthers !== false) linked += relinkAutomatedTests(project.id);
     return { runId: run.id, duplicate: false, total: report.tests.length, linked, attachments: attachmentCount };
     })();
   } catch (e) {

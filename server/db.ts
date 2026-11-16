@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS runs (
   project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
   kind TEXT NOT NULL,              -- manual | automated
-  source TEXT NOT NULL,            -- manual | upload | github
+  source TEXT NOT NULL,            -- manual | upload | github | agent
   status TEXT NOT NULL DEFAULT 'in_progress', -- in_progress | completed
   environment TEXT NOT NULL DEFAULT '',
   milestone TEXT NOT NULL DEFAULT '',
@@ -375,6 +375,8 @@ CREATE TABLE IF NOT EXISTS observation_cases (
   case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
   PRIMARY KEY (observation_id, case_id)
 );`);
+  // Set once when an agent delivers the report of a re-run. Kept apart from result_run_id, which goes empty if a person deletes the run, so a second delivery stays refused.
+  if (!hasColumn("agent_requests", "result_delivered_at")) d.exec("ALTER TABLE agent_requests ADD COLUMN result_delivered_at TEXT");
   // Which coverage gap a generated proposal came from (case:12, obs:7). A gap gets one proposal, ever; empty for proposals an agent made.
   if (!hasColumn("requirement_proposals", "gap_key")) d.exec("ALTER TABLE requirement_proposals ADD COLUMN gap_key TEXT NOT NULL DEFAULT ''");
   d.exec("CREATE UNIQUE INDEX IF NOT EXISTS requirement_proposals_gap ON requirement_proposals(project_id, gap_key) WHERE gap_key != ''");

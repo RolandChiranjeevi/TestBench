@@ -3,23 +3,24 @@ import { db } from "./db.ts";
 import { AuditError } from "./auditcommon.ts";
 
 /**
- * Tokens for a test agent to work through the requests people make of it (server/agentrequests.ts): fetch the waiting ones, take one, say it is done.
+ * Tokens for a test agent to work through the requests people make of it (server/agentrequests.ts): fetch the waiting ones, take one, hand in a re-run's report, say it is done.
  *
  *  - A fourth kind (tbrq_), apart from the read token (tbag_), the proposal token (tbpr_) and the CI token (tbci_), in its own table. Each kind is refused by its
  *    prefix before any lookup, so none can stand in for another.
  *  - Only a hash is stored. The token is returned once, when it is made, and never again (the list holds the prefix and dates only).
- *  - It opens three routes of one project and nothing else (below). It cannot make or cancel a request, read requirements, or decide anything. Taking or finishing a
- *    request only changes that request's status. Every other route refuses any agent credential (see the guard in server/index.ts).
+ *  - It opens four routes of one project and nothing else (below). It cannot make or cancel a request, read requirements, or decide anything. Taking or finishing a
+ *    request only changes that request's status. The one route that writes test results (`result`) is off until a person switches it on, takes only the report of the
+ *    request this very token took, only once, and only for tests that request named (see submitResult in server/agentrequests.ts). Every other route refuses any agent credential (see the guard in server/index.ts).
  *  - Made and revoked by an admin of the project, like the other tokens.
  */
 
 export const REQUEST_TOKEN_PREFIX = "tbrq_";
 export const REQUEST_TOKEN_LIMITS = { tokensPerProject: 3, nameMax: 80, tokenMax: 200 };
 
-/** The three routes a request token opens: the waiting requests, and taking and finishing one. Like the other token routes they skip the login cookie and the X-Testbench header, because each handler requires the token on every call. */
+/** The four routes a request token opens: the waiting requests, taking one, handing in the report of a re-run, and finishing it. Like the other token routes they skip the login cookie and the X-Testbench header, because each handler requires the token on every call. */
 export const isAgentRequestRoute = (method: string, url: string) =>
   (method === "GET" && /^\/api\/agent\/projects\/\d+\/requests\/?(\?.*)?$/.test(url)) ||
-  (method === "POST" && /^\/api\/agent\/projects\/\d+\/requests\/\d+\/(claim|complete)\/?(\?.*)?$/.test(url));
+  (method === "POST" && /^\/api\/agent\/projects\/\d+\/requests\/\d+\/(claim|complete|result)\/?(\?.*)?$/.test(url));
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 

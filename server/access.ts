@@ -41,16 +41,16 @@ export const ACCESS: Record<string, Need> = {
   "POST /api/logout": "user", "GET /api/me": "user", "PATCH /api/me": "user", "POST /api/me/password": "user", "GET /api/me/sessions": "user", "POST /api/me/sessions/:id/revoke": "user", "POST /api/me/sessions/revoke-others": "user",
   "GET /api/projects": "user", // lists only the projects the account is a member of
   "GET /api/features": "user", "GET /api/github/status": "user", "GET /api/jira/status": "user", "GET /api/linear/status": "user",
-  "GET /api/settings/display-name": "user", "PUT /api/settings/display-name": "user", "GET /api/settings/agent-proposals": "user", "GET /api/backup/info": "user",
+  "GET /api/settings/display-name": "user", "PUT /api/settings/display-name": "user", "GET /api/settings/agent-proposals": "user", "GET /api/settings/agent-results": "user", "GET /api/backup/info": "user",
   "GET /trace-viewer/*": "user", // Playwright's viewer: code only, it opens a trace the person already has
   // ---- the owner ----
-  "POST /api/projects": "owner", "POST /api/demo": "owner", "GET /api/backup": "owner", "POST /api/restore": "owner", "PUT /api/settings/agent-proposals": "owner",
+  "POST /api/projects": "owner", "POST /api/demo": "owner", "GET /api/backup": "owner", "POST /api/restore": "owner", "PUT /api/settings/agent-proposals": "owner", "PUT /api/settings/agent-results": "owner",
   "GET /api/users": "owner", "GET /api/users/:id/memberships": "owner", "POST /api/users/:id/disable": "owner", "POST /api/users/:id/enable": "owner", "POST /api/users/:id/reset-link": "owner", "GET /api/audit-log": "owner",
   // ---- invitations: the owner, or the admin of the project an invitation is for ----
   "GET /api/invitations": "custom", "POST /api/invitations": "custom", "POST /api/invitations/:id/revoke": "custom",
   // ---- machine tokens: each opens one route of one project and nothing else ----
   "POST /api/projects/:id/ci/test-results": "token", "GET /api/agent/projects/:id/requirements": "token", "POST /api/agent/projects/:id/requirement-proposals": "token",
-  "GET /api/agent/projects/:id/requests": "token", "POST /api/agent/projects/:id/requests/:rid/claim": "token", "POST /api/agent/projects/:id/requests/:rid/complete": "token",
+  "GET /api/agent/projects/:id/requests": "token", "POST /api/agent/projects/:id/requests/:rid/claim": "token", "POST /api/agent/projects/:id/requests/:rid/result": "token", "POST /api/agent/projects/:id/requests/:rid/complete": "token",
 
   // ---- a project ----
   "PATCH /api/projects/:id": a(), "POST /api/projects/:id/delete": a(), "GET /api/projects/:id/deletion-preview": a(),

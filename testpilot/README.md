@@ -159,9 +159,9 @@ This is what blocked the first delivery attempt.
 - Every POST must send the header `X-Testbench: 1`, otherwise the server answers 403.
 - A Bearer agent token (`tbag_...`) is **not enough** for audit import. It only works
   for agent reads (`GET /api/agent/projects/:id/requirements`) and CI ingest.
-- A request token (`tbrq_...`) opens three other routes of one project and nothing else: the
-  waiting requests, taking one and marking it done (`/testpilot-requests`). It cannot read
-  requirements, make or cancel a request, or import anything.
+- A request token (`tbrq_...`) opens four other routes of one project and nothing else: the
+  waiting requests, taking one, handing in a re-run's report (off unless a person switched it on) and marking it done
+  (`/testpilot-requests`). It cannot read requirements, make or cancel a request, or import an audit.
 - Wrong password gives 401. Repeated wrong passwords give 429. `deliver` does not retry.
 - `deliver` refuses plain `http` unless the host is `localhost`, `127.0.0.1` or `[::1]`.
 

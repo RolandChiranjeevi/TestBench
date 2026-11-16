@@ -75,10 +75,12 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 - Request-token ändrar fortfarande bara status på en förfrågan. Den får inte skapa eller avbryta någon.
 
 ### T-B: Automatisk import av re-run-rapporten
-**Status: väntar** (kräver ett säkerhetsbeslut först)
+**Status: pågår** (beslutat: route på request-token, sju villkor, två PR:er; PR 1 = servern, PR 2 = UI och skill)
 - Idag skriver agenten en rapportfil för en omkörning och användaren importerar den, så förfrågan blir aldrig länkad till en run.
 - Förslag: en fjärde route på request-token, `POST …/requests/:rid/result`, som bara tar en rapport för en förfrågan som just den token tagit, och som återanvänder CI-importens storleks- och formatkontroller. `resultRunId` sätts då automatiskt.
-- Beslut att ta först: det ändrar request-tokens löfte "bara status" till att den också får skriva testresultat. Alternativet är att ge agenten en CI-token (`tbci_`), vilket ger en andra credential i agentens händer. Inget byggs innan det är avgjort.
+- Beslut (taget): request-tokens löfte "bara status" utvidgas till att den också får lämna en omkörnings rapport. Alternativet, en CI-token (`tbci_`) i agentens händer, valdes bort: det är en andra och bredare credential, och CI-rutten gör buggar, inte en run.
+- De sju villkoren: av som standard (installationsinställning, bara ägaren); bara en omkörning som just den token tagit; bara en gång (även om en människa tar bort runen); bara tester som förfrågan nämnde, annars nekas hela rapporten; miljön kommer från förfrågan; runen märks `source: agent` och länkas till förfrågan; högst 5 MB, bara Playwright-JSON, inga bilagor, med audit-händelsen `agent_request.result_delivered`. Agentresultat räknas som vanliga resultat, märkta men med.
+- PR 1 (servern) är byggd. PR 2: knappen i Settings, märkningen på runen och på förfrågans kort, och skillens nya steg `result`.
 - Gäller bara re-run. Att starta en CI-körning (GitHub Actions) för en omkörning är ett separat alternativ, och väntar tills någon har sina tester i CI och inte lokalt.
 
 ## Backlog
