@@ -7,6 +7,7 @@ import { CasePicker, useRunnableCases } from "../components/CasePicker";
 import { Empty, FrameworkBadge, Github, Kbd, Modal, ProgressBar, useHotkeys, useToast, ListSkeleton } from "../components/ui";
 import { Badge, CiStatusBadge } from "../components/Badge";
 import { Button } from "../components/Button";
+import { agentRunInfo } from "../agentruns";
 import { TemplateModal, TemplatesPanel, useTemplates } from "./Templates";
 
 // "suites" is the tab of the runnable groups of cases (run templates). The tab and the suite filter are kept in the address, so that a link can open them.
@@ -109,6 +110,7 @@ function RunRow({ run }: { run: RunSummary }) {
           <span className="truncate" style={{ fontWeight: 500 }}>{run.title}</span>
           {run.template_name && <span className="chip" title="This run was started from a suite">Suite: {run.template_name}</span>}
           {run.meta?.scheduled && <span className="chip" title="Prepared by the suite's schedule, not started by a person">Scheduled</span>}
+          {agentRunInfo(run) && <span className="chip" title={`Handed in by an agent for request #${agentRunInfo(run)!.requestId}, not imported by a person`}>Agent</span>}
           {run.kind === "manual" && run.status === "in_progress" && <Badge tone="accent" icon="eye">In progress</Badge>}
           {run.flaky > 0 && <CiStatusBadge value="flaky" label={`${run.flaky} flaky`} />}
         </div>

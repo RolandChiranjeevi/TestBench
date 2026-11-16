@@ -6,11 +6,14 @@ terminal, a cap on the list, and the result note after `complete`).
 Run: python3 -m unittest discover -s testpilot/tests
 """
 import json
+import os
 import re
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 SKILL = Path(__file__).resolve().parent.parent.parent / ".claude" / "skills" / "testpilot-requests" / "SKILL.md"
@@ -123,6 +126,99 @@ class PrinterTests(unittest.TestCase):
         self.assertIn("no requests are waiting", out)
 
 
+class Stub(HTTPServer):
+    """A TestBench that records what it is sent and answers with a fixed code and body."""
+
+    def __init__(self, code=200, body=None):
+        class H(BaseHTTPRequestHandler):
+            def do_POST(h):
+                n = int(h.headers.get("Content-Length") or 0)
+                self.seen.append({"path": h.path, "auth": h.headers.get("Authorization"), "type": h.headers.get("Content-Type"), "body": h.rfile.read(n)})
+                out = json.dumps(self.body).encode()
+                h.send_response(self.code); h.send_header("Content-Type", "application/json"); h.send_header("Content-Length", str(len(out))); h.end_headers(); h.wfile.write(out)
+
+            def log_message(h, *a):
+                pass
+        super().__init__(("127.0.0.1", 0), H)
+        self.seen, self.code, self.body = [], code, body if body is not None else {"runId": 41, "total": 2, "linked": 1}
+        threading.Thread(target=self.serve_forever, daemon=True).start()
+
+
+def run_block(work, port, action, rid="12", report=""):
+    """The shell block of the skill, with its three variables set, run in the agent's folder `work`, against a stub on `port`."""
+    (work / ".testpilot" / "projects").mkdir(parents=True, exist_ok=True)
+    (work / ".testpilot" / "testbench.json").write_text(json.dumps({"baseUrl": f"http://127.0.0.1:{port}", "activeProject": "p"}))
+    (work / ".testpilot" / "projects" / "p.json").write_text(json.dumps({"projectId": 7, "requestTokenEnvVar": "TB_REQ_TOK"}))
+    block = BLOCK
+    for name, value in (("ACTION", action), ("RID", rid), ("REPORT", report)):
+        block = re.sub(rf'^{name}="[^"]*"', lambda m: f'{name}="{value}"', block, count=1, flags=re.M)
+    env = {**os.environ, "TB_REQ_TOK": "tbrq_secretsecretsecret"}
+    return subprocess.run(["bash", "-c", block], cwd=work, env=env, capture_output=True, text=True, timeout=60)
+
+
+class ResultActionTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.work = Path(self.tmp.name).resolve()
+        (self.work / "audits" / "request-12").mkdir(parents=True)
+        self.report = self.work / "audits" / "request-12" / "playwright-report.json"
+        self.report.write_bytes(b'{"suites": [], "config": {}}')
+        self.stub = Stub()
+        self.addCleanup(self.stub.shutdown)
+        self.addCleanup(self.tmp.cleanup)
+
+    def run_result(self, report=None, rid="12", stub=None):
+        return run_block(self.work, (stub or self.stub).server_port, "result", rid, str(report if report is not None else self.report))
+
+    def test_the_report_is_sent_as_it_is_with_the_token_in_the_header_only(self):
+        p = self.run_result()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(len(self.stub.seen), 1)
+        got = self.stub.seen[0]
+        self.assertEqual((got["path"], got["type"], got["body"]), ("/api/agent/projects/7/requests/12/result", "application/json", self.report.read_bytes()))
+        self.assertEqual(got["auth"], "Bearer tbrq_secretsecretsecret")
+        self.assertNotIn("secretsecret", p.stdout + p.stderr, "the token is never printed")
+        self.assertEqual(json.loads(p.stdout.splitlines()[-1]), {"run": 41, "tests": 2, "linked": 1})
+
+    def test_nothing_is_sent_for_a_file_that_is_not_this_requests_report(self):
+        other = self.work / "audits" / "request-13"; other.mkdir()
+        (other / "r.json").write_text("{}")
+        (self.work / "elsewhere.json").write_text("{}")
+        (self.work / "audits" / "request-12" / "notes.txt").write_text("{}")
+        (self.work / "audits" / "request-12" / "empty.json").write_text("")
+        (self.work / "audits" / "request-12" / "big.json").write_bytes(b" " * (5 * 1024 * 1024 + 1))
+        (self.work / "audits" / "request-12" / "link.json").symlink_to(self.work / "elsewhere.json")
+        (self.work / "audits" / "request-12" / "inner.json").symlink_to(self.report)  # a link even to a file in the same folder
+        for bad in [other / "r.json", self.work / "elsewhere.json", self.work / "audits" / "request-12" / "notes.txt", self.work / "audits" / "request-12" / "empty.json",
+                    self.work / "audits" / "request-12" / "big.json", self.work / "audits" / "request-12" / "link.json", self.work / "audits" / "request-12" / "inner.json", self.work / "audits" / "request-12" / "missing.json",
+                    self.work / "audits" / "request-12" / ".." / "request-13" / "r.json", "", "/etc/passwd"]:
+            with self.subTest(report=str(bad)):
+                p = self.run_result(bad)
+                self.assertNotEqual(p.returncode, 0)
+        self.assertEqual(self.stub.seen, [], "no request reached TestBench")
+
+    def test_a_request_number_is_required_and_must_be_a_number(self):
+        odd = self.work / "audits" / "request-1a"; odd.mkdir()
+        (odd / "r.json").write_text("{}")  # a real report in a folder that the odd number names, so only the number check stops it
+        for rid in ("", "12; id", "../1"):
+            self.assertNotEqual(self.run_result(rid=rid).returncode, 0, rid)
+        self.assertNotEqual(self.run_result(report=odd / "r.json", rid="1a").returncode, 0, "1a")
+        self.assertEqual(self.stub.seen, [])
+
+    def test_an_answer_of_switched_off_is_shown_and_fails_so_the_agent_falls_back(self):
+        off = Stub(409, {"error": "Agent results are switched off. A person switches them on in Settings first"})
+        self.addCleanup(off.shutdown)
+        p = self.run_result(stub=off)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("HTTP 409", p.stdout)
+        self.assertIn("switched off", p.stdout)
+
+    def test_the_printer_prints_the_run_and_counts_and_nothing_from_the_answer_besides(self):
+        code, out = printed({"runId": 9, "total": 3, "linked": 0, "secret": "x"}, action="result", rid="12")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out), {"run": 9, "tests": 3, "linked": 0})
+
+
 class RuleTests(unittest.TestCase):
     """Rules in the text that were found to matter in a real run. A change that drops one should have to say why."""
 
@@ -149,6 +245,25 @@ class RuleTests(unittest.TestCase):
     def test_the_agent_asks_where_the_tests_are(self):
         self.assertIn("Ask where the tests are", TEXT)
         self.assertIn("Do not keep `SPEC` in the profile", TEXT)
+
+    def test_the_upload_is_confirmed_in_a_new_message_and_sent_once(self):
+        self.assertIn("**Offer to hand it in, and ask.**", TEXT)
+        self.assertIn("Wait for the answer in a **new message**", TEXT)
+        self.assertIn("neither does the user's choice of the request", TEXT)
+        self.assertIn("send nothing", TEXT)
+        self.assertIn("Send **once**", TEXT)
+        self.assertIn("never another file", TEXT)
+
+    def test_a_switched_off_answer_means_the_user_imports_the_file(self):
+        self.assertIn("Agent results are switched off", TEXT)
+        self.assertIn("nothing was sent and nothing is lost", TEXT)
+        self.assertIn("**Import results**", TEXT)
+
+    def test_the_result_is_never_edited_to_get_it_through(self):
+        self.assertIn("Do not edit the report to get it through", TEXT)
+
+    def test_the_run_is_linked_by_testbench_so_result_run_stays_empty_after_a_result(self):
+        self.assertIn("leave `RESULT_RUN` empty, because TestBench has already linked the run", TEXT)
 
 
 if __name__ == "__main__":

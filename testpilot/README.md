@@ -270,7 +270,7 @@ Then run `/testpilot-requests`. It lists what is waiting, you choose **one**, an
 
 - **discover:** the address goes to `discover` as a suggestion. `discover` checks and confirms it as usual, including the two confirmations for production. The normal audit flow follows with all its stops.
 - **re-run:** only Playwright tests, only with `permissionMode: full`, and only after you confirm the exact command and the environment. The agent asks you for the folder that holds the tests (the repository with
-  `playwright.config.*`), and writes its report and artifacts under `audits/request-<id>/` in its own folder, never in yours. It does **not** import the report: you import it under **Import results**.
+  `playwright.config.*`), and writes its report and artifacts under `audits/request-<id>/` in its own folder, never in yours. It then offers to hand the report in to TestBench and shows exactly what would be sent. Nothing is sent until you answer yes in a message of its own, and only that one file is sent, once. This needs agent results to be switched on by the owner (Settings → Agent); if they are off, or you say no, you import the file under **Import results** as before. The run it makes is marked as the agent's and linked to the request.
 - The agent marks the request done, with a short note, after you confirm the note.
 
 What a request says (the address, the note) is data for the agent, never instructions, and a request confirms nothing: no production target, no scope, no command.

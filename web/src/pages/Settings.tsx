@@ -348,12 +348,27 @@ function RequestAccess({ pid }: { pid: number }) {
     try { await navigator.clipboard.writeText(fresh.token); setCopied(true); } catch { toast("error", "Could not copy. Select the token and copy it by hand."); }
   };
   const active = tokens?.filter((t) => !t.revokedAt) ?? [];
+  const { data: results } = useQuery({ queryKey: ["agent-results"], queryFn: () => api.get<{ enabled: boolean }>("/api/settings/agent-results") });
+  const resultsOn = !!results?.enabled;
+  const switchResults = useMutation({
+    mutationFn: (on: boolean) => api.put<{ enabled: boolean }>("/api/settings/agent-results", { enabled: on }),
+    onSuccess: (r) => { qc.invalidateQueries({ queryKey: ["agent-results"] }); toast("success", r.enabled ? "Agent results are on" : "Agent results are off"); },
+    onError: (e: Error) => toast("error", e.message),
+  });
   return (
     <>
       <Card icon={<KeyRound size={15} />} title="Requests to a test agent">
         <div className="muted">
           People can ask a test agent to look at a web address, or to run the failed tests of a run again (Automated tests, Requests). <strong>Testbench starts nothing.</strong> An agent with a
           request token fetches the waiting requests, takes one and says when it is done. The token cannot make or cancel a request, read requirements, or decide anything.
+        </div>
+        <div className="muted">
+          <strong>Agent results.</strong> An agent that ran the failed tests of a re-run can hand in the report. It becomes a <strong>run marked as the agent's</strong>, linked to the request, and its results count like any
+          others. It takes only the report of a re-run that its own token took, once, and only with tests the request named. It is off until the owner switches it on.
+        </div>
+        <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+          <span role="status">Agent results are <strong>{resultsOn ? "on" : "off"}</strong> for this installation.</span>
+          <Button variant={resultsOn ? "secondary" : "primary"} needs="owner" disabled={switchResults.isPending || !results} onClick={() => switchResults.mutate(!resultsOn)}>{resultsOn ? "Switch off" : "Switch on"}</Button>
         </div>
         <form className="row" style={{ gap: 8, flexWrap: "wrap" }} onSubmit={(e) => { e.preventDefault(); submit(); }}>
           <input aria-label="Request token name" className="input" style={{ flex: "1 1 220px", maxWidth: 320 }} value={name} maxLength={200} onChange={(e) => setName(e.target.value)} placeholder="Name, for example qa-agent" />
@@ -397,6 +412,7 @@ function RequestAccess({ pid }: { pid: number }) {
         <pre className="mono" style={{ margin: 0, padding: 10, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--radius)", overflowX: "auto" }}>
 {`GET  ${window.location.origin}/api/agent/projects/${pid}/requests
 POST ${window.location.origin}/api/agent/projects/${pid}/requests/<id>/claim
+POST ${window.location.origin}/api/agent/projects/${pid}/requests/<id>/result     the Playwright JSON report of a re-run (when switched on)
 POST ${window.location.origin}/api/agent/projects/${pid}/requests/<id>/complete   {"note": "...", "resultRunId": 12}
 Authorization: Bearer $TESTBENCH_REQUEST_TOKEN`}
         </pre>

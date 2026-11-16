@@ -75,7 +75,7 @@ export interface CaseDetail extends CaseSummary {
 }
 export interface Counts { total: number; passed: number; failed: number; blocked: number; skipped: number; untested: number; flaky: number; duration_ms: number }
 export interface RunSummary extends Counts {
-  id: number; title: string; kind: "manual" | "automated"; source: "manual" | "upload" | "github"; status: "in_progress" | "completed";
+  id: number; title: string; kind: "manual" | "automated"; source: "manual" | "upload" | "github" | "agent"; status: "in_progress" | "completed";
   environment: string; milestone: string; framework: string | null; meta: Record<string, any>; started_at: string; finished_at: string | null;
   /** The suite (a run template) the run was started from; the name is the one it had when the run started if the suite has been deleted since. */
   template_id: number | null; template_name: string | null;
@@ -157,6 +157,8 @@ export interface AgentRequest {
   tests: { id: number; framework: string; file: string; title: string; fullName: string }[];
   status: "pending" | "claimed" | "done" | "cancelled";
   createdBy: string; createdAt: string; claimedBy: string | null; claimedAt: string | null; finishedAt: string | null; resultRunId: number | null; resultNote: string;
+  /** Set when the agent handed in the report of a re-run (the run it made is resultRunId). */
+  resultDeliveredAt: string | null;
 }
 /** One run of a suite, with its counts. */
 export interface SuiteRun { id: number; title: string; status: "in_progress" | "completed"; started_at: string; total: number; passed: number; failed: number; blocked: number; untested: number }
