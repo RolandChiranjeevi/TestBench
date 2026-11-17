@@ -59,6 +59,7 @@ import { registerAccessGuard } from "./accessguard.ts";
 import { roleOf } from "./members.ts";
 import { coverageGaps, getObservationLinks, setObservationLinks } from "./coveragegaps.ts";
 import { applyBugDraft, bugDraftScreenshot, checkScreenshot, createBugDraft, decideBugDraft, editBugDraft, getBugDraft, listBugDrafts, buildBugDraft, MAX_SCREENSHOT_BYTES } from "./bugdrafts.ts";
+import { createSpec, editSpec, getSpec, listSpecs, removeSpec, renameSpec, specFile as ownSpecFile, SPEC_LIMITS, SPEC_STATUSES } from "./specs.ts";
 import { applyAutomationSuggestion, applySpecSuggestion, specFile, suggestSpecForPlanItem, suggestSpecForRequirement, suggestSpecForCase, listCaseAutomationSuggestions, decideAutomationSuggestion, editAutomationSuggestion, getAutomationSuggestion, listAutomationSuggestions, listRequirementAutomationSuggestions, removeRequirementSuggestions, suggestAutomation, suggestAutomationForRequirement } from "./automation.ts";
 import { generateProposals } from "./gapproposals.ts";
 import { agentRequirementsForToken, parseAgentQuery } from "./agentapi.ts";
@@ -1256,6 +1257,47 @@ app.post("/api/cases/:id/spec-suggestions", (req) => {
   return { ...made, suggestions: listCaseAutomationSuggestions(id) };
 });
 app.get("/api/cases/:id/automation-suggestions", (req) => audited(() => listCaseAutomationSuggestions(idParam(req))));
+// ---------------- Own specs (S2, server/specs.ts) ----------------
+// A spec a person wrote or pasted: a copy of a file in their own repo. Made, changed and removed by a signed-in person through the UI, and by nobody else: no agent token opens any of these
+// routes. TestBench never runs the text and never writes it anywhere. The audit log records who did what to which file, never the text.
+const specAudit = (req: FastifyRequest, action: string, projectId: number, detail: Record<string, unknown>) => audit({ userId: actorUserId(), label: actorName(), ip: req.ip }, action, { projectId, detail });
+const specLimit = { bodyLimit: 2 * SPEC_LIMITS.textBytes };
+const specText = z.string().max(SPEC_LIMITS.textBytes, `The spec text can be at most ${SPEC_LIMITS.textBytes / 1024} kB`);
+const specCase = z.number().int().nullable().optional();
+app.get("/api/projects/:id/specs", (req) => audited(() => listSpecs(idParam(req))));
+app.post("/api/projects/:id/specs", specLimit, (req) => {
+  const id = idParam(req);
+  const body = z.object({ fileName: z.string().max(200), text: specText, status: z.enum(SPEC_STATUSES).optional(), caseId: specCase }).strict().parse(req.body);
+  const spec = audited(() => createSpec(id, body));
+  specAudit(req, "spec.created", id, { spec: spec.id, fileName: spec.fileName });
+  return spec;
+});
+app.get("/api/specs/:id", (req) => audited(() => getSpec(idParam(req))));
+app.patch("/api/specs/:id", specLimit, (req) => {
+  const id = idParam(req);
+  const body = z.object({ text: specText.optional(), status: z.enum(SPEC_STATUSES).optional(), caseId: specCase }).strict().parse(req.body);
+  const r = audited(() => editSpec(id, body));
+  if (r.changed.length) specAudit(req, "spec.edited", r.projectId, { spec: id, fileName: r.fileName, changed: r.changed });
+  return r.spec;
+});
+app.post("/api/specs/:id/rename", (req) => {
+  const id = idParam(req);
+  const body = z.object({ fileName: z.string().max(200) }).strict().parse(req.body);
+  const r = audited(() => renameSpec(id, body.fileName));
+  if (r.from !== r.spec.fileName) specAudit(req, "spec.renamed", r.projectId, { spec: id, from: r.from, to: r.spec.fileName });
+  return r.spec;
+});
+app.delete("/api/specs/:id", (req) => {
+  const r = audited(() => removeSpec(idParam(req)));
+  specAudit(req, "spec.deleted", r.projectId, { spec: r.id, fileName: r.fileName });
+  return { ok: true };
+});
+app.get("/api/specs/:id/file", (req, reply) => {
+  const f = audited(() => ownSpecFile(idParam(req)));
+  // A file, never a page: plain text, an attachment, and no guessing of its type.
+  reply.type("text/plain; charset=utf-8").header("Content-Disposition", `attachment; filename="${f.fileName}"`).header("X-Content-Type-Options", "nosniff");
+  return f.text;
+});
 app.patch("/api/automation-suggestions/:id", (req) => {
   const id = idParam(req);
   const body = suggestionFields.partial().strict().parse(req.body);

@@ -47,7 +47,7 @@ export function DeleteProjectModal({ project, onClose }: { project: Project; onC
   const { data: backup } = useQuery({ queryKey: ["backup-info"], queryFn: () => api.get<BackupInfo>("/api/backup/info"), staleTime: 60_000 });
   const { data: preview } = useQuery({
     queryKey: ["deletion-preview", project.id],
-    queryFn: () => api.get<{ counts: { cases: number; runs: number; requirements: number; automatedTests: number } }>(`/api/projects/${project.id}/deletion-preview`),
+    queryFn: () => api.get<{ counts: { cases: number; runs: number; requirements: number; automatedTests: number; specs: number } }>(`/api/projects/${project.id}/deletion-preview`),
   });
   const del = useMutation({
     mutationFn: () => api.post<{ name: string; deleted: { cases: number; runs: number }; backup: string | null }>(`/api/projects/${project.id}/delete`, { confirm: project.key }),
@@ -71,7 +71,7 @@ export function DeleteProjectModal({ project, onClose }: { project: Project; onC
     >
       <p style={{ margin: 0 }}>
         This permanently deletes the project and everything in it
-        {c ? `: ${c.cases} test cases, ${c.runs} runs, ${c.requirements} requirements and ${c.automatedTests} automated tests` : ""}.
+        {c ? `: ${c.cases} test cases, ${c.runs} runs, ${c.requirements} requirements, ${c.automatedTests} automated tests and ${c.specs} specs` : ""}.
         Sprints, templates, the release checklists, and all uploaded screenshots, traces and attachments go too.
       </p>
       <p className="muted" style={{ margin: 0 }}>

@@ -22,7 +22,7 @@ export const levelRank = (l: Level) => LEVELS.indexOf(l);
 
 export const KINDS = [
   "project", "case", "run", "result", "attachment", "automated", "requirement", "reqattachment", "proposal", "observation", "bug", "bugpublication", "manualtest", "automationsuggestion", "bugdraft",
-  "audit", "milestone", "checklist", "suite", "template", "githubsource", "agenttoken", "citoken", "proposetoken", "requesttoken", "agentrequest", "file",
+  "audit", "milestone", "checklist", "suite", "template", "githubsource", "agenttoken", "citoken", "proposetoken", "requesttoken", "agentrequest", "spec", "file",
 ] as const;
 export type Kind = (typeof KINDS)[number];
 export type Need = "anon" | "user" | "owner" | "token" | "custom" | { level: Level; kind: Kind; via?: string };
@@ -70,6 +70,9 @@ export const ACCESS: Record<string, Need> = {
   "GET /api/projects/:id/destination": a(), "PUT /api/projects/:id/destination": a(), "DELETE /api/projects/:id/destination": a(), "POST /api/projects/:id/destination/teams": a(),
   "GET /api/projects/:id/github-sources": a(), "POST /api/projects/:id/github-sources": a(), "PATCH /api/github-sources/:id": a("githubsource"), "DELETE /api/github-sources/:id": a("githubsource"),
   "POST /api/github-sources/:id/check": a("githubsource"), "GET /api/github-sources/:id/runs": t("githubsource"), "POST /api/github-sources/:id/runs/:runId/import": t("githubsource"),
+  // own specs (S2): people only, through the UI. No agent token opens any of these routes.
+  "GET /api/projects/:id/specs": v(), "POST /api/projects/:id/specs": t(), "GET /api/specs/:id": v("spec"), "PATCH /api/specs/:id": t("spec"), "POST /api/specs/:id/rename": t("spec"),
+  "DELETE /api/specs/:id": t("spec"), "GET /api/specs/:id/file": v("spec"),
   // cases, suites, templates
   "GET /api/projects/:id/cases": v(), "POST /api/projects/:id/cases": t(), "POST /api/projects/:id/cases/bulk": t(), "POST /api/projects/:id/cases/delete": t(), "POST /api/projects/:id/import": t(),
   "GET /api/cases/:id": v("case"), "POST /api/cases/:id/spec-suggestions": t("case"), "GET /api/cases/:id/automation-suggestions": v("case"), "PATCH /api/cases/:id": t("case"), "DELETE /api/cases/:id": t("case"), "POST /api/cases/:id/duplicate": t("case"), "PUT /api/cases/:id/requirements": t("case"),
