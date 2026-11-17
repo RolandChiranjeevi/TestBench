@@ -9,7 +9,7 @@ import { Button, buttonClass } from "../components/Button";
 import { FilterChip } from "../components/FilterChip";
 import { useCan } from "../components/Access";
 
-type Kind = "load_test" | "security_review";
+type Kind = "load_test" | "security_review" | "exploratory";
 type Severity = "info" | "low" | "medium" | "high" | "critical";
 type Status = "observed" | "needs_review" | "confirmed" | "resolved" | "archived" | "converted";
 interface EvidenceFile { ref: string; path: string; sha256: string | null; state: "ok" | "problem" | "unresolved"; reason: string }
@@ -22,7 +22,7 @@ interface Observation {
 interface Counts { total: number; kind: Record<Kind, number>; severity: Record<Severity, number>; status: Record<Status, number> }
 interface Listing { counts: Counts; items: Observation[] }
 
-const KINDS: [Kind, string][] = [["load_test", "Load test"], ["security_review", "Security review"]];
+const KINDS: [Kind, string][] = [["load_test", "Load test"], ["security_review", "Security review"], ["exploratory", "Exploratory"]];
 const SEVERITIES: [Severity, string][] = [["critical", "Critical"], ["high", "High"], ["medium", "Medium"], ["low", "Low"], ["info", "Info"]];
 const STATUSES: [Status, string][] = [["observed", "Observed"], ["needs_review", "Needs review"], ["confirmed", "Confirmed"], ["resolved", "Resolved"], ["archived", "Archived"], ["converted", "Converted"]];
 /** The statuses of an observation that is still being looked at. A person can set these by hand; the others close it or mean it is tracked as a bug. */

@@ -224,7 +224,7 @@ describe("filters", () => {
     assert.deepEqual(ids({ q: "latency" }), ["LT-1", "LT-2"]);
     const all = listObservations(p.id, { kind: "load_test" });
     assert.equal(all.counts.total, 4);
-    assert.deepEqual(all.counts.kind, { load_test: 2, security_review: 2 });
+    assert.deepEqual(all.counts.kind, { load_test: 2, security_review: 2, exploratory: 0 });
     assert.equal(all.counts.severity.critical, 1);
     assert.equal(listObservations(p.id).items[0].sourceId, "SR-2"); // most severe first
     assert.throws(() => listObservations(p.id, { kind: "pentest" }), /Unknown kind/);
@@ -459,15 +459,15 @@ describe("the counters", () => {
     const { p, id } = seed();
     archiveObservation(id("S-2")); resolveObservation(id("L-3"));
     const active = listObservations(p.id).counts;               // no status: Active
-    assert.deepEqual(active.kind, { load_test: 2, security_review: 2 });
+    assert.deepEqual(active.kind, { load_test: 2, security_review: 2, exploratory: 0 });
     assert.equal(active.severity.info, 0);                       // S-2 is archived
     assert.equal(active.total, 6);
     assert.equal(active.status.archived, 1);
     const archived = listObservations(p.id, { status: "archived" }).counts;
-    assert.deepEqual(archived.kind, { load_test: 0, security_review: 1 });
+    assert.deepEqual(archived.kind, { load_test: 0, security_review: 1, exploratory: 0 });
     assert.equal(archived.severity.info, 1);
     const all = listObservations(p.id, { status: "all" }).counts;
-    assert.deepEqual(all.kind, { load_test: 3, security_review: 3 });
+    assert.deepEqual(all.kind, { load_test: 3, security_review: 3, exploratory: 0 });
     // picking a kind does not move the other chips, and the rows match the chip you clicked
     const picked = listObservations(p.id, { kind: "load_test" });
     assert.deepEqual(picked.counts.kind, active.kind);

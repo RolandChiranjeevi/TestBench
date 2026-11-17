@@ -204,7 +204,7 @@ CREATE TABLE ${name} (
   source_id TEXT NOT NULL,
   audit_id INTEGER REFERENCES audits(id) ON DELETE SET NULL,
   origin_audit_id TEXT NOT NULL,             -- the agent's audit id, kept when the audit row is deleted
-  kind TEXT NOT NULL CHECK (kind IN ('load_test', 'security_review')),
+  kind TEXT NOT NULL CHECK (kind IN ('load_test', 'security_review', 'exploratory')),
   title TEXT NOT NULL,
   severity TEXT NOT NULL CHECK (severity IN ('info', 'low', 'medium', 'high', 'critical')),
   status TEXT NOT NULL DEFAULT 'observed' CHECK (status IN ('observed', 'needs_review', 'confirmed', 'resolved', 'archived', 'converted')),
@@ -236,6 +236,18 @@ CREATE TABLE ${name} (
           CASE WHEN converted_bug_id IS NOT NULL THEN 'human' ELSE status_set_by END,
           CASE WHEN converted_bug_id IS NOT NULL THEN updated_at END,
           changed_since_review, metric, value, threshold, evidence, recommendation, source, content_hash, converted_bug_id, created_at, updated_at FROM observations`);
+      d.exec("DROP TABLE observations; ALTER TABLE observations_new RENAME TO observations;");
+    })();
+    d.pragma("foreign_keys = ON");
+  }
+  // A table made before 'exploratory' (what an agent notices while exploring an app, made only by agent findings) existed has a CHECK that refuses it: rebuild it the same
+  // way, row for row. Foreign keys are off while it is swapped, because observation_evidence points at it.
+  const obsDdl2 = (d.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'observations'").get() as { sql: string } | undefined)?.sql;
+  if (obsDdl2 && !obsDdl2.includes("'exploratory'")) {
+    d.pragma("foreign_keys = OFF");
+    d.transaction(() => {
+      d.exec(observationsTable("observations_new"));
+      d.exec("INSERT INTO observations_new SELECT * FROM observations");
       d.exec("DROP TABLE observations; ALTER TABLE observations_new RENAME TO observations;");
     })();
     d.pragma("foreign_keys = ON");
@@ -720,6 +732,17 @@ BEGIN SELECT RAISE(ABORT, 'An AI-suggested requirement can only be approved by a
     if (added) d.prepare("INSERT INTO audit_log (actor_label, action, detail) VALUES ('migration', 'members.migrated', ?)").run(JSON.stringify({ role: "tester", memberships: added }));
     d.prepare("INSERT INTO app_settings (key, value) VALUES ('roles_migrated_at', datetime('now'))").run();
   })();
+}
+
+/**
+ * Agent findings (AG-B). cases.created_by_agent_token_id holds the id of the request token (request_tokens.id, no foreign key: the mark outlives the token) of the agent
+ * that made the case; NULL means a person did. agent_requests.findings_count counts what one request has made, so that one request can never make more than a fixed number
+ * and so that every finding gets its own number inside the request ($agent-<request>-<n>).
+ */
+function migrateAgentFindings(d: Database.Database) {
+  const hasColumn = (table: string, col: string) => (d.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === col);
+  if (!hasColumn("cases", "created_by_agent_token_id")) d.exec("ALTER TABLE cases ADD COLUMN created_by_agent_token_id INTEGER");
+  if (!hasColumn("agent_requests", "findings_count")) d.exec("ALTER TABLE agent_requests ADD COLUMN findings_count INTEGER NOT NULL DEFAULT 0");
 }
 
 /** Creates missing tables and columns, and fills in data for features added later. Safe to run on every start. */
@@ -1284,6 +1307,7 @@ CREATE INDEX IF NOT EXISTS bug_events_bug ON bug_events(bug_report_id);`);
   migrateRequirementModel(d);
   migrateAccounts(d);
   migrateRoles(d);
+  migrateAgentFindings(d);
 
   // Make sure every sprint named on a run has a sprint record.
   const named = d.prepare("SELECT DISTINCT project_id, milestone FROM runs WHERE milestone != ''").all() as { project_id: number; milestone: string }[];
