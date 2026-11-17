@@ -58,7 +58,7 @@ Or in an `.mcp.json` / Claude Desktop config:
 }
 ```
 
-(From inside the TestBench folder, `npm run mcp` starts the same server.) Keep the token out of files you commit.
+From inside the TestBench folder you can also start the same server with `npm run --silent mcp` (or `npx tsx mcp/index.ts`). `--silent` prevents npm from writing its command banner to stdout. MCP stdout must contain only the MCP protocol, so use `--silent` whenever a client starts the server through npm. Keep the token out of files you commit.
 
 If something is missing or wrong the server stops at once with a message on stderr and exit code 1. stdout is reserved for the MCP protocol, and the token is never printed, not in logs, not in errors and not in answers.
 
