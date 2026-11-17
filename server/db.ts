@@ -613,7 +613,10 @@ WHEN EXISTS (SELECT 1 FROM users) AND ((NEW.review_status IN ('approved', 'rejec
 BEGIN SELECT RAISE(ABORT, 'A decision on an automation suggestion needs a person with an account'); END;
 CREATE TRIGGER IF NOT EXISTS automation_suggestions_decision_needs_account_update BEFORE UPDATE OF review_status ON automation_suggestions
 WHEN NEW.review_status != OLD.review_status AND EXISTS (SELECT 1 FROM users) AND ((NEW.review_status IN ('approved', 'rejected', 'ignored') AND NEW.decided_by_user_id IS NULL) OR (NEW.review_status = 'draft' AND NEW.edited_by_user_id IS NULL))
-BEGIN SELECT RAISE(ABORT, 'A decision on an automation suggestion needs a person with an account'); END;`);
+BEGIN SELECT RAISE(ABORT, 'A decision on an automation suggestion needs a person with an account'); END;
+-- A spec suggestion for a test case (subject_kind 'case', subject_ref = the case's id) goes when the case goes, by whatever way it goes (one, many at once, or its whole project): subject_ref is no foreign key.
+CREATE TRIGGER IF NOT EXISTS automation_suggestions_case_gone AFTER DELETE ON cases
+BEGIN DELETE FROM automation_suggestions WHERE subject_kind = 'case' AND subject_ref = CAST(OLD.id AS TEXT) AND project_id = OLD.project_id; END;`);
   // Spec suggestions (E1) live in the same table. A spec suggestion has a file name and the spec text (artifact_*). Apply makes it a draft spec: it records who and when (applied_*),
   // and only then can the file be downloaded. With accounts, applying needs an account, so a rule or an agent can never do it.
   for (const [col, ddl] of [["artifact_name", "TEXT NOT NULL DEFAULT ''"], ["artifact_text", "TEXT NOT NULL DEFAULT ''"], ["applied_at", "TEXT"], ["applied_by", "TEXT NOT NULL DEFAULT ''"], ["applied_by_user_id", "INTEGER"]] as const) {

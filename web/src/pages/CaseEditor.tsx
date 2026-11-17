@@ -6,6 +6,7 @@ import { api, timeAgo, type CaseDetail, type Priority, type Requirement, type Su
 import { ConfirmModal, FrameworkBadge, Modal, PriorityIcon, PRIORITY_LABEL, StatusIcon, useToast } from "../components/ui";
 import { Button } from "../components/Button";
 import { EditScope, useCan } from "../components/Access";
+import { AutomationSuggestions } from "./AutomationSuggestions";
 
 interface DraftStep { uid: string; id?: number; action: string; expected: string }
 interface Draft {
@@ -376,6 +377,8 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
             </div>
           )}
         </section>
+
+        <AutomationSuggestions pid={pid ?? ""} scope={{ kind: "case", caseId }} itemStatus={data.status} />
 
         <section>
           <div className="section-label">History</div>

@@ -711,6 +711,46 @@ describe("coverage gaps are a workspace a person owns, like plan items", () => {
   });
 });
 
+describe("a spec for a test case: asked for by a tester, read by a viewer", () => {
+  const caseWithStep = (project: number, status = "ready") => {
+    const id = fixture("case", project).id as number;
+    db.prepare("UPDATE cases SET status = ? WHERE id = ?").run(status, id);
+    db.prepare("INSERT INTO case_steps (case_id, position, action, expected) VALUES (?, 0, 'Open it', 'It opens')").run(id);
+    return id;
+  };
+  const made = (id: number) => (db.prepare("SELECT COUNT(*) AS n FROM automation_suggestions WHERE subject_kind = 'case' AND subject_ref = ?").get(String(id)) as { n: number }).n;
+  const ask = (id: number, cookie?: string) => call("POST", `/api/cases/${id}/spec-suggestions`, { cookie, body: {} });
+
+  it("a tester asks; a viewer gets 403, a stranger 404 and no login 401; only a ready test case gets one", async () => {
+    const id = caseWithStep(projects.A);
+    assert.equal((await ask(id)).statusCode, 401, "no login");
+    assert.ok(denied403(await ask(id, people.vie.cookie)), "a viewer cannot ask");
+    assert.ok(denied404(await ask(id, people.bob.cookie)), "nor someone from another project");
+    assert.equal(made(id), 0, "nothing was made");
+    const res = await ask(id, people.tes.cookie);
+    assert.equal(res.statusCode, 200, res.body);
+    assert.deepEqual([res.json().created.length, res.json().created[0].isSpec, res.json().created[0].subjectKind], [1, true, "case"]);
+    assert.equal(made(id), 1);
+    const draft = caseWithStep(projects.A, "draft");
+    assert.equal((await ask(draft, people.tes.cookie)).statusCode, 409, "a draft test case gets none");
+    assert.equal(made(draft), 0);
+  });
+
+  it("a viewer reads the list, a stranger gets 404, and neither can edit, decide or apply what is in it", async () => {
+    const id = caseWithStep(projects.A);
+    const sid = (await ask(id, people.tes.cookie)).json().created[0].id as number;
+    assert.equal((await call("GET", `/api/cases/${id}/automation-suggestions`, { cookie: people.vie.cookie })).statusCode, 200);
+    assert.ok(denied404(await call("GET", `/api/cases/${id}/automation-suggestions`, { cookie: people.bob.cookie })));
+    for (const [who, deny] of [["vie", denied403], ["bob", denied404]] as const) {
+      const c = people[who].cookie;
+      assert.ok(deny(await call("PATCH", `/api/automation-suggestions/${sid}`, { cookie: c, body: { artifactText: "// x\n" } })), `${who} cannot edit`);
+      assert.ok(deny(await call("POST", `/api/automation-suggestions/${sid}/decision`, { cookie: c, body: { status: "approved" } })), `${who} cannot decide`);
+      assert.ok(deny(await call("POST", `/api/automation-suggestions/${sid}/apply`, { cookie: c, body: {} })), `${who} cannot apply`);
+    }
+    assert.equal((db.prepare("SELECT review_status AS s FROM automation_suggestions WHERE id = ?").get(sid) as { s: string }).s, "proposed", "nothing changed");
+  });
+});
+
 describe("automation suggestions: made by a rule, decided by a person", () => {
   const plan = (audit: number | string, status: string, src = "TPI-1") => db.prepare("INSERT INTO audit_plan_items (audit_id, source_id, position, title, steps, acceptance_criteria, review_status, decided_by, decided_by_user_id) VALUES (?, ?, 0, 'Add a todo', '[\"Type\",\"Enter\"]', 'Shown in the list', ?, 'tes', ?)").run(audit, src, status, status === "approved" ? people.tes.id : null);
   const sug = (audit: number | string) => db.prepare("SELECT id, review_status AS s, case_id AS c, decided_by_user_id AS d, edited_by_user_id AS e FROM automation_suggestions WHERE audit_id = ?").get(audit) as { id: number; s: string; c: number | null; d: number | null; e: number | null } | undefined;

@@ -59,7 +59,7 @@ import { registerAccessGuard } from "./accessguard.ts";
 import { roleOf } from "./members.ts";
 import { coverageGaps, getObservationLinks, setObservationLinks } from "./coveragegaps.ts";
 import { applyBugDraft, bugDraftScreenshot, checkScreenshot, createBugDraft, decideBugDraft, editBugDraft, getBugDraft, listBugDrafts, buildBugDraft, MAX_SCREENSHOT_BYTES } from "./bugdrafts.ts";
-import { applyAutomationSuggestion, applySpecSuggestion, specFile, suggestSpecForPlanItem, suggestSpecForRequirement, decideAutomationSuggestion, editAutomationSuggestion, getAutomationSuggestion, listAutomationSuggestions, listRequirementAutomationSuggestions, removeRequirementSuggestions, suggestAutomation, suggestAutomationForRequirement } from "./automation.ts";
+import { applyAutomationSuggestion, applySpecSuggestion, specFile, suggestSpecForPlanItem, suggestSpecForRequirement, suggestSpecForCase, listCaseAutomationSuggestions, decideAutomationSuggestion, editAutomationSuggestion, getAutomationSuggestion, listAutomationSuggestions, listRequirementAutomationSuggestions, removeRequirementSuggestions, suggestAutomation, suggestAutomationForRequirement } from "./automation.ts";
 import { generateProposals } from "./gapproposals.ts";
 import { agentRequirementsForToken, parseAgentQuery } from "./agentapi.ts";
 import { applyManualUpdate, addToProject, createCaseFromProposal, deleteManualTest, getManualTest, ignoreManualUpdate, listManualTests, relinkManualRefs, reviewManualTest, updateManualTest } from "./manualtests.ts";
@@ -1248,6 +1248,14 @@ app.post("/api/requirements/:id/spec-suggestions", (req) => {
   const made = audited(() => suggestSpecForRequirement(id));
   return { ...made, suggestions: listRequirementAutomationSuggestions(id) };
 });
+// A spec from a test case (E3): only a ready one gets it. Edit, decide, Apply and download are the routes below, like for any suggestion.
+app.post("/api/cases/:id/spec-suggestions", (req) => {
+  const id = idParam(req);
+  z.object({}).strict().parse(req.body ?? {});
+  const made = audited(() => suggestSpecForCase(id));
+  return { ...made, suggestions: listCaseAutomationSuggestions(id) };
+});
+app.get("/api/cases/:id/automation-suggestions", (req) => audited(() => listCaseAutomationSuggestions(idParam(req))));
 app.patch("/api/automation-suggestions/:id", (req) => {
   const id = idParam(req);
   const body = suggestionFields.partial().strict().parse(req.body);

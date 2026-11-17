@@ -32,33 +32,36 @@ const KIND: Record<string, string> = {
 function Marks({ s }: { s: Suggestion }) {
   return (
     <>
-      <Badge tone="accent" icon="eye" title="Made by a fixed rule from the plan item's own text. It is not an AI, and nobody has to accept it.">{s.label}</Badge>
+      <Badge tone="accent" icon="eye" title="Made by a fixed rule from the source's own text (a plan item, a requirement or a test case). It is not an AI, and nobody has to accept it.">{s.label}</Badge>
       {s.isSpec && <Badge tone="neutral" icon="info" title="A Playwright spec made from a template. It starts with test.fixme and is not run by TestBench.">Playwright spec</Badge>}
       {s.isSpec && s.appliedAt && <Badge tone="info" icon="circle-check" title={s.appliedBy ? `Applied as a draft spec by ${s.appliedBy}` : "Applied as a draft spec"}>Draft spec</Badge>}
       {s.status === "draft" && <Badge tone="info" icon="circle" title="A person is working on this suggestion.">Draft</Badge>}
       {s.status === "approved" && <Badge tone="ok" icon="circle-check" title={s.decidedBy ? `Approved by ${s.decidedBy}` : "Approved"}>Approved</Badge>}
       {s.status === "rejected" && <Badge tone="neutral" icon="circle-x" title={s.decidedBy ? `Rejected by ${s.decidedBy}` : "Rejected"}>Rejected</Badge>}
       {s.status === "ignored" && <Badge tone="neutral" icon="eye-off" title={s.decidedBy ? `Put aside by ${s.decidedBy}` : "Put aside"}>Ignored</Badge>}
-      {s.subjectChanged && <Badge tone="warn" icon="triangle-alert" title="What this was suggested for was changed after it was suggested, so the suggestion may be out of date.">{s.subjectKind === "requirement" ? "Requirement" : "Plan item"} {s.subjectGone ? "removed" : "changed since"}</Badge>}
+      {s.subjectChanged && <Badge tone="warn" icon="triangle-alert" title="What this was suggested for was changed after it was suggested, so the suggestion may be out of date.">{s.subjectKind === "requirement" ? "Requirement" : s.subjectKind === "case" ? "Test case" : "Plan item"} {s.subjectGone ? "removed" : "changed since"}</Badge>}
     </>
   );
 }
 
 /**
- * Automation suggestions for one plan item or one requirement. Made by a fixed rule when a person asks; only an approved one gets a suggestion. A person edits, approves, rejects or ignores a suggestion,
+ * Automation suggestions for one plan item or one requirement; for a test case only a Playwright spec (E3). Made by a fixed rule when a person asks; only an approved one (for a test case: a ready one) gets a suggestion. A person edits, approves, rejects or ignores a suggestion,
  * and Apply makes a DRAFT test case of it. Nothing is generated or run, and nothing changes until a person clicks.
  */
-export type Scope = { kind: "plan_item"; auditId: number; sourceId: string } | { kind: "requirement"; requirementId: number };
+export type Scope = { kind: "plan_item"; auditId: number; sourceId: string } | { kind: "requirement"; requirementId: number } | { kind: "case"; caseId: number };
 export function AutomationSuggestions({ pid, scope, itemStatus }: { pid: string; scope: Scope; itemStatus: string }) {
   const toast = useToast();
   const qc = useQueryClient();
   const [message, setMessage] = useState("");
   const [showIgnored, setShowIgnored] = useState(false);
-  const noun = scope.kind === "requirement" ? "requirement" : "plan item";
-  const listUrl = scope.kind === "requirement" ? `/api/requirements/${scope.requirementId}/automation-suggestions` : `/api/audits/${scope.auditId}/automation-suggestions`;
-  const askUrl = scope.kind === "requirement" ? listUrl : `/api/audits/${scope.auditId}/plan/items/${encodeURIComponent(scope.sourceId)}/automation-suggestions`;
+  const isCase = scope.kind === "case";
+  const noun = scope.kind === "requirement" ? "requirement" : isCase ? "test case" : "plan item";
+  /** The status at which something gets a suggestion: a person has approved a plan item or a requirement, or has made a test case ready. */
+  const eligible = isCase ? "ready" : "approved";
+  const listUrl = scope.kind === "requirement" ? `/api/requirements/${scope.requirementId}/automation-suggestions` : isCase ? `/api/cases/${scope.caseId}/automation-suggestions` : `/api/audits/${scope.auditId}/automation-suggestions`;
+  const askUrl = scope.kind === "requirement" ? listUrl : isCase ? "" : `/api/audits/${scope.auditId}/plan/items/${encodeURIComponent(scope.sourceId)}/automation-suggestions`;
   const { data } = useQuery({ queryKey: ["automation-suggestions", listUrl], queryFn: () => api.get<Suggestion[]>(listUrl) });
-  const mine = (data ?? []).filter((s) => scope.kind === "requirement" || s.sourceId === scope.sourceId);
+  const mine = (data ?? []).filter((s) => scope.kind !== "plan_item" || s.sourceId === scope.sourceId);
   const shown = mine.filter((s) => showIgnored || s.status !== "ignored");
   const ignored = mine.length - mine.filter((s) => s.status !== "ignored").length;
 
@@ -68,7 +71,7 @@ export function AutomationSuggestions({ pid, scope, itemStatus }: { pid: string;
       if (ok) toast("success", ok);
       return r;
     }).catch((e: Error) => { toast("error", e.message); return null; });
-  const specUrl = scope.kind === "plan_item" ? `/api/audits/${scope.auditId}/plan/items/${encodeURIComponent(scope.sourceId)}/spec-suggestions` : `/api/requirements/${scope.requirementId}/spec-suggestions`;
+  const specUrl = scope.kind === "plan_item" ? `/api/audits/${scope.auditId}/plan/items/${encodeURIComponent(scope.sourceId)}/spec-suggestions` : scope.kind === "case" ? `/api/cases/${scope.caseId}/spec-suggestions` : `/api/requirements/${scope.requirementId}/spec-suggestions`;
   const ask = (url: string) => run(() => api.post<{ created: Suggestion[]; message: string }>(url, {}), "").then((r) => {
     if (!r) return;
     setMessage(r.message);
@@ -77,19 +80,23 @@ export function AutomationSuggestions({ pid, scope, itemStatus }: { pid: string;
   const suggest = () => ask(askUrl);
 
   return (
-    <section className="auto-suggestions" aria-label="Automation suggestions">
-      <h4>Automation suggestions</h4>
-      {itemStatus !== "approved"
-        ? <p className="faint">Approve this {noun} to get an automation suggestion for it.</p>
+    <section className="auto-suggestions" aria-label={isCase ? "Playwright spec" : "Automation suggestions"}>
+      <h4>{isCase ? "Playwright spec" : "Automation suggestions"}</h4>
+      {itemStatus !== eligible
+        ? <p className="faint">{isCase ? "Make this test case ready to create a Playwright spec for it." : `Approve this ${noun} to get an automation suggestion for it.`}</p>
         : (
           <div className="plan-actions">
-            <Button needs="tester" size="sm" onClick={suggest}><Wand2 size={13} /> Suggest automation</Button>
-            {specUrl && <Button needs="tester" size="sm" onClick={() => ask(specUrl)}><FileCode size={13} /> Suggest Playwright spec</Button>}
-            <span className="faint plan-who">A fixed rule makes it from the {noun}'s {scope.kind === "requirement" ? "acceptance criteria" : "steps and acceptance criteria"}. Nothing is generated or run.</span>
+            {!isCase && <Button needs="tester" size="sm" onClick={suggest}><Wand2 size={13} /> Suggest automation</Button>}
+            {specUrl && <Button needs="tester" size="sm" onClick={() => ask(specUrl)}><FileCode size={13} /> {isCase ? "Create spec" : "Suggest Playwright spec"}</Button>}
+            <span className="faint plan-who">
+              {isCase
+                ? "A fixed rule makes a draft from the test case's steps and expected results. A step without an expected result gets a TODO. Nothing is generated or run, and its title carries the test case's tag so that imported results are linked to it."
+                : `A fixed rule makes it from the ${noun}'s ${scope.kind === "requirement" ? "acceptance criteria" : "steps and acceptance criteria"}. Nothing is generated or run.`}
+            </span>
           </div>
         )}
       {message && <p role="status" className="auto-message">{message}</p>}
-      {itemStatus === "approved" && mine.length === 0 && !message && <p className="faint">No suggestion yet.</p>}
+      {itemStatus === eligible && mine.length === 0 && !message && <p className="faint">No suggestion yet.</p>}
       {shown.map((s) => <SuggestionCard key={s.id} s={s} pid={pid} run={run} />)}
       {ignored > 0 && <Button variant="ghost" size="sm" aria-pressed={showIgnored} onClick={() => setShowIgnored(!showIgnored)}>{showIgnored ? "Hide" : "Show"} {ignored} ignored</Button>}
     </section>
