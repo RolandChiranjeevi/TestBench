@@ -88,9 +88,9 @@ Rollerna:
 - **TestBench MCP-servern** är bryggan mellan Claude/TestPilot och TestBench: tre verktyg (hämta nästa förfrågan, avsluta eller släppa den, rapportera en finding) över kön som redan finns.
 - **Token** autentiserar agenten. En request-token kan ta, släppa och avsluta förfrågningar, och kan inte skapa eller avbryta dem, läsa krav, röra specar eller se konton. Agentens text från en förfrågan (adress, anteckning) är data, aldrig instruktion.
 
-Det som redan är byggt är kön, Request discover i UI, request-tokens, `/testpilot-requests`, release och audit-länk, och att agenten själv lämnar in en omkörnings rapport (se backlogg T, T-A, T-B), samt MCP-bryggan över kön (backlogg AG-A, #110). Det senaste steget är:
+Det som redan är byggt är kön, Request discover i UI, request-tokens, `/testpilot-requests`, release och audit-länk, och att agenten själv lämnar in en omkörnings rapport (se backlogg T, T-A, T-B), samt MCP-bryggan över kön (backlogg AG-A, #110) och agent findings (backlogg AG-B, #111): agenten skapar testfall, buggrapporter, observationer och manuella testförslag direkt i TestBench, kopplade till den discover-förfrågan den tog. Allt landar som utkast eller förslag och godkänns aldrig automatiskt, testfallen märks som agentens, och ogranskade AI-utkast tas inte med av "Select all" när en run byggs. Det senaste steget är:
 
-- **Agent findings** (backlogg AG-B): agenten skapar testfall, buggrapporter, observationer och manuella testförslag direkt i TestBench, kopplade till den discover-förfrågan den tog. Allt landar som utkast eller förslag och godkänns aldrig automatiskt, testfallen märks som agentens, och ogranskade AI-utkast tas inte med av "Select all" när en run byggs.
+- **Run-förfrågan** (backlogg AG4): användaren väljer testfall och klickar **Ask agent to run**. TestBench skapar en manuell run med tomma resultat och en `run`-förfrågan, och runnen visas som "Waiting for agent". Testfallens text (men aldrig specar eller krav) skickas till agenten när den tar förfrågan, och agenten får inte hitta på resultat. Agenten kan ta och släppa förfrågan; att rapportera resultat per testfall kommer i AG5a, och att få resultaten att nå specar via en Playwright-rapport i AG5b.
 
 Senare: skrivbordsappen (och eventuell körning i sandbox, F-B), Azure DevOps och mobilappstest.
 
@@ -150,14 +150,15 @@ Automatiserade testfall ska skrivas i **Playwright-format (`*.spec.ts`)**, så a
 ## Vad som saknas / behöver byggas
 
 - **Användarskapade automatiserade testfall (spec.ts)** — S1 (spec från ett testfall), S2 (egna specar) och S3 (specens resultat och jämförelse med användarens repo) är byggda, se backlogg U.
-- **Agent findings** är byggt men inte mergat än (backlogg AG-B). MCP-bryggan över kön är klar (AG-A, #110).
+- **Resultat från agenten**: run-förfrågan är byggd (AG4); resultat per testfall (AG5a) och Playwright-rapport som når specar (AG5b) återstår. MCP-bryggan (AG-A, #110) och agent findings (AG-B, #111) är klara.
 - **Azure DevOps-export** — framtida.
 - **Mobilappstest** — framtida.
 
 ## Nästa steg
 
-1. **AG-B: agent findings** — granska och merga. (AG-A, MCP-bryggan, är klar.)
-2. **Integrationer (Azure DevOps, mobil)** — senare.
+1. **AG4: run-förfrågan** — granska och merga.
+2. **AG5a: resultat per testfall**, sedan **AG5b: spec- och automatiserad länk**. (AG-A och AG-B är klara.)
+3. **Integrationer (Azure DevOps, mobil)** — senare.
 
 ## Frågor att förtydliga
 

@@ -1,6 +1,6 @@
 # Requests to a test agent
 
-A person can ask a test agent to do something from Testbench: **look at a web address** (discover), or **run the failed automated tests of a run again**.
+A person can ask a test agent to do something from Testbench: **look at a web address** (discover), **run the failed automated tests of a run again**, or **run chosen test cases**.
 **Testbench starts nothing.** The request waits until an agent with its own token takes it, works in *your* environment under its own rules, and says when it is
 done. What the agent delivers comes in through the normal import, as `proposed` items that a person reviews.
 
@@ -17,6 +17,12 @@ Nothing here lets Testbench, or anyone's browser, run code on the machine that h
   - The note is at most 2000 characters.
 - **Ask agent to re-run**: on an **automated** run that has failed or blocked tests, **Ask agent to re-run (n)**. The request lists those tests *as they were when you asked*
   (at most 500), so it stays the same if the run changes or is deleted afterwards. The environment is the run's unless you change it.
+- **Ask an agent to run test cases**: **Runs → New manual run → Ask an agent.** Pick the test cases, an **address to test** (the same rules as for discover), an optional environment and note.
+  - The run is made **at once**, as a manual run with an empty result for each chosen case, and the request points at it. The run shows *Waiting for agent · request #n*, then *Taken by agent: …*, *Agent finished* or *Request cancelled*. You can still fill in results yourself.
+  - **The text of the chosen test cases is sent to the agent**: title, description, preconditions, steps (with their ids), and the *names* of linked automated tests and spec files, as they were when you asked. Never a spec's text, a requirement, an attachment or a screenshot.
+  - **Do not put secrets, passwords, API keys or other sensitive information in test cases or in the address.** TestBench does not scan the text for them.
+  - Between 1 and **200** test cases, at most **1 MB** of text (more is refused: pick fewer), and none that is deprecated. A suite the dialog was opened from stays on the run (*Suite: …*).
+  - Taking and giving back work as for any request. **A run request cannot be finished yet** (`complete` answers 409): results are reported per test case with the next step (AG5a). Until then an agent can give it back, and a person can cancel it. A request whose run was deleted cannot be taken.
 - At most **20** requests can be waiting in a project. Taking or cancelling one frees a place.
 - To re-run **manual** cases, use **Re-run failed cases**; that makes a manual run of the cases the failing tests are linked to, and needs no agent. It is greyed out when none of the failing tests is linked to a case, and **Ask agent to re-run** is the one to use for automated tests.
 - An automated run to ask about comes from **Import results** or the GitHub Actions import. The CI route (`ci-report.mjs`) makes bugs and no run, so a project that only reports through CI has no run to ask about.
