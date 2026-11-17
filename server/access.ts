@@ -72,7 +72,7 @@ export const ACCESS: Record<string, Need> = {
   "POST /api/github-sources/:id/check": a("githubsource"), "GET /api/github-sources/:id/runs": t("githubsource"), "POST /api/github-sources/:id/runs/:runId/import": t("githubsource"),
   // cases, suites, templates
   "GET /api/projects/:id/cases": v(), "POST /api/projects/:id/cases": t(), "POST /api/projects/:id/cases/bulk": t(), "POST /api/projects/:id/cases/delete": t(), "POST /api/projects/:id/import": t(),
-  "GET /api/cases/:id": v("case"), "PATCH /api/cases/:id": t("case"), "DELETE /api/cases/:id": t("case"), "POST /api/cases/:id/duplicate": t("case"), "PUT /api/cases/:id/requirements": t("case"),
+  "GET /api/cases/:id": v("case"), "POST /api/cases/:id/spec-suggestions": t("case"), "GET /api/cases/:id/automation-suggestions": v("case"), "PATCH /api/cases/:id": t("case"), "DELETE /api/cases/:id": t("case"), "POST /api/cases/:id/duplicate": t("case"), "PUT /api/cases/:id/requirements": t("case"),
   "GET /api/projects/:id/suites": v(), "POST /api/projects/:id/suites": t(), "PATCH /api/suites/:id": t("suite"), "DELETE /api/suites/:id": a("suite"), "POST /api/suites/:id/move": t("suite"),
   "GET /api/projects/:id/templates": v(), "POST /api/projects/:id/templates": t(), "PATCH /api/templates/:id": t("template"), "DELETE /api/templates/:id": a("template"),
   // templates are what the app calls Suites: runnable groups of cases (server/runsuites.ts)

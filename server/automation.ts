@@ -115,6 +115,8 @@ const UNSAFE = /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b-\u200f\u2028
 export const cleanText = (s: string, max = 300) => clip(s.replace(UNSAFE, " ").replace(/\s+/g, " ").trim(), max);
 /** Text as a string literal: cleaned, then JSON-escaped, so a quote, a backslash or `${` can never end the string or start code. */
 const lit = (s: string, max = 300) => JSON.stringify(cleanText(s, max));
+/** The line a step gets when its test case has no expected result for it. */
+export const EXPECTED_MISSING = "TODO: Fill in the expected result for this step.";
 
 /** `<ref>-<title>.spec.ts` in lower case letters, digits and hyphens only: no path, no space, no dot but the extension. */
 export function specFileName(ref: string, title: string) {
@@ -126,7 +128,7 @@ export function specFileName(ref: string, title: string) {
  * The spec, from a template. The only lines are comments, the import, `test.describe`, `test`, `test.fixme` (always there: a finished spec has it removed by a person), `test.step` per step
  * and the closing lines. Text from the source is a JSON string literal or a cleaned `//` comment. No selector and no URL is made up: every step has a TODO for a person to write.
  */
-export function buildSpec(a: { source: string; title: string; steps: string[]; assertions: string[]; testData: string }): string {
+export function buildSpec(a: { source: string; title: string; steps: string[]; assertions: string[]; testData: string; perStep?: { expected: string[]; tag: string } }): string {
   const data = a.testData.split(/\r?\n/).map((l) => cleanText(l)).filter(Boolean).slice(0, 10);
   return [
     `// DRAFT: made by TestBench from ${cleanText(a.source, 200)} by a fixed rule. Not reviewed and not run.`,
@@ -134,12 +136,21 @@ export function buildSpec(a: { source: string; title: string; steps: string[]; a
     'import { test, expect } from "@playwright/test";',
     "",
     `test.describe(${lit(a.title, 200)}, () => {`,
-    `  test(${lit(a.title, 200)}, async ({ page }) => {`,
+    // A tag in the title (`@KEY-12`) is what links imported results to the test case: it works in every Playwright version.
+    `  test(${lit(a.perStep ? `${cleanText(a.title, 150)} @${a.perStep.tag}` : a.title, 200)}, async ({ page }) => {`,
     '    test.fixme(true, "Draft from TestBench: not reviewed, not run. Remove this line when a person has finished the test.");',
     ...(data.length ? ["    // Test data (from the source):", ...data.map((l) => `    //   ${l}`)] : []),
-    ...a.steps.flatMap((s) => [`    await test.step(${lit(s)}, async () => {`, "      // TODO: where this starts and what to do (no selector or URL is known here)", "    });"]),
-    "    // Checks (from the acceptance criteria):",
-    ...a.assertions.map((c) => `    // TODO: expect(...) for: ${cleanText(c)}`),
+    ...a.steps.flatMap((s, i) => {
+      const expected = a.perStep?.expected[i]?.trim();
+      return [
+        `    await test.step(${lit(s)}, async () => {`,
+        "      // TODO: where this starts and what to do (no selector or URL is known here)",
+        // From a test case every step has its own expected result. One that is missing is never made up: it is a TODO for a person.
+        ...(!a.perStep ? [] : expected ? [`      // Expected: ${cleanText(expected)}`, "      // TODO: expect(...) for the expected result above"] : [`      // ${EXPECTED_MISSING}`]),
+        "    });",
+      ];
+    }),
+    ...(a.perStep ? [] : ["    // Checks (from the acceptance criteria):", ...a.assertions.map((c) => `    // TODO: expect(...) for: ${cleanText(c)}`)]),
     "  });",
     "});",
     "",
@@ -184,6 +195,37 @@ export function suggestSpecFromRequirement(f: RequirementFields, number: number)
   };
 }
 
+// ---- E3: a spec from a test case ----
+
+export const RULE_SPEC_CASE = "playwright_spec_from_case";
+export const RULE_SPEC_CASE_LABEL = "rule: playwright spec from test case";
+export interface CaseFields { title: string; description: string; preconditions: string; priority: string; steps: { action: string; expected: string }[] }
+
+/**
+ * The spec suggestion for a test case: the same template as for a plan item or a requirement, but every step has the expected result the test case gives it (a comment, and a TODO to write the
+ * expect), and one that is missing is a TODO and is never made up. The test's title ends with the case's tag (`@KEY-12`), so that results imported later are linked to the test case. The file is
+ * `tc-<number>-<title>.spec.ts`, and it starts with test.fixme like the others. A test case without steps gives nothing, and the reason says so.
+ */
+export function suggestSpecFromCase(f: CaseFields, key: string, number: number): { content: SuggestionContent; fileName: string } | { reason: string } {
+  const steps = f.steps.map((s) => ({ action: s.action.trim(), expected: s.expected.trim() })).filter((s) => s.action);
+  if (!steps.length) return { reason: "Nothing was generated: the test case has no steps. Add steps to the test case and ask again." };
+  if (!/^[A-Z][A-Z0-9]*-\d+$/.test(key)) return { reason: "Nothing was generated: the test case has no usable key." };
+  const fileName = specFileName(`tc-${number}`, f.title);
+  const actions = steps.map((s) => s.action);
+  const expected = steps.map((s) => s.expected);
+  const testData = [f.preconditions.trim() && `Preconditions: ${f.preconditions.trim()}`, f.description.trim() && `Description: ${f.description.trim()}`].filter(Boolean).join("\n");
+  const missing = expected.filter((e) => !e).length;
+  return {
+    fileName,
+    content: {
+      summary: clip(`Playwright spec ${fileName} for ${key} “${f.title}”: ${plural(actions.length, "step")}${missing ? `, ${missing} without an expected result` : ""}, as a draft to finish.`, 300),
+      steps: actions, assertions: expected.filter(Boolean), testData,
+      plan: ["Draft Playwright spec from the test case's steps and expected results.", `The title ends with @${key}, so that results imported later are linked to the test case.`, "A step without an expected result has a TODO; nothing is made up. It starts with test.fixme, and every step is a TODO for a person to finish."].join(" "),
+      artifactText: buildSpec({ source: `test case ${key}`, title: f.title, steps: actions, assertions: [], testData, perStep: { expected, tag: key } }),
+    },
+  };
+}
+
 // ---- the store ----
 
 type Who = { name: string; userId: number | null };
@@ -224,7 +266,20 @@ const requirementFields = (q: Record<string, any>): RequirementFields => ({
 });
 const requirementHash = (f: RequirementFields) => JSON.stringify([f.title, f.description, f.acceptanceCriteria, f.kind, f.wcag, f.viewports]);
 
+const caseRow = (id: number) => db.prepare("SELECT * FROM cases WHERE id = ?").get(id) as Record<string, any> | undefined;
+const caseFields = (c: Record<string, any>): CaseFields => ({
+  title: c.title, description: c.description, preconditions: c.preconditions, priority: c.priority,
+  steps: db.prepare("SELECT action, expected FROM case_steps WHERE case_id = ? ORDER BY position, id").all(c.id) as { action: string; expected: string }[],
+});
+const caseHash = (f: CaseFields) => JSON.stringify([f.title, f.description, f.preconditions, f.steps.map((s) => [s.action, s.expected])]);
+
 function subjectOf(r: Record<string, any>): SubjectNow | null {
+  if (r.subject_kind === "case") {
+    const c = caseRow(Number(r.subject_ref));
+    if (!c) return null;
+    const f = caseFields(c);
+    return { title: f.title, hash: caseHash(f), preconditions: f.preconditions, priority: f.priority, link: () => [] };
+  }
   if (r.subject_kind === "requirement") {
     const q = requirementRow(Number(r.subject_ref));
     if (!q) return null;
@@ -336,6 +391,28 @@ export function suggestSpecForRequirement(requirementId: number): { created: Sug
   return createSuggestion({ projectId: q.project_id, auditId: null, kind: "requirement", ref: String(q.id), rule: RULE_SPEC_REQUIREMENT, label: RULE_SPEC_REQUIREMENT_LABEL, who: { name: "Rule: playwright spec from requirement", userId: null }, noun: "requirement", thing: "a spec suggestion", content: made.content, hash: requirementHash(f), artifactName: made.fileName });
 }
 
+/**
+ * A person asks for a Playwright spec suggestion for a test case. Only a ready test case gets one (a person has decided that it is ready; a draft or a deprecated one is refused with 409). Same rules
+ * as for a requirement: the rule makes it, as `proposed`, once; a rejected or ignored one is not made again. It cannot be downloaded until a person has applied it.
+ */
+export function suggestSpecForCase(caseId: number): { created: SuggestionView[]; message: string } {
+  const c = caseRow(caseId);
+  if (!c) throw new AuditError(404, "Test case not found");
+  if (c.status !== "ready") throw new AuditError(409, "Make the test case ready first. A spec is only suggested for a ready test case.");
+  const f = caseFields(c);
+  const key = caseKey(c.project_id, c.number);
+  const made = suggestSpecFromCase(f, key, c.number);
+  if ("reason" in made) return { created: [], message: made.reason };
+  return createSuggestion({ projectId: c.project_id, auditId: null, kind: "case", ref: String(c.id), rule: RULE_SPEC_CASE, label: RULE_SPEC_CASE_LABEL, who: { name: "Rule: playwright spec from test case", userId: null }, noun: "test case", thing: "a spec suggestion", content: made.content, hash: caseHash(f), artifactName: made.fileName });
+}
+
+/** The suggestions of one test case, oldest first. Ignored ones are included: the page hides them by default. */
+export function listCaseAutomationSuggestions(caseId: number) {
+  const c = caseRow(caseId);
+  if (!c) throw new AuditError(404, "Test case not found");
+  return (db.prepare("SELECT * FROM automation_suggestions WHERE subject_kind = 'case' AND subject_ref = ? AND project_id = ? ORDER BY id").all(String(c.id), c.project_id) as Record<string, any>[]).map(view);
+}
+
 /** The suggestions of one requirement, oldest first. Ignored ones are included: the page hides them by default. */
 export function listRequirementAutomationSuggestions(requirementId: number) {
   const q = requirementRow(requirementId);
@@ -350,7 +427,7 @@ export function removeRequirementSuggestions(requirementId: number) {
 }
 
 /** Makes the suggestion, once: asking again makes no second one, and a rejected or ignored one is not made again. */
-function createSuggestion(a: { projectId: number; auditId: number | null; kind: "plan_item" | "requirement"; ref: string; rule: string; label: string; who: Who; noun: string; content: SuggestionContent; hash: string; artifactName?: string; thing?: string }): { created: SuggestionView[]; message: string } {
+function createSuggestion(a: { projectId: number; auditId: number | null; kind: "plan_item" | "requirement" | "case"; ref: string; rule: string; label: string; who: Who; noun: string; content: SuggestionContent; hash: string; artifactName?: string; thing?: string }): { created: SuggestionView[]; message: string } {
   const existing = db.prepare("SELECT * FROM automation_suggestions WHERE project_id = ? AND subject_kind = ? AND COALESCE(audit_id, 0) = ? AND subject_ref = ? AND rule = ?").get(a.projectId, a.kind, a.auditId ?? 0, a.ref, a.rule) as Record<string, any> | undefined;
   if (existing) {
     const status = existing.review_status as SuggestionStatus;
@@ -434,7 +511,7 @@ export function applyAutomationSuggestion(id: number) {
     if (c) throw new AuditError(409, `This suggestion is already the test case ${caseKey(r.project_id, c.number)}.`);
   }
   const subject = subjectOf(r);
-  if (!subject) throw new AuditError(409, `The ${r.subject_kind === "requirement" ? "requirement" : "plan item"} is gone, so there is nothing to link the test case to.`);
+  if (!subject) throw new AuditError(409, `The ${r.subject_kind === "requirement" ? "requirement" : r.subject_kind === "case" ? "test case" : "plan item"} is gone, so there is nothing to link the test case to.`);
   const c = contentOf(r);
   const w = person();
   const project = db.prepare("SELECT id, key FROM projects WHERE id = ?").get(r.project_id) as { id: number; key: string };

@@ -54,6 +54,13 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
   - Gäller att köra *specar* i en sandbox. Schemalagda suites (se S nedan) gör bara en manuell run med otestade fall och kör ingen kod, så de kringgår inte villkoren ovan.
 - Passar bättre efter den lokala skrivbordsappen.
 
+### U: Användarskapade automatiserade testfall (spec.ts)
+**Status: pågår** (tre PR:er i ordning: S1, S2, S3)
+- **Ägande (beslutat):** användarens repo är källan. TestBench har en kopia som text, med revisioner och nedladdning, och en jämförelse mot den uppladdade eller inklistrade filen (hash och text: "samma" eller "skiljer sig"). TestBench skriver aldrig till disk eller git och kör aldrig en spec (F-B ligger kvar och väntar på en egen säkerhetsplan).
+- **S1: spec från ett testfall. Status: klart.** Knappen "Create spec" på ett `ready`-testfall. Samma mall som E1 och E2, men varje steg har sitt förväntade resultat (saknas det blir det en TODO-rad, inget hittas på). Titeln slutar med ärendets tagg `@<NYCKEL>-<nummer>`, så importerade resultat länkas till ärendet. Filnamn `tc-<nummer>-<titel>.spec.ts`, `test.fixme` kvar, Apply först efter granskning. `subject_kind = 'case'` utan ny kolumn eller tabell; en trigger tar bort förslagen när ärendet raderas (en, flera eller hela projektet). E1 och E2 ger exakt samma text som förut.
+- **S2: egna specar. Status: planerad.** Egen tabell `specs` (inte `automation_suggestions`): filnamn unikt per projekt, text högst 200 kB, valfritt ärende, status draft eller ready, vem som skapade och senast ändrade, revisioner. En flik under Automated tests: skapa, redigera i en textruta, byta namn, ta bort och ladda ner. **Säkerhet (beslutat):** bara inloggade projektmedlemmar via UI. Ingen agent-token får skapa, ändra, ta bort, läsa eller lista egna specar, och det bevisas med tester för både läsning och mutation. Audit-händelser för skapa, ändra, byta namn och ta bort spelar in den inloggade användaren. Ingen agentväg, ingen skrivning till disk eller git, ingen körning.
+- **S3: koppla specen till resultaten. Status: planerad.** `@REQ-n` i krav-specarnas titlar (bara nya utkast), specens kort visar senaste resultat (filnamn mot `automated_tests.file`, samma nyckel som skillen använder), och "Compare with my repo".
+
 ### S: Körbara suites och schemaläggning
 **Status: klart** (mergad i #91, #92, #93 och #95; docs i #96)
 - En suite är en körbar grupp av testfall (tabellen `run_templates`). Fliken Suites visar dem; Run gör en manuell run.
