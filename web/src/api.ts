@@ -168,9 +168,17 @@ export interface AgentRequest {
 export interface SpecSummary {
   id: number; projectId: number; fileName: string; status: "draft" | "ready"; testCase: { id: number; number: number; key: string } | null; size: number;
   createdBy: string; createdAt: string; updatedBy: string; updatedAt: string;
+  /** What imported runs say about the file the spec is a copy of (matched by file name). */
+  results: { tests: number; passed: number; failed: number; skipped: number; blocked: number; other: number; lastSeen: string | null; files: string[]; ambiguous: boolean };
+}
+export interface SpecCompare {
+  outcome: "same" | "same except line endings" | "differs";
+  stored: { sha256: string; bytes: number }; uploaded: { sha256: string; bytes: number };
+  added: number; removed: number; approximate: boolean; warning: string | null;
 }
 export interface SpecDetail extends SpecSummary {
   text: string;
+  resultTests: { title: string; file: string; status: string | null; lastSeen: string; testCase: { id: number; number: number; key: string } | null }[]; moreResultTests: number;
   history: { rev: number; at: string; kind: "created" | "edited" | "renamed" | "status" | "case"; actor: string; note: string; snapshot: { fileName: string; status: "draft" | "ready"; caseId: number | null } }[];
 }
 /** One run of a suite, with its counts. */

@@ -465,6 +465,15 @@ the text, status or test case, delete it, and download it as a plain file.
 - **Do not paste passwords or tokens.** The text is stored in TestBench's database and in its backups. TestBench does not look for secrets in it.
 - The audit log (shown to the owner) records who made, changed, renamed and deleted which file. It never holds the text.
 - Deleting a project deletes its specs too, and the confirmation says how many.
+- **Latest results.** A spec shows the imported tests whose file is the spec's name, or ends in `/<name>` (the case of the letters does not matter): how many tests, how many passed, failed, were
+  skipped or blocked, when one was last seen, and up to 20 titles with a link to their test case. If files in different folders have the same name (`a/login.spec.ts`, `b/login.spec.ts`), all are
+  listed with a warning. The list shows a short badge ("1 failed", "passed", "no results"). TestBench only reads what you imported.
+- **Compare with my repo.** Choose the file from your repo, or paste its text. TestBench says **same**, **same except line endings** or **differs**, shows both SHA-256 hashes and sizes and how many
+  lines were added and removed, and saves nothing. A file with another name than the spec is a warning, not a refusal; an empty file, a file with a NUL character and a file over 200 kB are
+  refused. **Use the repo version** saves the compared text as a normal change of the spec (a new revision), with an optional note of at most 200 characters that shows in the history ("Updated
+  from my repo"). A viewer can compare but not use it. No agent token can compare.
+- A spec made from a requirement has `@REQ-n` in its test title. It covers the requirement only when the imported test is linked to a test case: the import reads the tag then. Specs made before
+  keep their title.
 
 ## Deleting cases and projects
 

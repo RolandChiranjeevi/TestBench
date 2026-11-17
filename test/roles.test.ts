@@ -772,6 +772,47 @@ describe("own specs: made by a tester or an admin, read by a viewer, and recorde
   });
 });
 
+describe("comparing a spec with the person's file, and a note on a change", () => {
+  const MARK = "COMPARE-TEXT-MARKER-91";
+  const NOTE_MARK = "NOTE-MARKER-Updated-from-my-repo";
+  const body = `// ${MARK}\ntest("x", async () => {});\n`;
+  const makeSpec = async () => (await call("POST", `/api/projects/${projects.A}/specs`, { cookie: people.tes.cookie, body: { fileName: `cmp-${Date.now()}-${Math.floor(Math.random() * 1e6)}.spec.ts`, text: body } })).json().id as number;
+  const rows = () => (db.prepare("SELECT COUNT(*) AS n FROM audit_log").get() as { n: number }).n;
+
+  it("a viewer, a tester and an admin can compare; a stranger gets 404 and no login 401; nothing is stored or logged", async () => {
+    const id = await makeSpec();
+    const compare = (cookie?: string, text = body) => call("POST", `/api/specs/${id}/compare`, { cookie, body: { text, fileName: "x.spec.ts" } });
+    const before = [rows(), JSON.stringify(db.prepare("SELECT * FROM specs WHERE id = ?").get(id)), (db.prepare("SELECT COUNT(*) AS n FROM spec_revisions WHERE spec_id = ?").get(id) as { n: number }).n];
+    for (const who of ["vie", "tes", "adm"] as const) {
+      const res = await compare(people[who].cookie);
+      assert.equal(res.statusCode, 200, `${who}: ${res.body}`);
+      assert.equal(res.json().outcome, "same", who);
+    }
+    assert.equal((await compare(people.vie.cookie, `${body}// more\n`)).json().outcome, "differs");
+    assert.ok(denied404(await compare(people.bob.cookie)), "a stranger cannot tell");
+    assert.equal((await compare()).statusCode, 401, "no login");
+    const after = [rows(), JSON.stringify(db.prepare("SELECT * FROM specs WHERE id = ?").get(id)), (db.prepare("SELECT COUNT(*) AS n FROM spec_revisions WHERE spec_id = ?").get(id) as { n: number }).n];
+    assert.deepEqual(after, before, "no spec, revision or audit entry was made by comparing");
+  });
+
+  it("a viewer cannot use the repo's version: changing the text is a tester's; and the audit log has neither the note nor the text", async () => {
+    const id = await makeSpec();
+    const update = (cookie?: string) => call("PATCH", `/api/specs/${id}`, { cookie, body: { text: `${body}// the repo's version\n`, note: NOTE_MARK } });
+    assert.ok(denied403(await update(people.vie.cookie)), "a viewer cannot");
+    assert.ok(denied404(await update(people.bob.cookie)), "nor a stranger");
+    assert.equal((db.prepare("SELECT COUNT(*) AS n FROM spec_revisions WHERE spec_id = ? AND kind = 'edited'").get(id) as { n: number }).n, 0, "nothing was changed");
+    const res = await update(people.tes.cookie);
+    assert.equal(res.statusCode, 200, res.body);
+    assert.equal(res.json().history.at(-1).note, NOTE_MARK, "the note is in the history");
+    const entry = db.prepare("SELECT actor_user_id AS u, detail FROM audit_log WHERE action = 'spec.edited' ORDER BY id DESC").get() as { u: number; detail: string };
+    assert.equal(entry.u, people.tes.id);
+    assert.deepEqual(JSON.parse(entry.detail).changed, ["text"]);
+    const everything = (db.prepare("SELECT group_concat(detail, ' ') AS d FROM audit_log").get() as { d: string }).d;
+    assert.equal(everything.includes(NOTE_MARK), false, "the note is in no audit entry");
+    assert.equal(everything.includes(MARK), false, "nor is the text");
+  });
+});
+
 describe("a spec for a test case: asked for by a tester, read by a viewer", () => {
   const caseWithStep = (project: number, status = "ready") => {
     const id = fixture("case", project).id as number;

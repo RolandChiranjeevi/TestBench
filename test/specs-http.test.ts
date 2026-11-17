@@ -149,6 +149,52 @@ describe("a person makes, reads, changes, renames, downloads and removes a spec"
     }
     assert.equal((await get(s.id)).status, "draft", "nothing changed");
   });
+
+  it("compares with the person's file: same, same except line endings, differs; it stores nothing and warns about another file name", async () => {
+    const s = await ok<Spec>(await make(a, "compare.spec.ts"));
+    const cmp = (text: string, fileName?: string) => person(`/api/specs/${s.id}/compare`, { text, fileName });
+    const same = await ok<{ outcome: string; stored: { sha256: string; bytes: number }; uploaded: { sha256: string }; warning: string | null }>(await cmp(TEXT, "compare.spec.ts"));
+    assert.deepEqual([same.outcome, same.stored.sha256 === same.uploaded.sha256, same.stored.bytes, same.warning], ["same", true, Buffer.byteLength(TEXT), null]);
+    assert.equal((await ok<{ outcome: string }>(await cmp(TEXT.replace(/\n/g, "\r\n")))).outcome, "same except line endings");
+    const differs = await ok<{ outcome: string; added: number; removed: number; approximate: boolean; warning: string | null }>(await cmp(`${TEXT}// one more line\n`, "elsewhere/other.spec.ts"));
+    assert.deepEqual([differs.outcome, differs.added, differs.removed, differs.approximate], ["differs", 1, 0, false]);
+    assert.match(differs.warning ?? "", /called other\.spec\.ts/);
+    assert.equal((await cmp("")).status, 400);
+    assert.equal((await cmp(`a${String.fromCharCode(0)}b`)).status, 400);
+    assert.equal((await cmp("a".repeat(200 * 1024 + 1))).status, 400);
+    assert.equal((await person(`/api/specs/${s.id}/compare`, { text: "x", extra: 1 })).status, 400, "nothing else is taken");
+    assert.equal((await person("/api/specs/999999/compare", { text: "x" })).status, 404);
+    const after = await get(s.id);
+    assert.deepEqual([after.text, after.history.map((h) => h.kind)], [TEXT, ["created"]], "the comparisons left nothing behind");
+    assert.equal(output.includes("one more line"), false, "and the text did not reach the server's output");
+  });
+
+  it("changes the text with a note, which is shown in the history; a note without a change of the text is refused", async () => {
+    const s = await ok<Spec>(await make(a, "note.spec.ts"));
+    const edited = await ok<Spec>(await person(`/api/specs/${s.id}`, { text: `${TEXT}// from the repo\n`, note: "Updated from my repo" }, "PATCH"));
+    assert.deepEqual(edited.history.map((h) => [h.kind, h.note]), [["created", ""], ["edited", "Updated from my repo"]]);
+    assert.equal((await person(`/api/specs/${s.id}`, { status: "ready", note: "no text" }, "PATCH")).status, 400);
+    assert.equal((await person(`/api/specs/${s.id}`, { text: `${TEXT}// x\n`, note: "x".repeat(201) }, "PATCH")).status, 400);
+    assert.equal((await get(s.id)).history.length, 2);
+  });
+
+  it("gives a spec the results of the report that was imported for its file, in the list and in full", async () => {
+    await ok(await make(a, "results.spec.ts"));
+    const report = { config: { rootDir: "/repo/e2e" }, stats: { startTime: "2026-01-02T03:04:05.000Z" }, suites: [{ title: "results.spec.ts", file: "results.spec.ts", specs: [
+      { title: "passes", file: "results.spec.ts", line: 1, column: 1, tests: [{ projectName: "chromium", status: "expected", results: [{ status: "passed", duration: 1, retry: 0 }] }] },
+      { title: "fails", file: "results.spec.ts", line: 5, column: 1, tests: [{ projectName: "chromium", status: "unexpected", results: [{ status: "failed", duration: 1, retry: 0, error: { message: "boom" } }] }] },
+    ] }] };
+    const form = new FormData();
+    form.set("file", new Blob([JSON.stringify(report)], { type: "application/json" }), "report.json");
+    await ok(await call(`/api/projects/${a}/import`, { method: "POST", headers: { "X-Testbench": "1", Cookie: cookie }, body: form }));
+    const list = await ok<(Spec & { results: { tests: number; passed: number; failed: number; lastSeen: string | null } })[]>(await person(`/api/projects/${a}/specs`, undefined, "GET"));
+    const mine = list.find((x) => x.fileName === "results.spec.ts")!;
+    assert.deepEqual([mine.results.tests, mine.results.passed, mine.results.failed], [2, 1, 1]);
+    assert.ok(mine.results.lastSeen);
+    const full = await get(mine.id) as Spec & { resultTests: { title: string; status: string }[] };
+    assert.deepEqual(full.resultTests.map((t) => [t.title, t.status]), [["fails [chromium]", "failed"], ["passes [chromium]", "passed"]]);
+    assert.equal(list.find((x) => x.fileName === "login.spec.ts")?.results.tests, 0, "a spec with no imported tests has none");
+  });
 });
 
 describe("no kind of agent token reaches a spec, to read it or to change it", () => {
@@ -158,7 +204,7 @@ describe("no kind of agent token reaches a spec, to read it or to change it", ()
     const routes: [string, string, unknown?][] = [
       ["GET", `/api/projects/${a}/specs`], ["POST", `/api/projects/${a}/specs`, { fileName: "taken-by-token.spec.ts", text: "// token" }], ["GET", `/api/specs/${s.id}`],
       ["PATCH", `/api/specs/${s.id}`, { text: "// token\n", status: "ready" }], ["POST", `/api/specs/${s.id}/rename`, { fileName: "renamed-by-token.spec.ts" }], ["DELETE", `/api/specs/${s.id}`],
-      ["GET", `/api/specs/${s.id}/file`],
+      ["GET", `/api/specs/${s.id}/file`], ["POST", `/api/specs/${s.id}/compare`, { text: "// token\n", fileName: "token.spec.ts" }],
     ];
     let tried = 0;
     for (const [kind, token] of Object.entries(tokens)) {
@@ -170,7 +216,7 @@ describe("no kind of agent token reaches a spec, to read it or to change it", ()
         }
       }
     }
-    assert.equal(tried, 4 * 2 * 7, "every kind, with and without the header, on all seven routes");
+    assert.equal(tried, 4 * 2 * 8, "every kind, with and without the header, on all eight routes (the seven, and the comparison)");
     assert.equal(JSON.stringify([await get(s.id), await ok(await person(`/api/projects/${a}/specs`, undefined, "GET"))]), before, "nothing was read into, made, changed, renamed or removed");
   });
 
