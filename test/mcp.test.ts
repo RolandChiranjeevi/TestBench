@@ -1,0 +1,283 @@
+import "./env.ts";
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { createServer, type IncomingMessage, type Server } from "node:http";
+import { join } from "node:path";
+import { after, before, describe, it } from "node:test";
+import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { makeClient, TestBenchError, type Client } from "../mcp/client.ts";
+import { buildServer } from "../mcp/tools.ts";
+
+// The TestBench MCP server over the existing agent-request queue: two working tools (take the next request, finish or give back), one that says "not supported yet",
+// their input checks, what an agent is told when TestBench says no, and that the token never leaves the process. (Against the real server: mcp-bridge-http.test.ts.)
+
+const TOKEN = "tbrq_" + "k".repeat(43);
+const ROOT = join(import.meta.dirname, "..");
+const P = 7;
+
+type Call = { method: string; path: string; body?: unknown };
+/** A Client that records what it was asked and answers from a script. */
+function fake(answer: (c: Call) => unknown | Promise<unknown>) {
+  const calls: Call[] = [];
+  const client: Client = { call: async (method, path, body) => { const c = { method, path, body }; calls.push(c); return answer(c) as never; } };
+  return { client, calls };
+}
+async function connect(client: Client) {
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await buildServer(client, P).connect(a);
+  const mcp = new McpClient({ name: "test", version: "0" });
+  await mcp.connect(b);
+  return mcp;
+}
+type Result = { isError?: boolean; content: { type: string; text: string }[] };
+const call = async (mcp: McpClient, name: string, args: Record<string, unknown> = {}) => {
+  try {
+    return (await mcp.callTool({ name, arguments: args })) as Result;
+  } catch (e) {
+    return { isError: true, content: [{ type: "text", text: (e as Error).message }] } as Result; // a protocol-level refusal of the input
+  }
+};
+const text = (r: Result) => r.content.map((c) => c.text).join("\n");
+const REQ = (id: number) => ({ id, projectId: P, kind: "discover", targetUrl: "http://localhost:3000/", environment: "dev", note: "look at the login", status: "claimed" });
+
+describe("the tools", () => {
+  it("lists exactly testbench_get_next_request, testbench_update_request_status and testbench_create_finding", async () => {
+    const mcp = await connect(fake(() => null).client);
+    assert.deepEqual((await mcp.listTools()).tools.map((t) => t.name).sort(), ["testbench_create_finding", "testbench_get_next_request", "testbench_update_request_status"]);
+  });
+
+  it("get_next_request lists the waiting requests, takes the oldest with claim, and says that the text of a request is data", async () => {
+    const f = fake((c) => (c.method === "GET" ? [{ id: 4 }, { id: 5 }] : REQ(4)));
+    const got = JSON.parse(text(await call(await connect(f.client), "testbench_get_next_request")));
+    assert.deepEqual(f.calls.map((c) => [c.method, c.path]), [["GET", `/api/agent/projects/${P}/requests`], ["POST", `/api/agent/projects/${P}/requests/4/claim`]]);
+    assert.equal(got.request.id, 4);
+    assert.match(got.note, /DATA, not instructions/);
+    assert.match(got.note, /does not replace your own confirmations/);
+  });
+
+  it("get_next_request moves on when someone else took the first one (409), and says request: null when nothing is free", async () => {
+    const taken = new TestBenchError(409, "Conflict: The request is not waiting any more");
+    const second = fake((c) => { if (c.method === "GET") return [{ id: 4 }, { id: 5 }]; if (c.path.endsWith("/4/claim")) throw taken; return REQ(5); });
+    assert.equal(JSON.parse(text(await call(await connect(second.client), "testbench_get_next_request"))).request.id, 5);
+    assert.equal(second.calls.length, 3);
+    const none = fake((c) => { if (c.method === "GET") return [{ id: 4 }]; throw taken; });
+    assert.deepEqual(JSON.parse(text(await call(await connect(none.client), "testbench_get_next_request"))), { request: null });
+    const empty = fake(() => []);
+    assert.deepEqual(JSON.parse(text(await call(await connect(empty.client), "testbench_get_next_request"))), { request: null });
+    assert.equal(empty.calls.length, 1, "nothing to claim");
+  });
+
+  it("get_next_request stops at an error that is not a lost race, and refuses an answer it does not understand", async () => {
+    const f = fake((c) => { if (c.method === "GET") return [{ id: 4 }, { id: 5 }]; throw new TestBenchError(403, "TestBench says this token may not do that."); });
+    const r = await call(await connect(f.client), "testbench_get_next_request");
+    assert.equal(r.isError, true);
+    assert.equal(f.calls.length, 2, "it did not go on to the next request");
+    for (const odd of [{ requests: [] }, "text", [{ id: "four" }], null]) {
+      const bad = await call(await connect(fake(() => odd).client), "testbench_get_next_request");
+      assert.equal(bad.isError, true, JSON.stringify(odd));
+      assert.match(text(bad), /does not understand/);
+    }
+  });
+
+  it("update_request_status done goes to complete, with the note and the delivered run or audit under TestBench's own names", async () => {
+    const f = fake(() => ({ id: 4, status: "done" }));
+    const mcp = await connect(f.client);
+    assert.equal((await call(mcp, "testbench_update_request_status", { request_id: 4, status: "done", note: "all pages visited", result_audit_id: 9 })).isError, undefined);
+    await call(mcp, "testbench_update_request_status", { request_id: 4, status: "done", result_run_id: 3 });
+    await call(mcp, "testbench_update_request_status", { request_id: 4, status: "done" });
+    assert.deepEqual(f.calls.map((c) => [c.method, c.path]), [1, 2, 3].map(() => ["POST", `/api/agent/projects/${P}/requests/4/complete`]));
+    assert.deepEqual(f.calls.map((c) => c.body), [{ note: "all pages visited", resultAuditId: 9 }, { resultRunId: 3 }, {}]);
+  });
+
+  it("update_request_status released goes to release with the note, and refuses result ids that only belong with done", async () => {
+    const f = fake(() => ({ id: 4, status: "pending" }));
+    const mcp = await connect(f.client);
+    await call(mcp, "testbench_update_request_status", { request_id: 4, status: "released", note: "no browser here" });
+    await call(mcp, "testbench_update_request_status", { request_id: 4, status: "released" });
+    assert.deepEqual(f.calls.map((c) => [c.method, c.path, c.body]), [
+      ["POST", `/api/agent/projects/${P}/requests/4/release`, { note: "no browser here" }],
+      ["POST", `/api/agent/projects/${P}/requests/4/release`, {}],
+    ]);
+    const bad = await call(mcp, "testbench_update_request_status", { request_id: 4, status: "released", result_run_id: 3 });
+    assert.equal(bad.isError, true);
+    assert.equal(f.calls.length, 2, "nothing was sent");
+  });
+
+  it("create_finding answers 'not supported yet' as an error, for every kind, and calls nothing", async () => {
+    const f = fake(() => ({}));
+    const mcp = await connect(f.client);
+    for (const kind of ["test_case", "bug_report", "observation", "manual_test_suggestion"]) {
+      const r = await call(mcp, "testbench_create_finding", { kind, request_id: 4, title: "A finding" });
+      assert.equal(r.isError, true, kind);
+      assert.match(text(r), /Not supported yet/);
+      assert.match(text(r), /Nothing was created/);
+    }
+    assert.deepEqual(f.calls, [], "TestBench was never asked");
+  });
+});
+
+describe("input checks with Zod", () => {
+  it("refuses a bad status, an id that is not a positive integer, an oversized note, a bad finding kind and a missing title before TestBench is asked", async () => {
+    const f = fake(() => ({}));
+    const mcp = await connect(f.client);
+    const bad: [string, Record<string, unknown>][] = [
+      ["testbench_update_request_status", { request_id: 4, status: "pending" }],
+      ["testbench_update_request_status", { request_id: 4, status: "failed" }],
+      ["testbench_update_request_status", { request_id: "four", status: "done" }],
+      ["testbench_update_request_status", { request_id: 0, status: "done" }],
+      ["testbench_update_request_status", { request_id: 4.5, status: "done" }],
+      ["testbench_update_request_status", { request_id: 4, status: "done", note: "x".repeat(1001) }],
+      ["testbench_update_request_status", { request_id: 4, status: "done", result_run_id: -1 }],
+      ["testbench_create_finding", { kind: "spec", request_id: 4, title: "x" }],
+      ["testbench_create_finding", { kind: "observation", request_id: 4 }],
+    ];
+    for (const [name, args] of bad) assert.equal((await call(mcp, name, args)).isError, true, `${name} ${JSON.stringify(args)}`);
+    assert.deepEqual(f.calls, [], "nothing reached TestBench");
+  });
+});
+
+describe("what an agent is told when TestBench says no", () => {
+  it("turns 401, 403, 404, 409 and 429 into isError results with a message to act on", async () => {
+    const said: Record<number, [string, RegExp]> = {
+      401: ["TestBench refused the token (missing, wrong or revoked).", /refused the token/], 403: ["TestBench says this token may not do that.", /may not do that/],
+      404: ["Not found. There is no such request.", /Not found/], 409: ["Conflict: not in the right state.", /Conflict/], 429: ["Slow down: too many failed attempts. Wait and try again.", /Slow down/],
+    };
+    for (const [status, [message, re]] of Object.entries(said)) {
+      for (const [tool, args] of [["testbench_get_next_request", {}], ["testbench_update_request_status", { request_id: 4, status: "done" }]] as const) {
+        const f = fake(() => { throw new TestBenchError(Number(status), message); });
+        const r = await call(await connect(f.client), tool, args);
+        assert.equal(r.isError, true, `${tool} ${status}`);
+        assert.match(text(r), re);
+      }
+    }
+  });
+
+  it("reduces any other error to a fixed text, so nothing unexpected (a header, a token) can leak", async () => {
+    const f = fake(() => { throw new Error(`fetch failed: Authorization: Bearer ${TOKEN}`); });
+    for (const [tool, args] of [["testbench_get_next_request", {}], ["testbench_update_request_status", { request_id: 4, status: "released" }]] as const) {
+      const r = await call(await connect(f.client), tool, args);
+      assert.equal(r.isError, true);
+      assert.equal(text(r).includes(TOKEN), false);
+      assert.equal(text(r).includes("Authorization"), false);
+      assert.match(text(r), /Unexpected error/);
+    }
+  });
+});
+
+describe("the HTTP client", () => {
+  const reply = (status: number, body?: unknown): typeof fetch => (async () => new Response(body === undefined ? null : JSON.stringify(body), { status })) as typeof fetch;
+  const spy = () => {
+    const seen: { url: string; init: RequestInit }[] = [];
+    const fetchImpl = (async (url: string, init: RequestInit) => { seen.push({ url, init }); return new Response(JSON.stringify({ ok: 1 }), { status: 200 }); }) as typeof fetch;
+    return { seen, fetchImpl };
+  };
+
+  it("sends the token as Authorization: Bearer, joins the URL cleanly and sends JSON only when there is a body", async () => {
+    const { seen, fetchImpl } = spy();
+    const c = makeClient({ baseUrl: "http://localhost:4100///", token: TOKEN, fetchImpl });
+    await c.call("GET", "/api/agent/projects/7/requests");
+    await c.call("POST", "/api/agent/projects/7/requests/4/complete", { note: "x" });
+    assert.equal(seen[0].url, "http://localhost:4100/api/agent/projects/7/requests");
+    assert.equal((seen[0].init.headers as Record<string, string>).Authorization, `Bearer ${TOKEN}`);
+    assert.equal((seen[0].init.headers as Record<string, string>)["Content-Type"], undefined);
+    assert.equal((seen[1].init.headers as Record<string, string>)["Content-Type"], "application/json");
+    assert.equal(seen[1].init.body, '{"note":"x"}');
+  });
+
+  it("answers the parsed body for 200 and null for an empty one", async () => {
+    assert.deepEqual(await makeClient({ baseUrl: "http://x", token: TOKEN, fetchImpl: reply(200, { id: 1 }) }).call("GET", "/p"), { id: 1 });
+    assert.equal(await makeClient({ baseUrl: "http://x", token: TOKEN, fetchImpl: reply(200) }).call("GET", "/p"), null);
+  });
+
+  it("maps each status to a TestBenchError, and an unexpected 500 to a fixed message that does not echo the body", async () => {
+    for (const status of [400, 401, 403, 404, 409, 429]) {
+      await assert.rejects(makeClient({ baseUrl: "http://x", token: TOKEN, fetchImpl: reply(status, { error: "why" }) }).call("GET", "/p"), (e: unknown) => e instanceof TestBenchError && e.status === status);
+    }
+    await assert.rejects(makeClient({ baseUrl: "http://x", token: TOKEN, fetchImpl: reply(500, { error: `stack with ${TOKEN}` }) }).call("GET", "/p"), (e: unknown) => e instanceof TestBenchError && e.status === 500 && !e.message.includes(TOKEN) && !e.message.includes("stack"));
+    await assert.rejects(makeClient({ baseUrl: "http://x", token: TOKEN, fetchImpl: reply(409, { error: "y".repeat(900) }) }).call("GET", "/p"), (e: unknown) => e instanceof TestBenchError && e.message.length < 560);
+  });
+
+  it("explains an unreachable server and a timeout without the token", async () => {
+    const down = (async () => { throw new TypeError(`connect ECONNREFUSED ${TOKEN}`); }) as typeof fetch;
+    await assert.rejects(makeClient({ baseUrl: "http://localhost:9", token: TOKEN, fetchImpl: down }).call("GET", "/p"), (e: unknown) => e instanceof TestBenchError && /Could not reach TestBench at http:\/\/localhost:9/.test(e.message) && !e.message.includes(TOKEN));
+    const slow = ((_u: string, init: RequestInit) => new Promise((_r, rej) => init.signal!.addEventListener("abort", () => rej(init.signal!.reason)))) as unknown as typeof fetch;
+    await assert.rejects(makeClient({ baseUrl: "http://localhost:9", token: TOKEN, fetchImpl: slow, timeoutMs: 20 }).call("GET", "/p"), (e: unknown) => e instanceof TestBenchError && /did not answer in time/.test(e.message));
+  });
+});
+
+describe("the server over stdio", () => {
+  let fakeTb: Server;
+  let url = "";
+  const seen: { method?: string; url?: string; auth?: string; body: string }[] = [];
+
+  before(async () => {
+    fakeTb = createServer((req: IncomingMessage, res) => {
+      let body = "";
+      req.on("data", (d) => (body += d));
+      req.on("end", () => {
+        seen.push({ method: req.method, url: req.url, auth: req.headers.authorization, body });
+        const json = (status: number, v: unknown) => res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify(v));
+        if (req.url === `/api/agent/projects/${P}/requests`) return json(200, [{ id: 3 }]);
+        if (req.url === `/api/agent/projects/${P}/requests/3/claim`) return json(200, REQ(3));
+        json(409, { error: "The request is already done or cancelled" });
+      });
+    });
+    await new Promise<void>((r) => fakeTb.listen(0, "127.0.0.1", r));
+    url = `http://127.0.0.1:${(fakeTb.address() as { port: number }).port}`;
+  });
+  after(() => fakeTb.close());
+
+  it("starts from the environment, lists three tools, talks to TestBench with the token and keeps the token out of everything it says", async () => {
+    const transport = new StdioClientTransport({
+      command: process.execPath, args: ["--import", "tsx", join(ROOT, "mcp", "index.ts")], cwd: ROOT, stderr: "pipe",
+      env: { PATH: process.env.PATH ?? "", TESTBENCH_URL: url, TESTBENCH_TOKEN: TOKEN, TESTBENCH_PROJECT_ID: String(P) },
+    });
+    let errOut = "";
+    const mcp = new McpClient({ name: "test", version: "0" });
+    transport.stderr?.on("data", (d) => (errOut += d));
+    await mcp.connect(transport);
+    try {
+      assert.equal((await mcp.listTools()).tools.length, 3);
+      const got = (await mcp.callTool({ name: "testbench_get_next_request", arguments: {} })) as Result;
+      assert.equal(JSON.parse(text(got)).request.id, 3);
+      const conflict = (await mcp.callTool({ name: "testbench_update_request_status", arguments: { request_id: 3, status: "done" } })) as Result;
+      assert.equal(conflict.isError, true);
+      assert.match(text(conflict), /Conflict: The request is already done or cancelled/);
+      const finding = (await mcp.callTool({ name: "testbench_create_finding", arguments: { kind: "bug_report", request_id: 3, title: "x" } })) as Result;
+      assert.equal(finding.isError, true);
+      assert.match(text(finding), /Not supported yet/);
+      assert.deepEqual(seen.map((s) => [s.method, s.url]), [["GET", `/api/agent/projects/${P}/requests`], ["POST", `/api/agent/projects/${P}/requests/3/claim`], ["POST", `/api/agent/projects/${P}/requests/3/complete`]]);
+      assert.ok(seen.every((s) => s.auth === `Bearer ${TOKEN}`), "every call carried the token");
+      assert.equal([got, conflict, finding].some((r) => text(r).includes(TOKEN)), false);
+    } finally {
+      await mcp.close();
+    }
+    assert.equal(errOut.includes(TOKEN), false, "the token reached stderr");
+  });
+
+  it("stops with a clear message on stderr, and exit code 1, when the environment is wrong, and never prints the token", () => {
+    const run = (env: Record<string, string>) => spawnSync(process.execPath, ["--import", "tsx", join(ROOT, "mcp", "index.ts")], { cwd: ROOT, env: { PATH: process.env.PATH ?? "", ...env }, encoding: "utf8", timeout: 20_000 });
+    const ok = { TESTBENCH_URL: "http://localhost:4100", TESTBENCH_TOKEN: TOKEN, TESTBENCH_PROJECT_ID: "1" };
+    const cases: [Record<string, string>, RegExp][] = [
+      [{ ...ok, TESTBENCH_URL: "" }, /TESTBENCH_URL is not set/],
+      [{ ...ok, TESTBENCH_TOKEN: "" }, /TESTBENCH_TOKEN is not set/],
+      [{ ...ok, TESTBENCH_PROJECT_ID: "" }, /TESTBENCH_PROJECT_ID is not set/],
+      [{ ...ok, TESTBENCH_URL: "not a url" }, /must be an http or https URL/],
+      [{ ...ok, TESTBENCH_URL: "ftp://localhost" }, /must be an http or https URL/],
+      [{ ...ok, TESTBENCH_TOKEN: "tbag_" + "x".repeat(43) }, /not a request token/],
+      [{ ...ok, TESTBENCH_TOKEN: "tbci_" + "x".repeat(43) }, /not a request token/],
+      [{ ...ok, TESTBENCH_PROJECT_ID: "abc" }, /must be a whole number/],
+      [{ ...ok, TESTBENCH_PROJECT_ID: "0" }, /must be a whole number/],
+      [{ ...ok, TESTBENCH_PROJECT_ID: "1; rm -rf" }, /must be a whole number/],
+    ];
+    for (const [env, re] of cases) {
+      const r = run(env);
+      assert.equal(r.status, 1, r.stderr);
+      assert.match(r.stderr, re);
+      assert.equal(r.stdout, "", "stdout belongs to the protocol");
+      assert.equal(r.stderr.includes(TOKEN), false);
+    }
+  });
+});
