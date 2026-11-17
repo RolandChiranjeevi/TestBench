@@ -358,7 +358,7 @@ CREATE INDEX IF NOT EXISTS request_tokens_project ON request_tokens(project_id);
 CREATE TABLE IF NOT EXISTS agent_requests (
   id INTEGER PRIMARY KEY,
   project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL CHECK (kind IN ('discover', 'rerun')),
+  kind TEXT NOT NULL CHECK (kind IN ('discover', 'rerun', 'run')),
   target_url TEXT NOT NULL DEFAULT '',
   environment TEXT NOT NULL DEFAULT '',
   note TEXT NOT NULL DEFAULT '',
@@ -743,6 +743,54 @@ function migrateAgentFindings(d: Database.Database) {
   const hasColumn = (table: string, col: string) => (d.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === col);
   if (!hasColumn("cases", "created_by_agent_token_id")) d.exec("ALTER TABLE cases ADD COLUMN created_by_agent_token_id INTEGER");
   if (!hasColumn("agent_requests", "findings_count")) d.exec("ALTER TABLE agent_requests ADD COLUMN findings_count INTEGER NOT NULL DEFAULT 0");
+}
+
+/**
+ * The `run` kind of agent request (AG4): a person asks an agent to run chosen test cases. A table made before it has a CHECK that refuses the kind, and SQLite cannot change a
+ * CHECK, so the table is rebuilt: every row is kept as it is (the columns are named one by one, because the later ones were added at the end with ALTER), then the index is made
+ * again. Nothing else points at agent_requests, and foreign keys are off only while it is swapped. A table that already allows `run` is left alone.
+ */
+function migrateAgentRunKind(d: Database.Database) {
+  const ddl = d.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'agent_requests'").pluck().get() as string | undefined;
+  if (!ddl || ddl.includes("'run'")) return;
+  const columns = [
+    "id", "project_id", "kind", "target_url", "environment", "note", "run_id", "payload", "status", "created_by", "created_by_user_id", "created_at", "claimed_by", "claimed_token_id",
+    "claimed_at", "finished_at", "result_run_id", "result_note", "result_delivered_at", "release_note", "released_by", "released_at", "result_audit_id", "findings_count",
+  ].join(", ");
+  d.pragma("foreign_keys = OFF");
+  d.transaction(() => {
+    d.exec(`
+CREATE TABLE agent_requests_new (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('discover', 'rerun', 'run')),
+  target_url TEXT NOT NULL DEFAULT '',
+  environment TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  run_id INTEGER REFERENCES runs(id) ON DELETE SET NULL,
+  payload TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'claimed', 'done', 'cancelled')),
+  created_by TEXT NOT NULL DEFAULT '',
+  created_by_user_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  claimed_by TEXT,
+  claimed_token_id INTEGER,
+  claimed_at TEXT,
+  finished_at TEXT,
+  result_run_id INTEGER REFERENCES runs(id) ON DELETE SET NULL,
+  result_note TEXT NOT NULL DEFAULT '',
+  result_delivered_at TEXT,
+  release_note TEXT NOT NULL DEFAULT '',
+  released_by TEXT,
+  released_at TEXT,
+  result_audit_id INTEGER REFERENCES audits(id) ON DELETE SET NULL,
+  findings_count INTEGER NOT NULL DEFAULT 0
+)`);
+    d.exec(`INSERT INTO agent_requests_new (${columns}) SELECT ${columns} FROM agent_requests`);
+    d.exec("DROP TABLE agent_requests; ALTER TABLE agent_requests_new RENAME TO agent_requests;");
+    d.exec("CREATE INDEX IF NOT EXISTS agent_requests_project ON agent_requests(project_id, status)");
+  })();
+  d.pragma("foreign_keys = ON");
 }
 
 /** Creates missing tables and columns, and fills in data for features added later. Safe to run on every start. */
@@ -1308,6 +1356,7 @@ CREATE INDEX IF NOT EXISTS bug_events_bug ON bug_events(bug_report_id);`);
   migrateAccounts(d);
   migrateRoles(d);
   migrateAgentFindings(d);
+  migrateAgentRunKind(d);
 
   // Make sure every sprint named on a run has a sprint record.
   const named = d.prepare("SELECT DISTINCT project_id, milestone FROM runs WHERE milestone != ''").all() as { project_id: number; milestone: string }[];

@@ -77,6 +77,14 @@ describe("the audit log in words", () => {
     for (const a of AUDIT_ACTIONS) assert.ok(!describeAudit(e(a), names).includes(a), `${a} has words of its own`);
   });
 
+  it("says what a person asked an agent to do, for a run with the number of test cases", () => {
+    const f = (detail: Record<string, unknown>) => describeAudit(e("agent_request.created", { actor: "Tess Tester", projectId: 7, detail }), names);
+    assert.equal(f({ request: 3, kind: "run", run: 9, cases: 12 }), "Tess Tester asked an agent to run 12 test cases in Acme");
+    assert.equal(f({ request: 3, kind: "run", run: 9, cases: 1 }), "Tess Tester asked an agent to run 1 test case in Acme");
+    assert.equal(f({ request: 3, kind: "rerun" }), "Tess Tester asked an agent to run failed automated tests again in Acme");
+    assert.equal(f({ request: 3, kind: "discover" }), "Tess Tester asked an agent to look at a target in Acme");
+  });
+
   it("says what an agent reported, by kind, and names the agent", () => {
     const f = (kind: string) => describeAudit(e("agent_request.finding_created", { actor: "agent: claude-a", projectId: 7, detail: { request: 5, kind: "discover", finding_kind: kind, id: 9, n: 1, credential_id: 3 } }), names);
     assert.equal(f("test_case"), "agent: claude-a reported a test case (a draft) for a discover request in Acme");

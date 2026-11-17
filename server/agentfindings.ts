@@ -56,7 +56,7 @@ export function createFinding(projectId: number, requestId: number, token: { id:
   return db.transaction(() => {
     const r = db.prepare("SELECT id, kind, status, claimed_token_id, findings_count FROM agent_requests WHERE id = ? AND project_id = ?").get(requestId, projectId) as RequestRow | undefined;
     if (!r) throw new AuditError(404, "Request not found");
-    if (r.kind !== "discover") throw new AuditError(409, "Findings can only be made for a discover request. A re-run hands in its report with the result route");
+    if (r.kind !== "discover") throw new AuditError(409, "Findings can only be made for a discover request. A re-run hands in its report with the result route, and a run reports a result for each test case");
     if (r.status === "pending") throw new AuditError(409, "The request is not taken. Take it first");
     if (r.status !== "claimed") throw new AuditError(409, "The request is already done or cancelled");
     if (r.claimed_token_id !== token.id) throw new AuditError(409, "Another token took this request");

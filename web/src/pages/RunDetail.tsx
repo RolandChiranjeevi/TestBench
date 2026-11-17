@@ -19,7 +19,7 @@ import { AutomatedDetail } from "./AutomatedDetail";
 import { NewRunModal } from "./Runs";
 import { BugReportModal, jiraLabel, jiraUrl } from "./BugReport";
 import { useCan } from "../components/Access";
-import { agentRunInfo } from "../agentruns";
+import { agentRunInfo, askedRunInfo } from "../agentruns";
 
 export function RunDetailPage() {
   const { pid, runId } = useParams();
@@ -107,6 +107,7 @@ function RunHeader({ run, children }: { run: RunDetail; children?: ReactNode }) 
   const failingAutomated = run.kind === "automated" ? failing.filter((r) => r.automated_test_id != null).length : 0;
   const rerunOf = (run.meta as { rerunOf?: { id: number; title: string } }).rerunOf;
   const agent = agentRunInfo(run);
+  const asked = askedRunInfo(run);
   const remove = async () => {
     if (!(await confirm({ title: `Delete run "${run.title}"?`, body: <p style={{ margin: 0 }}>The run and all its results are deleted.</p>, confirmLabel: "Delete run" }))) return;
     await api.del(`/api/runs/${run.id}`);
@@ -125,6 +126,7 @@ function RunHeader({ run, children }: { run: RunDetail; children?: ReactNode }) 
       <span className="spacer" />
       {rerunOf && <Link className="chip" to={`/p/${pid}/runs/${rerunOf.id}`} title="The run this one re-tests">Re-run of {rerunOf.title}</Link>}
       {agent && <Link className="chip" to={`/p/${pid}/automated?view=requests`} title="An agent handed in this report for a request, not a person. Open the requests.">Handed in by agent (request #{agent.requestId})</Link>}
+      {asked && <Link className="chip" to={`/p/${pid}/automated?view=requests`} title={`${asked.title} Open the requests.`}>{asked.label}</Link>}
       {!!(run.meta as { scheduled?: unknown }).scheduled && <span className="chip" title="Prepared by the suite's schedule, not started by a person">Scheduled</span>}
       {suite && (
         suite.deleted ? (

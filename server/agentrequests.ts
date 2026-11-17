@@ -2,9 +2,11 @@ import { db, getSetting, setSetting } from "./db.ts";
 import { importReport } from "./importers/import.ts";
 import { parseReport } from "./importers/parse.ts";
 import { AuditError } from "./auditcommon.ts";
+import { createManualRun } from "./runsuites.ts";
 
 /**
- * Requests to a test agent. A person asks for something: look at a target (discover), or run the failed automated tests of a run again (rerun). Testbench starts
+ * Requests to a test agent. A person asks for something: look at a target (discover), run the failed automated tests of a run again (rerun), or run chosen test cases (run:
+ * the run is made at once, with an empty result for each case, and the request points at it; AG4 only asks and shows, the results come with AG5a). Testbench starts
  * NOTHING. The request waits as a row until an agent, with its own token and in its own environment, takes it, does the work under its own rules and stops, and says
  * it is done. What the agent delivers still comes in through the normal import and is `proposed` until a person decides.
  *
@@ -17,8 +19,8 @@ import { AuditError } from "./auditcommon.ts";
  */
 
 export const RESULT_LIMITS = { bodyBytes: 5 * 1024 * 1024 };
-export const REQUEST_LIMITS = { pendingPerProject: 20, urlMax: 500, environmentMax: 100, noteMax: 2000, resultNoteMax: 1000, rerunTestsMax: 500 };
-export const REQUEST_KINDS = ["discover", "rerun"] as const;
+export const REQUEST_LIMITS = { pendingPerProject: 20, urlMax: 500, environmentMax: 100, noteMax: 2000, resultNoteMax: 1000, rerunTestsMax: 500, runCasesMax: 200, runPayloadBytes: 1024 * 1024, runTitleMax: 200 };
+export const REQUEST_KINDS = ["discover", "rerun", "run"] as const;
 export const REQUEST_STATUSES = ["pending", "claimed", "done", "cancelled"] as const;
 export type RequestKind = (typeof REQUEST_KINDS)[number];
 export type RequestStatus = (typeof REQUEST_STATUSES)[number];
@@ -28,7 +30,7 @@ const SECRET_KEY = /pass|token|secret|key|auth|cookie|session/i;
 
 /** An http(s) address with no password in it and nothing in its query that looks like one. Secrets do not belong in a request that an agent and a log will read. */
 export function cleanTargetUrl(input: unknown): string {
-  if (typeof input !== "string" || !input.trim()) throw bad("A discover request needs the address to look at");
+  if (typeof input !== "string" || !input.trim()) throw bad("A discover or run request needs the address to look at");
   const text = input.trim();
   if (text.length > REQUEST_LIMITS.urlMax) throw bad(`The address can be at most ${REQUEST_LIMITS.urlMax} characters`);
   let u: URL;
@@ -48,16 +50,37 @@ interface Row {
   id: number; project_id: number; kind: RequestKind; target_url: string; environment: string; note: string; run_id: number | null; payload: string; status: RequestStatus;
   created_by: string; created_at: string; claimed_by: string | null; claimed_token_id: number | null; claimed_at: string | null; finished_at: string | null; result_run_id: number | null; result_note: string;
   result_delivered_at: string | null; release_note: string; released_by: string | null; released_at: string | null; result_audit_id: number | null;
+  /** Only in a list: the number of cases of a run request, counted by the database, so that a list does not have to carry their text. */
+  case_count?: number;
 }
 export interface RerunTest { id: number; framework: string; file: string; title: string; fullName: string }
+/** One test case of a run request, as it was when a person asked. Test case text only: never a spec's text, a requirement, an attachment or a screenshot. */
+export interface RunCase {
+  caseId: number; key: string; number: number; title: string; description: string; preconditions: string; priority: string;
+  steps: { id: number; action: string; expected: string }[];
+  automatedTests: { framework: string; file: string; fullName: string }[];
+  specFiles: string[];
+}
 
-export function viewOf(r: Row) {
+/**
+ * `withCases` false is for a list: the cases of a run request carry the text of test cases (up to 1 MB), which an agent gets when it takes the request and a person sees on the
+ * run's page, not in every list.
+ */
+export function viewOf(r: Row, withCases = true) {
   let tests: RerunTest[] = [];
+  let cases: RunCase[] = [];
+  let caseCount = r.case_count ?? 0;
   try {
-    tests = (JSON.parse(r.payload) as { tests?: RerunTest[] }).tests ?? [];
-  } catch { /* a payload that is not JSON: no tests listed */ }
+    // A run request in a list is not parsed at all: its payload can be large, and the list only needs the count.
+    if (withCases || r.kind !== "run") {
+      const p = JSON.parse(r.payload) as { tests?: RerunTest[]; cases?: RunCase[] };
+      tests = p.tests ?? [];
+      if (r.case_count == null) caseCount = p.cases?.length ?? 0;
+      if (withCases) cases = p.cases ?? [];
+    }
+  } catch { /* a payload that is not JSON: no tests or cases listed */ }
   return {
-    id: r.id, projectId: r.project_id, kind: r.kind, targetUrl: r.target_url, environment: r.environment, note: r.note, runId: r.run_id, tests, status: r.status,
+    id: r.id, projectId: r.project_id, kind: r.kind, targetUrl: r.target_url, environment: r.environment, note: r.note, runId: r.run_id, tests, cases, caseCount, status: r.status,
     createdBy: r.created_by, createdAt: r.created_at, claimedBy: r.claimed_by, claimedAt: r.claimed_at, finishedAt: r.finished_at, resultRunId: r.result_run_id, resultNote: r.result_note, resultDeliveredAt: r.result_delivered_at,
     releaseNote: r.release_note, releasedBy: r.released_by, releasedAt: r.released_at, resultAuditId: r.result_audit_id,
   };
@@ -81,17 +104,55 @@ const mustRow = (projectId: number, id: number) => {
 export function listRequests(projectId: number, status?: string, limit = 200) {
   if (status !== undefined && !(REQUEST_STATUSES as readonly string[]).includes(status)) throw bad(`status must be one of ${REQUEST_STATUSES.join(", ")}`);
   const rows = db
-    .prepare(`SELECT * FROM agent_requests WHERE project_id = ? ${status ? "AND status = ?" : ""} ORDER BY id DESC LIMIT ?`)
+    .prepare(`SELECT *, json_array_length(payload, '$.cases') AS case_count FROM agent_requests WHERE project_id = ? ${status ? "AND status = ?" : ""} ORDER BY id DESC LIMIT ?`)
     .all(...(status ? [projectId, status, limit] : [projectId, limit])) as Row[];
-  return withAudits(rows.map(viewOf));
+  return withAudits(rows.map((r) => viewOf(r, false)));
 }
 
 /** What an agent asks for: the requests still waiting, oldest first. */
 export function pendingForAgent(projectId: number) {
-  return (db.prepare("SELECT * FROM agent_requests WHERE project_id = ? AND status = 'pending' ORDER BY id ASC LIMIT 50").all(projectId) as Row[]).map(viewOf);
+  // A run request whose run was deleted cannot be taken (it would have nothing to fill in): it stays for a person to cancel. A list carries the count of cases, and the cases
+  // themselves come with the claim.
+  return (db.prepare(`SELECT *, json_array_length(payload, '$.cases') AS case_count FROM agent_requests
+      WHERE project_id = ? AND status = 'pending' AND NOT (kind = 'run' AND run_id IS NULL) ORDER BY id ASC LIMIT 50`).all(projectId) as Row[]).map((r) => viewOf(r, false));
 }
 
-export interface NewRequest { kind: unknown; targetUrl?: unknown; environment?: unknown; note?: unknown; runId?: unknown }
+/** The run request an agent was asked to run this run by (the newest one), for the run's page: its number, state and who took it. null for a run that was not asked of an agent. */
+export function agentRequestOfRun(runId: number): { id: number; status: RequestStatus; claimedBy: string | null } | null {
+  const r = db.prepare("SELECT id, status, claimed_by AS claimedBy FROM agent_requests WHERE run_id = ? AND kind = 'run' ORDER BY id DESC LIMIT 1").get(runId) as
+    { id: number; status: RequestStatus; claimedBy: string | null } | undefined;
+  return r ?? null;
+}
+
+export interface NewRequest { kind: unknown; targetUrl?: unknown; environment?: unknown; note?: unknown; runId?: unknown; caseIds?: unknown; title?: unknown; templateId?: unknown }
+
+/**
+ * The test cases of a run request, as they are now: the text a person wrote (title, description, preconditions, steps), the names of the automated tests linked to the case and of
+ * the specs linked to it. Never the text of a spec or of a requirement, an attachment or a screenshot. They come back in the order of the case list, which is the order of the run.
+ */
+function runCases(projectId: number, input: unknown): RunCase[] {
+  const asked = Array.isArray(input) ? [...new Set(input)] : [];
+  if (asked.length === 0) throw bad("A run request needs the test cases to run");
+  if (!asked.every((x) => Number.isInteger(x))) throw bad("The test cases must be given by their ids");
+  if (asked.length > REQUEST_LIMITS.runCasesMax) throw bad(`At most ${REQUEST_LIMITS.runCasesMax} test cases can be in one request. Pick fewer`);
+  const rows = db.prepare(`
+      SELECT c.id, c.number, c.title, c.description, c.preconditions, c.priority, c.status, p.key AS project_key
+      FROM cases c JOIN projects p ON p.id = c.project_id
+      WHERE c.project_id = ? AND c.id IN (SELECT value FROM json_each(?)) ORDER BY c.position, c.number`).all(projectId, JSON.stringify(asked)) as
+    { id: number; number: number; title: string; description: string; preconditions: string; priority: string; status: string; project_key: string }[];
+  if (rows.length !== asked.length) throw bad("Some of the test cases are not in this project");
+  const deprecated = rows.filter((r) => r.status === "deprecated");
+  if (deprecated.length) throw bad(`${deprecated.length} of the test cases ${deprecated.length === 1 ? "is" : "are"} deprecated and cannot be run: ${deprecated.slice(0, 5).map((r) => `${r.project_key}-${r.number}`).join(", ")}`);
+  const steps = db.prepare("SELECT id, action, expected FROM case_steps WHERE case_id = ? ORDER BY position");
+  const tests = db.prepare("SELECT framework, file, full_name AS fullName FROM automated_tests WHERE case_id = ? ORDER BY full_name LIMIT 50");
+  const specs = db.prepare("SELECT file_name FROM specs WHERE case_id = ? ORDER BY file_name LIMIT 50");
+  const cases = rows.map((r): RunCase => ({
+    caseId: r.id, key: `${r.project_key}-${r.number}`, number: r.number, title: r.title, description: r.description, preconditions: r.preconditions, priority: r.priority,
+    steps: steps.all(r.id) as RunCase["steps"], automatedTests: tests.all(r.id) as RunCase["automatedTests"], specFiles: (specs.all(r.id) as { file_name: string }[]).map((s) => s.file_name),
+  }));
+  if (Buffer.byteLength(JSON.stringify(cases)) > REQUEST_LIMITS.runPayloadBytes) throw bad("These test cases hold too much text for one request (more than 1 MB). Pick fewer");
+  return cases;
+}
 
 export function createRequest(projectId: number, input: NewRequest, by: { name: string; userId: number | null }) {
   if (!db.prepare("SELECT 1 FROM projects WHERE id = ?").get(projectId)) throw new AuditError(404, "Project not found");
@@ -114,6 +175,25 @@ export function createRequest(projectId: number, input: NewRequest, by: { name: 
   let tests: RerunTest[] = [];
   if (kind === "discover") {
     targetUrl = cleanTargetUrl(input.targetUrl);
+  } else if (kind === "run") {
+    // The address is where the agent runs the cases; the run is made together with the request, in one transaction, so there is never a request without its run.
+    targetUrl = cleanTargetUrl(input.targetUrl);
+    const cases = runCases(projectId, input.caseIds);
+    const title = text(input.title, "The run name", REQUEST_LIMITS.runTitleMax) || `Agent run · ${new Date().toISOString().slice(0, 10)}`;
+    let templateId: number | null = null;
+    if (input.templateId !== undefined && input.templateId !== null) {
+      if (!Number.isInteger(input.templateId)) throw bad("The suite must be given by its id");
+      if (!db.prepare("SELECT 1 FROM run_templates WHERE id = ? AND project_id = ?").get(input.templateId, projectId)) throw bad("The suite belongs to another project");
+      templateId = input.templateId as number;
+    }
+    return db.transaction(() => {
+      const run = createManualRun(projectId, { title, environment, caseIds: cases.map((c) => c.caseId), templateId });
+      const row = db
+        .prepare("INSERT INTO agent_requests (project_id, kind, target_url, environment, note, run_id, payload, created_by, created_by_user_id) VALUES (?, 'run', ?, ?, ?, ?, ?, ?, ?) RETURNING *")
+        .get(projectId, targetUrl, environment, note, run.id, JSON.stringify({ runId: run.id, targetUrl, environment, note, cases }), by.name, by.userId) as Row;
+      db.prepare("UPDATE runs SET meta = json_set(meta, '$.agentRequest', ?) WHERE id = ?").run(row.id, run.id); // the run says which request it was asked by
+      return viewOf(row);
+    })();
   } else {
     if (!Number.isInteger(input.runId)) throw bad("A re-run request needs the run it is about");
     const run = db.prepare("SELECT id, kind, environment FROM runs WHERE id = ? AND project_id = ?").get(input.runId, projectId) as { id: number; kind: string; environment: string } | undefined;
@@ -147,10 +227,12 @@ export function cancelRequest(id: number) {
 /** An agent takes a waiting request. Only one can: the UPDATE succeeds while the request is pending. */
 export function claimRequest(projectId: number, id: number, token: { id: number; name: string }) {
   const r = db
-    .prepare("UPDATE agent_requests SET status = 'claimed', claimed_by = ?, claimed_token_id = ?, claimed_at = datetime('now') WHERE id = ? AND project_id = ? AND status = 'pending' RETURNING *")
+    .prepare(`UPDATE agent_requests SET status = 'claimed', claimed_by = ?, claimed_token_id = ?, claimed_at = datetime('now')
+      WHERE id = ? AND project_id = ? AND status = 'pending' AND NOT (kind = 'run' AND run_id IS NULL) RETURNING *`)
     .get(`agent: ${token.name}`, token.id, id, projectId) as Row | undefined;
   if (r) return viewOf(r);
-  mustRow(projectId, id);
+  const cur = mustRow(projectId, id);
+  if (cur.status === "pending" && cur.kind === "run" && cur.run_id === null) throw new AuditError(409, "The run of this request was deleted, so there is nothing to run. A person can cancel the request");
   throw new AuditError(409, "The request is not waiting any more (someone else took it, or it was cancelled)");
 }
 
@@ -182,6 +264,8 @@ export function releaseRequest(projectId: number, id: number, token: { id: numbe
 /** The agent that took a request says it is done, with a note and, if it delivered something, the run that came in (a re-run) or the audit that was made (a discover). */
 export function completeRequest(projectId: number, id: number, token: { id: number; name: string }, input: { note?: unknown; resultRunId?: unknown; resultAuditId?: unknown }) {
   const cur = mustRow(projectId, id);
+  // A run request is finished by reporting a result for every case (AG5a). Until that exists nothing can finish it: the agent can give it back (release) and a person can cancel it.
+  if (cur.kind === "run") throw new AuditError(409, "A run request is finished when a result has been reported for every test case, and that is not possible yet. Give it back with release, or ask a person to cancel it");
   const note = agentNote(input.note);
   let resultAuditId: number | null = null;
   if (input.resultAuditId !== undefined && input.resultAuditId !== null) {

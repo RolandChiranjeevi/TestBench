@@ -79,6 +79,8 @@ export interface RunSummary extends Counts {
   environment: string; milestone: string; framework: string | null; meta: Record<string, any>; started_at: string; finished_at: string | null;
   /** The suite (a run template) the run was started from; the name is the one it had when the run started if the suite has been deleted since. */
   template_id: number | null; template_name: string | null;
+  /** The request an agent was asked to run this run by (AG4), with its state; null for a run that was not asked of an agent. */
+  agentRequest?: { id: number; status: "pending" | "claimed" | "done" | "cancelled"; claimedBy: string | null } | null;
 }
 export interface RunResult {
   id: number; case_id: number | null; automated_test_id: number | null; status: Status; flaky: number; duration_ms: number | null;
@@ -150,11 +152,13 @@ export interface ScheduleDetails { next_runs: string[]; fires: ScheduleFire[]; s
 export type SchedulePreview = { ok: true; next: string[]; schedulerEnabled: boolean } | { ok: false; error: string; schedulerEnabled: boolean };
 /** What a person asked a test agent to do (server/agentrequests.ts). Testbench runs nothing: an agent with a request token takes the request and says when it is done. */
 export interface AgentRequest {
-  id: number; projectId: number; kind: "discover" | "rerun"; targetUrl: string; environment: string; note: string;
-  /** The run a re-run is about; null when the run has been deleted since. */
+  id: number; projectId: number; kind: "discover" | "rerun" | "run"; targetUrl: string; environment: string; note: string;
+  /** The run a re-run is about, or the run a `run` request fills in; null when the run has been deleted since. */
   runId: number | null;
   /** The failed or blocked automated tests of that run, as they were when it was asked for. */
   tests: { id: number; framework: string; file: string; title: string; fullName: string }[];
+  /** A `run` request: how many test cases it holds. A list does not carry the cases themselves (their text can be long); the run's page shows them. */
+  caseCount: number;
   status: "pending" | "claimed" | "done" | "cancelled";
   createdBy: string; createdAt: string; claimedBy: string | null; claimedAt: string | null; finishedAt: string | null; resultRunId: number | null; resultNote: string;
   /** Set when the agent handed in the report of a re-run (the run it made is resultRunId). */
