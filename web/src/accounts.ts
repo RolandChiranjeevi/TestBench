@@ -68,7 +68,7 @@ export interface AuditEntry {
 
 /** Every action the server writes to the audit log (test/web-accounts.test.ts checks this list against the server's source, so a new action cannot be left without words). */
 export const AUDIT_ACTIONS = [
-  "agent_request.cancelled", "agent_request.claimed", "agent_request.completed", "agent_request.created", "agent_request.released", "agent_request.result_delivered", "account.created", "account.disabled", "account.enabled", "account.setup", "invitation.created", "invitation.revoked", "invitation.used", "login.failed", "login.succeeded",
+  "agent_request.cancelled", "agent_request.claimed", "agent_request.completed", "agent_request.created", "agent_request.released", "agent_request.result_delivered", "spec.created", "spec.deleted", "spec.edited", "spec.renamed", "account.created", "account.disabled", "account.enabled", "account.setup", "invitation.created", "invitation.revoked", "invitation.used", "login.failed", "login.succeeded",
   "member.added", "member.removed", "member.role_changed", "members.migrated", "password.changed", "password.reset", "password.reset_link_created", "profile.changed", "requirements.bulk_approved", "sessions.revoked_others",
 ] as const;
 
@@ -84,6 +84,7 @@ export const AUDIT_FILTERS: readonly { label: string; prefix: string }[] = [
   { label: "Members and roles", prefix: "member" },
   { label: "Requirements", prefix: "requirements." },
   { label: "Agent requests", prefix: "agent_request." },
+  { label: "Specs", prefix: "spec." },
 ];
 
 /** How to turn the ids in an entry into names. A name that is not known (an account or a project that no longer exists) is said as such, never left as a bare number. */
@@ -91,6 +92,9 @@ export interface NameLookup { user: (id: number | null) => string | undefined; p
 const plural = (n: unknown, one: string, many = one + "s") => `${Number(n) || 0} ${Number(n) === 1 ? one : many}`;
 
 /** One line of plain words for an entry. */
+/** A spec file name from an audit entry, as text only (it was checked when it was made, and is shown as it is). */
+const specName = (v: unknown) => (typeof v === "string" && v ? v : "a spec");
+
 export function describeAudit(e: Pick<AuditEntry, "action" | "actor" | "targetUserId" | "projectId" | "detail">, names: NameLookup): string {
   const d = e.detail ?? {};
   const who = e.actor || "Someone";
@@ -120,6 +124,10 @@ export function describeAudit(e: Pick<AuditEntry, "action" | "actor" | "targetUs
     case "agent_request.released": return `${who} gave a request back in ${project}`;
     case "agent_request.result_delivered": return `${who} handed in the report of a re-run in ${project}`;
     case "agent_request.completed": return `${who} finished a request in ${project}`;
+    case "spec.created": return `${who} added the spec ${specName(d.fileName)} in ${project}`;
+    case "spec.edited": return `${who} changed the ${Array.isArray(d.changed) && d.changed.length ? d.changed.join(", ") : "text"} of the spec ${specName(d.fileName)} in ${project}`;
+    case "spec.renamed": return `${who} renamed the spec ${specName(d.from)} to ${specName(d.to)} in ${project}`;
+    case "spec.deleted": return `${who} deleted the spec ${specName(d.fileName)} in ${project}`;
     case "requirements.bulk_approved": return `${who} approved ${plural(d.count, "imported requirement")} in ${project}`;
     case "sessions.revoked_others": return `${who} signed out of ${plural(d.sessionsEnded, "other session")}`;
     default: return `${who}: ${e.action}`;

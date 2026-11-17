@@ -452,6 +452,20 @@ beside each page is its keyboard shortcut.
 
 Settings has five sections: **Agent access** (make and revoke the agent tokens of the project; a new token is shown once), **Project** (name, key and id, rename, delete), **Data** (backup and restore), **Keyboard shortcuts** and **Account** (sign out). The id is what an agent's configuration calls `projectId` and what the API addresses contain; the key is what case IDs use.
 
+## Own specs
+
+On **Automated tests, Specs** a tester can keep a copy of a Playwright spec, either pasted from the repo or written there. **TestBench does not run it, and your repo is the source:
+this is a copy.** A spec has a file name, a status (**Draft** or **Ready**), an optional test case, its text, and a history of who changed what and when. You can rename it, change
+the text, status or test case, delete it, and download it as a plain file.
+
+- The file name is flat: letters, digits, `-` and `_`, then exactly `.spec.ts` (so `login.spec.ts`, not `e2e/login.spec.ts`). It is at most 80 characters and is used once in a project, whatever
+  the case of its letters.
+- The text is at most **200 kB** (counted in UTF-8 bytes) and is never empty. A project holds at most 500 specs.
+- Testers and admins make and change specs, and a viewer can read and download them. **No agent token can read, list, make, change or delete a spec.**
+- **Do not paste passwords or tokens.** The text is stored in TestBench's database and in its backups. TestBench does not look for secrets in it.
+- The audit log (shown to the owner) records who made, changed, renamed and deleted which file. It never holds the text.
+- Deleting a project deletes its specs too, and the confirmation says how many.
+
 ## Deleting cases and projects
 
 **Cases:** open a case and use the trash icon, or tick cases in the list (the box at the start of the toolbar ticks everything shown, after
@@ -460,7 +474,7 @@ case; results already recorded in past runs stay in their run (so reports and hi
 automated tests that were linked to it become unlinked.
 
 **Whole project:** Settings, Project, "Delete this project…". You have to type the project key to confirm. Everything in the project goes, including
-runs, requirements, sprints, checklists and the uploaded files.
+runs, requirements, specs, sprints, checklists and the uploaded files.
 
 **Safety net:** deleting a project, or 5 or more cases at once, first saves a backup named `testbench-before-delete-<date>.zip` next to the
 automatic ones (newest 10 kept) and refuses to delete if that backup fails. Restore it from Settings, Data. If you turned automatic backups off

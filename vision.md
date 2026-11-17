@@ -122,13 +122,13 @@ Automatiserade testfall ska skrivas i **Playwright-format (`*.spec.ts`)**, så a
 
 ## Vad som saknas / behöver byggas
 
-- **Användarskapade automatiserade testfall (spec.ts)** — S1 (spec från ett testfall) är byggd; egna specar (S2) och koppling till resultat (S3) återstår, se backlogg U.
+- **Användarskapade automatiserade testfall (spec.ts)** — S1 (spec från ett testfall) och S2 (egna specar) är byggda; koppling till resultat (S3) återstår, se backlogg U.
 - **Azure DevOps-export** — framtida.
 - **Mobilappstest** — framtida.
 
 ## Nästa steg
 
-1. **Användarskapade automatiserade testfall (spec.ts)** — S2 (egna specar) och S3 (koppling till resultat), se backlogg U.
+1. **Användarskapade automatiserade testfall (spec.ts)** — S3 (koppling till resultat), se backlogg U.
 2. **Integrationer (Azure DevOps, mobil)** — senare.
 
 ## Frågor att förtydliga

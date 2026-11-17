@@ -364,6 +364,39 @@ CREATE TABLE IF NOT EXISTS agent_requests (
   result_note TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS agent_requests_project ON agent_requests(project_id, status);
+-- Own specs (S2, server/specs.ts): a Playwright spec that a person wrote or pasted. A copy of a file in their own repo: TestBench keeps the text, never runs it and never writes it anywhere.
+CREATE TABLE IF NOT EXISTS specs (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  file_name TEXT NOT NULL,
+  text TEXT NOT NULL,
+  case_id INTEGER REFERENCES cases(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'ready')),
+  created_by TEXT NOT NULL DEFAULT '', created_by_user_id INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_by TEXT NOT NULL DEFAULT '', updated_by_user_id INTEGER, updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- One file name once in a project, whatever the case of its letters.
+CREATE UNIQUE INDEX IF NOT EXISTS specs_name ON specs(project_id, file_name COLLATE NOCASE);
+CREATE TABLE IF NOT EXISTS spec_revisions (
+  id INTEGER PRIMARY KEY,
+  spec_id INTEGER NOT NULL REFERENCES specs(id) ON DELETE CASCADE,
+  rev INTEGER NOT NULL,
+  at TEXT NOT NULL DEFAULT (datetime('now')),
+  kind TEXT NOT NULL CHECK (kind IN ('created', 'edited', 'renamed', 'status', 'case')),
+  actor TEXT NOT NULL DEFAULT '',
+  actor_user_id INTEGER,
+  note TEXT NOT NULL DEFAULT '',
+  snapshot TEXT NOT NULL,
+  UNIQUE (spec_id, rev)
+);
+-- With accounts, a spec is made and changed by a person with an account: nothing else (an agent, a rule, a stray call) can write one. The one exception is the test case going away, which empties case_id by itself.
+CREATE TRIGGER IF NOT EXISTS specs_need_a_person_insert BEFORE INSERT ON specs
+WHEN EXISTS (SELECT 1 FROM users) AND (NEW.created_by_user_id IS NULL OR NEW.updated_by_user_id IS NULL)
+BEGIN SELECT RAISE(ABORT, 'A spec needs a person with an account'); END;
+CREATE TRIGGER IF NOT EXISTS specs_need_a_person_update BEFORE UPDATE ON specs
+WHEN EXISTS (SELECT 1 FROM users) AND NEW.updated_by_user_id IS NULL
+  AND NOT (NEW.case_id IS NULL AND OLD.case_id IS NOT NULL AND NEW.file_name = OLD.file_name AND NEW.text = OLD.text AND NEW.status = OLD.status)
+BEGIN SELECT RAISE(ABORT, 'A spec needs a person with an account'); END;
 -- What a person has linked an observation to. An observation with neither is on the coverage gap list.
 CREATE TABLE IF NOT EXISTS observation_requirements (
   observation_id INTEGER NOT NULL REFERENCES observations(id) ON DELETE CASCADE,

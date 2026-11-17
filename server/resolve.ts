@@ -32,6 +32,7 @@ const PROJECT_OF: Record<Exclude<Kind, "file">, string> = {
   proposetoken: "SELECT project_id FROM propose_tokens WHERE id = ?",
   requesttoken: "SELECT project_id FROM request_tokens WHERE id = ?",
   agentrequest: "SELECT project_id FROM agent_requests WHERE id = ?",
+  spec: "SELECT project_id FROM specs WHERE id = ?",
 };
 export const RESOLVER_KINDS = Object.keys(PROJECT_OF) as Exclude<Kind, "file">[];
 

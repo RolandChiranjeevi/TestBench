@@ -117,6 +117,7 @@ function fixture(kind: Kind, project: number): { id: number | string } {
     case "proposetoken": return { id: token("propose_tokens") };
     case "requesttoken": return { id: token("request_tokens") };
     case "agentrequest": return { id: one("INSERT INTO agent_requests (project_id, kind, target_url) VALUES (?, 'discover', 'https://example.com') RETURNING id", project) };
+    case "spec": return { id: one("INSERT INTO specs (project_id, file_name, text, created_by_user_id, updated_by_user_id) VALUES (?, ?, '// a spec', (SELECT MIN(id) FROM users), (SELECT MIN(id) FROM users)) RETURNING id", project, `f${n}.spec.ts`) };
     case "file": {
       const name = `file-${n}.txt`;
       db.prepare("INSERT INTO attachments (result_id, filename, stored_name, mime) VALUES (?, 'f.txt', ?, 'text/plain')").run(result(), name);
@@ -708,6 +709,66 @@ describe("coverage gaps are a workspace a person owns, like plan items", () => {
       }
     }
     assert.deepEqual(row(audit), { t: "Validation is not verified", s: "proposed", d: null, e: null, origin: "agent" }, "nothing changed");
+  });
+});
+
+describe("own specs: made by a tester or an admin, read by a viewer, and recorded by the person", () => {
+  const TEXT_MARK = "ROLES-SPEC-TEXT-MARKER-77";
+  const text = `// ${TEXT_MARK}\ntest("x", async () => {});\n`;
+  const make = (project: number | string, name: string, cookie?: string) => call("POST", `/api/projects/${project}/specs`, { cookie, body: { fileName: name, text } });
+  const audits = (action: string) => db.prepare("SELECT actor_user_id AS u, project_id AS p, detail FROM audit_log WHERE action = ? ORDER BY id").all(action) as { u: number | null; p: number | null; detail: string }[];
+
+  it("a tester makes, changes, renames and removes; an admin can too; a viewer gets 403 on every write; a stranger 404 on everything; no login 401", async () => {
+    const countA = () => (db.prepare("SELECT COUNT(*) AS n FROM specs WHERE project_id = ?").get(projects.A) as { n: number }).n;
+    const had = countA();
+    assert.equal((await make(projects.A, "anon.spec.ts")).statusCode, 401, "no login");
+    assert.ok(denied403(await make(projects.A, "viewer.spec.ts", people.vie.cookie)), "a viewer cannot make one");
+    assert.ok(denied404(await make(projects.A, "stranger.spec.ts", people.bob.cookie)), "nor someone from another project");
+    assert.equal(countA(), had, "nothing was made");
+    const made = await make(projects.A, "tester.spec.ts", people.tes.cookie);
+    assert.equal(made.statusCode, 200, made.body);
+    const id = made.json().id as number;
+    const row = () => db.prepare("SELECT file_name AS f, status AS s, created_by_user_id AS c, updated_by_user_id AS u FROM specs WHERE id = ?").get(id) as { f: string; s: string; c: number; u: number };
+    assert.deepEqual([row().f, row().c, row().u], ["tester.spec.ts", people.tes.id, people.tes.id]);
+    for (const [who, deny] of [["vie", denied403], ["bob", denied404]] as const) {
+      const c = people[who].cookie;
+      assert.ok(deny(await call("PATCH", `/api/specs/${id}`, { cookie: c, body: { status: "ready" } })), `${who} cannot change`);
+      assert.ok(deny(await call("POST", `/api/specs/${id}/rename`, { cookie: c, body: { fileName: "x.spec.ts" } })), `${who} cannot rename`);
+      assert.ok(deny(await call("DELETE", `/api/specs/${id}`, { cookie: c })), `${who} cannot remove`);
+    }
+    assert.deepEqual([row().f, row().s], ["tester.spec.ts", "draft"], "nothing changed");
+    for (const url of [`/api/projects/${projects.A}/specs`, `/api/specs/${id}`, `/api/specs/${id}/file`]) {
+      assert.equal((await call("GET", url, { cookie: people.vie.cookie })).statusCode, 200, `a viewer reads ${url}`);
+      assert.ok(denied404(await call("GET", url, { cookie: people.bob.cookie })), `a stranger does not read ${url}`);
+      assert.equal((await call("GET", url)).statusCode, 401, `no login: ${url}`);
+    }
+    assert.equal((await call("PATCH", `/api/specs/${id}`, { cookie: people.adm.cookie, body: { status: "ready" } })).statusCode, 200, "an admin can change");
+    assert.deepEqual([row().s, row().u], ["ready", people.adm.id], "and it is the admin who is recorded");
+    assert.equal((await call("POST", `/api/specs/${id}/rename`, { cookie: people.tes.cookie, body: { fileName: "renamed.spec.ts" } })).statusCode, 200);
+    assert.equal((await call("DELETE", `/api/specs/${id}`, { cookie: people.tes.cookie })).statusCode, 200);
+    assert.equal((db.prepare("SELECT COUNT(*) AS n FROM specs WHERE id = ?").get(id) as { n: number }).n, 0);
+  });
+
+  it("the audit log records who made, changed, renamed and removed which file, and never the text, and nothing for a refused call", async () => {
+    const before = ["spec.created", "spec.edited", "spec.renamed", "spec.deleted"].map((a) => audits(a).length);
+    assert.ok(denied403(await make(projects.A, "refused.spec.ts", people.vie.cookie)));
+    const made = await make(projects.A, "audited.spec.ts", people.tes.cookie);
+    const id = made.json().id as number;
+    await call("PATCH", `/api/specs/${id}`, { cookie: people.adm.cookie, body: { text: `${text}// more\n`, status: "ready" } });
+    await call("PATCH", `/api/specs/${id}`, { cookie: people.adm.cookie, body: { status: "ready" } }); // changes nothing
+    await call("POST", `/api/specs/${id}/rename`, { cookie: people.tes.cookie, body: { fileName: "audited-2.spec.ts" } });
+    await call("DELETE", `/api/specs/${id}`, { cookie: people.tes.cookie });
+    const after = ["spec.created", "spec.edited", "spec.renamed", "spec.deleted"].map((a) => audits(a));
+    assert.deepEqual(after.map((rows, i) => rows.length - before[i]), [1, 1, 1, 1], "one entry each, none for the refused or the empty change");
+    const [created, edited, renamed, deleted] = after.map((rows) => rows.at(-1)!);
+    assert.deepEqual([created.u, edited.u, renamed.u, deleted.u], [people.tes.id, people.adm.id, people.tes.id, people.tes.id], "the signed-in person is recorded");
+    assert.ok([created, edited, renamed, deleted].every((e) => e.p === projects.A));
+    assert.equal(JSON.parse(created.detail).fileName, "audited.spec.ts");
+    assert.deepEqual(JSON.parse(edited.detail).changed, ["text", "status"]);
+    assert.deepEqual([JSON.parse(renamed.detail).from, JSON.parse(renamed.detail).to], ["audited.spec.ts", "audited-2.spec.ts"]);
+    assert.equal(JSON.parse(deleted.detail).fileName, "audited-2.spec.ts");
+    const everything = (db.prepare("SELECT group_concat(detail, ' ') AS d FROM audit_log").get() as { d: string }).d;
+    assert.equal(everything.includes(TEXT_MARK), false, "the text is in no audit entry");
   });
 });
 

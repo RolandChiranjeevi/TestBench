@@ -23,7 +23,7 @@ export function deleteCases(projectId: number, ids: number[]): { deleted: number
 export interface ProjectDeletion {
   name: string;
   key: string;
-  counts: { cases: number; runs: number; requirements: number; automatedTests: number; bugReports: number };
+  counts: { cases: number; runs: number; requirements: number; automatedTests: number; bugReports: number; specs: number };
   /** Stored names of uploaded files (evidence, requirement attachments) that no longer belong to anything. The caller removes them. */
   files: string[];
 }
@@ -41,6 +41,7 @@ export function describeProject(projectId: number) {
       requirements: n("SELECT COUNT(*) AS n FROM requirements WHERE project_id = ?"),
       automatedTests: n("SELECT COUNT(*) AS n FROM automated_tests WHERE project_id = ?"),
       bugReports: n("SELECT COUNT(*) AS n FROM bug_reports WHERE project_id = ?"),
+      specs: n("SELECT COUNT(*) AS n FROM specs WHERE project_id = ?"),
     },
   };
 }

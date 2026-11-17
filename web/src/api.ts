@@ -164,6 +164,15 @@ export interface AgentRequest {
   /** The audit a finished discover made (null if none, or if it was deleted since), with its name. */
   resultAuditId: number | null; resultAudit: { id: number; title: string; agentAuditId: string } | null;
 }
+/** An own spec (S2): a copy of a file in the person's repo, kept as text with its history. TestBench never runs it. */
+export interface SpecSummary {
+  id: number; projectId: number; fileName: string; status: "draft" | "ready"; testCase: { id: number; number: number; key: string } | null; size: number;
+  createdBy: string; createdAt: string; updatedBy: string; updatedAt: string;
+}
+export interface SpecDetail extends SpecSummary {
+  text: string;
+  history: { rev: number; at: string; kind: "created" | "edited" | "renamed" | "status" | "case"; actor: string; note: string; snapshot: { fileName: string; status: "draft" | "ready"; caseId: number | null } }[];
+}
 /** One run of a suite, with its counts. */
 export interface SuiteRun { id: number; title: string; status: "in_progress" | "completed"; started_at: string; total: number; passed: number; failed: number; blocked: number; untested: number }
 export interface DashboardRun extends Counts {

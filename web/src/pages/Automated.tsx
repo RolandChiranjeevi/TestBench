@@ -6,6 +6,7 @@ import { api, formatDuration, timeAgo, type AutomatedTest, type CaseSummary, typ
 import { Empty, FrameworkBadge, StatusIcon, useToast, ListSkeleton } from "../components/ui";
 import { InsightsPage, ViewTabs } from "./Insights";
 import { RequestsPage } from "./AgentRequests";
+import { SpecsPage } from "./Specs";
 import { Button } from "../components/Button";
 import { useCan } from "../components/Access";
 
@@ -61,6 +62,7 @@ export function AutomatedPage() {
 
   if (params.get("view") === "insights") return <InsightsPage />;
   if (params.get("view") === "requests") return <RequestsPage />;
+  if (params.get("view") === "specs") return <SpecsPage />;
 
   return (
     <>
