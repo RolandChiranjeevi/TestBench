@@ -248,6 +248,56 @@ describe("hand in findings through the MCP tool", () => {
   });
 });
 
+describe("a run request through the MCP tools", () => {
+  it("shows the agent the run, the address, the environment and the cases with their steps, never the text of a spec or a requirement; it can be given back, and it cannot be finished yet", async () => {
+    const mkCase = async (title: string, extra: Record<string, unknown> = {}) => (await ok<{ id: number }>(await person(`/api/projects/${a}/cases`, { title, status: "ready", ...extra }))).id;
+    const c1 = await mkCase("MCP sign in", { description: "The happy path", preconditions: "An account exists", priority: "high", steps: [{ action: "Open /login", expected: "A form" }, { action: "Submit", expected: "Signed in" }] });
+    const c2 = await mkCase("MCP pay", { steps: [{ action: "Open /pay", expected: "A form" }] });
+    await ok(await person(`/api/projects/${a}/specs`, { fileName: "mcp-login.spec.ts", text: "// MCP-SECRET-SPEC-TEXT\ntest('x', async () => {});", caseId: c1 }));
+    const requirement = await ok<{ id: number }>(await person(`/api/projects/${a}/requirements`, { title: "MCP-SECRET-REQUIREMENT", description: "MCP-SECRET-REQUIREMENT-TEXT" }));
+    await ok(await person(`/api/cases/${c1}/requirements`, { requirementIds: [requirement.id] }, "PUT"));
+    const asked = await ok<{ id: number; runId: number }>(await person(`/api/projects/${a}/agent-requests`, { kind: "run", targetUrl: "https://staging.example.com/", environment: "staging", title: "MCP agent run", caseIds: [c1, c2] }));
+
+    const s = await session(tokenA, a);
+    try {
+      const r = await s.tool("testbench_get_next_request");
+      assert.equal(r.isError, undefined, text(r));
+      const got = JSON.parse(text(r)) as { request: { id: number; kind: string; runId: number; targetUrl: string; environment: string; status: string; claimedBy: string; cases: { caseId: number; title: string; description: string; preconditions: string; priority: string; steps: { id: number; action: string; expected: string }[]; specFiles: string[] }[] }; note: string };
+      assert.deepEqual([got.request.id, got.request.kind, got.request.runId, got.request.targetUrl, got.request.environment, got.request.status, got.request.claimedBy], [asked.id, "run", asked.runId, "https://staging.example.com/", "staging", "claimed", "agent: claude-a"]);
+      assert.deepEqual(got.request.cases.map((c) => c.title), ["MCP sign in", "MCP pay"]);
+      assert.deepEqual([got.request.cases[0].description, got.request.cases[0].preconditions, got.request.cases[0].priority, got.request.cases[0].specFiles], ["The happy path", "An account exists", "high", ["mcp-login.spec.ts"]]);
+      assert.deepEqual(got.request.cases[0].steps.map((st) => [st.action, st.expected]), [["Open /login", "A form"], ["Submit", "Signed in"]]);
+      assert.ok(got.request.cases[0].steps.every((st) => Number.isInteger(st.id)));
+      assert.match(got.note, /never invent a result for a test case you did not run/);
+      for (const secret of ["MCP-SECRET-SPEC-TEXT", "MCP-SECRET-REQUIREMENT"]) assert.equal(text(r).includes(secret), false, secret);
+      assert.equal(issued.some((t) => text(r).includes(t)), false, "no token in what the tool said");
+
+      // It cannot be finished yet: TestBench says so, and nothing changes.
+      const done = await s.tool("testbench_update_request_status", { request_id: asked.id, status: "done", note: "all done" });
+      assert.equal(done.isError, true);
+      assert.match(text(done), /Conflict: A run request is finished when a result has been reported for every test case/);
+      assert.equal((await list(a)).find((x) => x.id === asked.id)!.status, "claimed");
+
+      // Findings are for a discover.
+      const finding = await s.tool("testbench_create_finding", { request_id: asked.id, kind: "observation", title: "x" });
+      assert.equal(finding.isError, true);
+      assert.match(text(finding), /Conflict: Findings can only be made for a discover request/);
+
+      // It can be given back, and then waits again, with the run still waiting too.
+      const back = await s.tool("testbench_update_request_status", { request_id: asked.id, status: "released", note: "no browser available" });
+      assert.equal(back.isError, undefined, text(back));
+      const after = (await list(a)).find((x) => x.id === asked.id)!;
+      assert.deepEqual([after.status, after.releaseNote], ["pending", "no browser available"]);
+      const run = await ok<{ agentRequest: { status: string } | null }>(await person(`/api/runs/${asked.runId}`, undefined, "GET"));
+      assert.equal(run.agentRequest?.status, "pending");
+      assert.equal((await next(s)).request?.id, asked.id, "it can be taken again");
+      await s.tool("testbench_update_request_status", { request_id: asked.id, status: "released" });
+    } finally {
+      await s.close();
+    }
+  });
+});
+
 describe("the secrets and the limits", () => {
   it("answers 429 as 'slow down' when the address has made too many wrong attempts", async () => {
     const s = await session(tokenRevoked, a);
