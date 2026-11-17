@@ -21,7 +21,7 @@ const STATUS: Record<AgentRequest["status"], { tone: Tone; label: string; title:
   done: { tone: "ok", label: "Done", title: "The agent says it is finished" },
   cancelled: { tone: "neutral", label: "Cancelled", title: "A person withdrew it" },
 };
-const KIND_LABEL = { discover: "Discover", rerun: "Re-run failed tests" } as const;
+const KIND_LABEL = { discover: "Discover", rerun: "Re-run failed tests", run: "Run test cases" } as const;
 
 /** The Requests tab of Automated tests. */
 export function RequestsPage() {
@@ -81,6 +81,7 @@ function RequestCard({ r, onCancel, cancelling }: { r: AgentRequest; onCancel: (
         ) : (
           <span className="muted">the run has been deleted</span>
         )}
+        {r.kind === "run" && <span className="muted">{r.caseCount} {r.caseCount === 1 ? "case" : "cases"} at <code className="inline mono" style={{ overflowWrap: "anywhere" }}>{r.targetUrl}</code></span>}
         {r.environment && <span className="chip">{r.environment}</span>}
         <span className="spacer" />
         {open && <Button needs="tester" size="sm" onClick={onCancel} disabled={cancelling} aria-label={`Cancel request ${r.id}`}>Cancel</Button>}

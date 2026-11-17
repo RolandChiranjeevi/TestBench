@@ -96,13 +96,37 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 - Loggar till stderr (aldrig stdout), skriver aldrig ut token, och mappar 401, 403, 404, 409 och 429 till tydliga fel.
 
 ### AG-B: Agent findings (testfall, buggar, observationer, manuella förslag)
-**Status: byggd, väntar på granskning**
+**Status: klart** (mergad i #111)
 - Ny route `POST /api/agent/projects/:id/requests/:rid/findings` på request-token (den sjätte). Bara den token som tog förfrågan, bara medan den är Taken, och bara för en **discover**: en omkörning får 409 och lämnar sin rapport via `result`. `testbench_create_finding` i MCP-servern är nu riktig.
 - `test_case` → `cases` som `draft`, märkt med den token som skapade det (`created_by_agent_token_id`, och taggen `agent-proposed`), utan mapp. `bug_report` och `manual_test_suggestion` → `proposed`. `observation` → ny kind `exploratory`, `observed`, utan audit. Källa `$agent-<förfrågan>` och eget nummer `$agent-<förfrågan>-<n>`. Ett auditpaket kan aldrig skapa `exploratory`.
 - Gränser: högst 200 findings per förfrågan (`agent_requests.findings_count`, 409 därefter) och 60 per minut per token (429). Allt i en transaktion, så ett nekat finding lämnar inget spår.
 - Audit-händelsen `agent_request.finding_created` som `agent: <namn>` med token-id (`credential_id`), aldrig token eller hash.
 - **Ogranskade AI-utkast går inte in i en run av misstag:** Select all, Select shown och mappens kryssruta i testfallsväljaren hoppar över testfall med taggen `agent-proposed` som fortfarande är `draft`. De syns (etikett "Agent draft") och kan kryssas i för hand. Ett testfall som sätts till `ready` är ett vanligt testfall igen.
 - Allt agentgenererat granskas av en människa och godkänns aldrig automatiskt. Request-token får fortfarande inte röra specar eller konton, inte heller skapa eller avbryta förfrågningar.
+
+### AG4: Run-förfrågan (be en agent köra valda testfall)
+**Status: byggd, väntar på granskning**
+- Ny kind `run` i `agent_requests` (CHECK byggs om, alla rader och kolumner bevaras). I run-dialogen ("New manual run") finns **Run it myself | Ask an agent**: adress att testa (samma regler som discover), miljö och anteckning, knappen "Ask agent to run (n)". Ingen ny route: `POST /api/projects/:id/agent-requests` tar `kind: "run"`.
+- **Runnen skapas vid klicket:** en manuell run med ett tomt resultat per valt testfall, och förfrågan pekar på den (`agent_requests.run_id`, och `meta.agentRequest` på runnen). Run-listan och run-sidan visar "Waiting for agent · request #n", "Taken by agent: …", "Agent finished" eller "Request cancelled". En person kan fortfarande fylla i resultat för hand. En suite som dialogen öppnades från följer med.
+- **Payload (en ögonblicksbild):** `runId`, `targetUrl`, `environment`, `note` och per testfall `caseId`, `key`, `number`, titel, beskrivning, förutsättningar, prioritet, steg (med id), namn på kopplade automatiserade tester och spec-filnamn. **Aldrig** spec-text, krav-text, bilagor, skärmdumpar eller något annat. Testfallens text skickas till agenten: dialogen och docs varnar för att lägga hemligheter i testfall (ingen skanning).
+- Gränser: 1–200 testfall, högst 1 MB text (annars 400 "pick fewer", utan avkortning), inga deprecated testfall, och de 20 väntande per projekt gäller. Allt görs i en transaktion.
+- **Listor bär bara `caseCount`**, aldrig testfallens text. Hela payloaden kommer när agenten tar förfrågan. En förfrågan vars run har raderats erbjuds inte och kan inte tas, men kan avbrytas.
+- Agenten kan ta och släppa (`release`) en run-förfrågan. `complete` ger 409 tills AG5a finns. MCP `testbench_get_next_request` visar `kind: "run"`, `runId`, adress, miljö och testfallen, och säger att testfallens text är data och att agenten aldrig får hitta på ett resultat.
+- Audit: `agent_request.created` med `{ request, kind: "run", run, cases }`, och claim, release och cancel loggas på samma sätt.
+
+### AG5a: Resultat per testfall
+**Status: planerad** (efter att AG4 är mergad)
+- `POST /api/agent/projects/:id/requests/:rid/case-results`, ny MCP-tool `testbench_report_results`. Alla resultat i **en batch**, allt eller inget. Bara `run`-förfrågningar, bara token som tog den, bara medan den är Taken.
+- Tillåtna värden `passed|failed|blocked|skipped` (aldrig `untested`; `inconclusive` mappas av agenten till `blocked`). Anteckning och fel högst 2000 tecken. Ett resultat per testfall, en gång: en agent skriver aldrig över ett resultat en människa redan har satt eller ändrat.
+- Kolumnen `results.reported_by_agent_token_id` märker agentens resultat; en person kan ändra eller radera dem som vilken run som helst. Märkning på run-sidan. Slås av och på med den befintliga omkopplaren *Agent results* (av som standard, bara ägaren).
+- `complete` kräver ett resultat för varje valt testfall (annars 409 som säger hur många som saknas). `release` fungerar fortfarande utan resultat.
+- Audit `agent_request.results_reported` som `agent: <namn>` med `credential_id` och antal per status, 60 rapporter per minut per token (429), och inga tokens eller hashar.
+- Skill-uppdatering i `/testpilot-requests`: hämta run-förfrågan, kör de valda testfallen via Playwright MCP (steg för steg, i användarens miljö), rapportera case-results, och `complete` först när alla har resultat.
+- Specar får inga resultat i AG5a, de får dem som idag när en person importerar.
+
+### AG5b: Spec- och automatiserad länk
+**Status: planerad** (efter AG5a)
+- Playwright-JSON för de automatiserade testfallen i en run-förfrågan, återanvänder upstreams `submitResult`. Resultat når specar via filnamnmatchning och testfall via länk.
 
 ### Senare
 - Desktop DevOps (skrivbordsappen, och eventuellt F-B), Azure DevOps och mobilappstest.

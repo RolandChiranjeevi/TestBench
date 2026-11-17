@@ -51,7 +51,7 @@ import { agentCredentialKind, agentProposalsEnabled, authenticateProposeToken, c
 import { approveProposal, createProposals, editProposal, getProposal, listProposals, rejectProposal } from "./reqproposals.ts";
 import { actorName, actorUserId, getDisplayName, setDisplayName } from "./actor.ts";
 import { accountsState, AccountError, audit, revokeAllSessions, updateProfile } from "./accounts.ts";
-import { agentResultsEnabled, cancelRequest, claimRequest, completeRequest, createRequest, listRequests, pendingForAgent, releaseRequest, RESULT_LIMITS, setAgentResultsEnabled, submitResult } from "./agentrequests.ts";
+import { agentRequestOfRun, agentResultsEnabled, cancelRequest, claimRequest, completeRequest, createRequest, listRequests, pendingForAgent, releaseRequest, RESULT_LIMITS, setAgentResultsEnabled, submitResult } from "./agentrequests.ts";
 import { authenticateRequestToken, createRequestToken, isAgentRequestRoute, listRequestTokens, revokeRequestToken } from "./requesttokens.ts";
 import { createFinding, FINDING_LIMITS, findingBody } from "./agentfindings.ts";
 import { currentUser } from "./accountcontext.ts";
@@ -500,11 +500,13 @@ app.get("/api/projects/:id/runs", (req) => {
     .prepare(`
       SELECT ru.*, ${STATUS_COUNTS},
         COALESCE(SUM(r.duration_ms), 0) AS duration_ms,
-        COALESCE(t.name, json_extract(ru.meta, '$.suite.name')) AS template_name
+        COALESCE(t.name, json_extract(ru.meta, '$.suite.name')) AS template_name,
+        (SELECT json_object('id', ar.id, 'status', ar.status, 'claimedBy', ar.claimed_by) FROM agent_requests ar WHERE ar.run_id = ru.id AND ar.kind = 'run' ORDER BY ar.id DESC LIMIT 1) AS agent_request
       FROM runs ru LEFT JOIN results r ON r.run_id = ru.id LEFT JOIN run_templates t ON t.id = ru.template_id
       WHERE ru.project_id = ? ${templateId === null ? "" : "AND ru.template_id = ?"} GROUP BY ru.id ORDER BY ru.started_at DESC, ru.id DESC`)
     .all(...(templateId === null ? [projectId] : [projectId, templateId])) as Record<string, any>[];
-  return rows.map((r) => ({ ...r, meta: parseJson(r.meta, {}) }));
+  // `agentRequest`: the request an agent was asked to run this run by ({ id, status, claimedBy }), or null. The raw column is not part of the answer.
+  return rows.map(({ agent_request, ...r }) => ({ ...r, meta: parseJson(r.meta, {}), agentRequest: parseJson<{ id: number; status: string; claimedBy: string | null } | null>(agent_request, null) }));
 });
 
 const manualRunBody = z.object({
@@ -555,6 +557,7 @@ app.get("/api/runs/:id", (req) => {
     ...run,
     meta: parseJson(run.meta, {}),
     counts,
+    agentRequest: agentRequestOfRun(id),
     suite: runSuiteInfo(run as { id: number; template_id: number | null; meta: unknown }),
     results: run.kind === "manual" ? withAutomation(run.project_id, results as { case_id: number | null }[]) : results,
   };
@@ -1892,14 +1895,19 @@ app.post("/api/agent/projects/:id/requirement-proposals", { bodyLimit: 2 * 1024 
 // A person asks an agent to look at a target (discover) or to run the failed automated tests of a run again. Testbench starts nothing: the request waits until an agent with a
 // request token takes it, and says when it is done. What the agent delivers comes in through the normal import and is `proposed` until a person decides.
 const requestBody = z.object({
-  kind: z.enum(["discover", "rerun"]),
+  kind: z.enum(["discover", "rerun", "run"]),
   targetUrl: z.string().max(1000).optional(),
   environment: z.string().max(500).optional(),
   note: z.string().max(10000).optional(),
   runId: z.number().int().optional(),
+  // A run request: the test cases to run (checked by createRequest: 1 to 200, in this project, not deprecated), the name of the run, and the suite it comes from, if any.
+  caseIds: z.array(z.number().int()).max(1000).optional(),
+  title: z.string().max(1000).optional(),
+  templateId: z.number().int().nullable().optional(),
 });
-const requestAudit = (req: FastifyRequest, action: string, r: { id: number; projectId: number; kind: string }, label = actorName(), userId: number | null = actorUserId()) =>
-  audit({ userId, label, ip: req.ip }, action, { projectId: r.projectId, detail: { request: r.id, kind: r.kind } });
+// For a run request the entry also names the run that was made and how many cases it holds; for the others it is as before.
+const requestAudit = (req: FastifyRequest, action: string, r: { id: number; projectId: number; kind: string; runId?: number | null; caseCount?: number }, label = actorName(), userId: number | null = actorUserId()) =>
+  audit({ userId, label, ip: req.ip }, action, { projectId: r.projectId, detail: { request: r.id, kind: r.kind, ...(r.kind === "run" ? { run: r.runId ?? null, cases: r.caseCount ?? 0 } : {}) } });
 
 app.get("/api/projects/:id/agent-requests", (req) => audited(() => listRequests(idParam(req), (req.query as { status?: string }).status)));
 app.post("/api/projects/:id/agent-requests", (req) => {

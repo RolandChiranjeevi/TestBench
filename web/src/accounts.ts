@@ -118,7 +118,7 @@ export function describeAudit(e: Pick<AuditEntry, "action" | "actor" | "targetUs
     case "password.reset": return `${target} set a new password${d.via === "command line" ? " (set on the server)" : " with a reset link"}${d.sessionsEnded ? `, which ended ${plural(d.sessionsEnded, "session")}` : ""}`;
     case "password.reset_link_created": return `${who} made a password reset link for ${target}`;
     case "profile.changed": return `${who} changed their ${Array.isArray(d.fields) && d.fields.length ? d.fields.join(" and ") : "profile"}`;
-    case "agent_request.created": return `${who} asked an agent to ${d.kind === "rerun" ? "run failed automated tests again" : "look at a target"} in ${project}`;
+    case "agent_request.created": return `${who} asked an agent to ${d.kind === "rerun" ? "run failed automated tests again" : d.kind === "run" ? `run ${plural(d.cases ?? 0, "test case")}` : "look at a target"} in ${project}`;
     case "agent_request.cancelled": return `${who} cancelled a request to an agent in ${project}`;
     case "agent_request.claimed": return `${who} took a request in ${project}`;
     case "agent_request.released": return `${who} gave a request back in ${project}`;

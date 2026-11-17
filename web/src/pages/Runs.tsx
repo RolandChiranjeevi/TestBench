@@ -7,7 +7,7 @@ import { CasePicker, useRunnableCases } from "../components/CasePicker";
 import { Empty, FrameworkBadge, Github, Kbd, Modal, ProgressBar, useHotkeys, useToast, ListSkeleton } from "../components/ui";
 import { Badge, CiStatusBadge } from "../components/Badge";
 import { Button } from "../components/Button";
-import { agentRunInfo } from "../agentruns";
+import { agentRunInfo, askedRunInfo } from "../agentruns";
 import { TemplateModal, TemplatesPanel, useTemplates } from "./Templates";
 
 // "suites" is the tab of the runnable groups of cases (run templates). The tab and the suite filter are kept in the address, so that a link can open them.
@@ -111,6 +111,7 @@ function RunRow({ run }: { run: RunSummary }) {
           {run.template_name && <span className="chip" title="This run was started from a suite">Suite: {run.template_name}</span>}
           {run.meta?.scheduled && <span className="chip" title="Prepared by the suite's schedule, not started by a person">Scheduled</span>}
           {agentRunInfo(run) && <span className="chip" title={`Handed in by an agent for request #${agentRunInfo(run)!.requestId}, not imported by a person`}>Agent</span>}
+          {askedRunInfo(run) && <span className="chip chip-long" title={askedRunInfo(run)!.title}>{askedRunInfo(run)!.label}</span>}
           {run.kind === "manual" && run.status === "in_progress" && <Badge tone="accent" icon="eye">In progress</Badge>}
           {run.flaky > 0 && <CiStatusBadge value="flaky" label={`${run.flaky} flaky`} />}
         </div>
@@ -175,6 +176,14 @@ export function NewRunModal({ initialCaseIds = [], initialTitle, template, rerun
   const [selected, setSelected] = useState<Set<number>>(() => new Set(template ? template.caseIds : initialCaseIds));
   const [saveAs, setSaveAs] = useState(false);
   const [saveName, setSaveName] = useState("");
+  // "Ask an agent" (AG4): the run is made now, with an empty result for each case, and an agent is asked to run them in its own environment. TestBench starts nothing.
+  const [agentMode, setAgentMode] = useState(false);
+  const [targetUrl, setTargetUrl] = useState("");
+  const [note, setNote] = useState("");
+  const chooseMode = (agent: boolean) => {
+    setAgentMode(agent);
+    if (!titleEdited && !rerunOf && !initialTitle) setTitle(agent ? `Agent run · ${today}` : defaultTitle(template?.name));
+  };
 
   // Deprecated cases can't be run, even if a template still lists them.
   const runnableIds = new Set(runnable.map((c) => c.id));
@@ -191,6 +200,12 @@ export function NewRunModal({ initialCaseIds = [], initialTitle, template, rerun
 
   const create = useMutation({
     mutationFn: async () => {
+      if (agentMode) {
+        // One request makes the run and the request together (the suite, if any, follows so that the run still says "Suite: …"). It gives back the request, and the request the run.
+        const asked = await api.post<{ id: number; runId: number | null }>(`/api/projects/${pid}/agent-requests`, { kind: "run", title, environment, targetUrl, note, caseIds, templateId });
+        qc.invalidateQueries({ queryKey: ["agent-requests", pid] });
+        return { id: asked.runId as number };
+      }
       let tid = templateId;
       if (saveAs && saveName.trim()) {
         const t = await api.post<RunTemplate>(`/api/projects/${pid}/templates`, { name: saveName, environment, caseIds });
@@ -221,14 +236,30 @@ export function NewRunModal({ initialCaseIds = [], initialTitle, template, rerun
           <span className="muted" style={{ marginRight: "auto" }}>{caseIds.length} of {runnable.length} cases</span>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button needs="tester" variant="primary"
-            disabled={!caseIds.length || !title.trim() || (saveAs && !saveName.trim()) || create.isPending}
+            disabled={!caseIds.length || !title.trim() || (agentMode ? !targetUrl.trim() : saveAs && !saveName.trim()) || create.isPending}
             onClick={() => create.mutate()}
           >
-            <Play size={13} /> Start run
+            {agentMode ? <><Bot size={13} /> Ask agent to run ({caseIds.length})</> : <><Play size={13} /> Start run</>}
           </Button>
         </>
       }
     >
+      <div className="tabs" role="radiogroup" aria-label="Who runs the cases" style={{ marginBottom: 4 }}>
+        <button type="button" role="radio" aria-checked={!agentMode} className={`tab${!agentMode ? " active" : ""}`} onClick={() => chooseMode(false)}>Run it myself</button>
+        <button type="button" role="radio" aria-checked={agentMode} className={`tab${agentMode ? " active" : ""}`} onClick={() => chooseMode(true)}><Bot size={12} /> Ask an agent</button>
+      </div>
+      {agentMode && (
+        <div className="muted" style={{ fontSize: 12, lineHeight: 1.5 }}>
+          <p style={{ margin: "0 0 6px" }}>
+            TestBench starts nothing. An agent with a request token takes this request and runs the cases in <b>your own environment</b>, then reports a result for each one.
+            The run is made now and waits for the agent; you can still fill in results yourself.
+          </p>
+          <p style={{ margin: 0 }}>
+            <b>The text of the chosen test cases is sent to the agent</b> (title, description, preconditions and steps, and the names of linked automated tests and spec files), but no specs
+            and no requirements. Do not put secrets, passwords, API keys or other sensitive information in test cases or in the address.
+          </p>
+        </div>
+      )}
       <div className="field">
         <label htmlFor="run-title">Run name</label>
         <input
@@ -256,21 +287,37 @@ export function NewRunModal({ initialCaseIds = [], initialTitle, template, rerun
           <label htmlFor="env">Environment</label>
           <input id="env" className="input" placeholder="staging, prod, iOS 18…" value={environment} onChange={(e) => setEnvironment(e.target.value)} />
         </div>
-        <div className="field grow">
-          <label htmlFor="ms">Sprint / release</label>
-          <input id="ms" className="input" list="milestone-options" placeholder="Sprint 42, v2.3.0…" value={milestone} onChange={(e) => setMilestone(e.target.value)} />
-          <datalist id="milestone-options">{milestones.map((m) => <option key={m.id} value={m.name} />)}</datalist>
-        </div>
-      </div>
-      <CasePicker selected={selected} onChange={setSelected} />
-      <div className="row" style={{ gap: 12 }}>
-        <label className="row muted" style={{ fontSize: "var(--fs-md)", cursor: "pointer" }}>
-          <input type="checkbox" className="checkbox" checked={saveAs} onChange={(e) => setSaveAs(e.target.checked)} /> Save this selection as a suite
-        </label>
-        {saveAs && (
-          <input className="input grow" style={{ height: 28 }} placeholder="Suite name, e.g. Smoke test" value={saveName} onChange={(e) => setSaveName(e.target.value)} aria-label="Suite name" />
+        {!agentMode && (
+          <div className="field grow">
+            <label htmlFor="ms">Sprint / release</label>
+            <input id="ms" className="input" list="milestone-options" placeholder="Sprint 42, v2.3.0…" value={milestone} onChange={(e) => setMilestone(e.target.value)} />
+            <datalist id="milestone-options">{milestones.map((m) => <option key={m.id} value={m.name} />)}</datalist>
+          </div>
+        )}
+        {agentMode && (
+          <div className="field grow">
+            <label htmlFor="agent-url">Address to test</label>
+            <input id="agent-url" className="input" type="url" inputMode="url" placeholder="https://staging.example.com" value={targetUrl} onChange={(e) => setTargetUrl(e.target.value)} />
+          </div>
         )}
       </div>
+      {agentMode && (
+        <div className="field">
+          <label htmlFor="agent-note">Note for the agent (optional)</label>
+          <input id="agent-note" className="input" maxLength={2000} placeholder="Anything the agent should know about this run" value={note} onChange={(e) => setNote(e.target.value)} />
+        </div>
+      )}
+      <CasePicker selected={selected} onChange={setSelected} />
+      {!agentMode && (
+        <div className="row" style={{ gap: 12 }}>
+          <label className="row muted" style={{ fontSize: "var(--fs-md)", cursor: "pointer" }}>
+            <input type="checkbox" className="checkbox" checked={saveAs} onChange={(e) => setSaveAs(e.target.checked)} /> Save this selection as a suite
+          </label>
+          {saveAs && (
+            <input className="input grow" style={{ height: 28 }} placeholder="Suite name, e.g. Smoke test" value={saveName} onChange={(e) => setSaveName(e.target.value)} aria-label="Suite name" />
+          )}
+        </div>
+      )}
     </Modal>
   );
 }
