@@ -10,7 +10,7 @@ import { OriginBadge } from "../components/RequirementBits";
 import { SeverityBadge } from "../components/Badge";
 import { LinkToRequirementModal } from "./Requirements";
 
-const KIND_NAME: Record<string, string> = { load_test: "Load test", security_review: "Security review" };
+const KIND_NAME: Record<string, string> = { load_test: "Load test", security_review: "Security review", exploratory: "Exploratory" };
 
 /**
  * What is not covered yet, in three lists: requirements without a test case, test cases without a requirement, and observations that are linked to neither.

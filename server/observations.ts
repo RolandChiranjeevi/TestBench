@@ -14,7 +14,9 @@ import { hashOf } from "./auditcommon.ts";
  *    reopen it. converted means it is tracked as a bug; it is set by `convertToBug` only and such an observation cannot be closed here.
  */
 
-export const KINDS = ["load_test", "security_review"] as const;
+/** `exploratory` is only made by an agent's finding (server/agentfindings.ts), never by an audit package: the package schema below keeps the first two. */
+export const KINDS = ["load_test", "security_review", "exploratory"] as const;
+const PACKAGE_KINDS = ["load_test", "security_review"] as const;
 export const SEVERITIES = ["info", "low", "medium", "high", "critical"] as const;
 export const STATUSES = ["observed", "needs_review", "confirmed", "resolved", "archived", "converted"] as const;
 /** What a person can set by hand without closing it. */
@@ -37,7 +39,7 @@ const finite = z.number().refine(Number.isFinite, "must be a finite number");
 const ItemSchema = z.object({
   id: z.string().trim().min(1).max(LIMITS.short),
   auditId: z.string().trim().min(1).max(LIMITS.short),
-  kind: z.enum(KINDS),
+  kind: z.enum(PACKAGE_KINDS),
   title: z.string().trim().min(1).max(LIMITS.title),
   severity: z.enum(SEVERITIES),
   status: z.enum(AGENT_STATUSES, { error: "must be observed, needs_review, confirmed or resolved (archived and converted are set by a person in Testbench)" }).default("observed"),

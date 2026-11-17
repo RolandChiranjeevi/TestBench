@@ -10,8 +10,8 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { makeClient, TestBenchError, type Client } from "../mcp/client.ts";
 import { buildServer } from "../mcp/tools.ts";
 
-// The TestBench MCP server over the existing agent-request queue: two working tools (take the next request, finish or give back), one that says "not supported yet",
-// their input checks, what an agent is told when TestBench says no, and that the token never leaves the process. (Against the real server: mcp-bridge-http.test.ts.)
+// The TestBench MCP server over the existing agent-request queue: three tools (take the next request, finish or give back, hand in a finding), their input checks, what an agent
+// is told when TestBench says no, and that the token never leaves the process. (Against the real server: mcp-bridge-http.test.ts.)
 
 const TOKEN = "tbrq_" + "k".repeat(43);
 const ROOT = join(import.meta.dirname, "..");
@@ -105,16 +105,57 @@ describe("the tools", () => {
     assert.equal(f.calls.length, 2, "nothing was sent");
   });
 
-  it("create_finding answers 'not supported yet' as an error, for every kind, and calls nothing", async () => {
-    const f = fake(() => ({}));
+  it("create_finding hands every kind to POST .../requests/:rid/findings, with the request in the address and not in the body, and gives back what TestBench made", async () => {
+    const f = fake(() => ({ kind: "x", id: 9, sourceId: "$agent-4-1", findingsOnRequest: 1 }));
     const mcp = await connect(f.client);
-    for (const kind of ["test_case", "bug_report", "observation", "manual_test_suggestion"]) {
-      const r = await call(mcp, "testbench_create_finding", { kind, request_id: 4, title: "A finding" });
-      assert.equal(r.isError, true, kind);
-      assert.match(text(r), /Not supported yet/);
-      assert.match(text(r), /Nothing was created/);
+    const inputs = [
+      { kind: "test_case", title: "Sign in", priority: "high", description: "The happy path", steps: [{ action: "Open /login", expected: "A form" }, { action: "Submit" }] },
+      { kind: "bug_report", title: "Overlap", steps: ["Open /"], severity: "medium", url: "http://localhost/", expected: "No overlap", actual: "Overlap" },
+      { kind: "observation", title: "Slow", severity: "low", evidence: "3 s", recommendation: "Cache it", source: "home" },
+      { kind: "manual_test_suggestion", title: "Screen reader", category: "accessibility", priority: "high", steps: ["Tab through"], preconditions: "A keyboard" },
+    ];
+    for (const input of inputs) {
+      const r = await call(mcp, "testbench_create_finding", { request_id: 4, ...input });
+      assert.equal(r.isError, undefined, `${input.kind}: ${text(r)}`);
+      assert.deepEqual(JSON.parse(text(r)), { kind: "x", id: 9, sourceId: "$agent-4-1", findingsOnRequest: 1 });
     }
-    assert.deepEqual(f.calls, [], "TestBench was never asked");
+    assert.deepEqual(f.calls.map((c) => [c.method, c.path]), inputs.map(() => ["POST", `/api/agent/projects/${P}/requests/4/findings`]));
+    assert.deepEqual(f.calls.map((c) => c.body), inputs, "the body is the finding, without request_id");
+  });
+
+  it("create_finding has no way to say that a finding is approved, accepted or reviewed: such a field is not in the input", async () => {
+    const mcp = await connect(fake(() => ({})).client);
+    const props = Object.keys(((await mcp.listTools()).tools.find((t) => t.name === "testbench_create_finding")!.inputSchema as { properties: Record<string, unknown> }).properties);
+    for (const field of ["status", "review_status", "approved", "accepted", "reviewed_by", "created_by_agent_token_id", "human_severity", "audit_id"]) assert.equal(props.includes(field), false, field);
+  });
+
+  it("create_finding turns TestBench's refusals (not a discover, not taken, another token, full, no such request, too many, bad input) into errors that say what to do", async () => {
+    const said: [number, string, RegExp][] = [
+      [409, "Findings can only be made for a discover request. A re-run hands in its report with the result route", /discover request/],
+      [409, "The request is not taken. Take it first", /not taken/],
+      [409, "Another token took this request", /Another token/],
+      [409, "This request already has 200 findings, the most one request can make", /200 findings/],
+      [404, "Request not found", /Not found/],
+      [429, "Too many findings from this token (at most 60 a minute). Wait a minute and try again", /Slow down: Too many findings/],
+      [400, "title: Too small", /refused the input: title/],
+      [403, "This token does not belong to this project", /does not belong to this project/],
+      [401, "A valid request token is required", /refused the token/],
+    ];
+    for (const [status, message, re] of said) {
+      const f = fake(() => { throw new TestBenchError(status, status === 401 ? "TestBench refused the token (missing, wrong or revoked)." : status === 400 ? `TestBench refused the input: ${message}` : status === 404 ? `Not found. ${message}` : status === 403 ? `TestBench says this token may not do that. ${message}` : status === 429 ? `Slow down: ${message}. Wait and try again.` : `Conflict: ${message}`); });
+      const r = await call(await connect(f.client), "testbench_create_finding", { kind: "observation", request_id: 4, title: "x" });
+      assert.equal(r.isError, true, String(status));
+      assert.match(text(r), re);
+      assert.equal(text(r).includes(TOKEN), false);
+    }
+  });
+
+  it("create_finding reduces any other error to a fixed text that holds no token", async () => {
+    const f = fake(() => { throw new Error(`fetch failed: Authorization: Bearer ${TOKEN}`); });
+    const r = await call(await connect(f.client), "testbench_create_finding", { kind: "bug_report", request_id: 4, title: "x" });
+    assert.equal(r.isError, true);
+    assert.equal(text(r).includes(TOKEN), false);
+    assert.match(text(r), /Unexpected error/);
   });
 });
 
@@ -221,6 +262,7 @@ describe("the server over stdio", () => {
         const json = (status: number, v: unknown) => res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify(v));
         if (req.url === `/api/agent/projects/${P}/requests`) return json(200, [{ id: 3 }]);
         if (req.url === `/api/agent/projects/${P}/requests/3/claim`) return json(200, REQ(3));
+        if (req.url === `/api/agent/projects/${P}/requests/3/findings`) return json(201, { kind: "bug_report", id: 9, sourceId: "$agent-3-1", findingsOnRequest: 1 });
         json(409, { error: "The request is already done or cancelled" });
       });
     });
@@ -246,9 +288,13 @@ describe("the server over stdio", () => {
       assert.equal(conflict.isError, true);
       assert.match(text(conflict), /Conflict: The request is already done or cancelled/);
       const finding = (await mcp.callTool({ name: "testbench_create_finding", arguments: { kind: "bug_report", request_id: 3, title: "x" } })) as Result;
-      assert.equal(finding.isError, true);
-      assert.match(text(finding), /Not supported yet/);
-      assert.deepEqual(seen.map((s) => [s.method, s.url]), [["GET", `/api/agent/projects/${P}/requests`], ["POST", `/api/agent/projects/${P}/requests/3/claim`], ["POST", `/api/agent/projects/${P}/requests/3/complete`]]);
+      assert.equal(finding.isError, undefined, text(finding));
+      assert.deepEqual(JSON.parse(text(finding)), { kind: "bug_report", id: 9, sourceId: "$agent-3-1", findingsOnRequest: 1 });
+      assert.deepEqual(seen.map((s) => [s.method, s.url]), [
+        ["GET", `/api/agent/projects/${P}/requests`], ["POST", `/api/agent/projects/${P}/requests/3/claim`], ["POST", `/api/agent/projects/${P}/requests/3/complete`],
+        ["POST", `/api/agent/projects/${P}/requests/3/findings`],
+      ]);
+      assert.deepEqual(JSON.parse(seen[3].body), { kind: "bug_report", title: "x" }, "request_id is in the address, not in the body");
       assert.ok(seen.every((s) => s.auth === `Bearer ${TOKEN}`), "every call carried the token");
       assert.equal([got, conflict, finding].some((r) => text(r).includes(TOKEN)), false);
     } finally {

@@ -8,8 +8,8 @@ import { TestBenchError, type Client } from "./client.ts";
  *
  *  - testbench_get_next_request: lists the waiting requests (oldest first) and takes the first one that is still free (claim).
  *  - testbench_update_request_status: finishes the request the token took (complete), or gives it back (release).
- *  - testbench_create_finding: NOT SUPPORTED YET. It answers with a clear error and calls nothing. Findings come with a later change; until then the agent hands them in
- *    the way it already does (an audit package, imported by a person).
+ *  - testbench_create_finding: hands in one finding of a DISCOVER request the token took (a test case, bug report, observation or manual test suggestion). TestBench makes a
+ *    draft or a proposal of it for a person to review, never an approval. The status of a finding is not something the agent can say: the input has no such field.
  *
  * Input is checked with Zod here so an agent gets a clear refusal early, and again by TestBench, which is the one that decides.
  */
@@ -28,10 +28,24 @@ export const updateRequestStatusInput = {
   result_run_id: z.number().int().positive().optional().describe("done only: the run the delivered report made (a rerun)"),
   result_audit_id: z.number().int().positive().optional().describe("done only: the audit the finished discover made"),
 };
+const step = z.object({ action: z.string().max(1000), expected: z.string().max(1000).optional() }).strict();
 export const createFindingInput = {
-  kind: z.enum(FINDING_KINDS).describe("test_case | bug_report | observation | manual_test_suggestion"),
-  request_id: z.number().int().positive(),
+  kind: z.enum(FINDING_KINDS).describe("test_case | bug_report | observation | manual_test_suggestion. Always made as a draft or a proposal for a person to review."),
+  request_id: z.number().int().positive().describe("The discover request you took with testbench_get_next_request. A rerun cannot have findings."),
   title: z.string().trim().min(1).max(300),
+  description: z.string().max(5000).optional().describe("test_case, bug_report, manual_test_suggestion"),
+  preconditions: z.string().max(2000).optional().describe("test_case, manual_test_suggestion"),
+  priority: z.enum(["low", "medium", "high", "critical"]).optional().describe("test_case, manual_test_suggestion (default medium)"),
+  steps: z.array(z.union([z.string().max(1000), step])).max(50).optional().describe("test_case: [{action, expected}]. bug_report and manual_test_suggestion: [string]"),
+  expected: z.string().max(2000).optional().describe("bug_report, manual_test_suggestion"),
+  actual: z.string().max(2000).optional().describe("bug_report"),
+  environment: z.string().max(200).optional().describe("bug_report"),
+  url: z.string().max(2000).optional().describe("bug_report"),
+  severity: z.enum(["info", "low", "medium", "high", "critical"]).optional().describe("observation (default info), bug_report (low, medium, high or critical; not info)"),
+  evidence: z.string().max(4000).optional().describe("observation"),
+  recommendation: z.string().max(4000).optional().describe("observation"),
+  source: z.string().max(300).optional().describe("observation: where it was seen, for example the page"),
+  category: z.enum(["functional", "accessibility", "responsive", "usability", "security", "other"]).optional().describe("manual_test_suggestion (default functional)"),
 };
 
 const ok = (value: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(value) }] });
@@ -104,17 +118,20 @@ export function buildServer(client: Client, projectId: number, version = "0.1.0"
   server.registerTool(
     "testbench_create_finding",
     {
-      title: "Report a finding to TestBench (not supported yet)",
-      description: "Not supported yet. It creates nothing and calls nothing: it answers with an error. Hand findings in as an audit package for now.",
+      title: "Report a finding to TestBench",
+      description:
+        "Hands in one finding of a DISCOVER request you took: a test case (draft), a bug report, a manual test suggestion (proposed) or an observation (observed). A person reviews " +
+        "it in TestBench; nothing here approves anything. Only the token that took the request can do this, only while it is taken, never for a rerun, at most 200 findings per " +
+        "request and 60 a minute. Fields that do not belong to the kind are refused.",
       inputSchema: createFindingInput,
     },
-    async () => ({
-      isError: true as const,
-      content: [{
-        type: "text" as const,
-        text: "Not supported yet: TestBench cannot take findings through this server. Nothing was created. Hand them in as an audit package (it stays proposed until a person decides).",
-      }],
-    }),
+    async ({ request_id, ...finding }) => {
+      try {
+        return ok(await client.call("POST", `${base}/${request_id}/findings`, finding));
+      } catch (e) {
+        return refused(e);
+      }
+    },
   );
 
   return server;

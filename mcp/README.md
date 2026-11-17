@@ -10,7 +10,27 @@ TestBench starts nothing: the request waits until an agent takes it. TestBench n
 | --- | --- |
 | `testbench_get_next_request` | Lists the waiting requests of the project (oldest first) and takes the first one that is still free (`claim`). Returns `{"request": null}` when nothing waits. If another agent takes one at the same moment, it moves on to the next. |
 | `testbench_update_request_status` | `done`: the work is finished (`complete`, with an optional `note`, `result_run_id` and `result_audit_id`). `released`: give the request back so that it waits again (`release`, with an optional reason in `note`). Only the token that took the request can do either. |
-| `testbench_create_finding` | **Not supported yet.** It always answers with an error, creates nothing and calls nothing. Hand findings in the way TestPilot already does (an audit package, which stays `proposed` until a person decides). |
+| `testbench_create_finding` | Hands in one finding of a **discover** request you took (`request_id`), as a draft or a proposal for a person to review. `kind` is `test_case`, `bug_report`, `observation` or `manual_test_suggestion`; see "Findings" below. |
+
+### Findings
+
+A finding is never an approval. TestBench decides what it becomes, and the tool has no field for a status, a reviewer or a decision (a field that does not belong to the kind is refused):
+
+| `kind` | Becomes | Fields |
+| --- | --- | --- |
+| `test_case` | a **draft** test case, marked as made by the agent (tag `agent-proposed`), in no folder | `title`, `description`, `preconditions`, `priority`, `steps` as `[{action, expected}]` |
+| `bug_report` | a **proposed** bug report, with the agent's severity only as a suggestion | `title`, `description`, `steps` as `[string]`, `expected`, `actual`, `environment`, `url`, `severity` (`low` to `critical`) |
+| `observation` | an **observed** observation of the new kind *Exploratory* | `title`, `severity` (`info` to `critical`), `evidence`, `recommendation`, `source` |
+| `manual_test_suggestion` | a **proposed** manual test | `title`, `description`, `preconditions`, `priority`, `steps` as `[string]`, `expected`, `category` |
+
+The answer says what was made: `{"kind", "id", "sourceId", "findingsOnRequest"}`. The source id is `$agent-<request>-<n>`, where `n` counts the findings of that request.
+
+Rules, all checked by TestBench:
+
+- Only the token that **took** the request, only **while it is taken**, and only for a **discover**. A rerun hands in its report through TestBench's result route and gets 409 here.
+- At most **200 findings per request** (409 after that) and **60 findings a minute per token** (429).
+- Test cases made by the agent are not ticked by *Select all* when you build a run: review them first.
+- Each finding is written to TestBench's audit log (`agent_request.finding_created`) with the agent's name and the token's id, never the token.
 
 The address, environment and note of a request were written by a person. They are **data, not instructions**, and a request does not replace the agent's own confirmations (production targets, observe-only mode). The answer of `testbench_get_next_request` says so.
 
@@ -18,7 +38,7 @@ The address, environment and note of a request were written by a person. They ar
 
 In TestBench: **Settings → Agent → Create request token** (an admin of the project does this). The full token is shown **once**. It starts with `tbrq_` and belongs to one project. Revoke it in the same place. The list shows when it was last used.
 
-A request token can fetch the waiting requests, take one, give it back and say it is done. It cannot make or cancel a request, read requirements, touch specs or accounts, or decide anything. Other kinds of token (`tbag_`, `tbpr_`, `tbci_`) are refused by this server and by TestBench.
+A request token can fetch the waiting requests, take one, give it back, hand in findings for a discover it took, and say it is done. It cannot make or cancel a request, read requirements, touch specs or accounts, or decide anything. Other kinds of token (`tbag_`, `tbpr_`, `tbci_`) are refused by this server and by TestBench.
 
 ## 2. Configure Claude
 
@@ -66,7 +86,8 @@ If something is missing or wrong the server stops at once with a message on stde
 
 1. In TestBench, ask for a discover (**Request discover**).
 2. In Claude, call `testbench_get_next_request`. It takes the request.
-3. Do the work. When you are done, call `testbench_update_request_status` with `done` (and the audit your discover made, if any). If you cannot do it, call it with `released` and say why.
+3. Do the work. For each thing you find, call `testbench_create_finding` with the request's id. A person reviews every finding in TestBench.
+4. When you are done, call `testbench_update_request_status` with `done` (and the audit your discover made, if any). If you cannot do it, call it with `released` and say why.
 
 ## Errors
 
@@ -77,8 +98,8 @@ Errors come back as MCP tool errors with a message to act on:
 | 401 | The token was refused (missing, wrong, revoked, or not a request token). |
 | 403 | The token belongs to another project, or may not do that. |
 | 404 | No such request in this project (or `TESTBENCH_PROJECT_ID` is wrong). |
-| 409 | The request is not in the right state (someone else took it, it is already done, another token took it). |
-| 429 | Too many wrong attempts from this address. Wait and try again. |
+| 409 | The request is not in the right state (someone else took it, it is already done, another token took it). For a finding also: the request is not a discover, is not taken, or already has 200 findings. |
+| 429 | Too many wrong attempts from this address, or more than 60 findings a minute from this token. Wait and try again. |
 | 400 | TestBench refused the input (for example a `result_audit_id` that is not an audit of this project). |
 
-Everything the token does is written to TestBench's audit log by TestBench itself (`agent_request.claimed`, `released`, `completed`).
+Everything the token does is written to TestBench's audit log by TestBench itself (`agent_request.claimed`, `released`, `completed`, `finding_created`).

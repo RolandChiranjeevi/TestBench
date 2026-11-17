@@ -434,7 +434,7 @@ export function listBugReports(projectId: number, opts: BugListFilter = {}) {
   return {
     items: rows.map((r) => ({
       id: r.id, sourceId: r.source_id, title: r.title, status: r.review_status as ReviewStatus, reviewedBy: (r.reviewed_by as string) || null, reviewedAt: r.reviewed_at as string | null, severity: effective(r), severitySource: severitySource(r), severityBy: r.human_severity ? ((r.severity_by as string) || null) : null, foundAt: r.found_at, importedAt: r.imported_at,
-      auditTitle: json<{ title?: string }>(r.origin, {}).title ?? "", auditDeleted: r.audit_id == null && r.source === "agent_audit",
+      auditTitle: json<{ title?: string }>(r.origin, {}).title ?? "", auditDeleted: r.audit_id == null && r.source === "agent_audit" && !String(r.origin_audit_id).startsWith("$"), // "$agent-<n>" is a finding's own origin, not an audit that was deleted
       source: r.source as string, fromScreenshot: r.origin_audit_id === "$screenshot", testKey: r.test_key as string | null, tags: json<string[]>(r.tags, []), workflowStatus: r.workflow_status as WorkflowStatus, assignee: r.assignee as string,
       ci: r.source === "ci" ? (() => {
         const [branch = "", commit = "", pipelineUrl = ""] = String(r.last_occurrence ?? "").split("\u001f");

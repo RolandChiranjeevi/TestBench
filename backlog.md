@@ -89,18 +89,20 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 - Gäller bara re-run. Att starta en CI-körning (GitHub Actions) för en omkörning är ett separat alternativ, och väntar tills någon har sina tester i CI och inte lokalt.
 
 ### AG-A: MCP-brygga över befintlig agentförfrågningskö
-**Status: byggd, väntar på granskning**
+**Status: klart** (mergad i #110)
 - En lokal MCP-server (`mcp/`, stdio, `@modelcontextprotocol/sdk`, Zod) som Claude/TestPilot startar. Den läser `TESTBENCH_URL`, `TESTBENCH_TOKEN` (en request-token, `tbrq_`) och `TESTBENCH_PROJECT_ID` (request-tokens routes har projektet i adressen).
-- `testbench_get_next_request` listar de väntande förfrågningarna och tar den äldsta lediga (`claim`). `testbench_update_request_status` avslutar (`complete`) eller släpper tillbaka (`release`) en förfrågan. `testbench_create_finding` svarar "not supported yet", skapar inget och anropar inget.
+- `testbench_get_next_request` listar de väntande förfrågningarna och tar den äldsta lediga (`claim`). `testbench_update_request_status` avslutar (`complete`) eller släpper tillbaka (`release`) en förfrågan. `testbench_create_finding` var i AG-A en platshållare ("not supported yet") och blir riktig i AG-B.
 - Ingen ändring i TestBench-servern, `agent_requests`, tokens, UI eller något testmaterial. Adress och anteckning är data, aldrig instruktion, och svaret säger det.
 - Loggar till stderr (aldrig stdout), skriver aldrig ut token, och mappar 401, 403, 404, 409 och 429 till tydliga fel.
 
 ### AG-B: Agent findings (testfall, buggar, observationer, manuella förslag)
-**Status: planerad** (efter att AG-A är mergad och verifierad)
-- En ny agent-route för findings, kopplad till en förfrågan som just den request-token tog (bara claim-token, bara medan förfrågan är Taken). `testbench_create_finding` i MCP-servern börjar fungera.
-- `test_case` → `cases` som `draft`, märkt med den token som skapade det (`created_by_agent_token_id`). `bug_report` och `manual_test_suggestion` → `proposed`, ursprung `$agent-<förfrågan>`. `observation` → ny kind `exploratory`, `observed`, utan audit.
-- Audit-loggning som `agent:<namn>` med token-id och aldrig token eller hash, och en gräns för hur många findings en token får göra per minut.
-- Allt agentgenererat granskas av en människa och godkänns aldrig automatiskt. Request-token får fortfarande inte röra specar eller konton.
+**Status: byggd, väntar på granskning**
+- Ny route `POST /api/agent/projects/:id/requests/:rid/findings` på request-token (den sjätte). Bara den token som tog förfrågan, bara medan den är Taken, och bara för en **discover**: en omkörning får 409 och lämnar sin rapport via `result`. `testbench_create_finding` i MCP-servern är nu riktig.
+- `test_case` → `cases` som `draft`, märkt med den token som skapade det (`created_by_agent_token_id`, och taggen `agent-proposed`), utan mapp. `bug_report` och `manual_test_suggestion` → `proposed`. `observation` → ny kind `exploratory`, `observed`, utan audit. Källa `$agent-<förfrågan>` och eget nummer `$agent-<förfrågan>-<n>`. Ett auditpaket kan aldrig skapa `exploratory`.
+- Gränser: högst 200 findings per förfrågan (`agent_requests.findings_count`, 409 därefter) och 60 per minut per token (429). Allt i en transaktion, så ett nekat finding lämnar inget spår.
+- Audit-händelsen `agent_request.finding_created` som `agent: <namn>` med token-id (`credential_id`), aldrig token eller hash.
+- **Ogranskade AI-utkast går inte in i en run av misstag:** Select all, Select shown och mappens kryssruta i testfallsväljaren hoppar över testfall med taggen `agent-proposed` som fortfarande är `draft`. De syns (etikett "Agent draft") och kan kryssas i för hand. Ett testfall som sätts till `ready` är ett vanligt testfall igen.
+- Allt agentgenererat granskas av en människa och godkänns aldrig automatiskt. Request-token får fortfarande inte röra specar eller konton, inte heller skapa eller avbryta förfrågningar.
 
 ### Senare
 - Desktop DevOps (skrivbordsappen, och eventuellt F-B), Azure DevOps och mobilappstest.

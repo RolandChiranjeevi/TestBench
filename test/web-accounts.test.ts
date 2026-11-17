@@ -77,6 +77,15 @@ describe("the audit log in words", () => {
     for (const a of AUDIT_ACTIONS) assert.ok(!describeAudit(e(a), names).includes(a), `${a} has words of its own`);
   });
 
+  it("says what an agent reported, by kind, and names the agent", () => {
+    const f = (kind: string) => describeAudit(e("agent_request.finding_created", { actor: "agent: claude-a", projectId: 7, detail: { request: 5, kind: "discover", finding_kind: kind, id: 9, n: 1, credential_id: 3 } }), names);
+    assert.equal(f("test_case"), "agent: claude-a reported a test case (a draft) for a discover request in Acme");
+    assert.equal(f("bug_report"), "agent: claude-a reported a bug report (a proposal) for a discover request in Acme");
+    assert.equal(f("observation"), "agent: claude-a reported an observation for a discover request in Acme");
+    assert.equal(f("manual_test_suggestion"), "agent: claude-a reported a manual test suggestion (a proposal) for a discover request in Acme");
+    assert.equal(f("something_new"), "agent: claude-a reported a finding for a discover request in Acme", "a kind the page does not know still reads well");
+  });
+
   it("says what happened, with names", () => {
     assert.equal(describeAudit(e("member.role_changed", { projectId: 7, detail: { from: "viewer", to: "tester" } }), names), "Ola Owner changed Pia Person's role in Acme from viewer to tester");
     assert.equal(describeAudit(e("member.added", { projectId: 7, detail: { role: "admin", via: "invitation" } }), names), "Ola Owner added Pia Person to Acme as admin (with an invitation)");

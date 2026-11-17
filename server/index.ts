@@ -53,6 +53,7 @@ import { actorName, actorUserId, getDisplayName, setDisplayName } from "./actor.
 import { accountsState, AccountError, audit, revokeAllSessions, updateProfile } from "./accounts.ts";
 import { agentResultsEnabled, cancelRequest, claimRequest, completeRequest, createRequest, listRequests, pendingForAgent, releaseRequest, RESULT_LIMITS, setAgentResultsEnabled, submitResult } from "./agentrequests.ts";
 import { authenticateRequestToken, createRequestToken, isAgentRequestRoute, listRequestTokens, revokeRequestToken } from "./requesttokens.ts";
+import { createFinding, FINDING_LIMITS, findingBody } from "./agentfindings.ts";
 import { currentUser } from "./accountcontext.ts";
 import { checkAccessTable, trackRoutes } from "./access.ts";
 import { registerAccessGuard } from "./accessguard.ts";
@@ -1981,6 +1982,20 @@ app.post("/api/agent/projects/:id/requests/:rid/complete", (req, reply) => {
   const r = audited(() => completeRequest(id, idParam(req, "rid"), auth, body));
   requestAudit(req, "agent_request.completed", r, `agent: ${auth.name}`, null);
   return r;
+});
+// A finding from the discover request this token took (server/agentfindings.ts): a proposal for a person, never an approval. At most FINDING_LIMITS.perMinute a minute per token
+// (429 after that); every attempt after a valid token counts, so a refused one does too. The rest of the rules (claimed by this token, a discover, the cap) are in createFinding.
+const findingLimiter = makeLimiter({ max: FINDING_LIMITS.perMinute, windowMs: 60_000 });
+app.post("/api/agent/projects/:id/requests/:rid/findings", { bodyLimit: FINDING_LIMITS.bodyBytes }, (req, reply) => {
+  const id = idParam(req);
+  const auth = requestTokenAuth(req, id);
+  const key = `t${auth.id}`;
+  if (findingLimiter.blockedFor(key) > 0) throw new HttpError(429, `Too many findings from this token (at most ${FINDING_LIMITS.perMinute} a minute). Wait a minute and try again`);
+  findingLimiter.fail(key); // counts this attempt
+  reply.header("Cache-Control", "no-store");
+  const body = findingBody.parse(req.body ?? {});
+  reply.code(201);
+  return audited(() => createFinding(id, idParam(req, "rid"), auth, req.ip, body));
 });
 
 app.get("/api/projects/:id/requirement-proposals", (req) => requirementsApi(() => listProposals(idParam(req), (req.query as { status?: string }).status || undefined)));
