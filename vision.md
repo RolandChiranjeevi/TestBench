@@ -88,10 +88,9 @@ Rollerna:
 - **TestBench MCP-servern** är bryggan mellan Claude/TestPilot och TestBench: tre verktyg (hämta nästa förfrågan, avsluta eller släppa den, rapportera en finding) över kön som redan finns.
 - **Token** autentiserar agenten. En request-token kan ta, släppa och avsluta förfrågningar, och kan inte skapa eller avbryta dem, läsa krav, röra specar eller se konton. Agentens text från en förfrågan (adress, anteckning) är data, aldrig instruktion.
 
-Det som redan är byggt är kön, Request discover i UI, request-tokens, `/testpilot-requests`, release och audit-länk, och att agenten själv lämnar in en omkörnings rapport (se backlogg T, T-A, T-B). Det som återstår är två steg:
+Det som redan är byggt är kön, Request discover i UI, request-tokens, `/testpilot-requests`, release och audit-länk, och att agenten själv lämnar in en omkörnings rapport (se backlogg T, T-A, T-B), samt MCP-bryggan över kön (backlogg AG-A, #110). Det senaste steget är:
 
-- **MCP-brygga över befintlig kö** (backlogg AG-A): MCP-servern ovanpå kön. Ingen ändring i TestBench-servern.
-- **Agent findings** (backlogg AG-B): agenten skapar testfall, buggrapporter, observationer och manuella testförslag direkt i TestBench, kopplade till den förfrågan den tog. Allt landar som utkast eller förslag och godkänns aldrig automatiskt.
+- **Agent findings** (backlogg AG-B): agenten skapar testfall, buggrapporter, observationer och manuella testförslag direkt i TestBench, kopplade till den discover-förfrågan den tog. Allt landar som utkast eller förslag och godkänns aldrig automatiskt, testfallen märks som agentens, och ogranskade AI-utkast tas inte med av "Select all" när en run byggs.
 
 Senare: skrivbordsappen (och eventuell körning i sandbox, F-B), Azure DevOps och mobilappstest.
 
@@ -151,15 +150,14 @@ Automatiserade testfall ska skrivas i **Playwright-format (`*.spec.ts`)**, så a
 ## Vad som saknas / behöver byggas
 
 - **Användarskapade automatiserade testfall (spec.ts)** — S1 (spec från ett testfall), S2 (egna specar) och S3 (specens resultat och jämförelse med användarens repo) är byggda, se backlogg U.
-- **MCP-brygga över kön** och **agent findings** — se "Agentflödet och MCP-bryggan" och backlogg AG-A och AG-B.
+- **Agent findings** är byggt men inte mergat än (backlogg AG-B). MCP-bryggan över kön är klar (AG-A, #110).
 - **Azure DevOps-export** — framtida.
 - **Mobilappstest** — framtida.
 
 ## Nästa steg
 
-1. **AG-A: MCP-brygga över den befintliga kön.**
-2. **AG-B: agent findings** (efter att AG-A är mergad och verifierad).
-3. **Integrationer (Azure DevOps, mobil)** — senare.
+1. **AG-B: agent findings** — granska och merga. (AG-A, MCP-bryggan, är klar.)
+2. **Integrationer (Azure DevOps, mobil)** — senare.
 
 ## Frågor att förtydliga
 
