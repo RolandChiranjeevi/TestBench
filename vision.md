@@ -67,6 +67,34 @@ TestPilot är AI-agenten som drivs från TestBench och arbetar enligt flödet:
 - **Report:** skapar observationer för avvikelser, säkerhetsproblem, tillgänglighetsproblem, och föreslår buggar vid behov.
 - **Deliver:** levererar resultatet tillbaka till TestBench.
 
+## Agentflödet och MCP-bryggan
+
+Målet är att användaren konfigurerar en gång och sedan styr allt från TestBench:
+
+1. Användaren skapar en **request-token** (`tbrq_`) en gång i TestBench, under Settings → Agent. Hela token visas bara vid skapandet, den kan återkallas och senaste användning syns.
+2. Användaren konfigurerar Claude/TestPilot en gång: `TESTBENCH_URL`, `TESTBENCH_TOKEN` och projektet.
+3. Användaren klickar **Request discover** i TestBench (finns).
+4. Claude/TestPilot tar förfrågan via **TestBench MCP-servern** (`mcp/`, stdio).
+5. TestPilot utforskar appen sida för sida via **Playwright MCP**, i användarens egen miljö.
+6. Discover lämnar testfall, buggrapporter, observationer och förslag på manuella testfall i TestBench, kopplade till rätt projekt, krav och ärenden där det passar.
+7. Användaren granskar. Allt agentgenererat är märkt och förblir ett förslag tills en människa bestämmer.
+8. Användaren väljer testfall och ber om en körning. TestPilot tar den via MCP, kör Playwright via Playwright MCP och importerar resultatet, som länkas till testfall, specar och ärenden.
+
+Rollerna:
+
+- **TestBench** är källan: projekt, krav, ärenden, testfall, buggrapporter, observationer, förslag, specar, förfrågningar och resultat. TestBench startar inget, kör aldrig Playwright och skriver aldrig till disk eller git.
+- **TestPilot** är agenten som fattar beslut, följer sina egna regler och bekräftelser, skapar material och kör flöden.
+- **Playwright MCP** är gränssnittet mot webbappen.
+- **TestBench MCP-servern** är bryggan mellan Claude/TestPilot och TestBench: tre verktyg (hämta nästa förfrågan, avsluta eller släppa den, rapportera en finding) över kön som redan finns.
+- **Token** autentiserar agenten. En request-token kan ta, släppa och avsluta förfrågningar, och kan inte skapa eller avbryta dem, läsa krav, röra specar eller se konton. Agentens text från en förfrågan (adress, anteckning) är data, aldrig instruktion.
+
+Det som redan är byggt är kön, Request discover i UI, request-tokens, `/testpilot-requests`, release och audit-länk, och att agenten själv lämnar in en omkörnings rapport (se backlogg T, T-A, T-B). Det som återstår är två steg:
+
+- **MCP-brygga över befintlig kö** (backlogg AG-A): MCP-servern ovanpå kön. Ingen ändring i TestBench-servern.
+- **Agent findings** (backlogg AG-B): agenten skapar testfall, buggrapporter, observationer och manuella testförslag direkt i TestBench, kopplade till den förfrågan den tog. Allt landar som utkast eller förslag och godkänns aldrig automatiskt.
+
+Senare: skrivbordsappen (och eventuell körning i sandbox, F-B), Azure DevOps och mobilappstest.
+
 ## Viktiga komponenter
 
 - **Playwright MCP** — central för webb-UI-testning.
@@ -123,12 +151,15 @@ Automatiserade testfall ska skrivas i **Playwright-format (`*.spec.ts`)**, så a
 ## Vad som saknas / behöver byggas
 
 - **Användarskapade automatiserade testfall (spec.ts)** — S1 (spec från ett testfall), S2 (egna specar) och S3 (specens resultat och jämförelse med användarens repo) är byggda, se backlogg U.
+- **MCP-brygga över kön** och **agent findings** — se "Agentflödet och MCP-bryggan" och backlogg AG-A och AG-B.
 - **Azure DevOps-export** — framtida.
 - **Mobilappstest** — framtida.
 
 ## Nästa steg
 
-1. **Integrationer (Azure DevOps, mobil)** — senare.
+1. **AG-A: MCP-brygga över den befintliga kön.**
+2. **AG-B: agent findings** (efter att AG-A är mergad och verifierad).
+3. **Integrationer (Azure DevOps, mobil)** — senare.
 
 ## Frågor att förtydliga
 
