@@ -13,7 +13,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 // tools, finishes or gives it back, and the queue says so. Nothing is mocked except that the "agent" is this test.
 
 const ROOT = join(import.meta.dirname, "..");
-const PORT = 47000 + Math.floor(Math.random() * 2000);
+const PORT = 53000 + Math.floor(Math.random() * 1000); // its own range: the other server tests use 41000 to 52000
 const BASE = `http://127.0.0.1:${PORT}`;
 const PASSWORD = "a long test passphrase";
 const JSON_H = { "Content-Type": "application/json" };
@@ -176,20 +176,75 @@ describe("what the token cannot do", () => {
     }
   });
 
-  it("creates no finding: testbench_create_finding says 'not supported yet' and nothing in TestBench changes", async () => {
-    const count = () => ["cases", "bug_reports", "observations", "manual_tests", "agent_requests"].map((t) => rows<{ n: number }>(`SELECT COUNT(*) AS n FROM ${t}`)[0].n);
-    const before = count();
+  it("makes no finding for a request it did not take, a request that is finished, one that does not exist, or with input TestBench refuses, and says why", async () => {
+    const count = () => ["cases", "bug_reports", "observations", "manual_tests", "audit_log"].map((t) => rows<{ n: number }>(`SELECT COUNT(*) AS n FROM ${t}`)[0].n);
+    const waiting = await ask(a, "waiting, not taken");
+    const mine = await ask(a, "mine");
     const s = await session(tokenA, a);
     try {
-      for (const kind of ["test_case", "bug_report", "observation", "manual_test_suggestion"]) {
-        const r = await s.tool("testbench_create_finding", { kind, request_id: 1, title: "A finding" });
-        assert.equal(r.isError, true);
-        assert.match(text(r), /Not supported yet/);
-      }
+      const got = await next(s);
+      assert.equal(got.request?.id, waiting.id, "the oldest waiting one is taken first");
+      const before = count();
+      const notTaken = await s.tool("testbench_create_finding", { kind: "observation", request_id: mine.id, title: "x" });
+      assert.equal(notTaken.isError, true);
+      assert.match(text(notTaken), /Conflict: The request is not taken/);
+      const missing = await s.tool("testbench_create_finding", { kind: "observation", request_id: 999999, title: "x" });
+      assert.equal(missing.isError, true);
+      assert.match(text(missing), /Not found/);
+      const bad = await s.tool("testbench_create_finding", { kind: "bug_report", request_id: waiting.id, title: "x", severity: "info" });
+      assert.equal(bad.isError, true, "info is for observations; TestBench refuses it for a bug");
+      assert.match(text(bad), /refused the input/);
+      const wrongField = await s.tool("testbench_create_finding", { kind: "test_case", request_id: waiting.id, title: "x", evidence: "does not belong to a test case" });
+      assert.equal(wrongField.isError, true);
+      assert.match(text(wrongField), /refused the input/);
+      assert.deepEqual(count(), before, "nothing was made, nothing was logged");
+      assert.equal((await s.tool("testbench_update_request_status", { request_id: waiting.id, status: "done" })).isError, undefined);
+      const finished = await s.tool("testbench_create_finding", { kind: "observation", request_id: waiting.id, title: "late" });
+      assert.equal(finished.isError, true);
+      assert.match(text(finished), /done or cancelled/);
+      assert.equal(await next(s).then((n) => n.request?.id), mine.id, "the other request is still free to take");
     } finally {
       await s.close();
     }
-    assert.deepEqual(count(), before);
+  });
+});
+
+describe("hand in findings through the MCP tool", () => {
+  it("makes a draft case, a proposed bug and manual test and an exploratory observation on a discover request, each with its own number, and tells the agent what it made", async () => {
+    const req = await ask(a, "findings through MCP");
+    const s = await session(tokenA, a);
+    try {
+      // an earlier test left a request taken by this token: take requests until the new one is ours
+      let got = await next(s);
+      for (let i = 0; i < 5 && got.request && got.request.id !== req.id; i++) got = await next(s);
+      assert.equal(got.request?.id, req.id);
+      const outputs: string[] = [];
+      const make = async (args: Record<string, unknown>) => { const r = await s.tool("testbench_create_finding", { request_id: req.id, ...args }); outputs.push(text(r)); assert.equal(r.isError, undefined, text(r)); return JSON.parse(text(r)) as { kind: string; id: number; sourceId: string; findingsOnRequest: number; number?: number }; };
+      const tc = await make({ kind: "test_case", title: "MCP sign in", priority: "high", steps: [{ action: "Open /login", expected: "A form" }] });
+      const bug = await make({ kind: "bug_report", title: "MCP overlap", steps: ["Open /"], severity: "high", url: "http://localhost:3000/" });
+      const ob = await make({ kind: "observation", title: "MCP slow paint", severity: "low", evidence: "3 s" });
+      const man = await make({ kind: "manual_test_suggestion", title: "MCP screen reader", category: "accessibility", steps: ["Tab through"] });
+      assert.deepEqual([tc.sourceId, bug.sourceId, ob.sourceId, man.sourceId], [1, 2, 3, 4].map((n) => `$agent-${req.id}-${n}`));
+      assert.deepEqual([tc.findingsOnRequest, man.findingsOnRequest], [1, 4]);
+
+      const caseRow = rows<{ status: string; tags: string; created_by_agent_token_id: number | null; suite_id: number | null }>("SELECT status, tags, created_by_agent_token_id, suite_id FROM cases WHERE id = ?", tc.id)[0];
+      assert.deepEqual([caseRow.status, caseRow.tags, caseRow.suite_id], ["draft", '["agent-proposed"]', null]);
+      assert.equal(caseRow.created_by_agent_token_id, rows<{ id: number }>("SELECT id FROM request_tokens WHERE name = 'claude-a'")[0].id);
+      assert.deepEqual(rows<{ review_status: string; audit_id: number | null; origin_audit_id: string; human_severity: string | null }>("SELECT review_status, audit_id, origin_audit_id, human_severity FROM bug_reports WHERE id = ?", bug.id), [{ review_status: "proposed", audit_id: null, origin_audit_id: `$agent-${req.id}`, human_severity: null }]);
+      assert.deepEqual(rows<{ kind: string; status: string; audit_id: number | null }>("SELECT kind, status, audit_id FROM observations WHERE id = ?", ob.id), [{ kind: "exploratory", status: "observed", audit_id: null }]);
+      assert.deepEqual(rows<{ review_status: string; category: string }>("SELECT review_status, category FROM manual_tests WHERE id = ?", man.id), [{ review_status: "proposed", category: "accessibility" }]);
+
+      // what a person sees: the observation under Exploratory, the case as a draft with the agent's mark
+      const seen = await ok<{ items: { title: string; kind: string }[] }>(await person(`/api/projects/${a}/observations?kind=exploratory`, undefined, "GET"));
+      assert.ok(seen.items.some((i) => i.title === "MCP slow paint" && i.kind === "exploratory"));
+      const cases = await ok<{ title: string; status: string; tags: string[] }[]>(await person(`/api/projects/${a}/cases`, undefined, "GET"));
+      assert.deepEqual(cases.filter((c) => c.title === "MCP sign in").map((c) => [c.status, c.tags]), [["draft", ["agent-proposed"]]]);
+
+      assert.equal(outputs.some((o) => issued.some((t) => o.includes(t))), false, "no token in what the tool said");
+      assert.equal((await s.tool("testbench_update_request_status", { request_id: req.id, status: "done", note: "four findings" })).isError, undefined);
+    } finally {
+      await s.close();
+    }
   });
 });
 
