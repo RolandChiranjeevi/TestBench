@@ -128,8 +128,9 @@ export function specFileName(ref: string, title: string) {
  * The spec, from a template. The only lines are comments, the import, `test.describe`, `test`, `test.fixme` (always there: a finished spec has it removed by a person), `test.step` per step
  * and the closing lines. Text from the source is a JSON string literal or a cleaned `//` comment. No selector and no URL is made up: every step has a TODO for a person to write.
  */
-export function buildSpec(a: { source: string; title: string; steps: string[]; assertions: string[]; testData: string; perStep?: { expected: string[]; tag: string } }): string {
+export function buildSpec(a: { source: string; title: string; steps: string[]; assertions: string[]; testData: string; tag?: string; perStep?: { expected: string[]; tag: string } }): string {
   const data = a.testData.split(/\r?\n/).map((l) => cleanText(l)).filter(Boolean).slice(0, 10);
+  const tag = a.tag ?? a.perStep?.tag;
   return [
     `// DRAFT: made by TestBench from ${cleanText(a.source, 200)} by a fixed rule. Not reviewed and not run.`,
     "// A person rewrites every TODO. Remove test.fixme only when the test is finished and reviewed.",
@@ -137,7 +138,7 @@ export function buildSpec(a: { source: string; title: string; steps: string[]; a
     "",
     `test.describe(${lit(a.title, 200)}, () => {`,
     // A tag in the title (`@KEY-12`) is what links imported results to the test case: it works in every Playwright version.
-    `  test(${lit(a.perStep ? `${cleanText(a.title, 150)} @${a.perStep.tag}` : a.title, 200)}, async ({ page }) => {`,
+    `  test(${lit(tag ? `${cleanText(a.title, 150)} @${tag}` : a.title, 200)}, async ({ page }) => {`,
     '    test.fixme(true, "Draft from TestBench: not reviewed, not run. Remove this line when a person has finished the test.");',
     ...(data.length ? ["    // Test data (from the source):", ...data.map((l) => `    //   ${l}`)] : []),
     ...a.steps.flatMap((s, i) => {
@@ -190,7 +191,8 @@ export function suggestSpecFromRequirement(f: RequirementFields, number: number)
       summary: clip(`Playwright spec ${fileName} for “${f.title}”: ${plural(steps.length, "step")} (a skeleton to rewrite) and ${plural(assertions.length, "check")}, as a draft to finish.`, 300),
       steps, assertions, testData,
       plan: ["Draft Playwright spec from the requirement's acceptance criteria.", "A requirement has no steps of its own: the steps are a skeleton, to be rewritten before scripting.", "It starts with test.fixme, and every step and check is a TODO for a person to write: no selector or URL is known.", "Nothing is run by TestBench, and nothing is written to disk or to git."].join("\n"),
-      artifactText: buildSpec({ source: `requirement ${ref}`, title: f.title, steps, assertions, testData }),
+      // The tag `@REQ-n` in the title makes an imported test cover requirement n, once the test is linked to a test case (the import reads it only then). Only a new draft has it.
+      artifactText: buildSpec({ source: `requirement ${ref}`, title: f.title, steps, assertions, testData, tag: ref }),
     },
   };
 }

@@ -2,12 +2,13 @@ import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, FileCode, Pencil, Plus, ShieldAlert, Trash2 } from "lucide-react";
-import { api, formatDateTime, timeAgo, type CaseSummary, type SpecDetail, type SpecSummary } from "../api";
+import { api, formatDateTime, timeAgo, type CaseSummary, type SpecCompare, type SpecDetail, type SpecSummary } from "../api";
 import { Badge } from "../components/Badge";
 import { Button, buttonClass } from "../components/Button";
 import { EditScope } from "../components/Access";
 import { ConfirmModal, Empty, Modal, useToast } from "../components/ui";
 import { SPEC_TEXT_MAX_BYTES, formatBytes, specNameProblem, specTextProblem, textBytes } from "../specname";
+import { compareView, lineSummary, resultBadge, shortHash } from "../specresults";
 import { ViewTabs } from "./Insights";
 
 // Own specs: a Playwright spec that a person writes or pastes here. It is a COPY of a file in their own repo, which is the source. TestBench keeps the text and its history, lets a person link
@@ -15,6 +16,11 @@ import { ViewTabs } from "./Insights";
 
 const STATUS = { draft: { tone: "info", label: "Draft", title: "Being written: not yet the copy of a finished file" }, ready: { tone: "ok", label: "Ready", title: "A person says this is the file as it is in the repo" } } as const;
 const KIND: Record<SpecDetail["history"][number]["kind"], string> = { created: "Made", edited: "Text changed", renamed: "Renamed", status: "Status changed", case: "Test case changed" };
+
+function ResultBadge({ results }: { results: SpecSummary["results"] }) {
+  const look = resultBadge(results);
+  return <Badge tone={look.tone} icon={look.icon} title={results.tests ? `${results.tests} imported test${results.tests === 1 ? "" : "s"} in a file with this name` : "No imported test is in a file with this name"}>{look.label}</Badge>;
+}
 
 function StatusBadge({ status }: { status: SpecSummary["status"] }) {
   const s = STATUS[status];
@@ -74,9 +80,10 @@ export function SpecsPage() {
                     <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
                       <span className="mono truncate" style={{ fontWeight: 500 }}>{s.fileName}</span>
                       <StatusBadge status={s.status} />
+                      <ResultBadge results={s.results} />
                       {s.testCase && <span className="chip" title="The test case this spec is about">{s.testCase.key}</span>}
                     </div>
-                    <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>{formatBytes(s.size)} · updated {timeAgo(s.updatedAt)} by {s.updatedBy || "someone"}</div>
+                    <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>{formatBytes(s.size)} · updated {timeAgo(s.updatedAt)} by {s.updatedBy || "someone"} · {s.results.files.length ? <>results from <span className="mono">{s.results.files.length === 1 ? s.results.files[0] : `${s.results.files.length} files`}</span>{s.results.lastSeen ? `, last seen ${timeAgo(s.results.lastSeen)}` : ""}</> : "no results"}</div>
                   </div>
                 </Link>
               ))}
@@ -246,6 +253,8 @@ function SpecEditor({ id, onClose }: { id: number; onClose: () => void }) {
         <Button needs="tester" variant="primary" disabled={!dirty || !!textProblem || save.isPending} onClick={() => save.mutate(changes)}>Save</Button>
         {dirty && <Button variant="ghost" onClick={() => setDraft({})}>Discard changes</Button>}
       </div>
+      <ResultsSection spec={data} />
+      <CompareSection spec={data} dirty={dirty} onUsed={() => { setDraft({}); refresh(); }} />
       <details className="auto-history">
         <summary>History ({data.history.length})</summary>
         <ol>
@@ -268,6 +277,118 @@ function SpecEditor({ id, onClose }: { id: number; onClose: () => void }) {
         </ConfirmModal>
       )}
     </div>
+  );
+}
+
+/** What imported runs say about the file this spec is a copy of. Matching is by file name only; TestBench never runs the spec. */
+function ResultsSection({ spec }: { spec: SpecDetail }) {
+  const { pid } = useParams();
+  const r = spec.results;
+  return (
+    <section aria-labelledby="sr-h" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <h3 id="sr-h" style={{ margin: 0, fontSize: "var(--fs-md)" }}>Latest results</h3>
+      {r.tests === 0 ? (
+        <div className="muted">No imported test is in a file called {spec.fileName}. Import a report whose tests are in a file with this name to see their results here.</div>
+      ) : (
+        <>
+          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+            <ResultBadge results={r} />
+            <span>{r.tests} test{r.tests === 1 ? "" : "s"}: {r.passed} passed, {r.failed} failed, {r.skipped} skipped, {r.blocked} blocked{r.other ? `, ${r.other} without a status` : ""}</span>
+            {r.lastSeen && <span className="faint">last seen {formatDateTime(r.lastSeen)}</span>}
+          </div>
+          {r.ambiguous && (
+            <div className="card" role="alert" style={{ padding: 10, display: "flex", gap: 8 }}>
+              <ShieldAlert size={16} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2, color: "var(--blocked-fg)" }} />
+              <div>
+                <strong>Several files have this name, so the results are from all of them:</strong>
+                <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>{r.files.map((f) => <li key={f} className="mono">{f}</li>)}</ul>
+              </div>
+            </div>
+          )}
+          {!r.ambiguous && <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>From <span className="mono">{r.files[0]}</span></div>}
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            {spec.resultTests.map((t, i) => (
+              <li key={`${t.file}-${t.title}-${i}`}>
+                <span className="mono">{t.title}</span> · {t.status ?? "no status"}
+                {t.testCase && <> · <Link to={`/p/${pid}/cases?case=${t.testCase.id}`} style={{ color: "var(--accent-text)" }}>{t.testCase.key}</Link></>}
+              </li>
+            ))}
+          </ul>
+          {spec.moreResultTests > 0 && <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>and {spec.moreResultTests} more. <Link to={`/p/${pid}/automated`} style={{ color: "var(--accent-text)" }}>See all in Automated tests</Link></div>}
+        </>
+      )}
+    </section>
+  );
+}
+
+/** Compare this copy with the file in the person's repo: they upload or paste it, TestBench answers on the server and stores nothing. "Use the repo version" is a normal change of the text. */
+function CompareSection({ spec, dirty, onUsed }: { spec: SpecDetail; dirty: boolean; onUsed: () => void }) {
+  const toast = useToast();
+  const [text, setText] = useState("");
+  const [fileName, setFileName] = useState("");
+  const [note, setNote] = useState("Updated from my repo");
+  const [result, setResult] = useState<SpecCompare | null>(null);
+  const problem = text ? specTextProblem(text) : null;
+  const compare = useMutation({
+    mutationFn: () => api.post<SpecCompare>(`/api/specs/${spec.id}/compare`, { text, ...(fileName ? { fileName } : {}) }),
+    onSuccess: setResult,
+    onError: (e: Error) => toast("error", e.message),
+  });
+  const use = useMutation({
+    mutationFn: () => api.patch<SpecDetail>(`/api/specs/${spec.id}`, { text, ...(note.trim() ? { note: note.trim() } : {}) }),
+    onSuccess: () => { toast("success", "The spec now has the text from your repo"); setResult(null); setText(""); setFileName(""); onUsed(); },
+    onError: (e: Error) => toast("error", e.message),
+  });
+  const view = result ? compareView(result.outcome) : null;
+  const changed = (v: string) => { setText(v); setResult(null); };
+  return (
+    <section aria-labelledby="sc-h" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <h3 id="sc-h" style={{ margin: 0, fontSize: "var(--fs-md)" }}>Compare with my repo</h3>
+      <div className="muted" style={{ fontSize: "var(--fs-sm)" }}>Give TestBench the file from your repo, by choosing it or pasting its text. TestBench does not fetch it, and the comparison saves nothing.</div>
+      <div className="field">
+        <label htmlFor="sc-file">File from your repo</label>
+        <input id="sc-file" type="file" className="input" accept=".ts,.txt,text/plain" onChange={async (e) => {
+          const f = e.target.files?.[0];
+          if (!f) return;
+          if (f.size > SPEC_TEXT_MAX_BYTES) { toast("error", `That file is ${formatBytes(f.size)}; the limit is ${SPEC_TEXT_MAX_BYTES / 1024} kB`); e.target.value = ""; return; }
+          changed(await f.text()); setFileName(f.name);
+        }} />
+        {fileName && <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>Chosen: <span className="mono">{fileName}</span></span>}
+      </div>
+      <div className="field">
+        <label htmlFor="sc-text">or paste its text</label>
+        <textarea id="sc-text" className="textarea" rows={6} wrap="off" spellCheck={false} style={MONO_AREA} value={text} onChange={(e) => { changed(e.target.value); setFileName(""); }} />
+        <TextMeter text={text} />
+      </div>
+      <div className="row" style={{ gap: 8 }}>
+        <Button variant="secondary" disabled={!text.trim() || !!problem || compare.isPending} onClick={() => compare.mutate()}>Compare</Button>
+      </div>
+      {result && view && (
+        <div className="card" role="status" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+          <strong>{view.text}</strong>
+          {result.warning && <div role="alert" style={{ color: "var(--blocked-fg)" }}>{result.warning}</div>}
+          <table className="mono" style={{ fontSize: "var(--fs-sm)", borderCollapse: "collapse" }}>
+            <tbody>
+              <tr><th scope="row" style={{ textAlign: "left", paddingRight: 12 }}>In TestBench</th><td title={result.stored.sha256}>{shortHash(result.stored.sha256)}</td><td>{formatBytes(result.stored.bytes)}</td></tr>
+              <tr><th scope="row" style={{ textAlign: "left", paddingRight: 12 }}>Your file</th><td title={result.uploaded.sha256}>{shortHash(result.uploaded.sha256)}</td><td>{formatBytes(result.uploaded.bytes)}</td></tr>
+            </tbody>
+          </table>
+          {result.outcome === "differs" && <div>{lineSummary(result.added, result.removed, result.approximate)}</div>}
+          {view.canUse && (
+            <EditScope>
+              <div className="field">
+                <label htmlFor="sc-note">Note in the history (optional)</label>
+                <input id="sc-note" className="input" maxLength={200} value={note} onChange={(e) => setNote(e.target.value)} />
+              </div>
+              <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                <Button needs="tester" variant="primary" disabled={dirty || use.isPending} onClick={() => use.mutate()}>Use the repo version</Button>
+                {dirty && <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>Save or discard your changes above first.</span>}
+              </div>
+            </EditScope>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 

@@ -59,7 +59,7 @@ import { registerAccessGuard } from "./accessguard.ts";
 import { roleOf } from "./members.ts";
 import { coverageGaps, getObservationLinks, setObservationLinks } from "./coveragegaps.ts";
 import { applyBugDraft, bugDraftScreenshot, checkScreenshot, createBugDraft, decideBugDraft, editBugDraft, getBugDraft, listBugDrafts, buildBugDraft, MAX_SCREENSHOT_BYTES } from "./bugdrafts.ts";
-import { createSpec, editSpec, getSpec, listSpecs, removeSpec, renameSpec, specFile as ownSpecFile, SPEC_LIMITS, SPEC_STATUSES } from "./specs.ts";
+import { compareSpec, createSpec, editSpec, getSpec, listSpecs, removeSpec, renameSpec, specFile as ownSpecFile, SPEC_LIMITS, SPEC_STATUSES } from "./specs.ts";
 import { applyAutomationSuggestion, applySpecSuggestion, specFile, suggestSpecForPlanItem, suggestSpecForRequirement, suggestSpecForCase, listCaseAutomationSuggestions, decideAutomationSuggestion, editAutomationSuggestion, getAutomationSuggestion, listAutomationSuggestions, listRequirementAutomationSuggestions, removeRequirementSuggestions, suggestAutomation, suggestAutomationForRequirement } from "./automation.ts";
 import { generateProposals } from "./gapproposals.ts";
 import { agentRequirementsForToken, parseAgentQuery } from "./agentapi.ts";
@@ -1275,10 +1275,15 @@ app.post("/api/projects/:id/specs", specLimit, (req) => {
 app.get("/api/specs/:id", (req) => audited(() => getSpec(idParam(req))));
 app.patch("/api/specs/:id", specLimit, (req) => {
   const id = idParam(req);
-  const body = z.object({ text: specText.optional(), status: z.enum(SPEC_STATUSES).optional(), caseId: specCase }).strict().parse(req.body);
+  const body = z.object({ text: specText.optional(), status: z.enum(SPEC_STATUSES).optional(), caseId: specCase, note: z.string().max(1000).optional() }).strict().parse(req.body);
   const r = audited(() => editSpec(id, body));
   if (r.changed.length) specAudit(req, "spec.edited", r.projectId, { spec: id, fileName: r.fileName, changed: r.changed });
   return r.spec;
+});
+// Compare with the person's repo: the text goes in, an answer comes out, and nothing is stored or logged. It only reads, so a viewer may use it.
+app.post("/api/specs/:id/compare", specLimit, (req) => {
+  const body = z.object({ text: specText, fileName: z.string().max(1000).optional() }).strict().parse(req.body);
+  return audited(() => compareSpec(idParam(req), body));
 });
 app.post("/api/specs/:id/rename", (req) => {
   const id = idParam(req);

@@ -124,12 +124,13 @@ describe("the E1 and E2 templates are unchanged", () => {
     );
   });
 
-  it("a requirement spec has no tag and no per-step expected results", () => {
+  it("a requirement spec has the tag @REQ-n in its title (a new draft only), and no per-step expected results", () => {
     const r = suggestSpecFromRequirement({ title: "Todo can be added", description: "A user with an empty list.", acceptanceCriteria: "- The text is shown\n- The input is cleared", kind: "functional", priority: "high", wcag: [], viewports: [] }, 7);
     assert.ok("content" in r);
     const t = r.content.artifactText!;
-    assert.equal(titleOf(t), "Todo can be added");
-    assert.doesNotMatch(t, /@REQ|@SC|Expected: |Fill in the expected result/);
+    assert.equal(titleOf(t), "Todo can be added @REQ-7");
+    assert.match(t, /test\.describe\("Todo can be added", /, "the describe block has the plain title");
+    assert.doesNotMatch(t, /@SC|Expected: |Fill in the expected result/);
     assert.match(t, /\/\/ Checks \(from the acceptance criteria\):/);
   });
 });

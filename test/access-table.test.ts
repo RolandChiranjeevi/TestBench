@@ -57,8 +57,16 @@ describe("every route has a decision, and every decision has a route", () => {
 });
 
 describe("the table is sensible", () => {
+  // A POST that only reads, named one by one: the text goes in, an answer comes out, and nothing is stored or logged (compare a spec with the person's file in their repo).
+  const readsOnly = new Set(["POST /api/specs/:id/compare"]);
+
   it("a viewer can only read: no change needs less than tester", () => {
-    assert.deepEqual(list((n, r) => mutating(r) && isProject(n) && n.level === "viewer"), []);
+    assert.deepEqual(list((n, r) => mutating(r) && !readsOnly.has(r) && isProject(n) && n.level === "viewer"), []);
+  });
+
+  it("the POSTs that only read are named, are really there, and are for a viewer (so the list cannot hide a change)", () => {
+    for (const r of readsOnly) assert.ok(routes.includes(r), `${r} is not a route`);
+    assert.deepEqual(list((n, r) => readsOnly.has(r) && !(isProject(n) && n.level === "viewer")), []);
   });
 
   it("changes need a project role or the owner; the other cases are named one by one", () => {
