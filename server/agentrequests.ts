@@ -47,7 +47,7 @@ export function cleanTargetUrl(input: unknown): string {
 interface Row {
   id: number; project_id: number; kind: RequestKind; target_url: string; environment: string; note: string; run_id: number | null; payload: string; status: RequestStatus;
   created_by: string; created_at: string; claimed_by: string | null; claimed_token_id: number | null; claimed_at: string | null; finished_at: string | null; result_run_id: number | null; result_note: string;
-  result_delivered_at: string | null;
+  result_delivered_at: string | null; release_note: string; released_by: string | null; released_at: string | null; result_audit_id: number | null;
 }
 export interface RerunTest { id: number; framework: string; file: string; title: string; fullName: string }
 
@@ -59,9 +59,17 @@ export function viewOf(r: Row) {
   return {
     id: r.id, projectId: r.project_id, kind: r.kind, targetUrl: r.target_url, environment: r.environment, note: r.note, runId: r.run_id, tests, status: r.status,
     createdBy: r.created_by, createdAt: r.created_at, claimedBy: r.claimed_by, claimedAt: r.claimed_at, finishedAt: r.finished_at, resultRunId: r.result_run_id, resultNote: r.result_note, resultDeliveredAt: r.result_delivered_at,
+    releaseNote: r.release_note, releasedBy: r.released_by, releasedAt: r.released_at, resultAuditId: r.result_audit_id,
   };
 }
 export type AgentRequest = ReturnType<typeof viewOf>;
+
+/** The same, with the title of the audit a finished discover made, for the person's list. */
+const withAudits = (views: AgentRequest[]) => {
+  const ids = [...new Set(views.map((v) => v.resultAuditId).filter((x): x is number => x != null))];
+  const found = new Map((ids.length ? (db.prepare(`SELECT id, title, agent_audit_id AS agentAuditId FROM audits WHERE id IN (${ids.map(() => "?").join(",")})`).all(...ids) as { id: number; title: string; agentAuditId: string }[]) : []).map((a) => [a.id, a]));
+  return views.map((v) => ({ ...v, resultAudit: v.resultAuditId != null ? found.get(v.resultAuditId) ?? null : null }));
+};
 
 const rowOf = (id: number) => db.prepare("SELECT * FROM agent_requests WHERE id = ?").get(id) as Row | undefined;
 const mustRow = (projectId: number, id: number) => {
@@ -75,7 +83,7 @@ export function listRequests(projectId: number, status?: string, limit = 200) {
   const rows = db
     .prepare(`SELECT * FROM agent_requests WHERE project_id = ? ${status ? "AND status = ?" : ""} ORDER BY id DESC LIMIT ?`)
     .all(...(status ? [projectId, status, limit] : [projectId, limit])) as Row[];
-  return rows.map(viewOf);
+  return withAudits(rows.map(viewOf));
 }
 
 /** What an agent asks for: the requests still waiting, oldest first. */
@@ -146,12 +154,45 @@ export function claimRequest(projectId: number, id: number, token: { id: number;
   throw new AuditError(409, "The request is not waiting any more (someone else took it, or it was cancelled)");
 }
 
-/** The agent that took a request says it is done, with a note and, if it delivered something, the run that came in. */
-export function completeRequest(projectId: number, id: number, token: { id: number; name: string }, input: { note?: unknown; resultRunId?: unknown }) {
-  const cur = mustRow(projectId, id);
-  const note = input.note === undefined || input.note === null ? "" : typeof input.note === "string" ? input.note.trim() : null;
+const agentNote = (v: unknown) => {
+  const note = v === undefined || v === null ? "" : typeof v === "string" ? v.trim() : null;
   if (note === null) throw bad("The note must be text");
   if (note.length > REQUEST_LIMITS.resultNoteMax) throw bad(`The note can be at most ${REQUEST_LIMITS.resultNoteMax} characters`);
+  return note;
+};
+
+/**
+ * The agent that took a request gives it back: it waits again, and another agent (or the same) can take it. Only the token that took it, only while it is taken, and not once a report
+ * was handed in (a re-run that has its result is finished with complete, not repeated). The note says why; it and who and when stay on the request for the card.
+ */
+export function releaseRequest(projectId: number, id: number, token: { id: number; name: string }, input: { note?: unknown }) {
+  const cur = mustRow(projectId, id);
+  const note = agentNote(input.note);
+  if (cur.status !== "claimed") throw new AuditError(409, cur.status === "pending" ? "The request is not taken, so there is nothing to give back" : "The request is already done or cancelled");
+  if (cur.claimed_token_id !== token.id) throw new AuditError(409, "Another token took this request");
+  if (cur.result_delivered_at) throw new AuditError(409, "A report was already handed in for this request. Finish it with complete instead");
+  const r = db
+    .prepare(`UPDATE agent_requests SET status = 'pending', claimed_by = NULL, claimed_token_id = NULL, claimed_at = NULL, release_note = ?, released_by = ?, released_at = datetime('now')
+      WHERE id = ? AND project_id = ? AND status = 'claimed' AND claimed_token_id = ? AND result_delivered_at IS NULL RETURNING *`)
+    .get(note, `agent: ${token.name}`, id, projectId, token.id) as Row | undefined;
+  if (!r) throw new AuditError(409, "The request changed while it was being given back");
+  return viewOf(r);
+}
+
+/** The agent that took a request says it is done, with a note and, if it delivered something, the run that came in (a re-run) or the audit that was made (a discover). */
+export function completeRequest(projectId: number, id: number, token: { id: number; name: string }, input: { note?: unknown; resultRunId?: unknown; resultAuditId?: unknown }) {
+  const cur = mustRow(projectId, id);
+  const note = agentNote(input.note);
+  let resultAuditId: number | null = null;
+  if (input.resultAuditId !== undefined && input.resultAuditId !== null) {
+    if (!Number.isInteger(input.resultAuditId)) throw bad("resultAuditId must be a whole number");
+    if (cur.kind !== "discover") throw bad("Only a discover request links an audit");
+    const audit = db.prepare("SELECT last_imported_at FROM audits WHERE id = ? AND project_id = ?").get(input.resultAuditId, projectId) as { last_imported_at: string } | undefined;
+    if (!audit) throw bad("resultAuditId is not an audit in this project");
+    // The audit was imported with a person's login, not by this token, so the server cannot tell whose it is. It can tell that it is not older than the request.
+    if (!cur.claimed_at || audit.last_imported_at < cur.claimed_at) throw bad("That audit was imported before this request was taken, so it cannot be the result of it");
+    resultAuditId = input.resultAuditId as number;
+  }
   let resultRunId: number | null = null;
   if (input.resultRunId !== undefined && input.resultRunId !== null) {
     if (cur.result_delivered_at && input.resultRunId !== cur.result_run_id) throw bad("This request already has the run its report made. Leave resultRunId out");
@@ -161,8 +202,8 @@ export function completeRequest(projectId: number, id: number, token: { id: numb
   }
   if (cur.status !== "claimed") throw new AuditError(409, cur.status === "pending" ? "Take the request first" : "The request is already done or cancelled");
   const r = db
-    .prepare("UPDATE agent_requests SET status = 'done', finished_at = datetime('now'), result_note = ?, result_run_id = COALESCE(result_run_id, ?) WHERE id = ? AND project_id = ? AND status = 'claimed' AND claimed_token_id = ? RETURNING *")
-    .get(note, resultRunId, id, projectId, token.id) as Row | undefined;
+    .prepare("UPDATE agent_requests SET status = 'done', finished_at = datetime('now'), result_note = ?, result_run_id = COALESCE(result_run_id, ?), result_audit_id = ? WHERE id = ? AND project_id = ? AND status = 'claimed' AND claimed_token_id = ? RETURNING *")
+    .get(note, resultRunId, resultAuditId, id, projectId, token.id) as Row | undefined;
   if (!r) throw new AuditError(409, "Another token took this request");
   return viewOf(r);
 }

@@ -46,14 +46,16 @@ skills or test scripts.
   mechanism the skill describes (`deliver`), after the user's confirmation.
 - If a TestBench route accepts a write with the read token, report it as a
   finding of severity **high** and stop using that route.
-- The request token (`tbrq_`) is a different kind of token. It opens four routes
-  of one project and nothing else: the waiting requests, taking one, handing in
-  the report of a re-run, and marking it done (`/testpilot-requests`). Three of
-  them change only the status of a request that a person made. The report route
+- The request token (`tbrq_`) is a different kind of token. It opens five routes
+  of one project and nothing else: the waiting requests, taking one, giving it
+  back, handing in the report of a re-run, and marking it done
+  (`/testpilot-requests`). Four of them change only the status of a request that
+  a person made (a release adds a note; a finished discover links its audit). A
+  request is given back only with the user's yes. The report route
   writes test results, only when a person has switched that on, only for the
   request this token took, and only with tests that request named. It cannot read
   requirements or make, cancel, approve or decide anything. Using it for anything
-  else, or a route outside those four that accepts it, is a finding of severity
+  else, or a route outside those five that accepts it, is a finding of severity
   **high**: stop using that route.
 
 ## 4. Observe-only by default

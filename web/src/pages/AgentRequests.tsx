@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Bot, Plus } from "lucide-react";
+import { auditPath } from "../agentruns";
 import { api, timeAgo, type AgentRequest, type RunDetail } from "../api";
 import type { Tone } from "../statuses";
 import { Badge } from "../components/Badge";
@@ -98,11 +99,17 @@ function RequestCard({ r, onCancel, cancelling }: { r: AgentRequest; onCancel: (
           </ul>
         </details>
       )}
-      {(r.resultNote || r.resultRunId || r.resultDeliveredAt) && (
+      {r.status === "pending" && r.releasedAt && (
+        <div className="faint" style={{ overflowWrap: "anywhere" }}>
+          Given back by {r.releasedBy ?? "an agent"} {timeAgo(r.releasedAt)}{r.releaseNote ? <>: <span style={{ whiteSpace: "pre-wrap" }}>{r.releaseNote}</span></> : "."}
+        </div>
+      )}
+      {(r.resultNote || r.resultRunId || r.resultDeliveredAt || r.resultAudit) && (
         <div style={{ overflowWrap: "anywhere" }}>
           {r.resultNote && <span>{r.resultNote} </span>}
           {r.resultDeliveredAt && <span>Report handed in by the agent. </span>}
           {r.resultRunId && <Link to={`/p/${pid}/runs/${r.resultRunId}`} style={{ color: "var(--accent-text)" }}>Run #{r.resultRunId}</Link>}
+          {r.resultAudit && <Link to={auditPath(pid!, r.resultAudit.id)} style={{ color: "var(--accent-text)" }} title="The audit this discover made. Opens it in Bug reports, under Audits.">Audit: {r.resultAudit.title || r.resultAudit.agentAuditId}</Link>}
         </div>
       )}
     </div>

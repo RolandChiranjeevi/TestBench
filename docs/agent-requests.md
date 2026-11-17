@@ -26,11 +26,11 @@ Nothing here lets Testbench, or anyone's browser, run code on the machine that h
 | State | Meaning |
 | --- | --- |
 | **Waiting** | Nobody has taken it. |
-| **Taken** | An agent took it, with the name of its token. Only that token can finish it. |
-| **Done** | The agent says it is finished, with a note and, if it delivered something, a link to the run that came in. |
+| **Taken** | An agent took it, with the name of its token. Only that token can finish it, or give it back. |
+| **Done** | The agent says it is finished, with a note and, if it delivered something, a link to the run (a re-run) or the audit (a discover) that came in. |
 | **Cancelled** | A person withdrew it (while it was Waiting or Taken). |
 
-Nothing leaves Done or Cancelled. Taking is one step in the database that only succeeds while the request is Waiting, so two agents cannot take the same one.
+An agent that cannot finish a Taken request can **give it back** (release): it is Waiting again, with the agent's note, who gave it back and when. Nothing leaves Done or Cancelled. Taking is one step in the database that only succeeds while the request is Waiting, so two agents cannot take the same one.
 
 ## A request is a wish, not an approval
 
@@ -47,15 +47,16 @@ Made under **Settings → Agent → Requests to a test agent**, by an admin of t
 - It is a fourth kind of agent token, **`tbrq_`**, apart from the read token (`tbag_`), the proposal token (`tbpr_`) and the CI token (`tbci_`). Each kind is refused by its prefix, so none can stand
   in for another.
 - It is shown once and only its hash is stored. A project can have **three** active request tokens; revoking is the only way to end one. Too many wrong tokens from one address are slowed down (429).
-- It opens **four routes of one project and nothing else**. It cannot make or cancel a request, read requirements, or decide anything; every other route refuses it. Three of them only change the
-  status of a request. The fourth (`result`) writes test results, and is **off until a person switches it on** (below).
+- It opens **five routes of one project and nothing else**. It cannot make or cancel a request, read requirements, or decide anything; every other route refuses it. Four of them only change the
+  status of a request (and a release adds a note, and a finished discover the audit it made). The fifth (`result`) writes test results, and is **off until a person switches it on** (below).
 - No login cookie and no `X-Testbench` header are needed. The token is checked on every call.
 
 ```
 GET  /api/agent/projects/<project id>/requests                    the waiting requests, oldest first
 POST /api/agent/projects/<project id>/requests/<id>/claim         take one (409 if someone else did)
+POST /api/agent/projects/<project id>/requests/<id>/release       {"note": "why it is given back"}  (it waits again)
 POST /api/agent/projects/<project id>/requests/<id>/result        the Playwright JSON report of a re-run (off by default, see below)
-POST /api/agent/projects/<project id>/requests/<id>/complete      {"note": "...", "resultRunId": 42}  (both optional)
+POST /api/agent/projects/<project id>/requests/<id>/complete      {"note": "...", "resultRunId": 42, "resultAuditId": 8}  (all optional)
 Authorization: Bearer $TESTBENCH_REQUEST_TOKEN
 ```
 
@@ -74,6 +75,12 @@ A request looks like this (times are UTC, `YYYY-MM-DD HH:MM:SS`):
 ```
 
 For a `rerun`, `runId` is the run and `tests` lists `{ id, framework, file, title, fullName }` of each failed or blocked test. `resultRunId` must be a run in the same project.
+
+## Giving a request back, and linking the audit
+
+**Release.** `POST …/requests/<id>/release` with an optional `note` (at most 1000 characters). Only the token that took the request can do it, only while it is Taken, and **not after a report was handed in** (a re-run that has its result is finished, not repeated; `complete` it). The request is Waiting again, the claim is gone, and the note, `releasedBy` and `releasedAt` stay on it: the card shows *Given back by … : note* while it waits. Another agent (or the same) can take it. Each release is in the audit log (`agent_request.released`). A person can still cancel it.
+
+**Audit link.** `complete` of a **discover** can carry `resultAuditId`, the `auditId` that `deliver` printed. TestBench links the request to the audit, and the card shows *Audit: its title*, which opens it under Bug reports → Audits. It must be an audit of the same project that was **imported after the request was taken** (the audit is imported with a person's login, not by the token, so the server cannot know whose it is, but it can refuse an older one). A re-run cannot carry it. If the audit is deleted later, the link is emptied and the request is kept.
 
 ## Handing in the report of a re-run
 
@@ -106,7 +113,7 @@ and cannot name another run. The results count like any others (dashboards, flak
 | **Tester** and above | Asks for a discover or a re-run, and cancels a request that is Waiting or Taken. |
 | **Admin** | Also makes and revokes request tokens. |
 | **Owner** | Also switches agent results on or off (off by default). |
-| **An agent with a request token** | The four routes above, for its own project. Nothing else. |
+| **An agent with a request token** | The five routes above, for its own project. Nothing else. |
 
 Who asked, cancelled, took and finished a request is written to the audit log (shown to the owner when accounts are on; the filter is *Agent requests*).
 
@@ -123,7 +130,5 @@ the agent take it. The address and note are treated as data (`agent-rules.md`, r
 
 - **discover:** the address goes to `/testpilot-discover` as a suggestion, which validates and confirms it, with its two confirmations for production. The normal audit flow follows, with every stop.
 - **re-run:** Playwright tests only, only with `permissionMode: full`, and only after the user confirms the exact command and the environment. The agent asks where the tests are (the repository with `playwright.config.*`, which is usually not the folder it runs from), finds each test's file there, and writes its report and artifacts in its own folder, never in the user's repository. It then **offers to hand the report in** and shows exactly what would be sent: the file, its size and test count, the request, the address, and that TestBench makes a run marked as the agent's. It sends nothing until the user answers yes in a **new message**, and it sends **once**, only that file, only the report it just wrote. If agent results are switched off (409), or the user says no, nothing is lost: the report stays in `audits/request-<id>/` and the user imports it under **Import results**. After a successful hand-in the request already links the run, so the note carries no run number.
-- The request is marked done with a short note after the user confirms the note.
-
-Limits for now: an agent cannot release a request, so one that is taken and not finished stays **Taken** until a person cancels it. `complete` can link a run, and an audit import makes an audit, so after a
-discover the audit is named in the note as text. The results of a re-run are not imported by the agent.
+- If the work stops, the agent **offers to give the request back** and shows the note it would send. It asks in a message of its own and does nothing without a yes, so the request stays Taken (until a person cancels it) if the answer is no.
+- The request is marked done with a short note after the user confirms the note. For a discover, the audit that `deliver` made is linked to it.

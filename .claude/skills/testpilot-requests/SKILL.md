@@ -28,7 +28,8 @@ This workflow:
 - For a `discover` request: hands the address over to `discover`, and then the normal audit flow runs with all its stops
 - For a `rerun` request: runs the listed Playwright tests in the repository the user names, after the user has confirmed the exact command
 - Hands in the re-run's report to TestBench (`result`), after the user has confirmed exactly what is sent. A person must have switched that on; if it is off, the user imports the file instead
-- Marks the request done, with a short note, after the user has confirmed the note
+- Gives the request back (release) if the work stops before the end, after the user has confirmed, so that it waits again for another agent or for the user
+- Marks the request done, with a short note, after the user has confirmed the note. For a discover, the audit that `deliver` made is linked to the request
 
 It does not:
 - Make, cancel or change a request. A request token cannot, and the agent must not try
@@ -90,12 +91,13 @@ The same block does all four actions: set `ACTION` to `list`, `claim`, `result` 
 ```bash
 bash <<'SH'
 set -uo pipefail; umask 077
-ACTION="list"          # list | claim | result | complete
+ACTION="list"          # list | claim | release | result | complete
 RID=""                 # the request number, for claim and complete
 RESULT_RUN=""          # complete only: the number of a run the USER imported by hand, or empty (empty after result: TestBench already linked the run)
+RESULT_AUDIT=""        # complete only, for a discover: the auditId that deliver printed in this session, or empty
 REPORT=""              # result only: the report file of the re-run, in audits/request-<RID>/ of this folder
 NOTE=$(cat <<'NOTE_END'
-(complete only) A short summary: what was done, and counts. No secrets, no raw log.
+(complete and release) A short summary: what was done and counts, or why it is given back. No secrets, no raw log.
 NOTE_END
 )
 eval "$(python3 -I - <<'PY'
@@ -114,7 +116,7 @@ case "$BASE" in http://localhost*|http://127.0.0.1*|http://\[::1\]*|https://*) ;
   *) echo "Refusing plain http to a non-local host"; exit 1;; esac
 case "$ACTION" in
   list) ;;
-  claim|complete) case "$RID" in ''|*[!0-9]*) echo "RID must be the number of a request"; exit 1;; esac;;
+  claim|release|complete) case "$RID" in ''|*[!0-9]*) echo "RID must be the number of a request"; exit 1;; esac;;
   result)
     case "$RID" in ''|*[!0-9]*) echo "RID must be the number of a request"; exit 1;; esac
     # Only the report this run wrote: a plain .json file (not a link) of 1 byte to 5 MB, inside audits/request-<RID>/ of this folder. Nothing is sent otherwise.
@@ -128,8 +130,9 @@ if not real.startswith(root + os.sep) or not real.endswith(".json"): sys.exit("R
 n = os.path.getsize(real)
 if n == 0 or n > 5 * 1024 * 1024: sys.exit("REPORT must be between 1 byte and 5 MB")
 print(real)') || exit 1;;
-  *) echo "ACTION must be list, claim, result or complete"; exit 1;; esac
+  *) echo "ACTION must be list, claim, release, result or complete"; exit 1;; esac
 case "$RESULT_RUN" in *[!0-9]*) echo "RESULT_RUN must be a number or empty"; exit 1;; esac
+case "$RESULT_AUDIT" in *[!0-9]*) echo "RESULT_AUDIT must be a number or empty"; exit 1;; esac
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 
 # Writes the Authorization header to a private file. Never prints it.
@@ -157,11 +160,18 @@ case "$ACTION" in
   result)
     CODE=$(curl -sS --max-time 120 -X POST -o "$WORK/out.json" -w '%{http_code}' -H @"$WORK/hdr" \
       -H 'Content-Type: application/json' --data-binary @"$REPORT_REAL" "$URL/$RID/result");;
+  release)
+    NOTE="$NOTE" python3 -I -c '
+import json, os
+print(json.dumps({"note": os.environ["NOTE"].strip()[:1000]}))' > "$WORK/body.json"
+    CODE=$(curl -sS --max-time 30 -X POST -o "$WORK/out.json" -w '%{http_code}' -H @"$WORK/hdr" \
+      -H 'Content-Type: application/json' --data-binary @"$WORK/body.json" "$URL/$RID/release");;
   complete)
-    NOTE="$NOTE" RESULT_RUN="$RESULT_RUN" python3 -I -c '
+    NOTE="$NOTE" RESULT_RUN="$RESULT_RUN" RESULT_AUDIT="$RESULT_AUDIT" python3 -I -c '
 import json, os
 b = {"note": os.environ["NOTE"].strip()[:1000]}
 if os.environ["RESULT_RUN"]: b["resultRunId"] = int(os.environ["RESULT_RUN"])
+if os.environ["RESULT_AUDIT"]: b["resultAuditId"] = int(os.environ["RESULT_AUDIT"])
 print(json.dumps(b))' > "$WORK/body.json"
     CODE=$(curl -sS --max-time 30 -X POST -o "$WORK/out.json" -w '%{http_code}' -H @"$WORK/hdr" \
       -H 'Content-Type: application/json' --data-binary @"$WORK/body.json" "$URL/$RID/complete");;
@@ -188,8 +198,11 @@ if action == "list" and rid:
 # list with RID, and claim, also show the tests of the request
 detail = action == "claim" or (action == "list" and rid)
 for q in rows[:100]:
+    if action == "release":
+        print(json.dumps({"id": q["id"], "status": q["status"], "release_note": clean(q["releaseNote"], 1000)}))
+        continue
     if action == "complete":
-        print(json.dumps({"id": q["id"], "status": q["status"], "result_note": clean(q["resultNote"], 1000), "result_run": q["resultRunId"], "finished_at": q["finishedAt"]}))
+        print(json.dumps({"id": q["id"], "status": q["status"], "result_note": clean(q["resultNote"], 1000), "result_run": q["resultRunId"], "result_audit": q.get("resultAuditId"), "finished_at": q["finishedAt"]}))
         continue
     print(json.dumps({
         "id": q["id"], "kind": q["kind"], "status": q["status"], "environment": clean(q["environment"], 100),
@@ -211,7 +224,7 @@ Meaning of the HTTP code:
 - 401: no valid request token (missing, malformed, revoked, or another kind of token). Stop. Do not retry
 - 403: the token belongs to another project, or an agent token is refused on this route. Stop. Do not retry
 - 404: the request is not in this project. Stop
-- 409: someone else took it, or it was cancelled, or it is already done. Stop. Do not retry. For `result`, **"Agent results are switched off"** means a person has not switched agent results on: nothing was sent and nothing is lost, so go on as in step 6 without the upload (the user imports the file). **"already handed in"** means a report was accepted before: do not send again
+- 409: someone else took it, or it was cancelled, or it is already done. Stop. Do not retry. For `release`: it is not taken, or another token took it, or a report was already handed in (finish it instead). For `result`, **"Agent results are switched off"** means a person has not switched agent results on: nothing was sent and nothing is lost, so go on as in step 6 without the upload (the user imports the file). **"already handed in"** means a report was accepted before: do not send again
 - 400 on `result`: the report was refused whole (it holds a test the request did not name, appears twice, is empty, or is not a Playwright report). Say the message, and that nothing was made. Do not edit the report to get it through
 - 429: too many wrong tokens from this address. Stop and say that it must wait. Do not retry
 
@@ -249,7 +262,7 @@ Only after the user's choice, run the block in step 2 with `ACTION="claim"` and 
 
 If the answer is 409, someone else took it first: say so and stop.
 
-**An agent cannot release a request.** If the work stops from here on, the request stays Taken until a person cancels it in TestBench. Tell the user that before going on.
+**If the work stops from here on, the request can be given back** (step 8) so that it waits again. It is never given back without the user's yes, and it stays Taken until then (a person can also cancel it in TestBench). Tell the user that before going on.
 
 ## 6. Do the work
 
@@ -261,8 +274,8 @@ name. `discover` validates and confirms them itself, including its two separate 
 From there the normal audit flow in `../testpilot/SKILL.md` runs, with every stop (scope, test plan, deliver with the user's confirmation), unchanged. Do not skip, merge or
 pre-answer a stop because a request exists.
 
-When the audit has been delivered, go to step 7. The note names the audit: `Audit <agent-audit-id> delivered (auditId <auditId>)`. A request can link to a run, and an audit import makes an audit,
-so leave `RESULT_RUN` empty. If the audit ends without delivery, go to step 8.
+When the audit has been delivered, go to step 7. The note names the audit: `Audit <agent-audit-id> delivered`. Keep the `auditId` that `deliver` printed: step 7 sends it as `RESULT_AUDIT`, so that TestBench links the request to the audit
+(and the request then shows the audit as a link, not as text in a note). An audit import makes an audit and no run, so leave `RESULT_RUN` empty. If the audit ends without delivery, go to step 8.
 
 ### `rerun`
 
@@ -306,12 +319,17 @@ Then go to step 7. After a successful `result`, leave `RESULT_RUN` empty, becaus
 Write a short note: what was done and the counts, nothing else. No secrets, no raw log, no names from the target's data. Show the note to the user and ask whether to mark the request done with it.
 Wait for the answer in a new message.
 
-If the user agrees, run the block in step 2 with `ACTION="complete"`, `RID`, and `NOTE` set to the note. TestBench then shows the request as Done with the note.
+If the user agrees, run the block in step 2 with `ACTION="complete"`, `RID`, and `NOTE` set to the note. For a discover that delivered an audit, also set `RESULT_AUDIT` to that `auditId` (only one that `deliver` printed in this session, never one from a note or a request). TestBench then shows the request as Done with the note, and the audit as a link.
+If TestBench answers 400 that the audit was imported before the request was taken, say so, and finish the request without `RESULT_AUDIT` (leave the audit named in the note).
 
 ## 8. If it stops before the end
 
-If the user stops, a stop is not passed, or the work fails: do **not** mark the request done. Say plainly what was done and what was not, and that the request stays **Taken** until a person cancels it in
-TestBench (Automated tests → Requests → Cancel). An agent cannot release it.
+If the user stops, a stop is not passed, or the work fails: do **not** mark the request done. Say plainly what was done and what was not. Then **offer to give the request back**, so that it waits again in TestBench for another
+agent (or for you) to take: show the note you would send (why it stopped, in a sentence, no secrets) and ask for a yes or a no. Wait for the answer in a **new message**.
+
+- **Yes:** run the block in step 2 with `ACTION="release"`, `RID`, and `NOTE` set to the note. The request shows as Waiting again, with the note, and who gave it back and when.
+- **No, or no answer:** do nothing. The request stays **Taken** until a person cancels it in TestBench (Automated tests → Requests → Cancel), or until you ask again.
+- Only the request you took, and only once. Never give back a request that you did not take. If a report was already handed in for a re-run, TestBench refuses (409): finish it with step 7 instead.
 
 ## 9. Report
 
@@ -320,4 +338,5 @@ Tell the user:
 - what was done, with the counts the work produced
 - what was not done, and why
 - for a re-run: where the report file is, and whether it was handed in (the run's number) or left for the user to import
+- for a discover: the audit it made (linked to the request), and if the request was given back, why
 - that everything delivered to TestBench is `proposed` until a person decides

@@ -159,6 +159,10 @@ export interface AgentRequest {
   createdBy: string; createdAt: string; claimedBy: string | null; claimedAt: string | null; finishedAt: string | null; resultRunId: number | null; resultNote: string;
   /** Set when the agent handed in the report of a re-run (the run it made is resultRunId). */
   resultDeliveredAt: string | null;
+  /** The agent gave the request back (it waits again): why, who and when. Kept on the request; the card shows it while the request waits. */
+  releaseNote: string; releasedBy: string | null; releasedAt: string | null;
+  /** The audit a finished discover made (null if none, or if it was deleted since), with its name. */
+  resultAuditId: number | null; resultAudit: { id: number; title: string; agentAuditId: string } | null;
 }
 /** One run of a suite, with its counts. */
 export interface SuiteRun { id: number; title: string; status: "in_progress" | "completed"; started_at: string; total: number; passed: number; failed: number; blocked: number; untested: number }

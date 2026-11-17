@@ -4,3 +4,6 @@ export function agentRunInfo(run: { source?: unknown; meta?: unknown }): { reque
   const id = run.meta && typeof run.meta === "object" ? (run.meta as { agentRequest?: unknown }).agentRequest : undefined;
   return typeof id === "number" && Number.isInteger(id) ? { requestId: id } : null;
 }
+
+/** Where the audit a finished discover made is shown: Bug reports (the route "bugs" in main.tsx), under Audits, with its row marked. */
+export const auditPath = (pid: string | number, auditId: number) => `/p/${pid}/bugs?audit=${auditId}`;

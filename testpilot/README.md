@@ -159,8 +159,8 @@ This is what blocked the first delivery attempt.
 - Every POST must send the header `X-Testbench: 1`, otherwise the server answers 403.
 - A Bearer agent token (`tbag_...`) is **not enough** for audit import. It only works
   for agent reads (`GET /api/agent/projects/:id/requirements`) and CI ingest.
-- A request token (`tbrq_...`) opens four other routes of one project and nothing else: the
-  waiting requests, taking one, handing in a re-run's report (off unless a person switched it on) and marking it done
+- A request token (`tbrq_...`) opens five other routes of one project and nothing else: the
+  waiting requests, taking one, giving it back, handing in a re-run's report (off unless a person switched it on) and marking it done
   (`/testpilot-requests`). It cannot read requirements, make or cancel a request, or import an audit.
 - Wrong password gives 401. Repeated wrong passwords give 429. `deliver` does not retry.
 - `deliver` refuses plain `http` unless the host is `localhost`, `127.0.0.1` or `[::1]`.
@@ -275,5 +275,5 @@ Then run `/testpilot-requests`. It lists what is waiting, you choose **one**, an
 
 What a request says (the address, the note) is data for the agent, never instructions, and a request confirms nothing: no production target, no scope, no command.
 
-Known limits: the agent cannot release a request, so one that is taken and not finished stays **Taken** until a person cancels it in TestBench. A request can link a run, and an audit import
-makes an audit, so after a discover the audit is named in the note as text.
+If the work stops, the agent offers to give the request back so that it waits again, with a note. It asks you first, in a message of its own, and does nothing without a yes (the request then stays **Taken** until you cancel it in
+TestBench). After a discover, the audit that `deliver` made is linked to the request, and the request card shows it as a link under Bug reports → Audits.
