@@ -92,7 +92,9 @@ export function buildServer(client: Client, projectId: number, version = "0.1.0"
       description:
         "Takes the oldest waiting request (a discover, a rerun of failed tests, or a run of chosen test cases) of the project and marks it claimed by this token. A run request " +
         "carries `runId`, `targetUrl`, `environment` and `cases`, each with its steps, and `progress` (how many test cases already have a result). Report the results with " +
-        "testbench_report_results, then finish with done; give it back with released if you cannot. Returns {request: null} when nothing waits. " + DATA_NOTE,
+        "testbench_report_results, then finish with done; give it back with released if you cannot. The `automatedTests` and `specFiles` of a test case name what to run in the user's own " +
+        "repository; a Playwright JSON report of them is too large for a tool argument, so it is NOT handed in through MCP but with the TestPilot skill (/testpilot-requests, action result). " +
+        "Returns {request: null} when nothing waits. " + DATA_NOTE,
       inputSchema: getNextRequestInput,
     },
     async () => {

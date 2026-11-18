@@ -43,8 +43,10 @@ const text = (r: Result) => r.content.map((c) => c.text).join("\n");
 const REQ = (id: number) => ({ id, projectId: P, kind: "discover", targetUrl: "http://localhost:3000/", environment: "dev", note: "look at the login", status: "claimed" });
 
 describe("the tools", () => {
-  it("lists exactly testbench_get_next_request, testbench_update_request_status, testbench_report_results and testbench_create_finding", async () => {
+  it("lists exactly testbench_get_next_request, testbench_update_request_status, testbench_report_results and testbench_create_finding: no tool hands in a Playwright report or reads a file", async () => {
     const mcp = await connect(fake(() => null).client);
+    const described = (await mcp.listTools()).tools.map((t) => `${t.name} ${t.description ?? ""} ${JSON.stringify(t.inputSchema)}`).join("\n");
+    assert.doesNotMatch(described, /report_path|file_path|\bpath\b.*read|readFile/i, "no input names a file: the skill's result action delivers the report");
     assert.deepEqual((await mcp.listTools()).tools.map((t) => t.name).sort(), ["testbench_create_finding", "testbench_get_next_request", "testbench_report_results", "testbench_update_request_status"]);
   });
 
@@ -77,6 +79,7 @@ describe("the tools", () => {
     assert.match(tool.description ?? "", /`runId`, `targetUrl`, `environment` and `cases`/);
     assert.match(tool.description ?? "", /Report the results with testbench_report_results, then finish with done; give it back with released if you cannot/);
     assert.doesNotMatch(tool.description ?? "", /not possible yet/);
+    assert.match(tool.description ?? "", /a Playwright JSON report of them is too large for a tool argument, so it is NOT handed in through MCP but with the TestPilot skill \(\/testpilot-requests, action result\)/);
   });
 
   it("get_next_request moves on when someone else took the first one (409), and says request: null when nothing is free", async () => {
