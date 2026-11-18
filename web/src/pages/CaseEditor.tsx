@@ -328,7 +328,7 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
         )}
         {data.proposal && (
           <div className="card" style={{ padding: "8px 12px", fontSize: "var(--fs-md)" }}>
-            Made from an AI suggestion by a test agent: <Link to={`/p/${pid}/manual-tests?test=${data.proposal.id}`}>{data.proposal.title}</Link>. A newer version from the agent waits there until you choose to use it; it never changes this case by itself.
+            Made from an AI suggestion by a test agent: <Link to={`/p/${pid}/manual-tests?test=${data.proposal.id}`}>{data.proposal.title}</Link>.{data.created_by ? ` Made into a test case by ${data.created_by}.` : ""} A newer version from the agent waits there until you choose to use it; it never changes this case by itself.
           </div>
         )}
         <section>
