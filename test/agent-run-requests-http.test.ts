@@ -8,7 +8,7 @@ import { after, before, describe, it } from "node:test";
 import Database from "better-sqlite3";
 
 // The real server, started as a separate process with a password set. AG4: a person asks an agent to run chosen test cases from the route that already makes requests. The run is made
-// at once and says it waits; a request token sees the request, takes it, can give it back but cannot finish it yet; a person can cancel it and still run the cases by hand.
+// at once and says it waits; a request token sees the request, takes it, can give it back, and cannot finish it while a test case has no result (the results are in agent-case-results-http.test.ts); a person can cancel it and still run the cases by hand.
 
 const ROOT = join(import.meta.dirname, "..");
 const PORT = 55000 + Math.floor(Math.random() * 1000); // its own range: the other server tests use 41000 to 54999
@@ -88,7 +88,7 @@ describe("a person asks an agent to run test cases", () => {
     assert.ok(r.runId);
     const run = await runOf(r.runId!);
     assert.deepEqual([run.kind, run.source, run.status, run.meta.agentRequest], ["manual", "manual", "in_progress", r.id]);
-    assert.deepEqual(run.agentRequest, { id: r.id, status: "pending", claimedBy: null });
+    assert.deepEqual(run.agentRequest, { id: r.id, status: "pending", claimedBy: null, progress: { total: 2, reported: 0, missing: 2 } });
     assert.deepEqual(run.results.map((x) => [x.case_id, x.status]), [[c1, "untested"], [c2, "untested"]]);
     const list = await ok<{ id: number; source: string; agentRequest: { id: number; status: string } | null }[]>(await person(`/api/projects/${a}/runs`, undefined, "GET"));
     const inList = list.find((x) => x.id === r.runId)!;
@@ -152,30 +152,31 @@ describe("what the agent sees", () => {
   });
 });
 
-describe("take, give back, cannot finish yet, cancel", () => {
-  it("shows the state on the run as it changes; complete answers 409, release works, a person cancels, and the cases can still be run by hand", async () => {
+describe("take, give back, cannot finish without results, cancel", () => {
+  it("shows the state on the run as it changes; complete answers 409 while a test case has no result, release works, a person cancels, and the cases can still be run by hand", async () => {
     const r = await ok<Req>(await askRun(a, [c1, c2], { title: "State walk" }));
     const state = async () => (await runOf(r.runId!)).agentRequest;
-    assert.deepEqual(await state(), { id: r.id, status: "pending", claimedBy: null });
+    const progress = { total: 2, reported: 0, missing: 2 };
+    assert.deepEqual(await state(), { id: r.id, status: "pending", claimedBy: null, progress });
 
     assert.equal((await claim(tokenA, a, r.id)).status, 200);
-    assert.deepEqual(await state(), { id: r.id, status: "claimed", claimedBy: "agent: claude-a" });
+    assert.deepEqual(await state(), { id: r.id, status: "claimed", claimedBy: "agent: claude-a", progress });
     assert.equal((await claim(tokenA2, a, r.id)).status, 409, "only one agent takes it");
 
     const complete = await agent(tokenA, `/api/agent/projects/${a}/requests/${r.id}/complete`, "POST", { note: "done" });
     assert.equal(complete.status, 409);
-    assert.match((await complete.json()).error, /A run request is finished when a result has been reported for every test case/);
-    assert.deepEqual(await state(), { id: r.id, status: "claimed", claimedBy: "agent: claude-a" }, "nothing changed");
+    assert.match((await complete.json()).error, /^2 of 2 test cases have no result yet/);
+    assert.deepEqual(await state(), { id: r.id, status: "claimed", claimedBy: "agent: claude-a", progress }, "nothing changed");
 
     const back = await ok<Req>(await agent(tokenA, `/api/agent/projects/${a}/requests/${r.id}/release`, "POST", { note: "no browser here" }));
     assert.deepEqual([back.status, back.releaseNote], ["pending", "no browser here"]);
-    assert.deepEqual(await state(), { id: r.id, status: "pending", claimedBy: null });
+    assert.deepEqual(await state(), { id: r.id, status: "pending", claimedBy: null, progress });
     assert.equal((await claim(tokenA2, a, r.id)).status, 200, "another agent can take it now");
-    assert.equal((await agent(tokenA, `/api/agent/projects/${a}/requests/${r.id}/complete`, "POST", {})).status, 409);
+    assert.equal((await agent(tokenA, `/api/agent/projects/${a}/requests/${r.id}/complete`, "POST", {})).status, 409, "and the first one no longer can");
 
     const cancelled = await ok<Req>(await person(`/api/agent-requests/${r.id}/cancel`, {}));
     assert.equal(cancelled.status, "cancelled");
-    assert.deepEqual(await state(), { id: r.id, status: "cancelled", claimedBy: "agent: second-agent" });
+    assert.deepEqual(await state(), { id: r.id, status: "cancelled", claimedBy: "agent: second-agent", progress });
 
     const run = await runOf(r.runId!);
     assert.equal(run.status, "in_progress", "the run is kept");

@@ -19,7 +19,7 @@ import { AutomatedDetail } from "./AutomatedDetail";
 import { NewRunModal } from "./Runs";
 import { BugReportModal, jiraLabel, jiraUrl } from "./BugReport";
 import { useCan } from "../components/Access";
-import { agentRunInfo, askedRunInfo } from "../agentruns";
+import { agentRunInfo, askedRunInfo, PROGRESS_TITLE, reportedByAgent } from "../agentruns";
 
 export function RunDetailPage() {
   const { pid, runId } = useParams();
@@ -127,6 +127,7 @@ function RunHeader({ run, children }: { run: RunDetail; children?: ReactNode }) 
       {rerunOf && <Link className="chip" to={`/p/${pid}/runs/${rerunOf.id}`} title="The run this one re-tests">Re-run of {rerunOf.title}</Link>}
       {agent && <Link className="chip" to={`/p/${pid}/automated?view=requests`} title="An agent handed in this report for a request, not a person. Open the requests.">Handed in by agent (request #{agent.requestId})</Link>}
       {asked && <Link className="chip" to={`/p/${pid}/automated?view=requests`} title={`${asked.title} Open the requests.`}>{asked.label}</Link>}
+      {asked?.progress && <span className="chip" title={PROGRESS_TITLE}>{asked.progress}</span>}
       {!!(run.meta as { scheduled?: unknown }).scheduled && <span className="chip" title="Prepared by the suite's schedule, not started by a person">Scheduled</span>}
       {suite && (
         suite.deleted ? (
@@ -321,6 +322,7 @@ function ManualRun({ run }: { run: RunDetail }) {
                     </span>
                   )}
                   {r.jira_key && <span className="chip" title={`Linked Jira issue ${jiraLabel(r.jira_key)}`}><Bug size={10} /> {jiraLabel(r.jira_key)}</span>}
+                  {reportedByAgent(r) && <span className="chip" title={reportedByAgent(r)!.title}><Bot size={10} aria-hidden="true" /> {reportedByAgent(r)!.label}</span>}
                 </div>
               ))}
             </div>
@@ -473,6 +475,7 @@ function ExecutionPanel({ resultId, projectKey, run, auto, onMark }: { resultId:
       <div className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
         <div className="row">
           <span className="section-label" style={{ margin: 0 }}>Result</span>
+          {reportedByAgent(r) && <span className="chip" title={reportedByAgent(r)!.title}><Bot size={10} aria-hidden="true" /> {reportedByAgent(r)!.label}</span>}
           <span className="spacer" />
           {r.executed_at && r.status !== "untested" && <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>{formatDateTime(r.executed_at)}</span>}
         </div>
@@ -537,6 +540,13 @@ function ExecutionPanel({ resultId, projectKey, run, auto, onMark }: { resultId:
           </div>
         )}
       </section>
+
+      {r.error && (
+        <section>
+          <div className="section-label">Error reported{reportedByAgent(r) ? " by the agent" : ""}</div>
+          <div className="mono" style={{ whiteSpace: "pre-wrap", color: "var(--failed-fg)" }}>{r.error}</div>
+        </section>
+      )}
 
       <section>
         <div className="section-label">Notes</div>

@@ -12,7 +12,7 @@ import { makeCase, makeProject } from "./helpers.ts";
 
 // AG4: a person asks an agent to run chosen test cases. The run is made at once, with an empty result for each case, and the request points at it. These are the rules of the
 // request itself (the route, the page and the audit are in agent-run-requests-http.test.ts): what is made, what the payload holds and never holds, the limits, that it is
-// all or nothing, what an agent can do with it (take it, give it back, not finish it yet), and the step from a database that does not know the kind.
+// all or nothing, what an agent can do with it (take it, give it back, not finish it while a case has no result: the results are in agent-case-results.test.ts), and the step from a database that does not know the kind.
 
 const me = { name: "Tess Tester", userId: null };
 const URL_OK = "https://staging.example.com";
@@ -35,7 +35,7 @@ describe("asking for a run", () => {
     assert.deepEqual(JSON.parse(run.meta), { agentRequest: r.id }, "the run says which request it was asked by, and is not 'handed in by an agent'");
     const results = db.prepare("SELECT case_id, status FROM results WHERE run_id = ? ORDER BY position").all(r.runId) as { case_id: number; status: string }[];
     assert.deepEqual(results.map((x) => [x.case_id, x.status]), [[second.id, "untested"], [first.id, "untested"]], "untested, in the order of the case list");
-    assert.deepEqual(agentRequestOfRun(r.runId!), { id: r.id, status: "pending", claimedBy: null });
+    assert.deepEqual(agentRequestOfRun(r.runId!), { id: r.id, status: "pending", claimedBy: null, progress: { total: 2, reported: 0, missing: 2 } });
     assert.equal(agentRequestOfRun(999999), null);
   });
 
@@ -176,24 +176,24 @@ describe("what an agent sees and can do", () => {
     assert.deepEqual([taken.cases[0].title, taken.cases[0].steps.map((s) => s.action), taken.runId], ["Has steps", ["Do it"], r.runId]);
   });
 
-  it("can be taken and given back, can be cancelled by a person, and cannot be finished: complete answers 409 in every state", () => {
+  it("can be taken and given back, and can be cancelled by a person; complete is refused until every test case has a result, and only the token that took it can ask", () => {
     const p = makeProject("STA", "State");
     const c = makeCase(p.id, "One");
     const t = agent(p.id);
     const other = agent(p.id, "claude-b");
     const r = ask(p.id, [c.id]);
-    refused(() => completeRequest(p.id, r.id, t, {}), 409, /not possible yet/);
+    refused(() => completeRequest(p.id, r.id, t, {}), 409, /Take the request first/);
     claimRequest(p.id, r.id, t);
-    assert.deepEqual(agentRequestOfRun(r.runId!), { id: r.id, status: "claimed", claimedBy: "agent: claude-a" });
-    refused(() => completeRequest(p.id, r.id, t, { note: "done" }), 409, /A run request is finished when a result has been reported for every test case/);
-    refused(() => completeRequest(p.id, r.id, other, {}), 409, /not possible yet/);
+    assert.deepEqual(agentRequestOfRun(r.runId!), { id: r.id, status: "claimed", claimedBy: "agent: claude-a", progress: { total: 1, reported: 0, missing: 1 } });
+    refused(() => completeRequest(p.id, r.id, t, { note: "done" }), 409, /^1 of 1 test cases have no result yet/);
+    refused(() => completeRequest(p.id, r.id, other, {}), 409, /Another token took this request/);
     const back = releaseRequest(p.id, r.id, t, { note: "no browser here" });
     assert.deepEqual([back.status, back.releaseNote, back.cases.length], ["pending", "no browser here", 1]);
     assert.equal(agentRequestOfRun(r.runId!)!.status, "pending");
-    refused(() => completeRequest(p.id, r.id, t, {}), 409, /not possible yet/);
+    refused(() => completeRequest(p.id, r.id, t, {}), 409, /Take the request first/);
     claimRequest(p.id, r.id, other);
     assert.equal(cancelRequest(r.id).status, "cancelled");
-    assert.deepEqual(agentRequestOfRun(r.runId!), { id: r.id, status: "cancelled", claimedBy: "agent: claude-b" });
+    assert.deepEqual(agentRequestOfRun(r.runId!), { id: r.id, status: "cancelled", claimedBy: "agent: claude-b", progress: { total: 1, reported: 0, missing: 1 } });
     assert.equal(n("SELECT COUNT(*) FROM runs WHERE id = ?", r.runId), 1, "the run is kept");
     assert.equal(n("SELECT COUNT(*) FROM results WHERE run_id = ? AND status = 'untested'", r.runId), 1, "and can be run by hand");
   });

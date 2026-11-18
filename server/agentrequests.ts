@@ -6,7 +6,8 @@ import { createManualRun } from "./runsuites.ts";
 
 /**
  * Requests to a test agent. A person asks for something: look at a target (discover), run the failed automated tests of a run again (rerun), or run chosen test cases (run:
- * the run is made at once, with an empty result for each case, and the request points at it; AG4 only asks and shows, the results come with AG5a). Testbench starts
+ * the run is made at once, with an empty result for each case, and the request points at it; the agent reports a result for each case with server/agentresults.ts and the
+ * request is done when every case has one, whoever set it). Testbench starts
  * NOTHING. The request waits as a row until an agent, with its own token and in its own environment, takes it, does the work under its own rules and stops, and says
  * it is done. What the agent delivers still comes in through the normal import and is `proposed` until a person decides.
  *
@@ -83,9 +84,17 @@ export function viewOf(r: Row, withCases = true) {
     id: r.id, projectId: r.project_id, kind: r.kind, targetUrl: r.target_url, environment: r.environment, note: r.note, runId: r.run_id, tests, cases, caseCount, status: r.status,
     createdBy: r.created_by, createdAt: r.created_at, claimedBy: r.claimed_by, claimedAt: r.claimed_at, finishedAt: r.finished_at, resultRunId: r.result_run_id, resultNote: r.result_note, resultDeliveredAt: r.result_delivered_at,
     releaseNote: r.release_note, releasedBy: r.released_by, releasedAt: r.released_at, resultAuditId: r.result_audit_id,
+    // A run request: how far its run has come. An agent that takes it again after a release sees from this what is left.
+    progress: r.kind === "run" && r.run_id !== null ? runProgress(r.run_id) : null,
   };
 }
 export type AgentRequest = ReturnType<typeof viewOf>;
+
+/** For a run: how many of its test cases (those that still exist) have a result, whoever set it (the agent, or a person by hand), and how many have none yet. */
+export function runProgress(runId: number): { total: number; reported: number; missing: number } {
+  const r = db.prepare("SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN status = 'untested' THEN 1 ELSE 0 END), 0) AS missing FROM results WHERE run_id = ? AND case_id IS NOT NULL").get(runId) as { total: number; missing: number };
+  return { total: r.total, reported: r.total - r.missing, missing: r.missing };
+}
 
 /** The same, with the title of the audit a finished discover made, for the person's list. */
 const withAudits = (views: AgentRequest[]) => {
@@ -118,10 +127,10 @@ export function pendingForAgent(projectId: number) {
 }
 
 /** The run request an agent was asked to run this run by (the newest one), for the run's page: its number, state and who took it. null for a run that was not asked of an agent. */
-export function agentRequestOfRun(runId: number): { id: number; status: RequestStatus; claimedBy: string | null } | null {
+export function agentRequestOfRun(runId: number): { id: number; status: RequestStatus; claimedBy: string | null; progress: { total: number; reported: number; missing: number } } | null {
   const r = db.prepare("SELECT id, status, claimed_by AS claimedBy FROM agent_requests WHERE run_id = ? AND kind = 'run' ORDER BY id DESC LIMIT 1").get(runId) as
     { id: number; status: RequestStatus; claimedBy: string | null } | undefined;
-  return r ?? null;
+  return r ? { ...r, progress: runProgress(runId) } : null;
 }
 
 export interface NewRequest { kind: unknown; targetUrl?: unknown; environment?: unknown; note?: unknown; runId?: unknown; caseIds?: unknown; title?: unknown; templateId?: unknown }
@@ -264,8 +273,6 @@ export function releaseRequest(projectId: number, id: number, token: { id: numbe
 /** The agent that took a request says it is done, with a note and, if it delivered something, the run that came in (a re-run) or the audit that was made (a discover). */
 export function completeRequest(projectId: number, id: number, token: { id: number; name: string }, input: { note?: unknown; resultRunId?: unknown; resultAuditId?: unknown }) {
   const cur = mustRow(projectId, id);
-  // A run request is finished by reporting a result for every case (AG5a). Until that exists nothing can finish it: the agent can give it back (release) and a person can cancel it.
-  if (cur.kind === "run") throw new AuditError(409, "A run request is finished when a result has been reported for every test case, and that is not possible yet. Give it back with release, or ask a person to cancel it");
   const note = agentNote(input.note);
   let resultAuditId: number | null = null;
   if (input.resultAuditId !== undefined && input.resultAuditId !== null) {
@@ -285,6 +292,16 @@ export function completeRequest(projectId: number, id: number, token: { id: numb
     resultRunId = input.resultRunId as number;
   }
   if (cur.status !== "claimed") throw new AuditError(409, cur.status === "pending" ? "Take the request first" : "The request is already done or cancelled");
+  if (cur.kind === "run") {
+    // A run request is finished when every test case that is still there has a result, whoever set it (the agent, or a person by hand). The run stays in progress: a person reviews it
+    // and finishes it. TestBench links the run itself, so the agent cannot name another one.
+    if (cur.claimed_token_id !== token.id) throw new AuditError(409, "Another token took this request");
+    if (cur.run_id === null) throw new AuditError(409, "The run of this request was deleted, so there is nothing to finish. A person can cancel the request");
+    if (input.resultRunId !== undefined && input.resultRunId !== null && input.resultRunId !== cur.run_id) throw bad("TestBench links the run of a run request itself. Leave resultRunId out");
+    const p = runProgress(cur.run_id);
+    if (p.missing > 0) throw new AuditError(409, `${p.missing} of ${p.total} test cases have no result yet. Report a result for each one, or give the request back with release`);
+    resultRunId = cur.run_id;
+  }
   const r = db
     .prepare("UPDATE agent_requests SET status = 'done', finished_at = datetime('now'), result_note = ?, result_run_id = COALESCE(result_run_id, ?), result_audit_id = ? WHERE id = ? AND project_id = ? AND status = 'claimed' AND claimed_token_id = ? RETURNING *")
     .get(note, resultRunId, resultAuditId, id, projectId, token.id) as Row | undefined;

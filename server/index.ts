@@ -54,6 +54,7 @@ import { accountsState, AccountError, audit, revokeAllSessions, updateProfile } 
 import { agentRequestOfRun, agentResultsEnabled, cancelRequest, claimRequest, completeRequest, createRequest, listRequests, pendingForAgent, releaseRequest, RESULT_LIMITS, setAgentResultsEnabled, submitResult } from "./agentrequests.ts";
 import { authenticateRequestToken, createRequestToken, isAgentRequestRoute, listRequestTokens, revokeRequestToken } from "./requesttokens.ts";
 import { createFinding, FINDING_LIMITS, findingBody } from "./agentfindings.ts";
+import { CASE_RESULT_LIMITS, caseResultsBody, reportCaseResults } from "./agentresults.ts";
 import { currentUser } from "./accountcontext.ts";
 import { checkAccessTable, trackRoutes } from "./access.ts";
 import { registerAccessGuard } from "./accessguard.ts";
@@ -538,6 +539,7 @@ app.get("/api/runs/:id", (req) => {
   const results = db
     .prepare(`
       SELECT r.id, r.run_id, r.case_id, r.automated_test_id, r.status, r.flaky, r.duration_ms, r.error, r.notes, r.position, r.executed_at, r.jira_key,
+        r.reported_by_agent_token_id, (SELECT name FROM request_tokens WHERE id = r.reported_by_agent_token_id) AS reported_by_agent,
         (SELECT COUNT(*) FROM attachments att WHERE att.result_id = r.id) AS attachment_count, r.detail IS NOT NULL AS has_detail,
         COALESCE(json_extract(r.snapshot, '$.number'), c.number) AS case_number,
         COALESCE(json_extract(r.snapshot, '$.title'), c.title) AS case_title,
@@ -620,6 +622,8 @@ app.get("/api/results/:id", (req) => {
     : live;
   return {
     ...result,
+    // The name of the request token that reported this result (null if a person made it, or the token no longer exists); the run's list has it too.
+    reported_by_agent: result.reported_by_agent_token_id == null ? null : ((db.prepare("SELECT name FROM request_tokens WHERE id = ?").pluck().get(result.reported_by_agent_token_id) as string | undefined) ?? null),
     case: frozen,
     stepResults: db.prepare("SELECT * FROM step_results WHERE result_id = ?").all(id),
     attachments: db.prepare("SELECT * FROM attachments WHERE result_id = ? ORDER BY id").all(id),
@@ -2004,6 +2008,21 @@ app.post("/api/agent/projects/:id/requests/:rid/findings", { bodyLimit: FINDING_
   const body = findingBody.parse(req.body ?? {});
   reply.code(201);
   return audited(() => createFinding(id, idParam(req, "rid"), auth, req.ip, body));
+});
+// Results by test case for the run request this token took (server/agentresults.ts): a batch, all or nothing. They count at once for the status of a test case, for coverage and for
+// requirements, so a person has to have switched agent results on (off by default, the owner decides). At most CASE_RESULT_LIMITS.perMinute calls a minute per token (429); every
+// attempt after a valid token counts, so a refused one does too. The rest of the rules (a run, claimed by this token, untouched results, steps) are in reportCaseResults.
+const caseResultsLimiter = makeLimiter({ max: CASE_RESULT_LIMITS.perMinute, windowMs: 60_000 });
+app.post("/api/agent/projects/:id/requests/:rid/case-results", { bodyLimit: CASE_RESULT_LIMITS.bodyBytes }, (req, reply) => {
+  const id = idParam(req);
+  const auth = requestTokenAuth(req, id);
+  const key = `t${auth.id}`;
+  if (caseResultsLimiter.blockedFor(key) > 0) throw new HttpError(429, `Too many result reports from this token (at most ${CASE_RESULT_LIMITS.perMinute} a minute). Wait a minute and try again`);
+  caseResultsLimiter.fail(key); // counts this attempt
+  if (!agentResultsEnabled()) throw new HttpError(409, "Agent results are switched off. A person switches them on in Settings first (Agent results must be enabled before an agent can report results for a run)");
+  reply.header("Cache-Control", "no-store");
+  const body = caseResultsBody.parse(req.body ?? {});
+  return audited(() => reportCaseResults(id, idParam(req, "rid"), auth, req.ip, body));
 });
 
 app.get("/api/projects/:id/requirement-proposals", (req) => requirementsApi(() => listProposals(idParam(req), (req.query as { status?: string }).status || undefined)));

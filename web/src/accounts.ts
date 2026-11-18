@@ -68,7 +68,7 @@ export interface AuditEntry {
 
 /** Every action the server writes to the audit log (test/web-accounts.test.ts checks this list against the server's source, so a new action cannot be left without words). */
 export const AUDIT_ACTIONS = [
-  "agent_request.cancelled", "agent_request.claimed", "agent_request.completed", "agent_request.created", "agent_request.finding_created", "agent_request.released", "agent_request.result_delivered", "spec.created", "spec.deleted", "spec.edited", "spec.renamed", "account.created", "account.disabled", "account.enabled", "account.setup", "invitation.created", "invitation.revoked", "invitation.used", "login.failed", "login.succeeded",
+  "agent_request.cancelled", "agent_request.claimed", "agent_request.completed", "agent_request.created", "agent_request.finding_created", "agent_request.released", "agent_request.result_delivered", "agent_request.results_reported", "spec.created", "spec.deleted", "spec.edited", "spec.renamed", "account.created", "account.disabled", "account.enabled", "account.setup", "invitation.created", "invitation.revoked", "invitation.used", "login.failed", "login.succeeded",
   "member.added", "member.removed", "member.role_changed", "members.migrated", "password.changed", "password.reset", "password.reset_link_created", "profile.changed", "requirements.bulk_approved", "sessions.revoked_others",
 ] as const;
 
@@ -123,6 +123,11 @@ export function describeAudit(e: Pick<AuditEntry, "action" | "actor" | "targetUs
     case "agent_request.claimed": return `${who} took a request in ${project}`;
     case "agent_request.released": return `${who} gave a request back in ${project}`;
     case "agent_request.result_delivered": return `${who} handed in the report of a re-run in ${project}`;
+    case "agent_request.results_reported": {
+      const n = Number(d.reported) || 0;
+      const parts = (["passed", "failed", "blocked", "skipped"] as const).map((s) => [Number(d[s]) || 0, s] as const).filter(([c]) => c > 0).map(([c, s]) => `${c} ${s}`);
+      return `${who} reported results for ${n} test ${n === 1 ? "case" : "cases"}${parts.length ? ` (${parts.join(", ")})` : ""} in ${project}`;
+    }
     case "agent_request.completed": return `${who} finished a request in ${project}`;
     case "agent_request.finding_created": return `${who} reported ${({ test_case: "a test case (a draft)", bug_report: "a bug report (a proposal)", observation: "an observation", manual_test_suggestion: "a manual test suggestion (a proposal)" } as Record<string, string>)[String(d.finding_kind)] ?? "a finding"} for a discover request in ${project}`;
     case "spec.created": return `${who} added the spec ${specName(d.fileName)} in ${project}`;

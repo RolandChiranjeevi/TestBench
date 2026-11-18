@@ -746,6 +746,15 @@ function migrateAgentFindings(d: Database.Database) {
 }
 
 /**
+ * Results an agent reported for a run request (AG5a). results.reported_by_agent_token_id holds the id of the request token (request_tokens.id, no foreign key: the mark outlives
+ * the token) of the agent that reported the result, and stays when a person changes it afterwards, so that it can always be seen where a result came from. NULL: a person or an import.
+ */
+function migrateAgentResults(d: Database.Database) {
+  const hasColumn = (table: string, col: string) => (d.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === col);
+  if (!hasColumn("results", "reported_by_agent_token_id")) d.exec("ALTER TABLE results ADD COLUMN reported_by_agent_token_id INTEGER");
+}
+
+/**
  * The `run` kind of agent request (AG4): a person asks an agent to run chosen test cases. A table made before it has a CHECK that refuses the kind, and SQLite cannot change a
  * CHECK, so the table is rebuilt: every row is kept as it is (the columns are named one by one, because the later ones were added at the end with ALTER), then the index is made
  * again. Nothing else points at agent_requests, and foreign keys are off only while it is swapped. A table that already allows `run` is left alone.
@@ -1357,6 +1366,7 @@ CREATE INDEX IF NOT EXISTS bug_events_bug ON bug_events(bug_report_id);`);
   migrateRoles(d);
   migrateAgentFindings(d);
   migrateAgentRunKind(d);
+  migrateAgentResults(d);
 
   // Make sure every sprint named on a run has a sprint record.
   const named = d.prepare("SELECT DISTINCT project_id, milestone FROM runs WHERE milestone != ''").all() as { project_id: number; milestone: string }[];

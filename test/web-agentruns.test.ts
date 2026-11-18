@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { agentRunInfo, askedRunInfo, auditPath } from "../web/src/agentruns.ts";
+import { agentRunInfo, askedRunInfo, auditPath, PROGRESS_TITLE, progressLabel, reportedByAgent } from "../web/src/agentruns.ts";
 
 describe("agentRunInfo", () => {
   it("names the request of a run an agent handed in", () => {
@@ -43,6 +43,37 @@ describe("askedRunInfo", () => {
     const run = { source: "manual", meta: { agentRequest: 12 }, agentRequest: { id: 12, status: "pending", claimedBy: null } };
     assert.equal(agentRunInfo(run), null);
     assert.ok(askedRunInfo(run));
+  });
+});
+
+describe("progressLabel and the progress of an asked run", () => {
+  it("says 'n of M results recorded (includes manual results)', and nothing when there is nothing to say", () => {
+    assert.equal(progressLabel({ total: 5, reported: 2 }), "2 of 5 results recorded (includes manual results)");
+    assert.equal(progressLabel({ total: 3, reported: 0 }), "0 of 3 results recorded (includes manual results)");
+    for (const p of [null, undefined, {}, { total: 0, reported: 0 }, { total: "5", reported: 2 }, { total: 5, reported: 1.5 }]) assert.equal(progressLabel(p as never), null, JSON.stringify(p));
+  });
+  it("is part of askedRunInfo in every state, and null when the answer has none", () => {
+    for (const status of ["pending", "claimed", "done", "cancelled"]) assert.equal(askedRunInfo({ agentRequest: { id: 1, status, claimedBy: null, progress: { total: 4, reported: 1, missing: 3 } } })!.progress, "1 of 4 results recorded (includes manual results)", status);
+    assert.equal(askedRunInfo({ agentRequest: { id: 1, status: "claimed", claimedBy: null } })!.progress, null);
+  });
+  it("has a tooltip that says the count is not only the agent's and that a person may have changed what the agent reported, and both chips use it", () => {
+    assert.match(PROGRESS_TITLE, /whoever set it: the agent, or a person by hand/);
+    assert.match(PROGRESS_TITLE, /A result the agent reported may have been changed by a person\./);
+    const pages = join(import.meta.dirname, "..", "web", "src", "pages");
+    for (const file of ["RunDetail.tsx", "AgentRequests.tsx"]) assert.ok(readFileSync(join(pages, file), "utf8").includes("title={PROGRESS_TITLE}"), `${file} uses the shared tooltip`);
+  });
+  it("tells a person to review and finish the run when the agent is done", () => {
+    assert.match(askedRunInfo({ agentRequest: { id: 1, status: "done", claimedBy: "agent: a" } })!.title, /Review the results, then finish the run/);
+  });
+});
+
+describe("reportedByAgent", () => {
+  it("marks a result an agent reported with its name, and says that a person may have changed it since", () => {
+    assert.deepEqual(reportedByAgent({ reported_by_agent_token_id: 4, reported_by_agent: "claude-a" }), { label: "Agent: claude-a", title: "Reported by agent. A person may have changed it." });
+  });
+  it("still marks it when the token has been deleted (no name), and does not mark any other result", () => {
+    assert.equal(reportedByAgent({ reported_by_agent_token_id: 4, reported_by_agent: null })!.label, "Agent: an agent");
+    for (const r of [{}, { reported_by_agent_token_id: null, reported_by_agent: null }, { reported_by_agent_token_id: undefined }, { reported_by_agent_token_id: "4", reported_by_agent: "x" }]) assert.equal(reportedByAgent(r), null, JSON.stringify(r));
   });
 });
 
