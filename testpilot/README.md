@@ -266,6 +266,8 @@ Set it up once:
 2. Put it in `.env` as `TESTBENCH_REQUEST_TOKEN_<KEY>=tbrq_...`.
 3. Add `"requestTokenEnvVar": "TESTBENCH_REQUEST_TOKEN_<KEY>"` to `.testpilot/projects/<key>.json` by hand.
 
+The agent calls `testpilot/tools/request_call.py` instead of reading `.env` or writing its own HTTP code: that script is the only thing that reads the token, and it sends it only to this project's request routes and never prints or stores it.
+
 Then run `/testpilot-requests`. It lists what is waiting, you choose **one**, and only then does the agent take it. What happens next:
 
 - **discover:** the address goes to `discover` as a suggestion. `discover` checks and confirms it as usual, including the two confirmations for production. The normal audit flow follows with all its stops.
