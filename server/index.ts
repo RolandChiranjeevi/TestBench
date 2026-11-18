@@ -607,9 +607,12 @@ app.patch("/api/runs/:id", (req) => {
   const run = db
     .prepare(`
       UPDATE runs SET title = ?, environment = ?, milestone = ?, status = ?,
-        finished_at = CASE WHEN ? = 'completed' THEN COALESCE(finished_at, datetime('now')) ELSE NULL END
+        finished_at = CASE WHEN ? = 'completed' THEN COALESCE(finished_at, datetime('now')) ELSE NULL END,
+        -- who finished it: written the first time it is finished (a run that was finished before, also by an import, keeps what it has), and cleared when it is reopened, as finished_at is
+        finished_by = CASE WHEN ? != 'completed' THEN '' WHEN finished_at IS NULL THEN ? ELSE finished_by END,
+        finished_by_user_id = CASE WHEN ? != 'completed' THEN NULL WHEN finished_at IS NULL THEN ? ELSE finished_by_user_id END
       WHERE id = ? RETURNING *`)
-    .get(body.title ?? cur.title, body.environment ?? cur.environment, body.milestone ?? cur.milestone, status, status, id);
+    .get(body.title ?? cur.title, body.environment ?? cur.environment, body.milestone ?? cur.milestone, status, status, status, actorName(), status, actorUserId(), id);
   if (status !== cur.status) decisionAudit(req, status === "completed" ? "run.finished" : "run.reopened", cur.project_id, { run: id });
   return run;
 });
