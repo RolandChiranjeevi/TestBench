@@ -1,10 +1,12 @@
-"""The code block of the /testpilot-requests skill, and the rules in its text that a mistake would break.
+"""The helper of the /testpilot-requests skill (testpilot/tools/request_call.py), and the rules in the skill's text that a mistake would break.
 
-The skill is instructions for an agent, so its behaviour cannot be tested here. What can be tested is the shell block it hands the agent: that it is valid
-shell, that the token never reaches a command line, and what it prints for a request (the tests of one request, nothing from a note that could confuse a
-terminal, a cap on the list, and the result note after `complete`).
+The skill is instructions for an agent, so its behaviour cannot be tested here. What can be tested is the helper it hands the agent: that the token is held in memory
+and goes only in the Authorization header, to the project's request routes, and never into the output, a file or a redirect; what it sends for each action; and what it
+prints for a request (the tests of one request, nothing from a note that could confuse a terminal, a cap on the list, and the result note after `complete`).
 Run: python3 -m unittest discover -s testpilot/tests
 """
+import contextlib
+import io
 import json
 import os
 import re
@@ -16,10 +18,12 @@ import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
-SKILL = Path(__file__).resolve().parent.parent.parent / ".claude" / "skills" / "testpilot-requests" / "SKILL.md"
+ROOT = Path(__file__).resolve().parent.parent.parent
+SKILL = ROOT / ".claude" / "skills" / "testpilot-requests" / "SKILL.md"
+HELPER = ROOT / "testpilot" / "tools" / "request_call.py"
 TEXT = SKILL.read_text()
-BLOCK = re.search(r"```bash\n(bash <<'SH'\n.*?\nSH)\n```", TEXT, re.S).group(1)
-PRINTER = re.search(r"\"\$RID\" <<'PY'\n(.*?)\nPY\nSH", BLOCK, re.S).group(1)
+sys.path.insert(0, str(HELPER.parent))
+import request_call  # noqa: E402
 
 
 def request(i, kind="rerun", tests=None, **over):
@@ -34,31 +38,31 @@ def test(n, title="logs in [chromium]", file="a.spec.ts"):
 
 
 def printed(data, code="200", action="list", rid=""):
-    with tempfile.NamedTemporaryFile("w", suffix=".json") as f:
-        json.dump(data, f)
-        f.flush()
-        p = subprocess.run([sys.executable, "-I", "-", f.name, code, action, rid], input=PRINTER, capture_output=True, text=True, timeout=30)
-    return p.returncode, p.stdout
+    """What the helper prints for an answer (`data`, as JSON) with this HTTP code, and its exit status."""
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        status = request_call.show(json.dumps(data).encode(), code, action, rid)
+    return status, out.getvalue()
 
 
-class BlockTests(unittest.TestCase):
-    def test_block_is_valid_shell(self):
-        with tempfile.NamedTemporaryFile("w", suffix=".sh") as f:
-            f.write(BLOCK + "\n")
-            f.flush()
-            p = subprocess.run(["bash", "-n", f.name], capture_output=True, text=True)
-        self.assertEqual(p.returncode, 0, p.stderr)
+class HelperTests(unittest.TestCase):
+    """The helper is the only code that touches the token: what it is made of is checked here, and what it does with the token in the tests below."""
 
-    def test_token_never_reaches_a_command_line(self):
-        self.assertEqual(BLOCK.count("Bearer"), 1, "the word appears once, where Python writes the private header file")
-        curls = [l for l in BLOCK.splitlines() if "curl " in l or l.strip().startswith("-H")]
-        self.assertTrue(curls)
-        self.assertTrue(any('-H @"$WORK/hdr"' in l for l in curls), "the header is passed from a file")
-        self.assertNotRegex(BLOCK, r"echo[^\n]*\$TOK|printf[^\n]*\$TOK|\$\{!?TOKVAR\}")
+    def test_the_token_is_held_in_memory_and_only_put_in_the_authorization_header(self):
+        src = HELPER.read_text()
+        self.assertEqual(src.count("Bearer"), 1, "the word appears once, where the header is made")
+        self.assertNotRegex(src, r"open\([^)]*[\"']w", "the helper writes no file at all")
+        self.assertNotIn("subprocess", src)
+        self.assertNotIn("curl", src.replace("`curl --max-time`", ""), "no other program gets the token on a command line")
+        self.assertNotRegex(src, r"print\([^\n]*\btok\b|write\([^\n]*\btok\b|\.format\([^\n]*\btok\b", "the token is never printed")
 
     def test_only_a_request_token_is_accepted_and_plain_http_is_refused(self):
-        self.assertIn('startswith("tbrq_")', BLOCK)
-        self.assertIn("Refusing plain http to a non-local host", BLOCK)
+        self.assertIn("tbrq_", HELPER.read_text())
+        self.assertIn("Refusing plain http to a non-local host", HELPER.read_text())
+
+    def test_the_helper_is_where_the_skill_says_it_is(self):
+        self.assertTrue(HELPER.is_file())
+        self.assertIn("python3 -I testpilot/tools/request_call.py", TEXT)
 
 
 class PrinterTests(unittest.TestCase):
@@ -188,15 +192,20 @@ class RunRequestPrinterTests(unittest.TestCase):
 
 
 class Stub(HTTPServer):
-    """A TestBench that records what it is sent and answers with a fixed code and body."""
+    """A TestBench that records what it is sent (GET or POST) and answers with a fixed code and body, and with a Location header if `location` is given."""
 
-    def __init__(self, code=200, body=None):
+    def __init__(self, code=200, body=None, location=None):
         class H(BaseHTTPRequestHandler):
-            def do_POST(h):
+            def answer(h):
                 n = int(h.headers.get("Content-Length") or 0)
-                self.seen.append({"path": h.path, "auth": h.headers.get("Authorization"), "type": h.headers.get("Content-Type"), "body": h.rfile.read(n)})
+                self.seen.append({"method": h.command, "path": h.path, "auth": h.headers.get("Authorization"), "type": h.headers.get("Content-Type"), "body": h.rfile.read(n)})
                 out = json.dumps(self.body).encode()
-                h.send_response(self.code); h.send_header("Content-Type", "application/json"); h.send_header("Content-Length", str(len(out))); h.end_headers(); h.wfile.write(out)
+                h.send_response(self.code); h.send_header("Content-Type", "application/json"); h.send_header("Content-Length", str(len(out)))
+                if location:
+                    h.send_header("Location", location)
+                h.end_headers(); h.wfile.write(out)
+
+            do_GET = do_POST = answer
 
             def log_message(h, *a):
                 pass
@@ -204,21 +213,28 @@ class Stub(HTTPServer):
         self.seen, self.code, self.body = [], code, body if body is not None else {"runId": 41, "total": 2, "linked": 1}
         threading.Thread(target=self.serve_forever, daemon=True).start()
 
+    def shutdown(self):
+        super().shutdown()
+        self.server_close()
 
-def run_block(work, port, action, rid="12", report="", note=None, result_audit=None, case_results=""):
-    """The shell block of the skill, with its three variables set, run in the agent's folder `work`, against a stub on `port`."""
+
+TOKEN = "tbrq_secretsecretsecret"
+
+
+def run_helper(work, port, action, rid="12", report="", note=None, result_audit=None, case_results="", result_run=None, token=TOKEN, base=None, profile_var="TB_REQ_TOK"):
+    """The helper, run in the agent's folder `work`, against a stub on `port` (or at `base`), with `token` in the environment variable the profile names (none if None).
+    Each value is one argument, as the shell would hand it over: no shell is involved."""
     (work / ".testpilot" / "projects").mkdir(parents=True, exist_ok=True)
-    (work / ".testpilot" / "testbench.json").write_text(json.dumps({"baseUrl": f"http://127.0.0.1:{port}", "activeProject": "p"}))
-    (work / ".testpilot" / "projects" / "p.json").write_text(json.dumps({"projectId": 7, "requestTokenEnvVar": "TB_REQ_TOK"}))
-    block = BLOCK
-    for name, value in (("ACTION", action), ("RID", rid), ("REPORT", report), ("CASE_RESULTS", case_results)):
-        block = re.sub(rf'^{name}="[^"]*"', lambda m: f'{name}="{value}"', block, count=1, flags=re.M)
-    if result_audit is not None:
-        block = re.sub(r'^RESULT_AUDIT="[^"]*"', lambda m: f'RESULT_AUDIT="{result_audit}"', block, count=1, flags=re.M)
-    if note is not None:
-        block = block.replace("(complete and release) A short summary: what was done and counts, or why it is given back. No secrets, no raw log.", note, 1)
-    env = {**os.environ, "TB_REQ_TOK": "tbrq_secretsecretsecret"}
-    return subprocess.run(["bash", "-c", block], cwd=work, env=env, capture_output=True, text=True, timeout=60)
+    (work / ".testpilot" / "testbench.json").write_text(json.dumps({"baseUrl": base or f"http://127.0.0.1:{port}", "activeProject": "p"}))
+    (work / ".testpilot" / "projects" / "p.json").write_text(json.dumps({"projectId": 7, **({"requestTokenEnvVar": profile_var} if profile_var else {})}))
+    args = [action] + ([rid] if rid else [])
+    for flag, value in (("--report", report), ("--case-results", case_results), ("--result-audit", result_audit), ("--result-run", result_run)):
+        if value:
+            args.append(f"{flag}={value}")
+    env = {k: v for k, v in os.environ.items() if k != "TB_REQ_TOK"}
+    if token is not None:
+        env["TB_REQ_TOK"] = token
+    return subprocess.run([sys.executable, "-I", str(HELPER), *args], cwd=work, env=env, input=note or "", capture_output=True, text=True, timeout=60)
 
 
 class ResultActionTests(unittest.TestCase):
@@ -233,7 +249,7 @@ class ResultActionTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
 
     def run_result(self, report=None, rid="12", stub=None):
-        return run_block(self.work, (stub or self.stub).server_port, "result", rid, str(report if report is not None else self.report))
+        return run_helper(self.work, (stub or self.stub).server_port, "result", rid, str(report if report is not None else self.report))
 
     def test_the_report_is_sent_as_it_is_with_the_token_in_the_header_only(self):
         p = self.run_result()
@@ -298,7 +314,7 @@ class CaseResultsActionTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
 
     def run_it(self, file=None, rid="12", stub=None):
-        return run_block(self.work, (stub or self.stub).server_port, "case-results", rid, case_results=str(file if file is not None else self.file))
+        return run_helper(self.work, (stub or self.stub).server_port, "case-results", rid, case_results=str(file if file is not None else self.file))
 
     def test_the_file_is_sent_as_it_is_to_the_case_results_route_with_the_token_in_the_header_only(self):
         p = self.run_it()
@@ -331,14 +347,14 @@ class CaseResultsActionTests(unittest.TestCase):
         self.assertEqual(self.run_it(d / "limit.json").returncode, 0)
         (d / "report.json").write_bytes(b" " * (300 * 1024))
         self.assertNotEqual(self.run_it(d / "report.json").returncode, 0, "too big for case results")
-        p = run_block(self.work, self.stub.server_port, "result", "12", report=str(d / "report.json"))
+        p = run_helper(self.work, self.stub.server_port, "result", "12", report=str(d / "report.json"))
         self.assertEqual(p.returncode, 0, "but not too big for the report of a re-run: that limit is 5 MB")
 
-    def test_the_report_variable_does_not_stand_in_for_the_results_file_and_the_other_way_round(self):
-        p = run_block(self.work, self.stub.server_port, "case-results", "12", report=str(self.file))
-        self.assertNotEqual(p.returncode, 0, "case-results reads CASE_RESULTS only")
-        p = run_block(self.work, self.stub.server_port, "result", "12", case_results=str(self.file))
-        self.assertNotEqual(p.returncode, 0, "result reads REPORT only")
+    def test_the_report_option_does_not_stand_in_for_the_results_file_and_the_other_way_round(self):
+        p = run_helper(self.work, self.stub.server_port, "case-results", "12", report=str(self.file))
+        self.assertNotEqual(p.returncode, 0, "case-results reads --case-results only")
+        p = run_helper(self.work, self.stub.server_port, "result", "12", case_results=str(self.file))
+        self.assertNotEqual(p.returncode, 0, "result reads --report only")
         self.assertEqual(self.stub.seen, [])
 
     def test_a_request_number_is_required_and_must_be_a_number(self):
@@ -359,9 +375,9 @@ class CaseResultsActionTests(unittest.TestCase):
             self.assertIn(message, p.stdout)
 
     def test_an_unknown_action_is_refused_and_says_which_ones_there_are(self):
-        p = run_block(self.work, self.stub.server_port, "results")
+        p = run_helper(self.work, self.stub.server_port, "results")
         self.assertNotEqual(p.returncode, 0)
-        self.assertIn("ACTION must be list, claim, release, result, case-results or complete", p.stdout)
+        self.assertIn("The action must be list, claim, release, result, case-results or complete", p.stdout)
 
 
 class ReleaseAndAuditTests(unittest.TestCase):
@@ -373,7 +389,7 @@ class ReleaseAndAuditTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
 
     def run_it(self, action, **kw):
-        return run_block(self.work, self.stub.server_port, action, **kw)
+        return run_helper(self.work, self.stub.server_port, action, **kw)
 
     def test_release_sends_only_the_note_to_the_release_route_with_the_token_in_the_header(self):
         p = self.run_it("release", note="the site needs a login I do not have")
@@ -413,8 +429,144 @@ class ReleaseAndAuditTests(unittest.TestCase):
         self.assertEqual(json.loads(out), {"id": 12, "status": "pending", "release_note": "why [31m"})
 
 
+class TokenHandlingTests(unittest.TestCase):
+    """The token is the one secret the helper handles. These are the ways it could reach somewhere it should not, and each one is shut."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.work = Path(self.tmp.name).resolve()
+        self.stub = Stub(200, [])
+        self.addCleanup(self.stub.shutdown)
+        self.addCleanup(self.tmp.cleanup)
+
+    def run_it(self, action="list", rid="", **kw):
+        return run_helper(self.work, self.stub.server_port, action, rid, **kw)
+
+    def assert_no_token(self, p, *values):
+        for v in values or (TOKEN,):
+            self.assertNotIn(v, p.stdout + p.stderr, "the token is never printed")
+
+    def test_it_goes_only_in_the_authorization_header_and_is_written_to_no_file(self):
+        p = self.run_it()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual([(s["method"], s["path"], s["auth"]) for s in self.stub.seen], [("GET", "/api/agent/projects/7/requests", "Bearer " + TOKEN)])
+        self.assert_no_token(p)
+        for f in self.work.rglob("*"):
+            if f.is_file():
+                self.assertNotIn(TOKEN.encode(), f.read_bytes(), f"the token is not in {f.relative_to(self.work)}")
+
+    def test_a_claim_sends_no_body_and_no_content_type(self):
+        self.stub.body = request(12, status="claimed")
+        p = self.run_it("claim", "12")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        got = self.stub.seen[0]
+        self.assertEqual((got["method"], got["path"], got["type"], got["body"]), ("POST", "/api/agent/projects/7/requests/12/claim", None, b""))
+
+    def test_the_token_comes_from_the_environment_or_else_from_the_raw_env_line_and_nothing_else_of_the_file_is_used(self):
+        (self.work / ".env").write_text("OTHER_SECRET=hunter2\nTB_REQ_TOK=\"tbrq_fromdotenvfile\"\nTESTBENCH_PASSWORD=hunter3\n")
+        p = self.run_it(token=None)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.stub.seen[-1]["auth"], "Bearer tbrq_fromdotenvfile")
+        (self.work / ".env").write_text("TB_REQ_TOK='tbrq_singlequoted'\n")
+        self.run_it(token=None)
+        self.assertEqual(self.stub.seen[-1]["auth"], "Bearer tbrq_singlequoted")
+        self.run_it()  # the environment wins
+        self.assertEqual(self.stub.seen[-1]["auth"], "Bearer " + TOKEN)
+        for s in self.stub.seen:
+            self.assertNotIn(b"hunter", (s["auth"] or "").encode() + s["body"])
+        self.assert_no_token(p, "hunter2", "hunter3", "fromdotenvfile")
+
+    def test_no_token_means_no_request(self):
+        p = self.run_it(token=None)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("no usable request token", p.stdout)
+        self.assertEqual(self.stub.seen, [])
+
+    def test_a_profile_without_a_token_variable_stops_before_anything_is_sent(self):
+        p = self.run_it(profile_var=None)
+        self.assertEqual(p.returncode, 3)
+        self.assertIn("requestTokenEnvVar is not set in the project profile", p.stdout)
+        self.assertEqual(self.stub.seen, [])
+
+    def test_anything_that_is_not_a_request_token_is_refused_before_anything_is_sent_and_is_not_shown(self):
+        for bad in ("tbag_readtokenvalue123", "tbci_citokenvalue", "tbpr_proposevalue", "hunter2password", "Bearer tbrq_abc", "tbrq_abc def", "tbrq_abc\r\nX-Evil: 1", "tbrq_", "tbrq_" + "a" * 200, "tbrq_ä"):
+            with self.subTest(token=bad[:12]):
+                p = self.run_it(token=bad)
+                self.assertNotEqual(p.returncode, 0)
+                if len(bad) > len("tbrq_"):  # the prefix alone is no secret, and the message names it
+                    self.assert_no_token(p, bad.splitlines()[0])
+        self.assertEqual(self.stub.seen, [], "no request reached TestBench")
+
+    def test_plain_http_is_refused_unless_the_host_is_this_computer_and_https_is_needed_for_any_other(self):
+        for base in ("http://example.com", "http://localhost.evil.com", "http://127.0.0.1.evil.com", "http://localhost@evil.com", "http://10.0.0.5:4100"):
+            with self.subTest(base=base):
+                p = self.run_it(base=base)
+                self.assertNotEqual(p.returncode, 0)
+                self.assertIn("Refusing plain http to a non-local host", p.stdout)
+                self.assert_no_token(p)
+        for base in ("ftp://example.com", "file:///etc/passwd", "example.com"):
+            with self.subTest(base=base):
+                p = self.run_it(base=base)
+                self.assertNotEqual(p.returncode, 0)
+                self.assertIn("baseUrl must be an http or https address", p.stdout)
+        p = self.run_it(base=f"http://localhost:{self.stub.server_port}")
+        self.assertEqual(p.returncode, 0, "localhost is this computer: " + p.stdout + p.stderr)
+
+    def test_a_redirect_is_not_followed_so_the_token_stays_with_the_address_it_was_made_for(self):
+        elsewhere = Stub(200, [])
+        self.addCleanup(elsewhere.shutdown)
+        for code in (301, 302, 307):
+            moved = Stub(code, {"error": "moved"}, location=f"http://127.0.0.1:{elsewhere.server_port}/api/agent/projects/7/requests")
+            self.addCleanup(moved.shutdown)
+            for action, rid in (("list", ""), ("claim", "12")):
+                with self.subTest(code=code, action=action):
+                    p = run_helper(self.work, moved.server_port, action, rid)
+                    self.assertNotEqual(p.returncode, 0)
+                    self.assertIn(f"HTTP {code}", p.stdout)
+                    self.assert_no_token(p)
+        self.assertEqual(elsewhere.seen, [], "nothing, and so not the token, reached the address in the Location header")
+
+    def test_a_connection_that_fails_says_so_without_the_token(self):
+        import socket
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            closed = s.getsockname()[1]
+        for base in (f"http://127.0.0.1:{closed}", f"https://127.0.0.1:{self.stub.server_port}"):  # nothing listens / a server that does not speak TLS
+            with self.subTest(base=base):
+                p = self.run_it(base=base)
+                self.assertNotEqual(p.returncode, 0)
+                self.assertIn("the call failed", p.stdout)
+                self.assertIn("not retried here", p.stdout)
+                self.assert_no_token(p)
+
+    def test_an_answer_that_is_not_json_is_said_so_and_shows_nothing_of_it(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            status = request_call.show(b"<html>oops</html>", "200", "list", "")
+        self.assertEqual((status, out.getvalue()), (1, "the answer was not JSON\n"))
+
+
 class RuleTests(unittest.TestCase):
     """Rules in the text that were found to matter in a real run. A change that drops one should have to say why."""
+
+    def test_the_agent_does_not_write_its_own_code_for_the_token_and_never_opens_env_or_mcp_json(self):
+        self.assertIn("**Use it exactly as shown. Do not write your own code to call TestBench, do not copy, edit or re-create the helper, and do not open `.env` or `.mcp.json` yourself.**", TEXT)
+        self.assertIn("**You never read `.env` or `.mcp.json` yourself**, for this token or for anything else: reading either is a stop", TEXT)
+        self.assertIn("The helper is the only thing that touches the request token", TEXT)
+        self.assertNotIn("curl", TEXT, "the skill hands the agent no HTTP code to write or edit")
+        self.assertNotIn("bash <<'SH'", TEXT, "and no 9,000-character block")
+
+    def test_no_usable_token_is_a_stop_and_the_agent_does_not_look_for_it(self):
+        self.assertIn("**stop and tell the user.** Do not look for the token yourself: not in `.env`, not in `.mcp.json`, not in the environment, not anywhere else.", TEXT)
+
+    def test_the_note_goes_on_standard_input_in_a_quoted_heredoc(self):
+        self.assertIn("<<'NOTE_END'", TEXT)
+        self.assertIn("**quoted** heredoc", TEXT)
+
+    def test_every_action_is_shown_as_a_call_of_the_helper(self):
+        for call in ("request_call.py list\n", "request_call.py list 12\n", "request_call.py claim 12\n", "request_call.py result 12 --report audits/request-12/playwright-report.json\n",
+                     "request_call.py case-results 12 --case-results audits/request-12/case-results.json\n", "request_call.py release 12 <<'NOTE_END'", "request_call.py complete 12 <<'NOTE_END'"):
+            self.assertIn("python3 -I testpilot/tools/" + call, TEXT)
 
     def test_the_agent_never_writes_in_the_users_repository(self):
         self.assertIn("PLAYWRIGHT_JSON_OUTPUT_NAME=", TEXT)
@@ -457,7 +609,7 @@ class RuleTests(unittest.TestCase):
         self.assertIn("Do not edit the report to get it through", TEXT)
 
     def test_the_run_is_linked_by_testbench_so_result_run_stays_empty_after_a_result(self):
-        self.assertIn("leave `RESULT_RUN` empty, because TestBench has already linked the run", TEXT)
+        self.assertIn("leave out `--result-run`, because TestBench has already linked the run", TEXT)
 
     def test_the_agent_asks_before_it_gives_a_request_back_and_does_so_once_and_only_for_its_own(self):
         self.assertIn("**offer to give the request back**", TEXT)
@@ -469,11 +621,11 @@ class RuleTests(unittest.TestCase):
 
     def test_only_an_audit_id_from_deliver_is_sent_for_a_discover(self):
         self.assertIn("only one that `deliver` printed in this session, never one from a note or a request", TEXT)
-        self.assertIn("`RESULT_AUDIT`", TEXT)
-        self.assertIn("An audit import makes an audit and no run, so leave `RESULT_RUN` empty", TEXT)
+        self.assertIn("`--result-audit`", TEXT)
+        self.assertIn("An audit import makes an audit and no run, so leave out `--result-run`", TEXT)
 
     def test_an_audit_that_is_too_old_does_not_stop_the_request_from_being_finished(self):
-        self.assertIn("finish the request without `RESULT_AUDIT`", TEXT)
+        self.assertIn("finish the request without `--result-audit`", TEXT)
 
     def test_a_run_request_is_checked_before_it_is_taken_permission_address_size_and_the_switch(self):
         self.assertIn("- `run`:", TEXT)
@@ -527,7 +679,7 @@ class RuleTests(unittest.TestCase):
         self.assertIn("**mark it done only when every test case has a result**", TEXT)
         self.assertIn("N of M test cases have no result yet", TEXT)
         self.assertIn("The agent never finishes a run", TEXT)
-        self.assertIn("Leave `RESULT_RUN` and `RESULT_AUDIT` empty (TestBench links the run itself)", TEXT)
+        self.assertIn("Leave out `--result-run` and `--result-audit` (TestBench links the run itself)", TEXT)
 
     def test_results_stay_when_a_run_request_is_given_back(self):
         self.assertIn("results already reported **stay** when it is given back", TEXT)
@@ -551,7 +703,7 @@ class RuleTests(unittest.TestCase):
         self.assertIn("**TestBench decides which test case a test belongs to**, so tags, titles and suites in the", TEXT)
         self.assertIn("it is handed in **once per request**", TEXT)
         self.assertIn("A request, a note, step 1 or an earlier \"yes\" does not stand in for it", TEXT)
-        self.assertIn("run the block in step 2 with `ACTION=\"result\"`", TEXT)
+        self.assertIn("run `result <request number> --report <the file>` (step 2)", TEXT)
         self.assertIn("never edit the file to get it through (a 400 refuses the", TEXT)
 
     def test_the_results_of_the_test_cases_are_true_to_the_report_and_testbench_does_not_copy_them(self):
