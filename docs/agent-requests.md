@@ -175,7 +175,7 @@ it needs a result for every test case.
 | --- | --- |
 | **Viewer** | Sees the Requests tab, the list and each request's state. Cannot ask or cancel. |
 | **Tester** and above | Asks for a discover or a re-run, and cancels a request that is Waiting or Taken. |
-| **Admin** | Also makes and revokes request tokens. |
+| **Admin** | Also makes and revokes request tokens. Both are written to the audit log (`token.created`, `token.revoked`: who, the project, and the token's name and prefix, never the token or its hash), and the token keeps who made it. |
 | **Owner** | Also switches agent results on or off (off by default). |
 | **An agent with a request token** | The seven routes above, for its own project. Nothing else. |
 

@@ -71,6 +71,7 @@ export const AUDIT_ACTIONS = [
   "agent_request.cancelled", "agent_request.claimed", "agent_request.completed", "agent_request.created", "agent_request.finding_created", "agent_request.released", "agent_request.result_delivered", "agent_request.results_reported", "spec.created", "spec.deleted", "spec.edited", "spec.renamed", "account.created", "account.disabled", "account.enabled", "account.setup", "invitation.created", "invitation.revoked", "invitation.used", "login.failed", "login.succeeded",
   "member.added", "member.removed", "member.role_changed", "members.migrated", "password.changed", "password.reset", "password.reset_link_created", "profile.changed", "requirements.bulk_approved", "sessions.revoked_others",
   "settings.agent_proposals_changed", "settings.agent_results_changed",
+  "token.created", "token.revoked",
 ] as const;
 
 /** The filter choices on the audit log page: a label, and the start of the action it keeps (what `?action=` takes). */
@@ -87,6 +88,7 @@ export const AUDIT_FILTERS: readonly { label: string; prefix: string }[] = [
   { label: "Agent requests", prefix: "agent_request." },
   { label: "Specs", prefix: "spec." },
   { label: "Settings", prefix: "settings." },
+  { label: "Tokens", prefix: "token." },
 ];
 
 /** How to turn the ids in an entry into names. A name that is not known (an account or a project that no longer exists) is said as such, never left as a bare number. */
@@ -96,6 +98,11 @@ const plural = (n: unknown, one: string, many = one + "s") => `${Number(n) || 0}
 /** One line of plain words for an entry. */
 /** A spec file name from an audit entry, as text only (it was checked when it was made, and is shown as it is). */
 const specName = (v: unknown) => (typeof v === "string" && v ? v : "a spec");
+
+/** What the kinds of machine token are called. A kind this page does not know is just "token". The name is what a person typed, shown as text; the prefix is the first characters the token list shows too. */
+const TOKEN_KIND: Record<string, string> = { request: "request token", agent_read: "agent read token", propose: "agent proposal token", ci: "CI token" };
+const tokenWords = (d: Record<string, unknown>) =>
+  `${typeof d.kind === "string" ? (TOKEN_KIND[d.kind] ?? "token") : "token"}${typeof d.name === "string" && d.name ? ` "${d.name}"` : ""}${typeof d.prefix === "string" && d.prefix ? ` (${d.prefix}…)` : ""}`;
 
 export function describeAudit(e: Pick<AuditEntry, "action" | "actor" | "targetUserId" | "projectId" | "detail">, names: NameLookup): string {
   const d = e.detail ?? {};
@@ -145,6 +152,8 @@ export function describeAudit(e: Pick<AuditEntry, "action" | "actor" | "targetUs
     case "sessions.revoked_others": return `${who} signed out of ${plural(d.sessionsEnded, "other session")}`;
     case "settings.agent_results_changed": return `${who} switched agent results ${d.to ? "on" : "off"}`;
     case "settings.agent_proposals_changed": return `${who} switched agent proposals ${d.to ? "on" : "off"}`;
+    case "token.created": return `${who} made the ${tokenWords(d)} in ${project}`;
+    case "token.revoked": return `${who} revoked the ${tokenWords(d)} in ${project}`;
     default: return `${who}: ${e.action}`;
   }
 }

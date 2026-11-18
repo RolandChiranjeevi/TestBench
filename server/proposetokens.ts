@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { db, getSetting, setSetting } from "./db.ts";
 import { AuditError } from "./auditcommon.ts";
+import { revokeToken } from "./tokens.ts";
 
 /**
  * Tokens that let a test agent make requirement proposals, and nothing else.
@@ -55,10 +56,7 @@ export function listProposeTokens(projectId: number) {
     .map((t) => ({ id: t.id, name: t.name, prefix: t.prefix, createdAt: t.created_at, lastUsedAt: t.last_used_at, revokedAt: t.revoked_at }));
 }
 
-export function revokeProposeToken(id: number) {
-  const r = db.prepare("UPDATE propose_tokens SET revoked_at = COALESCE(revoked_at, datetime('now')) WHERE id = ?").run(id);
-  if (!r.changes) throw new AuditError(404, "Token not found");
-}
+export const revokeProposeToken = (id: number) => revokeToken("propose", id);
 
 export type ProposeAuth = { state: "ok"; name: string } | { state: "invalid" | "other_project" | "off" };
 

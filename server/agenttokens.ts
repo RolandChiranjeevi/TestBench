@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { db } from "./db.ts";
 import { AuditError } from "./auditcommon.ts";
+import { revokeToken } from "./tokens.ts";
 
 /**
  * Tokens for a test agent. They are made to read the active requirements of one project and nothing else.
@@ -38,10 +39,7 @@ export function listAgentTokens(projectId: number) {
     .map((t) => ({ id: t.id, name: t.name, prefix: t.prefix, createdAt: t.created_at, lastUsedAt: t.last_used_at, revokedAt: t.revoked_at }));
 }
 
-export function revokeAgentToken(id: number) {
-  const r = db.prepare("UPDATE agent_tokens SET revoked_at = COALESCE(revoked_at, datetime('now')) WHERE id = ?").run(id);
-  if (!r.changes) throw new AuditError(404, "Token not found");
-}
+export const revokeAgentToken = (id: number) => revokeToken("agent_read", id);
 
 export type AgentAuth = "ok" | "invalid" | "other_project";
 

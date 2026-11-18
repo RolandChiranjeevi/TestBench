@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import { db, parseJson } from "./db.ts";
 import { AuditError, toSqlDate } from "./auditcommon.ts";
+import { revokeToken } from "./tokens.ts";
 
 /**
  * CI results as bug history.
@@ -83,10 +84,7 @@ export function listCiTokens(projectId: number) {
     .map((t) => ({ id: t.id, name: t.name, prefix: t.prefix, createdAt: t.created_at, lastUsedAt: t.last_used_at, revokedAt: t.revoked_at }));
 }
 
-export function revokeCiToken(id: number) {
-  const r = db.prepare("UPDATE ci_tokens SET revoked_at = COALESCE(revoked_at, datetime('now')) WHERE id = ?").run(id);
-  if (!r.changes) throw new AuditError(404, "Token not found");
-}
+export const revokeCiToken = (id: number) => revokeToken("ci", id);
 
 /** True when the Authorization header carries a live token that belongs to this project. */
 export function authenticateCiToken(header: string | undefined, projectId: number): boolean {
