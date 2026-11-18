@@ -85,12 +85,12 @@ Rollerna:
 - **TestBench** är källan: projekt, krav, ärenden, testfall, buggrapporter, observationer, förslag, specar, förfrågningar och resultat. TestBench startar inget, kör aldrig Playwright och skriver aldrig till disk eller git.
 - **TestPilot** är agenten som fattar beslut, följer sina egna regler och bekräftelser, skapar material och kör flöden.
 - **Playwright MCP** är gränssnittet mot webbappen.
-- **TestBench MCP-servern** är bryggan mellan Claude/TestPilot och TestBench: tre verktyg (hämta nästa förfrågan, avsluta eller släppa den, rapportera en finding) över kön som redan finns.
+- **TestBench MCP-servern** är bryggan mellan Claude/TestPilot och TestBench: fyra verktyg (hämta nästa förfrågan, avsluta eller släppa den, rapportera resultat per testfall för en run-förfrågan, rapportera en finding) över kön som redan finns.
 - **Token** autentiserar agenten. En request-token kan ta, släppa och avsluta förfrågningar, och kan inte skapa eller avbryta dem, läsa krav, röra specar eller se konton. Agentens text från en förfrågan (adress, anteckning) är data, aldrig instruktion.
 
 Det som redan är byggt är kön, Request discover i UI, request-tokens, `/testpilot-requests`, release och audit-länk, och att agenten själv lämnar in en omkörnings rapport (se backlogg T, T-A, T-B), samt MCP-bryggan över kön (backlogg AG-A, #110) och agent findings (backlogg AG-B, #111): agenten skapar testfall, buggrapporter, observationer och manuella testförslag direkt i TestBench, kopplade till den discover-förfrågan den tog. Allt landar som utkast eller förslag och godkänns aldrig automatiskt, testfallen märks som agentens, och ogranskade AI-utkast tas inte med av "Select all" när en run byggs. Det senaste steget är:
 
-- **Run-förfrågan** (backlogg AG4): användaren väljer testfall och klickar **Ask agent to run**. TestBench skapar en manuell run med tomma resultat och en `run`-förfrågan, och runnen visas som "Waiting for agent". Testfallens text (men aldrig specar eller krav) skickas till agenten när den tar förfrågan, och agenten får inte hitta på resultat. Agenten kan ta och släppa förfrågan; att rapportera resultat per testfall kommer i AG5a, och att få resultaten att nå specar via en Playwright-rapport i AG5b.
+- **Run-förfrågan** (backlogg AG4): användaren väljer testfall och klickar **Ask agent to run**. TestBench skapar en manuell run med tomma resultat och en `run`-förfrågan, och runnen visas som "Waiting for agent". Testfallens text (men aldrig specar eller krav) skickas till agenten när den tar förfrågan, och agenten får inte hitta på resultat. Agenten tar förfrågan, kör testfallen i användarens miljö med Playwright MCP och rapporterar ett resultat per testfall (AG5a): en batch är allt eller inget, varje testfall rapporteras en gång, aldrig över ett resultat en människa har satt, och bara när en person har slagit på *Agent results*. Resultaten märks som agentens, en person kan ändra dem, och runnen förblir pågående tills en person granskar och avslutar den. Att få resultaten att nå specar via en Playwright-rapport kommer i AG5b.
 
 Senare: skrivbordsappen (och eventuell körning i sandbox, F-B), Azure DevOps och mobilappstest.
 
@@ -150,14 +150,14 @@ Automatiserade testfall ska skrivas i **Playwright-format (`*.spec.ts`)**, så a
 ## Vad som saknas / behöver byggas
 
 - **Användarskapade automatiserade testfall (spec.ts)** — S1 (spec från ett testfall), S2 (egna specar) och S3 (specens resultat och jämförelse med användarens repo) är byggda, se backlogg U.
-- **Resultat från agenten**: run-förfrågan är byggd (AG4); resultat per testfall (AG5a) och Playwright-rapport som når specar (AG5b) återstår. MCP-bryggan (AG-A, #110) och agent findings (AG-B, #111) är klara.
+- **Resultat från agenten**: run-förfrågan (AG4, #112) och resultat per testfall (AG5a) är byggda; Playwright-rapport som når specar (AG5b) återstår. MCP-bryggan (AG-A, #110) och agent findings (AG-B, #111) är klara.
 - **Azure DevOps-export** — framtida.
 - **Mobilappstest** — framtida.
 
 ## Nästa steg
 
-1. **AG4: run-förfrågan** — granska och merga.
-2. **AG5a: resultat per testfall**, sedan **AG5b: spec- och automatiserad länk**. (AG-A och AG-B är klara.)
+1. **AG5a: resultat per testfall** — granska och merga.
+2. **AG5b: spec- och automatiserad länk**. (AG-A, AG-B och AG4 är klara.)
 3. **Integrationer (Azure DevOps, mobil)** — senare.
 
 ## Frågor att förtydliga
