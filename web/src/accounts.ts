@@ -122,7 +122,12 @@ export function describeAudit(e: Pick<AuditEntry, "action" | "actor" | "targetUs
     case "agent_request.cancelled": return `${who} cancelled a request to an agent in ${project}`;
     case "agent_request.claimed": return `${who} took a request in ${project}`;
     case "agent_request.released": return `${who} gave a request back in ${project}`;
-    case "agent_request.result_delivered": return `${who} handed in the report of a re-run in ${project}`;
+    case "agent_request.result_delivered": {
+      if (d.kind !== "run") return `${who} handed in the report of a re-run in ${project}`;
+      const tests = Number(d.tests) || 0;
+      const parts = (["passed", "failed", "skipped"] as const).map((s) => [Number(d[s]) || 0, s] as const).filter(([c]) => c > 0).map(([c, s]) => `${c} ${s}`);
+      return `${who} handed in an automated test report for a run request (${tests} ${tests === 1 ? "test" : "tests"}${parts.length ? `: ${parts.join(", ")}` : ""}) in ${project}`;
+    }
     case "agent_request.results_reported": {
       const n = Number(d.reported) || 0;
       const parts = (["passed", "failed", "blocked", "skipped"] as const).map((s) => [Number(d[s]) || 0, s] as const).filter(([c]) => c > 0).map(([c, s]) => `${c} ${s}`);

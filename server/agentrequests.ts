@@ -1,8 +1,10 @@
 import { db, getSetting, setSetting } from "./db.ts";
 import { importReport } from "./importers/import.ts";
-import { parseReport } from "./importers/parse.ts";
+import { parseReport, type ParsedTest } from "./importers/parse.ts";
 import { AuditError } from "./auditcommon.ts";
+import { audit } from "./accounts.ts";
 import { createManualRun } from "./runsuites.ts";
+import { fileMatchesSpec } from "./specs.ts";
 
 /**
  * Requests to a test agent. A person asks for something: look at a target (discover), run the failed automated tests of a run again (rerun), or run chosen test cases (run:
@@ -14,12 +16,14 @@ import { createManualRun } from "./runsuites.ts";
  *  - pending -> claimed (an agent took it) -> done; a person can cancel a request that is pending or claimed. Nothing leaves done or cancelled.
  *  - Taking a request is one UPDATE that only succeeds while it is pending, so two agents cannot take the same one.
  *  - A request is a wish, not an approval: it does not replace the agent's own confirmations (production targets, observe-only mode).
- *  - An agent may hand in the Playwright report of a re-run (submitResult), but only when a person has switched that on (off by default), only for the request this very
- *    token took, once, and only with tests that request named. It becomes a run marked source `agent`, linked to the request; a person can delete it.
+ *  - An agent may hand in the Playwright report of a re-run or of a run request (submitResult), but only when a person has switched that on (off by default), only for the
+ *    request this very token took, once, and only with tests that request named (for a run request also a new test in one of its spec files). It becomes a run marked source
+ *    `agent`, linked to the request; a person can delete it. TestBench decides which case a test belongs to, never the text of the report.
  *  - The address and the note are written by a person and read by an agent: they are DATA for the agent, never instructions. They are returned as plain fields.
  */
 
-export const RESULT_LIMITS = { bodyBytes: 5 * 1024 * 1024 };
+/** A Playwright report handed in for a re-run or a run: at most 5 MB and 1000 tests, and at most 10 handed in a minute per token (every attempt counts). */
+export const RESULT_LIMITS = { bodyBytes: 5 * 1024 * 1024, testsMax: 1000, perMinute: 10 };
 export const REQUEST_LIMITS = { pendingPerProject: 20, urlMax: 500, environmentMax: 100, noteMax: 2000, resultNoteMax: 1000, rerunTestsMax: 500, runCasesMax: 200, runPayloadBytes: 1024 * 1024, runTitleMax: 200 };
 export const REQUEST_KINDS = ["discover", "rerun", "run"] as const;
 export const REQUEST_STATUSES = ["pending", "claimed", "done", "cancelled"] as const;
@@ -127,10 +131,13 @@ export function pendingForAgent(projectId: number) {
 }
 
 /** The run request an agent was asked to run this run by (the newest one), for the run's page: its number, state and who took it. null for a run that was not asked of an agent. */
-export function agentRequestOfRun(runId: number): { id: number; status: RequestStatus; claimedBy: string | null; progress: { total: number; reported: number; missing: number } } | null {
-  const r = db.prepare("SELECT id, status, claimed_by AS claimedBy FROM agent_requests WHERE run_id = ? AND kind = 'run' ORDER BY id DESC LIMIT 1").get(runId) as
-    { id: number; status: RequestStatus; claimedBy: string | null } | undefined;
-  return r ? { ...r, progress: runProgress(runId) } : null;
+export function agentRequestOfRun(runId: number): { id: number; status: RequestStatus; claimedBy: string | null; progress: { total: number; reported: number; missing: number }; reportRunId?: number } | null {
+  const r = db.prepare("SELECT id, status, claimed_by AS claimedBy, CASE WHEN result_delivered_at IS NOT NULL THEN result_run_id END AS reportRunId FROM agent_requests WHERE run_id = ? AND kind = 'run' ORDER BY id DESC LIMIT 1").get(runId) as
+    { id: number; status: RequestStatus; claimedBy: string | null; reportRunId: number | null } | undefined;
+  if (!r) return null;
+  const { reportRunId, ...rest } = r;
+  // reportRunId: the automated run that the agent's Playwright report made (left out until there is one), so that the page of the manual run can link to it.
+  return { ...rest, progress: runProgress(runId), ...(reportRunId ? { reportRunId } : {}) };
 }
 
 export interface NewRequest { kind: unknown; targetUrl?: unknown; environment?: unknown; note?: unknown; runId?: unknown; caseIds?: unknown; title?: unknown; templateId?: unknown }
@@ -261,10 +268,12 @@ export function releaseRequest(projectId: number, id: number, token: { id: numbe
   const note = agentNote(input.note);
   if (cur.status !== "claimed") throw new AuditError(409, cur.status === "pending" ? "The request is not taken, so there is nothing to give back" : "The request is already done or cancelled");
   if (cur.claimed_token_id !== token.id) throw new AuditError(409, "Another token took this request");
-  if (cur.result_delivered_at) throw new AuditError(409, "A report was already handed in for this request. Finish it with complete instead");
+  // A re-run that has its report is finished, not repeated. A run request may be given back after its Playwright report was handed in: test cases can still be left, and the report
+  // stays (it is handed in once per request, so the next agent cannot hand in another).
+  if (cur.kind !== "run" && cur.result_delivered_at) throw new AuditError(409, "A report was already handed in for this request. Finish it with complete instead");
   const r = db
     .prepare(`UPDATE agent_requests SET status = 'pending', claimed_by = NULL, claimed_token_id = NULL, claimed_at = NULL, release_note = ?, released_by = ?, released_at = datetime('now')
-      WHERE id = ? AND project_id = ? AND status = 'claimed' AND claimed_token_id = ? AND result_delivered_at IS NULL RETURNING *`)
+      WHERE id = ? AND project_id = ? AND status = 'claimed' AND claimed_token_id = ? AND (kind = 'run' OR result_delivered_at IS NULL) RETURNING *`)
     .get(note, `agent: ${token.name}`, id, projectId, token.id) as Row | undefined;
   if (!r) throw new AuditError(409, "The request changed while it was being given back");
   return viewOf(r);
@@ -316,19 +325,26 @@ export const agentResultsEnabled = () => getSetting(RESULT_KEY) === "1";
 export const setAgentResultsEnabled = (on: boolean) => setSetting(RESULT_KEY, on ? "1" : "0");
 
 /**
- * The agent that took a re-run hands in the Playwright report. Everything is checked before anything is written, and the run and the "delivered" mark are made in one
- * transaction, so a refused report leaves no trace and two calls at once make one run.
- *  1. a person has switched agent results on (off by default)   2. the request is a re-run this token took and has not finished   3. nothing was delivered before
- *  4. the report is Playwright JSON   5. every test in it is one the request named (the whole report is refused otherwise, none is taken in part)
- * The environment comes from the request, never from the report. Attachments are not read, and no other test of the project is touched (no relinking by case ID). The run is marked source `agent` and carries the request in its meta.
+ * The agent that took a re-run or a run request hands in a Playwright report. Everything is checked before anything is written, and the run, the links, the "delivered" mark and the
+ * audit entry are made in one transaction, so a refused report leaves no trace and two calls at once make one run.
+ *  1. a person has switched agent results on (off by default)   2. the request is a re-run or a run request that this token took and that has not finished   3. nothing was delivered before
+ *  4. for a run request: its run still exists   5. the report is Playwright JSON, not empty, and has at most RESULT_LIMITS.testsMax tests
+ *  6. every test in it is one the request named, once (the whole report is refused otherwise, none is taken in part). A re-run names its failed tests. A run request names the tests linked
+ *     to its test cases, and lets in every test in one of its spec files (also a test that TestBench does not know yet), so that a spec made in TestBench can get its first results.
+ * Which case a test belongs to is decided here and never by the report (opts.resolveLink): a test that is already known keeps its case (a person's link, or an earlier one, or none), a
+ * new test in a spec file of the request gets the case of that spec, and any other new test gets none. The title, the suite and the tags are not read for links, and `@REQ-n` links nothing.
+ * The environment comes from the request, never from the report. Attachments are not read, and no other test of the project is touched. The run is a NEW automated run, marked source
+ * `agent`, that carries the request in its meta; the manual run of a run request, and the results reported for it, are never touched. What the report says reaches a spec by its file
+ * name, as for any import.
  */
-export function submitResult(projectId: number, id: number, token: { id: number; name: string }, body: unknown) {
+export function submitResult(projectId: number, id: number, token: { id: number; name: string }, body: unknown, ip = "") {
   if (!agentResultsEnabled()) throw new AuditError(409, "Agent results are switched off. A person switches them on in Settings first");
   const cur = mustRow(projectId, id);
-  if (cur.kind !== "rerun") throw bad("Only a re-run request takes a report");
+  if (cur.kind !== "rerun" && cur.kind !== "run") throw bad("Only a re-run or a run request takes a report");
   if (cur.status !== "claimed") throw new AuditError(409, cur.status === "pending" ? "Take the request first" : "The request is already done or cancelled");
   if (cur.claimed_token_id !== token.id) throw new AuditError(409, "Another token took this request");
-  if (cur.result_delivered_at) throw new AuditError(409, "A report was already handed in for this request. Ask for a new re-run to try again");
+  if (cur.result_delivered_at) throw new AuditError(409, "A report was already handed in for this request. Ask for a new request to try again");
+  if (cur.kind === "run" && cur.run_id === null) throw new AuditError(409, "The run of this request was deleted, so there is nothing to attach a report to. A person can cancel the request");
   if (!body || typeof body !== "object" || Array.isArray(body)) throw bad("Send the Playwright JSON report as the request body (Content-Type: application/json)");
   let report;
   try {
@@ -338,25 +354,54 @@ export function submitResult(projectId: number, id: number, token: { id: number;
   }
   if (report.format !== "playwright-json") throw bad("Only a Playwright JSON report is taken");
   if (report.tests.length === 0) throw bad("The report has no tests");
-  const asked = new Set(viewOf(cur).tests.map((t) => `${t.framework}\u0000${t.fullName}`));
+  if (report.tests.length > RESULT_LIMITS.testsMax) throw bad(`The report holds ${report.tests.length} tests and at most ${RESULT_LIMITS.testsMax} are taken in one report. Send fewer tests`);
+
+  // What the request names: the failed tests of a re-run; for a run request the automated tests linked to its test cases, and its spec files, each with the case it is linked to.
+  const view = viewOf(cur);
+  const named = new Set(view.tests.map((t) => `${t.framework}\u0000${t.fullName}`));
+  const specCases: [string, number][] = [];
+  for (const c of cur.kind === "run" ? view.cases : []) {
+    for (const t of c.automatedTests) named.add(`${t.framework}\u0000${t.fullName}`);
+    for (const f of c.specFiles) specCases.push([f, c.caseId]);
+  }
+  const caseOfSpecFile = (file: string): number | null => specCases.find(([name]) => fileMatchesSpec(file, name))?.[1] ?? null;
   const seen = new Set<string>();
   const strangers: string[] = [];
   for (const t of report.tests) {
     const key = `${report.framework}\u0000${t.fullName}`;
-    if (!asked.has(key) || seen.has(key)) strangers.push(t.fullName);
+    if (!(named.has(key) || caseOfSpecFile(t.file) !== null) || seen.has(key)) strangers.push(t.fullName);
     seen.add(key);
   }
-  if (strangers.length) throw bad(`The report holds ${strangers.length} test(s) that this request did not name or that appear twice, so none of it was taken. First: ${strangers.slice(0, 3).join("; ").slice(0, 300)}`);
+  if (strangers.length) {
+    const what = cur.kind === "run" ? "did not name (a test linked to one of its test cases, or a test in one of its spec files)" : "did not name";
+    throw bad(`The report holds ${strangers.length} test(s) that this request ${what} or that appear twice, so none of it was taken. First: ${strangers.slice(0, 3).join("; ").slice(0, 300)}`);
+  }
 
-  // The same shape as a manual re-run keeps (meta.rerunOf = { id, title }), so the run page shows "Re-run of ..." for both.
+  // The link is TestBench's to decide: a test that is known keeps its case (also none), a new one in a spec file of the request gets that spec's case, any other gets none.
+  const known = db.prepare("SELECT case_id FROM automated_tests WHERE project_id = ? AND framework = ? AND full_name = ?");
+  let newTests = 0;
+  const resolveLink = (t: ParsedTest): number | null => {
+    const row = known.get(projectId, report.framework, t.fullName) as { case_id: number | null } | undefined;
+    if (row) return row.case_id;
+    newTests++;
+    return cur.kind === "run" ? caseOfSpecFile(t.file) : null;
+  };
+
+  const isRun = cur.kind === "run";
+  // The same shape as a manual re-run keeps (meta.rerunOf = { id, title }), so the run page shows "Re-run of ..." for both; a run request's report says which run it belongs to.
   const original = cur.run_id ? (db.prepare("SELECT id, title FROM runs WHERE id = ? AND project_id = ?").get(cur.run_id, projectId) as { id: number; title: string } | undefined) : undefined;
   return db.transaction(() => {
     const res = importReport(report, {
-      projectId, source: "agent", title: `Re-run of run #${cur.run_id ?? "?"} (request #${cur.id})`, environment: cur.environment,
-      meta: { agentRequest: cur.id, ...(original ? { rerunOf: original } : {}), deliveredBy: token.name }, relinkOthers: false,
+      projectId, source: "agent", environment: cur.environment, relinkOthers: false, resolveLink,
+      title: isRun ? `Automated tests of run #${cur.run_id} (request #${cur.id})` : `Re-run of run #${cur.run_id ?? "?"} (request #${cur.id})`,
+      meta: { agentRequest: cur.id, ...(original ? (isRun ? { runOf: original } : { rerunOf: original }) : {}), deliveredBy: token.name },
     });
     const marked = db.prepare("UPDATE agent_requests SET result_run_id = ?, result_delivered_at = datetime('now') WHERE id = ? AND project_id = ? AND status = 'claimed' AND claimed_token_id = ? AND result_delivered_at IS NULL").run(res.runId, id, projectId, token.id);
     if (!marked.changes) throw new AuditError(409, "The request changed while the report was being taken");
+    const count = (status: string) => report.tests.filter((t) => t.status === status).length;
+    audit({ userId: null, label: `agent: ${token.name}`, ip }, "agent_request.result_delivered", {
+      projectId, detail: { request: id, kind: cur.kind, run: cur.run_id, result_run: res.runId, credential_id: token.id, tests: res.total, new_tests: newTests, linked: res.linked, passed: count("passed"), failed: count("failed"), skipped: count("skipped") },
+    });
     return { runId: res.runId, total: res.total, linked: res.linked, request: viewOf(rowOf(id)!) };
   })();
 }

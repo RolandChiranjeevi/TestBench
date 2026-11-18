@@ -4,7 +4,7 @@ import { unlinkSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { db, ensureMilestone, UPLOAD_DIR } from "../db.ts";
 import { resolveEntry, type FileBag } from "./bag.ts";
-import { extractCaseRefs, type AttachmentRef, type ParsedReport } from "./parse.ts";
+import { extractCaseRefs, type AttachmentRef, type ParsedReport, type ParsedTest } from "./parse.ts";
 
 /** Evidence types worth keeping. Anything else in an artifact (html reports, node_modules...) is ignored. */
 const ATTACHMENT_EXT = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".webm", ".mp4", ".zip", ".md", ".txt", ".log", ".pdf"]);
@@ -20,6 +20,12 @@ export interface ImportOptions {
   meta?: Record<string, unknown>;
   /** Link other, unlinked tests of the project by the case ID in their name afterwards (default). An agent's report must touch only the tests it carries, so it sets false. */
   relinkOthers?: boolean;
+  /**
+   * Who decides which case a test belongs to. Left out (a person's import): the case ID in the test's name or tags, as always. Given (an agent's report): this function decides, and nothing
+   * in the report can link a test to a case or a requirement. The title, the suite and the tags are text an agent wrote, so they are not looked at, and `@REQ-n` is not read either.
+   * It returns the case of the test (a case of this project) or null. The importer checks that the case exists and is in this project.
+   */
+  resolveLink?: (test: ParsedTest) => number | null;
 }
 
 export interface ImportResult {
@@ -127,6 +133,10 @@ export function importReport(report: ParsedReport, opts: ImportOptions, files?: 
     return null;
   };
 
+  // The case that opts.resolveLink named, if it is a case of this project (a case deleted in the meantime is no link).
+  const caseInProject = db.prepare("SELECT 1 FROM cases WHERE id = ? AND project_id = ?");
+  const decided = (caseId: number | null): number | null => (caseId != null && caseInProject.get(caseId, project.id) ? caseId : null);
+
   const startedAt = toSqlDate(report.startedAt);
   try {
     return db.transaction((): ImportResult => {
@@ -156,13 +166,13 @@ export function importReport(report: ParsedReport, opts: ImportOptions, files?: 
         suitePath: t.suitePath,
         title: t.title,
         fullName: t.fullName,
-        caseId: resolveCase(extractCaseRefs(t.title, t.suitePath, ...t.tags)),
+        caseId: opts.resolveLink ? decided(opts.resolveLink(t)) : resolveCase(extractCaseRefs(t.title, t.suitePath, ...t.tags)),
         status: t.status,
       }) as { id: number; case_id: number | null };
       if (test.case_id) {
         linked++;
-        // `@REQ-n` on an automated test covers requirement n through the case it is linked to.
-        linkCaseByText(test.case_id, project.id, [t.title, t.suitePath, ...t.tags].join("\n"));
+        // `@REQ-n` on an automated test covers requirement n through the case it is linked to. Not for an agent's report: its text decides nothing about requirements.
+        if (!opts.resolveLink) linkCaseByText(test.case_id, project.id, [t.title, t.suitePath, ...t.tags].join("\n"));
       }
       const row = insertResult.get(
         run.id, test.case_id, test.id, t.status, t.flaky ? 1 : 0, t.durationMs, t.error, i, startedAt, t.detail ? JSON.stringify(t.detail) : null,

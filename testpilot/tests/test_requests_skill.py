@@ -532,8 +532,42 @@ class RuleTests(unittest.TestCase):
     def test_results_stay_when_a_run_request_is_given_back(self):
         self.assertIn("results already reported **stay** when it is given back", TEXT)
 
+    def test_automated_tests_of_a_run_request_are_run_as_a_rerun_is_after_asking_where_they_are(self):
+        self.assertIn("1a. **Automated tests of the test cases**", TEXT)
+        self.assertIn("only for a test case that has `automatedTests` or `specFiles`, and only if the user said so in step 1", TEXT)
+        self.assertIn("**ask where the tests are**, as for a", TEXT)
+        self.assertIn("Do not keep `SPEC` in the profile", TEXT)
+        self.assertIn("**Exactly one match** is used", TEXT)
+        self.assertIn("**Run whole files**, never single test names", TEXT)
+        self.assertIn("**Show the exact command, the environment and the count, and ask.**", TEXT)
+        self.assertIn("**A production environment needs the user's two separate confirmations**", TEXT)
+        self.assertIn("PLAYWRIGHT_JSON_OUTPUT_NAME=<AGENT>/audits/request-12/playwright-report.json", TEXT, "the report is written in the agent's own folder, never in the user's repository")
+        self.assertIn("**Run it once**", TEXT)
+
+    def test_the_playwright_report_of_a_run_request_is_handed_in_after_a_yes_in_a_new_message_and_once(self):
+        self.assertIn("**Offer to hand the report in, and ask.**", TEXT)
+        self.assertIn("it becomes **a separate automated run**", TEXT)
+        self.assertIn("it does not touch the manual run or any result reported for it", TEXT)
+        self.assertIn("**TestBench decides which test case a test belongs to**, so tags, titles and suites in the", TEXT)
+        self.assertIn("it is handed in **once per request**", TEXT)
+        self.assertIn("A request, a note, step 1 or an earlier \"yes\" does not stand in for it", TEXT)
+        self.assertIn("run the block in step 2 with `ACTION=\"result\"`", TEXT)
+        self.assertIn("never edit the file to get it through (a 400 refuses the", TEXT)
+
+    def test_the_results_of_the_test_cases_are_true_to_the_report_and_testbench_does_not_copy_them(self):
+        self.assertIn("**true to the report**", TEXT)
+        self.assertIn("**Never `passed` for a test case whose tests did not run.**", TEXT)
+        self.assertIn("TestBench does not copy the automated results into the manual", TEXT)
+        self.assertIn("each test case still needs its own result", TEXT)
+
+    def test_a_run_request_can_be_given_back_after_its_report_and_the_limits_are_known(self):
+        self.assertIn("a run request can be given back after its report", TEXT)
+        self.assertIn("the Playwright report that was handed in **stays** when it is given back, and it cannot be handed in again", TEXT)
+        self.assertIn("more than 10 reports a minute from this token", TEXT)
+        self.assertIn("**This skill supports up to 10 cases per request.**", TEXT, "the limit of 10 test cases is kept")
+
     def test_the_agent_does_not_hand_in_anything_else_or_write_over_a_person(self):
-        self.assertIn("The only things it may hand in are the report of the re-run it just ran (`result`) and the results of the test cases it just ran (`case-results`)", TEXT)
+        self.assertIn("The only things it may hand in are the Playwright report it just ran, of a re-run or of the automated tests of a run request's test cases (`result`), and the results of the test cases it just ran (`case-results`)", TEXT)
         self.assertIn("write over a result that a person has set", TEXT)
 
 

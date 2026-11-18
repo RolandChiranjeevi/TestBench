@@ -109,7 +109,7 @@ function RequestCard({ r, onCancel, cancelling }: { r: AgentRequest; onCancel: (
       {(r.resultNote || r.resultRunId || r.resultDeliveredAt || r.resultAudit) && (
         <div style={{ overflowWrap: "anywhere" }}>
           {r.resultNote && <span>{r.resultNote} </span>}
-          {r.resultDeliveredAt && <span>Report handed in by the agent. </span>}
+          {r.resultDeliveredAt && <span>{r.kind === "run" ? "Automated report handed in: " : "Report handed in by the agent. "}</span>}
           {r.resultRunId && <Link to={`/p/${pid}/runs/${r.resultRunId}`} style={{ color: "var(--accent-text)" }}>Run #{r.resultRunId}</Link>}
           {r.resultAudit && <Link to={auditPath(pid!, r.resultAudit.id)} style={{ color: "var(--accent-text)" }} title="The audit this discover made. Opens it in Bug reports, under Audits.">Audit: {r.resultAudit.title || r.resultAudit.agentAuditId}</Link>}
         </div>
