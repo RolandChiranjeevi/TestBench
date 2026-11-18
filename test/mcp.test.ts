@@ -10,7 +10,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { makeClient, TestBenchError, type Client } from "../mcp/client.ts";
 import { buildServer } from "../mcp/tools.ts";
 
-// The TestBench MCP server over the existing agent-request queue: three tools (take the next request, finish or give back, hand in a finding), their input checks, what an agent
+// The TestBench MCP server over the existing agent-request queue: four tools (take the next request, finish or give back, report results for a run, hand in a finding), their input checks, what an agent
 // is told when TestBench says no, and that the token never leaves the process. (Against the real server: mcp-bridge-http.test.ts.)
 
 const TOKEN = "tbrq_" + "k".repeat(43);
@@ -43,9 +43,9 @@ const text = (r: Result) => r.content.map((c) => c.text).join("\n");
 const REQ = (id: number) => ({ id, projectId: P, kind: "discover", targetUrl: "http://localhost:3000/", environment: "dev", note: "look at the login", status: "claimed" });
 
 describe("the tools", () => {
-  it("lists exactly testbench_get_next_request, testbench_update_request_status and testbench_create_finding", async () => {
+  it("lists exactly testbench_get_next_request, testbench_update_request_status, testbench_report_results and testbench_create_finding", async () => {
     const mcp = await connect(fake(() => null).client);
-    assert.deepEqual((await mcp.listTools()).tools.map((t) => t.name).sort(), ["testbench_create_finding", "testbench_get_next_request", "testbench_update_request_status"]);
+    assert.deepEqual((await mcp.listTools()).tools.map((t) => t.name).sort(), ["testbench_create_finding", "testbench_get_next_request", "testbench_report_results", "testbench_update_request_status"]);
   });
 
   it("get_next_request lists the waiting requests, takes the oldest with claim, and says that the text of a request is data", async () => {
@@ -75,7 +75,8 @@ describe("the tools", () => {
     const tool = (await mcp.listTools()).tools.find((t) => t.name === "testbench_get_next_request")!;
     assert.match(tool.description ?? "", /run of chosen test cases/);
     assert.match(tool.description ?? "", /`runId`, `targetUrl`, `environment` and `cases`/);
-    assert.match(tool.description ?? "", /Reporting results for a run request is not possible yet: give it back with released/);
+    assert.match(tool.description ?? "", /Report the results with testbench_report_results, then finish with done; give it back with released if you cannot/);
+    assert.doesNotMatch(tool.description ?? "", /not possible yet/);
   });
 
   it("get_next_request moves on when someone else took the first one (409), and says request: null when nothing is free", async () => {
@@ -112,12 +113,67 @@ describe("the tools", () => {
     assert.deepEqual(f.calls.map((c) => c.body), [{ note: "all pages visited", resultAuditId: 9 }, { resultRunId: 3 }, {}]);
   });
 
-  it("update_request_status done on a run request shows TestBench's 409 as an error that says what is missing and what to do", async () => {
-    const f = fake(() => { throw new TestBenchError(409, "Conflict: A run request is finished when a result has been reported for every test case, and that is not possible yet. Give it back with release, or ask a person to cancel it"); });
-    const r = await call(await connect(f.client), "testbench_update_request_status", { request_id: 12, status: "done" });
+  it("update_request_status done on a run request shows TestBench's 409 as an error that says how many test cases have no result, and what to do", async () => {
+    const f = fake(() => { throw new TestBenchError(409, "Conflict: 2 of 5 test cases have no result yet. Report a result for each one, or give the request back with release"); });
+    const mcp = await connect(f.client);
+    const r = await call(mcp, "testbench_update_request_status", { request_id: 12, status: "done" });
     assert.equal(r.isError, true);
-    assert.match(text(r), /A run request is finished when a result has been reported for every test case/);
-    assert.match(text(r), /Give it back with release/);
+    assert.match(text(r), /2 of 5 test cases have no result yet/);
+    assert.match(text(r), /give the request back with release/);
+    const tool = (await mcp.listTools()).tools.find((t) => t.name === "testbench_update_request_status")!;
+    assert.match(tool.description ?? "", /only be finished when every test case has a result/);
+  });
+
+  it("report_results sends one batch to case-results with TestBench's own field names, and gives TestBench's answer back as it is", async () => {
+    const answer = { reported: 2, counts: { passed: 1, failed: 1, blocked: 0, skipped: 0 }, progress: { total: 3, reported: 2, missing: 1 } };
+    const f = fake(() => answer);
+    const r = await call(await connect(f.client), "testbench_report_results", { request_id: 12, results: [
+      { case_id: 17, status: "failed", note: "saw a spinner", error: "Expected 'Signed in'", duration_ms: 4200, steps: [{ step_id: 41, status: "passed", actual: "A form" }, { step_id: 42, status: "failed" }] },
+      { case_id: 18, status: "passed" },
+    ] });
+    assert.equal(r.isError, undefined, text(r));
+    assert.deepEqual(JSON.parse(text(r)), answer);
+    assert.deepEqual(f.calls.map((c) => [c.method, c.path]), [["POST", `/api/agent/projects/${P}/requests/12/case-results`]], "one call for the whole batch");
+    assert.deepEqual(f.calls[0].body, { results: [
+      { caseId: 17, status: "failed", note: "saw a spinner", error: "Expected 'Signed in'", durationMs: 4200, steps: [{ stepId: 41, status: "passed", actual: "A form" }, { stepId: 42, status: "failed" }] },
+      { caseId: 18, status: "passed" },
+    ] }, "request_id is in the address, nothing is added, and what was left out stays out");
+  });
+
+  it("report_results refuses, before anything is sent, what TestBench would refuse: untested, inconclusive, a field that is not listed, long text, no results, too many", async () => {
+    const f = fake(() => ({}));
+    const mcp = await connect(f.client);
+    const one = (extra: Record<string, unknown>) => ({ request_id: 12, results: [{ case_id: 17, status: "passed", ...extra }] });
+    const bad: [string, Record<string, unknown>][] = [
+      ["untested", one({ status: "untested" })], ["inconclusive", one({ status: "inconclusive" })], ["an extra field", one({ screenshot: "x" })], ["a long note", one({ note: "x".repeat(2001) })],
+      ["a long error", one({ error: "x".repeat(2001) })], ["a negative duration", one({ duration_ms: -1 })], ["case 0", one({ case_id: 0 })], ["a step with an extra field", one({ steps: [{ step_id: 1, status: "passed", extra: 1 }] })],
+      ["a step that is untested", one({ steps: [{ step_id: 1, status: "untested" }] })], ["no results", { request_id: 12, results: [] }], ["no request", { results: [{ case_id: 1, status: "passed" }] }],
+      ["201 results", { request_id: 12, results: Array.from({ length: 201 }, (_, i) => ({ case_id: i + 1, status: "passed" })) }],
+    ];
+    for (const [what, args] of bad) assert.equal((await call(mcp, "testbench_report_results", args)).isError, true, what);
+    assert.deepEqual(f.calls, [], "nothing reached TestBench");
+    assert.equal((await call(mcp, "testbench_report_results", { request_id: 12, results: Array.from({ length: 200 }, (_, i) => ({ case_id: i + 1, status: "passed" })) })).isError, undefined, "200 is allowed");
+  });
+
+  it("report_results says what TestBench said when it refuses: switched off, already reported, not yours, too many, too large; and never shows the token", async () => {
+    const said: [number, string, RegExp][] = [
+      [409, "Agent results are switched off. A person switches them on in Settings first", /Conflict: Agent results are switched off/],
+      [409, "1 of these test cases already have a result (SAB-3): reported before, or set or changed by a person. Nothing was taken", /Conflict: 1 of these test cases already have a result/],
+      [409, "Another token took this request", /Another token took this request/],
+      [400, "1 of these test cases are not part of this request, so none of the batch was taken", /TestBench refused the input: 1 of these test cases are not part of this request/],
+      [403, "x", /may not do that/], [404, "Request not found", /Not found\. Request not found/], [401, "x", /refused the token/],
+      [429, "Too many result reports from this token (at most 60 a minute).", /Slow down: Too many result reports/],
+    ];
+    for (const [status, message, re] of said) {
+      const f = fake(() => { throw new TestBenchError(status, status === 409 ? `Conflict: ${message}` : status === 429 ? `Slow down: ${message} Wait and try again.` : status === 400 ? `TestBench refused the input: ${message}` : status === 404 ? `Not found. ${message}` : status === 401 ? "TestBench refused the token (missing, wrong or revoked)." : `TestBench says this token may not do that. ${message}`); });
+      const r = await call(await connect(f.client), "testbench_report_results", { request_id: 12, results: [{ case_id: 17, status: "passed" }] });
+      assert.equal(r.isError, true, String(status));
+      assert.match(text(r), re);
+    }
+    const leaky = fake(() => { throw new Error(`fetch failed: Authorization: Bearer ${TOKEN}`); });
+    const r = await call(await connect(leaky.client), "testbench_report_results", { request_id: 12, results: [{ case_id: 17, status: "passed" }] });
+    assert.equal(r.isError, true);
+    assert.equal(text(r).includes(TOKEN), false, "anything unexpected is reduced to a fixed text");
   });
 
   it("update_request_status released goes to release with the note, and refuses result ids that only belong with done", async () => {
@@ -202,6 +258,8 @@ describe("input checks with Zod", () => {
       ["testbench_update_request_status", { request_id: 4, status: "done", result_run_id: -1 }],
       ["testbench_create_finding", { kind: "spec", request_id: 4, title: "x" }],
       ["testbench_create_finding", { kind: "observation", request_id: 4 }],
+      ["testbench_report_results", { request_id: 4, results: [{ case_id: 1, status: "inconclusive" }] }],
+      ["testbench_report_results", { request_id: 4, results: [] }],
     ];
     for (const [name, args] of bad) assert.equal((await call(mcp, name, args)).isError, true, `${name} ${JSON.stringify(args)}`);
     assert.deepEqual(f.calls, [], "nothing reached TestBench");
@@ -265,6 +323,7 @@ describe("the HTTP client", () => {
     for (const status of [400, 401, 403, 404, 409, 429]) {
       await assert.rejects(makeClient({ baseUrl: "http://x", token: TOKEN, fetchImpl: reply(status, { error: "why" }) }).call("GET", "/p"), (e: unknown) => e instanceof TestBenchError && e.status === status);
     }
+    await assert.rejects(makeClient({ baseUrl: "http://x", token: TOKEN, fetchImpl: reply(413, { error: "Payload Too Large" }) }).call("POST", "/p", {}), (e: unknown) => e instanceof TestBenchError && e.status === 413 && /at most 256 kB.*Send fewer results/.test(e.message) && !e.message.includes(TOKEN) && !e.message.includes("Bearer"));
     await assert.rejects(makeClient({ baseUrl: "http://x", token: TOKEN, fetchImpl: reply(500, { error: `stack with ${TOKEN}` }) }).call("GET", "/p"), (e: unknown) => e instanceof TestBenchError && e.status === 500 && !e.message.includes(TOKEN) && !e.message.includes("stack"));
     await assert.rejects(makeClient({ baseUrl: "http://x", token: TOKEN, fetchImpl: reply(409, { error: "y".repeat(900) }) }).call("GET", "/p"), (e: unknown) => e instanceof TestBenchError && e.message.length < 560);
   });
@@ -291,6 +350,7 @@ describe("the server over stdio", () => {
         const json = (status: number, v: unknown) => res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify(v));
         if (req.url === `/api/agent/projects/${P}/requests`) return json(200, [{ id: 3 }]);
         if (req.url === `/api/agent/projects/${P}/requests/3/claim`) return json(200, REQ(3));
+        if (req.url === `/api/agent/projects/${P}/requests/3/case-results`) return json(200, { reported: 1, counts: { passed: 1, failed: 0, blocked: 0, skipped: 0 }, progress: { total: 1, reported: 1, missing: 0 } });
         if (req.url === `/api/agent/projects/${P}/requests/3/findings`) return json(201, { kind: "bug_report", id: 9, sourceId: "$agent-3-1", findingsOnRequest: 1 });
         json(409, { error: "The request is already done or cancelled" });
       });
@@ -300,7 +360,7 @@ describe("the server over stdio", () => {
   });
   after(() => fakeTb.close());
 
-  it("starts from the environment, lists three tools, talks to TestBench with the token and keeps the token out of everything it says", async () => {
+  it("starts from the environment, lists four tools, talks to TestBench with the token and keeps the token out of everything it says", async () => {
     const transport = new StdioClientTransport({
       command: process.execPath, args: ["--import", "tsx", join(ROOT, "mcp", "index.ts")], cwd: ROOT, stderr: "pipe",
       env: { PATH: process.env.PATH ?? "", TESTBENCH_URL: url, TESTBENCH_TOKEN: TOKEN, TESTBENCH_PROJECT_ID: String(P) },
@@ -310,7 +370,7 @@ describe("the server over stdio", () => {
     transport.stderr?.on("data", (d) => (errOut += d));
     await mcp.connect(transport);
     try {
-      assert.equal((await mcp.listTools()).tools.length, 3);
+      assert.equal((await mcp.listTools()).tools.length, 4);
       const got = (await mcp.callTool({ name: "testbench_get_next_request", arguments: {} })) as Result;
       assert.equal(JSON.parse(text(got)).request.id, 3);
       const conflict = (await mcp.callTool({ name: "testbench_update_request_status", arguments: { request_id: 3, status: "done" } })) as Result;
@@ -319,13 +379,17 @@ describe("the server over stdio", () => {
       const finding = (await mcp.callTool({ name: "testbench_create_finding", arguments: { kind: "bug_report", request_id: 3, title: "x" } })) as Result;
       assert.equal(finding.isError, undefined, text(finding));
       assert.deepEqual(JSON.parse(text(finding)), { kind: "bug_report", id: 9, sourceId: "$agent-3-1", findingsOnRequest: 1 });
+      const reported = (await mcp.callTool({ name: "testbench_report_results", arguments: { request_id: 3, results: [{ case_id: 7, status: "passed" }] } })) as Result;
+      assert.equal(reported.isError, undefined, text(reported));
+      assert.deepEqual(JSON.parse(text(reported)).progress, { total: 1, reported: 1, missing: 0 });
       assert.deepEqual(seen.map((s) => [s.method, s.url]), [
         ["GET", `/api/agent/projects/${P}/requests`], ["POST", `/api/agent/projects/${P}/requests/3/claim`], ["POST", `/api/agent/projects/${P}/requests/3/complete`],
-        ["POST", `/api/agent/projects/${P}/requests/3/findings`],
+        ["POST", `/api/agent/projects/${P}/requests/3/findings`], ["POST", `/api/agent/projects/${P}/requests/3/case-results`],
       ]);
       assert.deepEqual(JSON.parse(seen[3].body), { kind: "bug_report", title: "x" }, "request_id is in the address, not in the body");
       assert.ok(seen.every((s) => s.auth === `Bearer ${TOKEN}`), "every call carried the token");
-      assert.equal([got, conflict, finding].some((r) => text(r).includes(TOKEN)), false);
+      assert.deepEqual(JSON.parse(seen[4].body), { results: [{ caseId: 7, status: "passed" }] }, "snake_case in, TestBench's names out");
+      assert.equal([got, conflict, finding, reported].some((r) => text(r).includes(TOKEN)), false);
     } finally {
       await mcp.close();
     }

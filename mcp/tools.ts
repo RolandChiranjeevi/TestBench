@@ -3,11 +3,13 @@ import { z } from "zod";
 import { TestBenchError, type Client } from "./client.ts";
 
 /**
- * The three tools of the TestBench MCP server, over TestBench's existing agent-request queue (server/agentrequests.ts). A person asks for something in TestBench; the agent
+ * The four tools of the TestBench MCP server, over TestBench's existing agent-request queue (server/agentrequests.ts). A person asks for something in TestBench; the agent
  * takes it here, does the work in its own environment under its own rules, and says it is done. TestBench starts nothing and this server decides nothing.
  *
  *  - testbench_get_next_request: lists the waiting requests (oldest first) and takes the first one that is still free (claim).
- *  - testbench_update_request_status: finishes the request the token took (complete), or gives it back (release).
+ *  - testbench_update_request_status: finishes the request the token took (complete), or gives it back (release). A run request can only be finished when every test case has a result.
+ *  - testbench_report_results: reports a result for each of the test cases of a RUN request the token took (a batch, all or nothing, each test case once). Only when a person has
+ *    switched agent results on in TestBench. The agent says passed, failed, blocked or skipped; the time and the mark that it was the agent are TestBench's.
  *  - testbench_create_finding: hands in one finding of a DISCOVER request the token took (a test case, bug report, observation or manual test suggestion). TestBench makes a
  *    draft or a proposal of it for a person to review, never an approval. The status of a finding is not something the agent can say: the input has no such field.
  *
@@ -50,6 +52,25 @@ export const createFindingInput = {
   category: z.enum(["functional", "accessibility", "responsive", "usability", "security", "other"]).optional().describe("manual_test_suggestion (default functional)"),
 };
 
+const resultStatus = z.enum(["passed", "failed", "blocked", "skipped"]);
+const stepResult = z.object({
+  step_id: z.number().int().positive().describe("A step id from that test case in the request"),
+  status: resultStatus,
+  actual: z.string().max(2000).optional().describe("What you saw"),
+}).strict();
+const caseResult = z.object({
+  case_id: z.number().int().positive().describe("caseId from the request's cases"),
+  status: resultStatus.describe("passed | failed | blocked | skipped. Not sure, or could not finish: blocked, with the reason in note. Never untested, never a result you did not get."),
+  note: z.string().max(2000).optional().describe("What you did or saw, for the person who reviews it"),
+  error: z.string().max(2000).optional().describe("failed: the error or the difference from what was expected"),
+  duration_ms: z.number().int().min(0).optional(),
+  steps: z.array(stepResult).max(100).optional(),
+}).strict();
+export const reportResultsInput = {
+  request_id: z.number().int().positive().describe("The run request you took with testbench_get_next_request"),
+  results: z.array(caseResult).min(1).max(200).describe("One result per test case, each test case once, in all of this call. A test case you did not run is reported as blocked or skipped with the reason in note, or left out."),
+};
+
 const ok = (value: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(value) }] });
 const refused = (e: unknown) => ({
   isError: true as const,
@@ -70,8 +91,8 @@ export function buildServer(client: Client, projectId: number, version = "0.1.0"
       title: "Get the next TestBench request",
       description:
         "Takes the oldest waiting request (a discover, a rerun of failed tests, or a run of chosen test cases) of the project and marks it claimed by this token. A run request " +
-        "carries `runId`, `targetUrl`, `environment` and `cases`, each with its steps. Reporting results for a run request is not possible yet: give it back with released. " +
-        "Returns {request: null} when nothing waits. " + DATA_NOTE,
+        "carries `runId`, `targetUrl`, `environment` and `cases`, each with its steps, and `progress` (how many test cases already have a result). Report the results with " +
+        "testbench_report_results, then finish with done; give it back with released if you cannot. Returns {request: null} when nothing waits. " + DATA_NOTE,
       inputSchema: getNextRequestInput,
     },
     async () => {
@@ -99,7 +120,9 @@ export function buildServer(client: Client, projectId: number, version = "0.1.0"
     "testbench_update_request_status",
     {
       title: "Finish or give back a TestBench request",
-      description: "done: marks a request this token took as finished (complete). released: gives it back so that it waits again (release). Only the token that took it can do either.",
+      description:
+        "done: marks a request this token took as finished (complete). A run request can only be finished when every test case has a result (TestBench answers 409 with how many are " +
+        "missing). released: gives it back so that it waits again (release); results already reported stay. Only the token that took it can do either.",
       inputSchema: updateRequestStatusInput,
     },
     async ({ request_id, status, note, result_run_id, result_audit_id }) => {
@@ -113,6 +136,37 @@ export function buildServer(client: Client, projectId: number, version = "0.1.0"
           ...(result_run_id === undefined ? {} : { resultRunId: result_run_id }),
           ...(result_audit_id === undefined ? {} : { resultAuditId: result_audit_id }),
         }));
+      } catch (e) {
+        return refused(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "testbench_report_results",
+    {
+      title: "Report results for the test cases of a run request",
+      description:
+        "Reports a result (passed, failed, blocked or skipped) for each test case you ran of a RUN request you took. The whole call is one batch: if one result is refused, none is taken. " +
+        "Each test case is reported once, and never over a result a person has set. You may report in several calls. Only when a person has switched agent results on in TestBench (off " +
+        "by default), only the token that took the request, only while it is taken, at most 200 results per call and 60 calls a minute. When every test case has a result, finish with " +
+        "testbench_update_request_status done: a person then reviews the results and finishes the run. Never invent a result for a test case you did not run. " +
+        "Returns {reported, counts, progress}.",
+      inputSchema: reportResultsInput,
+    },
+    async ({ request_id, results }) => {
+      try {
+        const body = {
+          results: results.map((r) => ({
+            caseId: r.case_id,
+            status: r.status,
+            ...(r.note === undefined ? {} : { note: r.note }),
+            ...(r.error === undefined ? {} : { error: r.error }),
+            ...(r.duration_ms === undefined ? {} : { durationMs: r.duration_ms }),
+            ...(r.steps === undefined ? {} : { steps: r.steps.map((s) => ({ stepId: s.step_id, status: s.status, ...(s.actual === undefined ? {} : { actual: s.actual }) })) }),
+          })),
+        };
+        return ok(await client.call("POST", `${base}/${request_id}/case-results`, body));
       } catch (e) {
         return refused(e);
       }

@@ -296,6 +296,61 @@ describe("a run request through the MCP tools", () => {
       await s.close();
     }
   });
+
+  it("reports results for a run request: refused while agent results are off; then a batch, the progress, the rest, done; marked on the run, still in progress, and no token is shown", async () => {
+    const p = (await ok<{ id: number }>(await person("/api/projects", { name: "Bridge C", key: "BRC" }))).id; // its own project: only its own requests wait there
+    const t = await ok<{ token: string; id: number }>(await person(`/api/projects/${p}/request-tokens`, { name: "claude-c" }));
+    issued.push(t.token);
+    const mkCase = async (title: string) => (await ok<{ id: number }>(await person(`/api/projects/${p}/cases`, { title, status: "ready", steps: [{ action: "Do it", expected: "It is done" }] }))).id;
+    const [c1, c2, c3] = [await mkCase("Report one"), await mkCase("Report two"), await mkCase("Report three")];
+    const asked = await ok<{ id: number; runId: number }>(await person(`/api/projects/${p}/agent-requests`, { kind: "run", targetUrl: "https://staging.example.com/", caseIds: [c1, c2, c3] }));
+    const outputs: string[] = [];
+    const s = await session(t.token, p);
+    const tool = async (name: string, args: Record<string, unknown>) => { const r = await s.tool(name, args); outputs.push(text(r)); return r; };
+    const marked = () => rows<{ case_id: number; status: string; reported_by_agent_token_id: number | null }>("SELECT case_id, status, reported_by_agent_token_id FROM results WHERE run_id = ? ORDER BY position", asked.runId);
+    try {
+      const got = JSON.parse(text(await tool("testbench_get_next_request", {}))) as { request: { id: number; progress: unknown; cases: { caseId: number; steps: { id: number }[] }[] } };
+      assert.equal(got.request.id, asked.id);
+      assert.deepEqual(got.request.progress, { total: 3, reported: 0, missing: 3 }, "the agent sees what is left");
+      const stepOf = (caseId: number) => got.request.cases.find((c) => c.caseId === caseId)!.steps[0].id;
+
+      const off = await tool("testbench_report_results", { request_id: asked.id, results: [{ case_id: c1, status: "passed" }] });
+      assert.equal(off.isError, true);
+      assert.match(text(off), /Conflict: Agent results are switched off.*must be enabled before an agent can report results for a run/);
+      assert.deepEqual(marked().map((r) => r.status), ["untested", "untested", "untested"], "nothing was written");
+
+      await ok(await person("/api/settings/agent-results", { enabled: true }, "PUT"));
+      const first = await tool("testbench_report_results", { request_id: asked.id, results: [
+        { case_id: c1, status: "passed", note: "worked", duration_ms: 900, steps: [{ step_id: stepOf(c1), status: "passed", actual: "It is done" }] },
+        { case_id: c2, status: "failed", error: "Expected 'It is done'", note: "got an error page" },
+      ] });
+      assert.equal(first.isError, undefined, text(first));
+      assert.deepEqual(JSON.parse(text(first)), { reported: 2, counts: { passed: 1, failed: 1, blocked: 0, skipped: 0 }, progress: { total: 3, reported: 2, missing: 1 } });
+
+      const early = await tool("testbench_update_request_status", { request_id: asked.id, status: "done" });
+      assert.equal(early.isError, true);
+      assert.match(text(early), /Conflict: 1 of 3 test cases have no result yet/);
+
+      const twice = await tool("testbench_report_results", { request_id: asked.id, results: [{ case_id: c1, status: "failed" }, { case_id: c3, status: "blocked" }] });
+      assert.equal(twice.isError, true);
+      assert.match(text(twice), /already have a result/);
+      assert.equal(marked()[2].status, "untested", "the whole batch was refused, not just the case that was reported before");
+
+      const rest = await tool("testbench_report_results", { request_id: asked.id, results: [{ case_id: c3, status: "blocked", note: "the page never loaded" }] });
+      assert.deepEqual(JSON.parse(text(rest)).progress, { total: 3, reported: 3, missing: 0 });
+      const done = await tool("testbench_update_request_status", { request_id: asked.id, status: "done", note: "all three" });
+      assert.equal(done.isError, undefined, text(done));
+      assert.deepEqual([JSON.parse(text(done)).status, JSON.parse(text(done)).resultRunId], ["done", asked.runId]);
+    } finally {
+      await s.close();
+    }
+    assert.deepEqual(marked().map((r) => [r.status, r.reported_by_agent_token_id]), [["passed", t.id], ["failed", t.id], ["blocked", t.id]], "each result is marked with the token that reported it");
+    const run = await ok<{ status: string; agentRequest: { status: string } }>(await person(`/api/runs/${asked.runId}`, undefined, "GET"));
+    assert.deepEqual([run.status, run.agentRequest.status], ["in_progress", "done"], "a person reviews the results and finishes the run");
+    const audit = rows<{ actor_label: string; detail: string }>("SELECT actor_label, detail FROM audit_log WHERE action = 'agent_request.results_reported' AND project_id = ? ORDER BY id", p);
+    assert.deepEqual(audit.map((x) => [x.actor_label, JSON.parse(x.detail).reported]), [["agent: claude-c", 2], ["agent: claude-c", 1]]);
+    assert.equal(outputs.some((o) => o.includes(t.token)), false, "no token in what the tools said");
+  });
 });
 
 describe("the secrets and the limits", () => {
