@@ -427,6 +427,9 @@ CREATE TABLE IF NOT EXISTS observation_cases (
   if (!hasColumn("agent_requests", "released_by")) d.exec("ALTER TABLE agent_requests ADD COLUMN released_by TEXT");
   if (!hasColumn("agent_requests", "released_at")) d.exec("ALTER TABLE agent_requests ADD COLUMN released_at TEXT");
   if (!hasColumn("agent_requests", "result_audit_id")) d.exec("ALTER TABLE agent_requests ADD COLUMN result_audit_id INTEGER REFERENCES audits(id) ON DELETE SET NULL");
+  // Who made a request token: the name as it was then, and the account when there is one. A token made before this has neither (the audit log does not reach back either).
+  if (!hasColumn("request_tokens", "created_by")) d.exec("ALTER TABLE request_tokens ADD COLUMN created_by TEXT NOT NULL DEFAULT ''");
+  if (!hasColumn("request_tokens", "created_by_user_id")) d.exec("ALTER TABLE request_tokens ADD COLUMN created_by_user_id INTEGER");
   // Which coverage gap a generated proposal came from (case:12, obs:7). A gap gets one proposal, ever; empty for proposals an agent made.
   if (!hasColumn("requirement_proposals", "gap_key")) d.exec("ALTER TABLE requirement_proposals ADD COLUMN gap_key TEXT NOT NULL DEFAULT ''");
   d.exec("CREATE UNIQUE INDEX IF NOT EXISTS requirement_proposals_gap ON requirement_proposals(project_id, gap_key) WHERE gap_key != ''");

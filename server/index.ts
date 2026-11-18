@@ -53,6 +53,7 @@ import { actorName, actorUserId, getDisplayName, setDisplayName } from "./actor.
 import { accountsState, AccountError, audit, revokeAllSessions, updateProfile } from "./accounts.ts";
 import { agentRequestOfRun, agentResultsEnabled, cancelRequest, claimRequest, completeRequest, createRequest, listRequests, pendingForAgent, releaseRequest, RESULT_LIMITS, setAgentResultsEnabled, submitResult } from "./agentrequests.ts";
 import { authenticateRequestToken, createRequestToken, isAgentRequestRoute, listRequestTokens, revokeRequestToken } from "./requesttokens.ts";
+import type { TokenKind, TokenMaker } from "./tokens.ts";
 import { createFinding, FINDING_LIMITS, findingBody } from "./agentfindings.ts";
 import { CASE_RESULT_LIMITS, caseResultsBody, reportCaseResults } from "./agentresults.ts";
 import { currentUser } from "./accountcontext.ts";
@@ -1030,15 +1031,23 @@ app.post("/api/projects/:id/ci/test-results", { bodyLimit: CI_LIMITS.bodyBytes }
   }
   return audited(() => ingestCiResults(id, req.body));
 });
+// A machine token is a credential for one project, so who made one and who revoked one belongs in the audit log: the kind, the project, and the token's id, name and prefix (what the
+// list shows too), never the token or its hash. The id goes under `credential_id`, as in the agent entries: audit() drops every key with "token" in it, so that none can hold a secret by mistake.
+const tokenAudit = (req: FastifyRequest, action: "token.created" | "token.revoked", kind: TokenKind, projectId: number, t: { id: number; name: string; prefix: string }) =>
+  audit({ userId: actorUserId(), label: actorName(), ip: req.ip }, action, { projectId, detail: { kind, credential_id: t.id, name: t.name, prefix: t.prefix } });
+const tokenMaker = (): TokenMaker => ({ name: actorName(), userId: actorUserId() });
 app.get("/api/projects/:id/ci/tokens", (req) => listCiTokens(idParam(req)));
 app.post("/api/projects/:id/ci/tokens", (req) => {
   const id = idParam(req);
   if (!db.prepare("SELECT 1 FROM projects WHERE id = ?").get(id)) throw new HttpError(404, "Project not found");
   const body = z.object({ name: z.string().max(80) }).parse(req.body);
-  return audited(() => createCiToken(id, body.name));
+  const t = audited(() => createCiToken(id, body.name));
+  tokenAudit(req, "token.created", "ci", id, t);
+  return t;
 });
 app.post("/api/ci-tokens/:id/revoke", (req) => {
-  audited(() => revokeCiToken(idParam(req)));
+  const t = audited(() => revokeCiToken(idParam(req)));
+  if (t.changed) tokenAudit(req, "token.revoked", "ci", t.projectId, t);
   return { ok: true };
 });
 // ---- Agent tokens: read-only tokens for a test agent. The token route below is separate from the login-protected export
@@ -1066,10 +1075,13 @@ app.post("/api/projects/:id/agent/tokens", (req, reply) => {
   const id = idParam(req);
   const body = z.object({ name: z.string().max(200) }).parse(req.body);
   reply.header("Cache-Control", "no-store");
-  return audited(() => createAgentToken(id, body.name));
+  const t = audited(() => createAgentToken(id, body.name));
+  tokenAudit(req, "token.created", "agent_read", id, t);
+  return t;
 });
 app.post("/api/agent-tokens/:id/revoke", (req) => {
-  audited(() => revokeAgentToken(idParam(req)));
+  const t = audited(() => revokeAgentToken(idParam(req)));
+  if (t.changed) tokenAudit(req, "token.revoked", "agent_read", t.projectId, t);
   return { ok: true };
 });
 app.post("/api/bug-reports/:id/triage", (req) => {
@@ -1877,10 +1889,13 @@ app.post("/api/projects/:id/propose-tokens", (req, reply) => {
   const id = idParam(req);
   const body = z.object({ name: z.string().max(200) }).parse(req.body);
   reply.header("Cache-Control", "no-store");
-  return audited(() => createProposeToken(id, body.name));
+  const t = audited(() => createProposeToken(id, body.name));
+  tokenAudit(req, "token.created", "propose", id, t);
+  return t;
 });
 app.post("/api/propose-tokens/:id/revoke", (req) => {
-  audited(() => revokeProposeToken(idParam(req)));
+  const t = audited(() => revokeProposeToken(idParam(req)));
+  if (t.changed) tokenAudit(req, "token.revoked", "propose", t.projectId, t);
   return { ok: true };
 });
 
@@ -1941,10 +1956,13 @@ app.post("/api/projects/:id/request-tokens", (req, reply) => {
   const id = idParam(req);
   const body = z.object({ name: z.string().max(200) }).parse(req.body);
   reply.header("Cache-Control", "no-store");
-  return audited(() => createRequestToken(id, body.name));
+  const t = audited(() => createRequestToken(id, body.name, tokenMaker()));
+  tokenAudit(req, "token.created", "request", id, t);
+  return t;
 });
 app.post("/api/request-tokens/:id/revoke", (req) => {
-  audited(() => revokeRequestToken(idParam(req)));
+  const t = audited(() => revokeRequestToken(idParam(req)));
+  if (t.changed) tokenAudit(req, "token.revoked", "request", t.projectId, t);
   return { ok: true };
 });
 

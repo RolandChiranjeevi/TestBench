@@ -9,7 +9,7 @@ git push → CI runs the tests → CI sends the results → Testbench makes or u
 
 ## Set up
 
-1. In Testbench open **Bug reports → CI** and **Create token**. The token is shown once; only a hash is kept. A token works for one project and can be revoked.
+1. In Testbench open **Bug reports → CI** and **Create token**. The token is shown once; only a hash is kept. A token works for one project and can be revoked. Making and revoking a token is written to the audit log (who, and the token's name and prefix, never the token).
 2. Store it as a secret in your CI. Never put it in code or logs.
 3. Send the results. For GitHub Actions and Playwright see [the example](../examples/github-actions/testbench-report.yml) and
    [`scripts/ci-report.mjs`](../scripts/ci-report.mjs): one file without dependencies that reads `test-results/results.json` (Playwright's JSON reporter).

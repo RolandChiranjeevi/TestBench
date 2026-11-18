@@ -72,7 +72,7 @@ describe("the audit log in words", () => {
   it("every action the server writes has words, found by reading the server's own source", () => {
     const sources = [...readdirSync("server").filter((f) => f.endsWith(".ts")).map((f) => join("server", f)), "scripts/accounts.ts"];
     const found = new Set<string>();
-    for (const f of sources) for (const m of readFileSync(f, "utf8").matchAll(/["'`]((?:account|login|password|profile|invitation|member|members|requirements|sessions?|settings|agent_request|spec)\.[a-z_]+)["'`]/g)) found.add(m[1]);
+    for (const f of sources) for (const m of readFileSync(f, "utf8").matchAll(/["'`]((?:account|login|password|profile|invitation|member|members|requirements|sessions?|settings|token|agent_request|spec)\.[a-z_]+)["'`]/g)) found.add(m[1]);
     assert.deepEqual([...found].sort(), [...AUDIT_ACTIONS].sort(), "the list in web/src/accounts.ts is the server's list");
     for (const a of AUDIT_ACTIONS) assert.ok(!describeAudit(e(a), names).includes(a), `${a} has words of its own`);
   });
@@ -116,6 +116,17 @@ describe("the audit log in words", () => {
     assert.equal(f("settings.agent_results_changed", false), "Ola Owner switched agent results off");
     assert.equal(f("settings.agent_proposals_changed", true), "Ola Owner switched agent proposals on");
     assert.equal(f("settings.agent_proposals_changed", false), "Ola Owner switched agent proposals off");
+  });
+
+  it("says who made or revoked which kind of machine token, by name and prefix, never by its id", () => {
+    const f = (action: string, kind: string, extra: Record<string, unknown> = { name: "qa-agent", prefix: "tbrq_x1bB" }) =>
+      describeAudit(e(action, { targetUserId: null, projectId: 7, detail: { kind, credential_id: 12, ...extra } }), names);
+    assert.equal(f("token.created", "request"), 'Ola Owner made the request token "qa-agent" (tbrq_x1bB…) in Acme');
+    assert.equal(f("token.revoked", "request"), 'Ola Owner revoked the request token "qa-agent" (tbrq_x1bB…) in Acme');
+    assert.equal(f("token.created", "agent_read", { name: "reader", prefix: "tbag_abcd" }), 'Ola Owner made the agent read token "reader" (tbag_abcd…) in Acme');
+    assert.equal(f("token.created", "propose", { name: "skill", prefix: "tbpr_abcd" }), 'Ola Owner made the agent proposal token "skill" (tbpr_abcd…) in Acme');
+    assert.equal(f("token.revoked", "ci", { name: "GitHub Actions", prefix: "tbci_abcd" }), 'Ola Owner revoked the CI token "GitHub Actions" (tbci_abcd…) in Acme');
+    assert.equal(f("token.created", "something_new", {}), "Ola Owner made the token in Acme", "a kind and details the page does not know still read well");
   });
 
   it("says what happened, with names", () => {

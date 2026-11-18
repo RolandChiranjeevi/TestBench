@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { db } from "./db.ts";
 import { AuditError } from "./auditcommon.ts";
+import { revokeToken, type TokenMaker } from "./tokens.ts";
 
 /**
  * Tokens for a test agent to work through the requests people make of it (server/agentrequests.ts): fetch the waiting ones, take one, give it back, hand in a re-run's report, say it is done.
@@ -24,28 +25,26 @@ export const isAgentRequestRoute = (method: string, url: string) =>
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
-export function createRequestToken(projectId: number, name: string) {
+/** `by` is who makes it (the route says; code that makes a token without a person, as a test does, may leave it out). */
+export function createRequestToken(projectId: number, name: string, by?: TokenMaker) {
   const n = name.trim();
   if (!n || n.length > REQUEST_TOKEN_LIMITS.nameMax) throw new AuditError(400, `Give the token a name of at most ${REQUEST_TOKEN_LIMITS.nameMax} characters`);
   if (!db.prepare("SELECT 1 FROM projects WHERE id = ?").get(projectId)) throw new AuditError(404, "Project not found");
   const live = (db.prepare("SELECT COUNT(*) AS n FROM request_tokens WHERE project_id = ? AND revoked_at IS NULL").get(projectId) as { n: number }).n;
   if (live >= REQUEST_TOKEN_LIMITS.tokensPerProject) throw new AuditError(409, `A project can have ${REQUEST_TOKEN_LIMITS.tokensPerProject} active request tokens. Revoke one first.`);
   const token = `${REQUEST_TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`;
-  const row = db.prepare("INSERT INTO request_tokens (project_id, name, prefix, token_hash) VALUES (?, ?, ?, ?) RETURNING id, created_at")
-    .get(projectId, n, token.slice(0, 9), sha256(token)) as { id: number; created_at: string };
+  const row = db.prepare("INSERT INTO request_tokens (project_id, name, prefix, token_hash, created_by, created_by_user_id) VALUES (?, ?, ?, ?, ?, ?) RETURNING id, created_at")
+    .get(projectId, n, token.slice(0, 9), sha256(token), by?.name ?? "", by?.userId ?? null) as { id: number; created_at: string };
   // The token is returned this once. Only its hash is stored.
   return { id: row.id, name: n, prefix: token.slice(0, 9), createdAt: row.created_at, token };
 }
 
 export function listRequestTokens(projectId: number) {
-  return (db.prepare("SELECT id, name, prefix, created_at, last_used_at, revoked_at FROM request_tokens WHERE project_id = ? ORDER BY id DESC").all(projectId) as Record<string, any>[])
-    .map((t) => ({ id: t.id, name: t.name, prefix: t.prefix, createdAt: t.created_at, lastUsedAt: t.last_used_at, revokedAt: t.revoked_at }));
+  return (db.prepare("SELECT id, name, prefix, created_at, created_by, last_used_at, revoked_at FROM request_tokens WHERE project_id = ? ORDER BY id DESC").all(projectId) as Record<string, any>[])
+    .map((t) => ({ id: t.id, name: t.name, prefix: t.prefix, createdAt: t.created_at, createdBy: t.created_by, lastUsedAt: t.last_used_at, revokedAt: t.revoked_at }));
 }
 
-export function revokeRequestToken(id: number) {
-  const r = db.prepare("UPDATE request_tokens SET revoked_at = COALESCE(revoked_at, datetime('now')) WHERE id = ?").run(id);
-  if (!r.changes) throw new AuditError(404, "Token not found");
-}
+export const revokeRequestToken = (id: number) => revokeToken("request", id);
 
 export type RequestAuth = { state: "ok"; id: number; name: string } | { state: "invalid" | "other_project" };
 
