@@ -115,7 +115,7 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 - Audit: `agent_request.created` med `{ request, kind: "run", run, cases }`, och claim, release och cancel loggas på samma sätt.
 
 ### AG5a: Resultat per testfall
-**Status: byggd, väntar på granskning**
+**Status: klart** (mergad i #113)
 - `POST /api/agent/projects/:id/requests/:rid/case-results` och MCP-toolen `testbench_report_results`. **Varje anrop är en batch, allt eller inget** (1–200 resultat, högst 256 kB, 60 anrop per minut per token, annars 429): en refuserad batch lämnar inget spår. Agenten får rapportera flera gånger, men **varje testfall bara en gång**. Allt kontrolleras och skrivs i en transaktion tillsammans med audit-raden.
 - Bara `run`-förfrågningar, bara token som tog den, bara medan den är Taken, och bara när en person har slagit på den befintliga omkopplaren *Agent results* (av som standard, bara ägaren, eftersom resultaten räknas direkt för testfallets status, täckning och kravstatus). Är den av ger routen 409 och inget skrivs.
 - Tillåtna värden `passed|failed|blocked|skipped` (aldrig `untested`; agenten rapporterar `inconclusive` som `blocked`). `note`, `error` och stegets `actual` högst 2000 tecken, `durationMs` valfritt, stegresultat `{stepId, status, actual}` där steget måste höra till testfallet i förfrågan. Fält som inte finns i schemat nekas. Tiden (`executed_at`) sätts av servern.
@@ -128,8 +128,15 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 - Specar får inga resultat i AG5a, de får dem som idag när en person importerar.
 
 ### AG5b: Spec- och automatiserad länk
-**Status: planerad** (efter att AG5a är mergad)
-- Playwright-JSON för de automatiserade testfallen i en run-förfrågan, återanvänder upstreams `submitResult`. Resultat når specar via filnamnmatchning och testfall via länk.
+**Status: byggd, väntar på granskning**
+- Ingen ny route: agentens Playwright-JSON lämnas in på den befintliga `POST /api/agent/projects/:id/requests/:rid/result` (upstreams `submitResult`), nu för **`run` och `rerun`**. Samma regler som förut: bara token som tog förfrågan, bara medan den är Taken, bara när *Agent results* är på, **en gång per förfrågan**, högst 5 MB, och hela rapporten nekas vid fel. Nytt: **högst 1000 tester** och **10 leveranser per minut per token** (429, även nekade försök räknas).
+- **Vad en rapport får innehålla för en `run`-förfrågan:** ett test som är länkat till något av förfrågans testfall (`cases[].automatedTests`, framework + fullName), eller ett test i en av förfrågans spec-filer (`specFiles`), också ett test som TestBench inte känner till än. Det senare behövs för att en nyskapad spec ska få sina första resultat. Allt annat, dubbletter, tom rapport, icke-Playwright eller över gränserna nekar hela rapporten och lämnar inget spår (ingen körning, inga `automated_tests`-rader, ingen audit, ingen markering).
+- **Länken bestämmer TestBench, aldrig texten i rapporten** (`resolveLink` i `importReport`): ett känt test behåller sitt `case_id` (även inget, och en människas länk), ett nytt test i en spec-fil från förfrågan får den specens testfall, annars inget. Titel, svit och taggar (`@KEY-n`, `@REQ-n`) länkar ingenting och ger ingen kravtäckning. Samma regel gäller `rerun`, vilket stänger ett hål där taggar i en agents rapport kunde länka om ett känt test till ett annat testfall.
+- **Rapporten blir en egen automatiserad körning** (`Automated tests of run #… (request #…)`, `source: agent`, `meta.agentRequest`, `runOf`), länkad från förfrågan och från den manuella runnen ("Automated report: run #N"). Den rör varken den manuella runnen eller AG5a-resultaten, och TestBench kopierar inte de automatiserade resultaten dit: agenten rapporterar testfallens resultat själv via `case-results`, sanna mot rapporten.
+- **Specar** får sina resultat av sig själva via filnamnsmatchning (sista ledet, skiftlägesokänsligt, `ambiguous` om två filer har samma basnamn), och **testfall** via länken (täckning, kravstatus och "Last automated" följer det senaste resultatet).
+- `release` tillåts efter levererad rapport för `run` (rapporten blir kvar och kan inte lämnas in igen), men fortsatt inte för `rerun`. `complete` är oförändrad.
+- Audit `agent_request.result_delivered` skrivs i samma transaktion med `{ request, kind, run, result_run, credential_id, tests, new_tests, linked, passed, failed, skipped }`, utan token eller hash, och en egen mening för `run`.
+- Skillen `/testpilot-requests` (högst 10 testfall per förfrågan) kör testfall med `automatedTests` eller `specFiles` med Playwright efter att ha frågat var testerna ligger, hittat filerna med exakt en träff, visat exakt kommando och miljö (produktion kräver de två bekräftelserna) och fått ett ja i ett nytt meddelande; den lämnar in rapporten med `result` efter ett nytt ja och rapporterar sedan testfallens resultat sanna mot rapporten. **Inget nytt MCP-verktyg**: en JSON på upp till 5 MB passar inte som verktygsargument, så MCP får bara en text om hur rapporten levereras.
 
 ### Senare
 - Desktop DevOps (skrivbordsappen, och eventuellt F-B), Azure DevOps och mobilappstest.

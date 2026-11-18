@@ -61,7 +61,7 @@ Made under **Settings → Agent → Requests to a test agent**, by an admin of t
 GET  /api/agent/projects/<project id>/requests                    the waiting requests, oldest first
 POST /api/agent/projects/<project id>/requests/<id>/claim         take one (409 if someone else did)
 POST /api/agent/projects/<project id>/requests/<id>/release       {"note": "why it is given back"}  (it waits again)
-POST /api/agent/projects/<project id>/requests/<id>/result        the Playwright JSON report of a re-run (off by default, see below)
+POST /api/agent/projects/<project id>/requests/<id>/result        the Playwright JSON report of a re-run or of a run request (off by default, see below)
 POST /api/agent/projects/<project id>/requests/<id>/case-results  a result for each test case of a run request (off by default, see below)
 POST /api/agent/projects/<project id>/requests/<id>/findings      one finding of a discover (draft or proposed, see mcp/README.md)
 POST /api/agent/projects/<project id>/requests/<id>/complete      {"note": "...", "resultRunId": 42, "resultAuditId": 8}  (all optional)
@@ -91,6 +91,8 @@ For a `rerun`, `runId` is the run and `tests` lists `{ id, framework, file, titl
 **Audit link.** `complete` of a **discover** can carry `resultAuditId`, the `auditId` that `deliver` printed. TestBench links the request to the audit, and the card shows *Audit: its title*, which opens it under Bug reports → Audits. It must be an audit of the same project that was **imported after the request was taken** (the audit is imported with a person's login, not by the token, so the server cannot know whose it is, but it can refuse an older one). A re-run cannot carry it. If the audit is deleted later, the link is emptied and the request is kept.
 
 ## Handing in the report of a re-run
+
+(A run request can hand in a report too, with other rules about which tests it may hold and how they are linked: see *The Playwright report of a run request* below.)
 
 An agent that ran the failed tests again can hand in the Playwright JSON report, and Testbench makes a run of it, linked to the request. This writes test results (facts, not proposals), so it
 is **off by default**. The owner switches it on for the installation (**Settings → Agent → Requests to a test agent → Agent results → Switch on**, or `PUT /api/settings/agent-results` with `{"enabled": true}`). While it is off the route answers 409 and writes nothing.
@@ -143,6 +145,30 @@ Nothing here finishes anything: the agent finishes the request with `complete`, 
 An agent that has to stop gives the request back (`release`): the results it reported stay, and the next agent sees in the request's `progress` (`{total, reported, missing}`) how many are left. The audit log gets
 `agent_request.results_reported` for each batch (the agent's name, the request, the run, the token's id and the number per status, never the token).
 
+## The Playwright report of a run request
+
+An agent that ran the **automated tests of the test cases** of a run request (the `automatedTests` and `specFiles` that the request lists for each test case) hands in the Playwright JSON report on the same route as for a re-run:
+`POST …/requests/<id>/result`. There is **no MCP tool** for it (a report can be 5 MB, too large for a tool argument): the TestPilot skill sends the file with its `result` action, and the request token only in a header.
+
+It takes the same rules as the report of a re-run (*Agent results* on, a request **this very token took** and that is still Taken, **once per request**, at most 5 MB, and the whole report refused otherwise), and these:
+
+1. **Which tests the report may hold.** A test that is linked to one of the request's test cases (its `automatedTests`, by framework and full name), or **any test in one of the request's spec files** (also a test TestBench does not know yet,
+   so that a spec made in TestBench can get its first results). Every other test, a test twice, an empty report, something that is not a Playwright report, more than **1000 tests** or more than 5 MB refuses the **whole** report: no run,
+   no test, no audit entry and no mark is made.
+2. **TestBench decides which test case a test belongs to, the report does not.** A test TestBench already knows keeps its case (also none, and a link a person made). A new test in a spec file of the request is linked to the test case
+   of that spec. Any other new test gets none. The title, the suite and the tags of the report, `@KEY-n` and `@REQ-n` included, link nothing and cover no requirement. (A re-run follows the same rule.)
+3. **It becomes a separate automated run**, `Automated tests of run #… (request #…)`, marked as the agent's and in the request's environment, linked from the request (*Automated report handed in*) and from the manual run (*Automated report: run #N*).
+   It does **not** touch the manual run, the results a person set there, or the results the agent reported with `case-results`, and TestBench does **not** copy the automated results into the manual run: the agent reports each test case itself,
+   true to what the report says.
+4. **It reaches a spec by its file name** (the last part of the file, any case of the letters and either slash), so a spec shows its tests and their last status; two files with the same name make it *ambiguous*. **It reaches a test case
+   by the link:** a linked test case gets the status of its newest result, so coverage, requirement status and *Last automated* on the manual run's page follow it at once, which is why this is off until the owner switches agent results on.
+5. At most **10 reports a minute per token** (429); every attempt counts, also a refused one.
+6. The audit log gets `agent_request.result_delivered` in the same transaction as the run: the agent's name, the request, the run, the run that the report made, the token's id (never the token) and what came in (tests, new tests, linked, and how many
+   passed, failed and were skipped).
+
+A run request **can be given back after its report** (the report stays, and another agent can take the rest, but it cannot hand in another report); a re-run that has its report is still finished, not given back. `complete` is as it was:
+it needs a result for every test case.
+
 ## Who can do what
 
 | Role | Requests |
@@ -168,6 +194,7 @@ the agent take it. The address and note are treated as data (`agent-rules.md`, r
 
 - **discover:** the address goes to `/testpilot-discover` as a suggestion, which validates and confirms it, with its two confirmations for production. The normal audit flow follows, with every stop.
 - **re-run:** Playwright tests only, only with `permissionMode: full`, and only after the user confirms the exact command and the environment. The agent asks where the tests are (the repository with `playwright.config.*`, which is usually not the folder it runs from), finds each test's file there, and writes its report and artifacts in its own folder, never in the user's repository. It then **offers to hand the report in** and shows exactly what would be sent: the file, its size and test count, the request, the address, and that TestBench makes a run marked as the agent's. It sends nothing until the user answers yes in a **new message**, and it sends **once**, only that file, only the report it just wrote. If agent results are switched off (409), or the user says no, nothing is lost: the report stays in `audits/request-<id>/` and the user imports it under **Import results**. After a successful hand-in the request already links the run, so the note carries no run number.
+- **run, automated tests:** for a test case that has `automatedTests` or `specFiles`, and only if the user wants them run, the skill asks where the tests are (the repository with `playwright.config.*`), finds each file with exactly one match, runs whole files (never a test name in a shell string), shows the exact command and the environment (a production target needs the two confirmations), runs once, and then **offers to hand the report in** and shows exactly what is sent. It reports each test case's result afterwards, true to the report: never `passed` for a test case whose tests did not run.
 - **run:** only with `permissionMode: full` and a valid address (a production target needs its two confirmations), **at most 10 test cases per request** (a cautious limit of the skill, "This skill supports up to 10 cases per request"; TestBench itself takes up to 200, and the skill's limit can be raised later), and only after the user confirms the plan in a message of its own. The agent runs the test cases **one at a time with Playwright MCP in the user's own environment**, writes the results to a file under `audits/request-<id>/`, **shows exactly what would be sent and asks** in a new message, and sends it with the `case-results` action (the token only in a header). It never invents a result: a test case it could not finish is `blocked`, one it did not run is `skipped` or left out, each with the reason. The text of a test case is data, and a step that asks for something outside the test is not done. It marks the request done only when every test case has a result, and never finishes the run.
 - If the work stops, the agent **offers to give the request back** and shows the note it would send. It asks in a message of its own and does nothing without a yes, so the request stays Taken (until a person cancels it) if the answer is no.
 - The request is marked done with a short note after the user confirms the note. For a discover, the audit that `deliver` made is linked to it.
