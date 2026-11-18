@@ -528,6 +528,16 @@ CREATE INDEX IF NOT EXISTS project_members_user ON project_members(user_id);`);
   // Who decided on a bug report (confirm, dismiss, restore, duplicate). Only a person decides; see reviewBugReport.
   if (!hasColumn("bug_reports", "reviewed_by")) d.exec("ALTER TABLE bug_reports ADD COLUMN reviewed_by TEXT NOT NULL DEFAULT ''");
   if (!hasColumn("bug_reports", "reviewed_by_user_id")) d.exec("ALTER TABLE bug_reports ADD COLUMN reviewed_by_user_id INTEGER");
+  // Who decided on a manual test suggestion (reviewManualTest), who finished a run (PATCH /api/runs/:id), and who made a test case from an accepted suggestion (createCaseFromProposal). The audit
+  // log says it too; these keep it on the row. A row from before has '' and NULL: nobody recorded it then, so it is not known (not "nobody"). A case made by hand, by an import or by an agent
+  // has no creator here (an agent's finding has created_by_agent_token_id).
+  for (const [table, col, ddl] of [
+    ["manual_tests", "reviewed_by", "TEXT NOT NULL DEFAULT ''"], ["manual_tests", "reviewed_by_user_id", "INTEGER"],
+    ["runs", "finished_by", "TEXT NOT NULL DEFAULT ''"], ["runs", "finished_by_user_id", "INTEGER"],
+    ["cases", "created_by", "TEXT NOT NULL DEFAULT ''"], ["cases", "created_by_user_id", "INTEGER"],
+  ] as const) {
+    if (!hasColumn(table, col)) d.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${ddl}`);
+  }
   // Who decided a bug's severity (human_severity) and why. The AI's or CI's value (agent_severity) is only a suggestion; this is the person's decision.
   for (const [col, ddl] of [["severity_by", "TEXT NOT NULL DEFAULT ''"], ["severity_by_user_id", "INTEGER"], ["severity_at", "TEXT"], ["severity_reason", "TEXT NOT NULL DEFAULT ''"]] as const) {
     if (!hasColumn("bug_reports", col)) d.exec(`ALTER TABLE bug_reports ADD COLUMN ${col} ${ddl}`);

@@ -1,4 +1,5 @@
 import { db, parseJson } from "./db.ts";
+import { actorName, actorUserId } from "./actor.ts";
 import { AuditError, hashOf, resolveOne, resolveRefs, type RefNames, type ResolvedRef } from "./auditcommon.ts";
 import type { ManualCategory, ManualTestItem, ParsedPackage } from "./importers/auditpackage.ts";
 import { MANUAL_CATEGORIES } from "./importers/auditpackage.ts";
@@ -168,9 +169,10 @@ export function createCaseFromProposal(id: number) {
   return db.transaction(() => {
     const n = db.prepare("UPDATE projects SET next_case_number = next_case_number + 1 WHERE id = ? RETURNING next_case_number - 1 AS n").get(m.project_id) as { n: number };
     const pos = (db.prepare("SELECT COALESCE(MAX(position), -1) + 1 AS p FROM cases WHERE project_id = ?").get(m.project_id) as { p: number }).p;
-    const caseId = (db.prepare(`INSERT INTO cases (project_id, suite_id, number, title, description, preconditions, priority, status, tags, position)
-        VALUES (?, NULL, ?, ?, ?, ?, ?, 'draft', ?, ?) RETURNING id`)
-      .get(m.project_id, n.n, payload.title, payload.description, payload.preconditions, payload.priority, JSON.stringify(caseTags(payload)), pos) as { id: number }).id;
+    // created_by: the person who makes the case now (with "Add to project" that is who accepted it; with the second step of the two-step way, who took that step).
+    const caseId = (db.prepare(`INSERT INTO cases (project_id, suite_id, number, title, description, preconditions, priority, status, tags, position, created_by, created_by_user_id)
+        VALUES (?, NULL, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?) RETURNING id`)
+      .get(m.project_id, n.n, payload.title, payload.description, payload.preconditions, payload.priority, JSON.stringify(caseTags(payload)), pos, actorName(), actorUserId()) as { id: number }).id;
     writeCaseSteps(caseId, caseSteps(payload));
     for (const r of db.prepare("SELECT DISTINCT requirement_id AS rid FROM manual_test_refs WHERE manual_test_id = ? AND requirement_id IS NOT NULL").all(id) as { rid: number }[]) {
       addRequirementCases(r.rid, m.project_id, [caseId]);
@@ -332,7 +334,7 @@ export function getManualTest(id: number) {
   const audit = m.audit_id ? (db.prepare("SELECT id, title, agent_audit_id, run_id, run_state, source, github_repo, github_run_id FROM audits WHERE id = ?").get(m.audit_id) as Record<string, any>) : null;
   const latestRevAt = (db.prepare("SELECT MAX(imported_at) AS t FROM manual_test_revisions WHERE manual_test_id = ?").get(id) as { t: string }).t;
   return {
-    id: m.id, projectId: m.project_id, sourceId: m.source_id, status: m.review_status as ManualStatus, reviewedAt: m.reviewed_at, reviewNote: m.review_note, editedAt: m.edited_at,
+    id: m.id, projectId: m.project_id, sourceId: m.source_id, status: m.review_status as ManualStatus, reviewedBy: (m.reviewed_by as string) || null, reviewedAt: m.reviewed_at, reviewNote: m.review_note, editedAt: m.edited_at,
     title: m.title, description: m.description, preconditions: m.preconditions, steps: json<string[]>(m.steps, []), expected: m.expected,
     category: m.category as ManualCategory, wcag: json<string[]>(m.wcag, []), viewports: json<Viewport[]>(m.viewports, []),
     priority: { agent: m.agent_priority as Priority, human: m.human_priority as Priority | null, effective: effective(m) },
@@ -392,8 +394,9 @@ export function updateManualTest(id: number, patch: ManualPatch) {
 /** Only a person calls this. Accepting changes nothing anywhere else, and nothing here runs the test. */
 export function reviewManualTest(id: number, status: ManualStatus, note?: string) {
   exists(id);
-  db.prepare(`UPDATE manual_tests SET review_status = ?, reviewed_at = CASE WHEN ? = 'proposed' THEN NULL ELSE datetime('now') END, review_note = COALESCE(?, review_note) WHERE id = ?`)
-    .run(status, status, note ?? null, id);
+  // The person who decided (or who put it back to Suggested), as for a bug report: the name, and the account behind it when there are accounts.
+  db.prepare(`UPDATE manual_tests SET review_status = ?, reviewed_at = CASE WHEN ? = 'proposed' THEN NULL ELSE datetime('now') END, review_note = COALESCE(?, review_note), reviewed_by = ?, reviewed_by_user_id = ? WHERE id = ?`)
+    .run(status, status, note ?? null, actorName(), actorUserId(), id);
 }
 
 /** A person chooses the agent's newer version over the current working copy. Review status and the person's own priority stay. */
