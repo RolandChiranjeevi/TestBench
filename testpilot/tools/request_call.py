@@ -125,7 +125,9 @@ def show(data, code, action, rid):
             print(json.dumps({"id": q["id"], "status": q["status"], "release_note": clean(q["releaseNote"], 1000)}))
             continue
         if action == "complete":
-            print(json.dumps({"id": q["id"], "status": q["status"], "result_note": clean(q["resultNote"], 1000), "result_run": q["resultRunId"], "result_audit": q.get("resultAuditId"), "finished_at": q["finishedAt"]}))
+            # `warning` is TestBench's own text for a run request that was finished without the report of the automated tests it names (the agent tells the user): shown, cleaned like all text, and cut.
+            print(json.dumps({"id": q["id"], "status": q["status"], "result_note": clean(q["resultNote"], 1000), "result_run": q["resultRunId"], "result_audit": q.get("resultAuditId"), "finished_at": q["finishedAt"],
+                              **({"warning": clean(q["warning"], 600)} if q.get("warning") else {})}))
             continue
         print(json.dumps({
             "id": q["id"], "kind": q["kind"], "status": q["status"], "environment": clean(q["environment"], 100),
