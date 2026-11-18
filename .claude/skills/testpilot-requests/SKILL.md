@@ -53,6 +53,9 @@ It does not:
   or put the token value on a command line or in a file. Only the helper in step 2 touches it. **You never read `.env` or `.mcp.json` yourself**, for this token or for anything else: reading either is a stop, so say so and ask the user.
 - **A result is what was observed.** Never invent a result for a test case you did not run. A test case you could not finish is `blocked` (an inconclusive result is reported as `blocked`), one you chose
   not to run is `skipped`, each with the reason in `note`; or it is left out. Never `untested`, and never a result copied from an earlier run or from the request.
+- **Nothing is installed in `SPEC`.** `SPEC` is the user's repository, and the user has not confirmed an install. Never run `npm install`, `npm ci`, `playwright install` or an `npx` that would fetch a package there.
+  If the tests cannot start because their dependencies are missing (for example `Cannot find module '@playwright/test'`), run nothing more and say that the spec project has no installed dependencies.
+  Report the test cases that needed them as `blocked` with that reason, and tell the user that they can install them themselves and ask again.
 - **Only the request token.** A read token, a CI token, a proposal token or the login password does not work here and is not to be tried.
 - **Limits.** At most 3 attempts per call, never a retry after 401, 403 or 429, at most 30 seconds per call, at most 100 requests or tests handled in one step
   (`../../references/agent-rules.md`, rule 6).
