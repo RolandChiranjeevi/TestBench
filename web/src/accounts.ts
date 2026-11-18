@@ -72,6 +72,7 @@ export const AUDIT_ACTIONS = [
   "member.added", "member.removed", "member.role_changed", "members.migrated", "password.changed", "password.reset", "password.reset_link_created", "profile.changed", "requirements.bulk_approved", "sessions.revoked_others",
   "settings.agent_proposals_changed", "settings.agent_results_changed",
   "token.created", "token.revoked",
+  "case.status_changed", "project.created", "proposal.accepted", "proposal.case_created", "proposal.rejected", "proposal.restored", "run.finished", "run.reopened",
 ] as const;
 
 /** The filter choices on the audit log page: a label, and the start of the action it keeps (what `?action=` takes). */
@@ -89,6 +90,10 @@ export const AUDIT_FILTERS: readonly { label: string; prefix: string }[] = [
   { label: "Specs", prefix: "spec." },
   { label: "Settings", prefix: "settings." },
   { label: "Tokens", prefix: "token." },
+  { label: "Test cases", prefix: "case." },
+  { label: "Proposals", prefix: "proposal." },
+  { label: "Runs", prefix: "run." },
+  { label: "Projects", prefix: "project." },
 ];
 
 /** How to turn the ids in an entry into names. A name that is not known (an account or a project that no longer exists) is said as such, never left as a bare number. */
@@ -103,6 +108,10 @@ const specName = (v: unknown) => (typeof v === "string" && v ? v : "a spec");
 const TOKEN_KIND: Record<string, string> = { request: "request token", agent_read: "agent read token", propose: "agent proposal token", ci: "CI token" };
 const tokenWords = (d: Record<string, unknown>) =>
   `${typeof d.kind === "string" ? (TOKEN_KIND[d.kind] ?? "token") : "token"}${typeof d.name === "string" && d.name ? ` "${d.name}"` : ""}${typeof d.prefix === "string" && d.prefix ? ` (${d.prefix}…)` : ""}`;
+/** What a decision was about, as text only. A kind this page does not know is just "a proposal". */
+const PROPOSAL_KIND: Record<string, string> = { bug_report: "a bug proposal", manual_test: "a manual test suggestion", requirement: "a requirement proposal" };
+const proposalWords = (d: Record<string, unknown>) => (typeof d.kind === "string" ? (PROPOSAL_KIND[d.kind] ?? "a proposal") : "a proposal");
+const word = (v: unknown, fallback = "?") => (typeof v === "string" && v ? v : fallback);
 
 export function describeAudit(e: Pick<AuditEntry, "action" | "actor" | "targetUserId" | "projectId" | "detail">, names: NameLookup): string {
   const d = e.detail ?? {};
@@ -154,6 +163,17 @@ export function describeAudit(e: Pick<AuditEntry, "action" | "actor" | "targetUs
     case "settings.agent_proposals_changed": return `${who} switched agent proposals ${d.to ? "on" : "off"}`;
     case "token.created": return `${who} made the ${tokenWords(d)} in ${project}`;
     case "token.revoked": return `${who} revoked the ${tokenWords(d)} in ${project}`;
+    case "case.status_changed":
+      return Number.isInteger(d.count)
+        ? `${who} changed the status of ${plural(d.count, "test case")} to ${word(d.to)} in ${project}`
+        : `${who} changed the status of ${word(d.key, "a test case")} from ${word(d.from)} to ${word(d.to)} in ${project}`;
+    case "proposal.accepted": return `${who} accepted ${proposalWords(d)} in ${project}${typeof d.case === "string" && d.case ? `, and made it the test case ${d.case}` : ""}`;
+    case "proposal.case_created": return `${who} made ${typeof d.case === "string" && d.case ? `the test case ${d.case}` : "a test case"} from ${proposalWords(d)} in ${project}`;
+    case "proposal.rejected": return `${who} rejected ${proposalWords(d)}${d.to === "duplicate" ? " as a duplicate" : ""} in ${project}`;
+    case "proposal.restored": return `${who} moved ${proposalWords(d)} back to Suggested in ${project}`;
+    case "run.finished": return `${who} finished ${Number.isInteger(d.run) ? `run #${d.run}` : "a run"} in ${project}`;
+    case "run.reopened": return `${who} reopened ${Number.isInteger(d.run) ? `run #${d.run}` : "a run"} in ${project}`;
+    case "project.created": return `${who} made ${typeof d.name === "string" && d.name ? `the project "${d.name}"` : "a project"}${typeof d.key === "string" && d.key ? ` (${d.key})` : ""}`;
     default: return `${who}: ${e.action}`;
   }
 }

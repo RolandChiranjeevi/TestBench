@@ -218,11 +218,26 @@ app.get("/api/projects", () => {
   return rows.flatMap((p) => { const role = roleOf(u, p.id); return role ? [{ ...p, role }] : []; });
 });
 
+// A person's decision that makes a project, finishes a run, or turns what an agent proposed into trusted material (a test case made ready, a proposal accepted or rejected) belongs in the
+// audit log: who took it, in which project, about which thing, and from what to what. The route says when something really changed; nothing is written for a decision that changes nothing.
+const decisionAudit = (req: FastifyRequest, action: string, projectId: number | null, detail: Record<string, unknown>) =>
+  audit({ userId: actorUserId(), label: actorName(), ip: req.ip }, action, { projectId, detail });
+/** The review state of a bug proposal or a manual test suggestion before a decision, so that the decision can be written as from-and-to. */
+const proposalOf = (table: "bug_reports" | "manual_tests", id: number) =>
+  db.prepare(`SELECT review_status AS status, project_id AS projectId FROM ${table} WHERE id = ?`).get(id) as { status: string; projectId: number } | undefined;
+const PROPOSAL_ACTIONS: Record<string, string> = { accepted: "proposal.accepted", rejected: "proposal.rejected", duplicate: "proposal.rejected", proposed: "proposal.restored" };
+const proposalAudit = (req: FastifyRequest, kind: "bug_report" | "manual_test", id: number, before: ReturnType<typeof proposalOf>, to: string, extra: Record<string, unknown> = {}) => {
+  const action = PROPOSAL_ACTIONS[to];
+  if (before && action && before.status !== to) decisionAudit(req, action, before.projectId, { kind, proposal: id, from: before.status, to, ...extra });
+};
+
 app.post("/api/projects", (req) => {
   ownerOnly(); // also enforced by the access table; the person who makes a project is the owner, an admin of it by being the owner
   const body = projectBody.parse(req.body);
   if (db.prepare("SELECT 1 FROM projects WHERE key = ?").get(body.key)) throw new HttpError(409, `Key ${body.key} is already used`);
-  return db.prepare("INSERT INTO projects (name, key) VALUES (?, ?) RETURNING *").get(body.name, body.key);
+  const made = db.prepare("INSERT INTO projects (name, key) VALUES (?, ?) RETURNING *").get(body.name, body.key) as { id: number; name: string; key: string };
+  decisionAudit(req, "project.created", made.id, { key: made.key, name: made.name });
+  return made;
 });
 
 app.patch("/api/projects/:id", (req) => {
@@ -386,8 +401,14 @@ app.post("/api/projects/:id/cases/bulk", (req) => {
   const projectId = idParam(req);
   must(db.prepare("SELECT id FROM projects WHERE id = ?").get(projectId), "Project");
   const { ids, ...patch } = bulkBody.parse(req.body);
+  // Which cases really change status, for the audit log. The answer stays {updated}, which counts the cases touched and not those that moved.
+  const moving = patch.status
+    ? (db.prepare(`SELECT id FROM cases WHERE project_id = ? AND status != ? AND id IN (${ids.map(() => "?").join(",")}) ORDER BY id`).all(projectId, patch.status, ...ids) as { id: number }[]).map((r) => r.id)
+    : [];
   try {
-    return bulkUpdateCases(projectId, ids, patch);
+    const done = bulkUpdateCases(projectId, ids, patch);
+    if (moving.length) decisionAudit(req, "case.status_changed", projectId, { count: moving.length, to: patch.status, cases: moving.slice(0, 50) });
+    return done;
   } catch (e) {
     if (e instanceof CaseBulkError) throw new HttpError(e.status, e.message);
     throw e;
@@ -425,6 +446,10 @@ app.patch("/api/cases/:id", (req) => {
     if (body.steps) saveSteps(id, body.steps);
     linkCaseByTags(id);
   })();
+  if (body.status !== undefined && body.status !== cur.status) {
+    const key = (db.prepare("SELECT p.key || '-' || c.number AS key FROM cases c JOIN projects p ON p.id = c.project_id WHERE c.id = ?").get(id) as { key: string }).key;
+    decisionAudit(req, "case.status_changed", cur.project_id, { case: id, key, from: cur.status, to: body.status });
+  }
   return getCase(id);
 });
 
@@ -579,12 +604,14 @@ app.patch("/api/runs/:id", (req) => {
   const cur = must(db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as Record<string, any> | undefined, "Run");
   const status = body.status ?? cur.status;
   if (body.milestone) ensureMilestone(cur.project_id, body.milestone);
-  return db
+  const run = db
     .prepare(`
       UPDATE runs SET title = ?, environment = ?, milestone = ?, status = ?,
         finished_at = CASE WHEN ? = 'completed' THEN COALESCE(finished_at, datetime('now')) ELSE NULL END
       WHERE id = ? RETURNING *`)
     .get(body.title ?? cur.title, body.environment ?? cur.environment, body.milestone ?? cur.milestone, status, status, id);
+  if (status !== cur.status) decisionAudit(req, status === "completed" ? "run.finished" : "run.reopened", cur.project_id, { run: id });
+  return run;
 });
 
 app.delete("/api/runs/:id", async (req) => {
@@ -1110,13 +1137,17 @@ app.patch("/api/bug-reports/:id", (req) => {
 app.post("/api/bug-reports/:id/review", (req) => {
   const id = idParam(req);
   const body = z.object({ status: z.enum(["proposed", "accepted", "rejected"]), note: z.string().max(2000).optional(), severity: severity.optional(), severityReason: z.string().trim().max(200).optional() }).parse(req.body);
+  const before = proposalOf("bug_reports", id);
   audited(() => reviewBugReport(id, body.status, body.note, body.severity ? { value: body.severity, reason: body.severityReason } : undefined));
+  proposalAudit(req, "bug_report", id, before, body.status);
   return getBugReport(id);
 });
 app.post("/api/bug-reports/:id/duplicate", (req) => {
   const id = idParam(req);
   const body = z.object({ ofId: z.number().int(), note: z.string().max(2000).optional() }).parse(req.body);
+  const before = proposalOf("bug_reports", id);
   audited(() => markDuplicate(id, body.ofId, body.note));
+  proposalAudit(req, "bug_report", id, before, "duplicate", { duplicate_of: body.ofId });
   return getBugReport(id);
 });
 app.post("/api/bug-reports/:id/external-link", (req) => {
@@ -1447,20 +1478,26 @@ app.patch("/api/manual-tests/:id", (req) => {
 app.post("/api/manual-tests/:id/review", (req) => {
   const id = idParam(req);
   const body = z.object({ status: z.enum(["proposed", "accepted", "rejected"]), note: z.string().max(2000).optional() }).parse(req.body);
+  const before = proposalOf("manual_tests", id);
   audited(() => reviewManualTest(id, body.status, body.note));
+  proposalAudit(req, "manual_test", id, before, body.status);
   return getManualTest(id);
 });
 // A person takes a suggestion into the project in one step: accepted and made into a test case, as a draft.
 app.post("/api/manual-tests/:id/add-to-project", (req) => {
   const id = idParam(req);
   const body = z.object({ note: z.string().max(2000).optional() }).parse(req.body ?? {});
+  const before = proposalOf("manual_tests", id);
   const made = audited(() => addToProject(id, body.note));
+  proposalAudit(req, "manual_test", id, before, "accepted", { case: made.key });
   return { case: made, manualTest: getManualTest(id) };
 });
 // A person turns an accepted proposal into a test case of the project (to be run in Runs).
 app.post("/api/manual-tests/:id/create-case", (req) => {
   const id = idParam(req);
+  const before = proposalOf("manual_tests", id);
   const made = audited(() => createCaseFromProposal(id));
+  if (before) decisionAudit(req, "proposal.case_created", before.projectId, { kind: "manual_test", proposal: id, case: made.key });
   return { case: made, manualTest: getManualTest(id) };
 });
 app.post("/api/manual-tests/:id/apply-update", (req) => {
@@ -2060,8 +2097,22 @@ app.post("/api/agent/projects/:id/requests/:rid/case-results", { bodyLimit: CASE
 app.get("/api/projects/:id/requirement-proposals", (req) => requirementsApi(() => listProposals(idParam(req), (req.query as { status?: string }).status || undefined)));
 app.get("/api/requirement-proposals/:id", (req) => must(getProposal(idParam(req)), "Proposal"));
 app.patch("/api/requirement-proposals/:id", (req) => requirementsApi(() => editProposal(idParam(req), req.body)));
-app.post("/api/requirement-proposals/:id/approve", (req) => requirementsApi(() => approveProposal(idParam(req))));
-app.post("/api/requirement-proposals/:id/reject", (req) => requirementsApi(() => rejectProposal(idParam(req), (req.body as { reason?: unknown } | null)?.reason)));
+// A requirement proposal is always "proposed" before a decision (a decided one is refused with 409), so the entry says from "proposed". The reason for a rejection stays with the proposal, not in the log.
+const requirementProposalProject = (id: number) => (db.prepare("SELECT project_id AS projectId FROM requirement_proposals WHERE id = ?").get(id) as { projectId: number } | undefined)?.projectId ?? null;
+app.post("/api/requirement-proposals/:id/approve", (req) => {
+  const id = idParam(req);
+  const projectId = requirementProposalProject(id);
+  const done = requirementsApi(() => approveProposal(id));
+  decisionAudit(req, "proposal.accepted", projectId, { kind: "requirement", proposal: id, from: "proposed", to: "approved", requirement: done.requirementId });
+  return done;
+});
+app.post("/api/requirement-proposals/:id/reject", (req) => {
+  const id = idParam(req);
+  const projectId = requirementProposalProject(id);
+  const done = requirementsApi(() => rejectProposal(id, (req.body as { reason?: unknown } | null)?.reason));
+  decisionAudit(req, "proposal.rejected", projectId, { kind: "requirement", proposal: id, from: "proposed", to: "rejected" });
+  return done;
+});
 
 // Set the requirements a test case covers (the same links, edited from the case's side).
 app.put("/api/cases/:id/requirements", (req) => {

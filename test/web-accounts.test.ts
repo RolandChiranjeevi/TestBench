@@ -72,7 +72,7 @@ describe("the audit log in words", () => {
   it("every action the server writes has words, found by reading the server's own source", () => {
     const sources = [...readdirSync("server").filter((f) => f.endsWith(".ts")).map((f) => join("server", f)), "scripts/accounts.ts"];
     const found = new Set<string>();
-    for (const f of sources) for (const m of readFileSync(f, "utf8").matchAll(/["'`]((?:account|login|password|profile|invitation|member|members|requirements|sessions?|settings|token|agent_request|spec)\.[a-z_]+)["'`]/g)) found.add(m[1]);
+    for (const f of sources) for (const m of readFileSync(f, "utf8").matchAll(/["'`]((?:account|login|password|profile|invitation|member|members|requirements|sessions?|settings|token|case|proposal|run|project|agent_request|spec)\.[a-z_]+)["'`]/g)) found.add(m[1]);
     assert.deepEqual([...found].sort(), [...AUDIT_ACTIONS].sort(), "the list in web/src/accounts.ts is the server's list");
     for (const a of AUDIT_ACTIONS) assert.ok(!describeAudit(e(a), names).includes(a), `${a} has words of its own`);
   });
@@ -127,6 +127,28 @@ describe("the audit log in words", () => {
     assert.equal(f("token.created", "propose", { name: "skill", prefix: "tbpr_abcd" }), 'Ola Owner made the agent proposal token "skill" (tbpr_abcd…) in Acme');
     assert.equal(f("token.revoked", "ci", { name: "GitHub Actions", prefix: "tbci_abcd" }), 'Ola Owner revoked the CI token "GitHub Actions" (tbci_abcd…) in Acme');
     assert.equal(f("token.created", "something_new", {}), "Ola Owner made the token in Acme", "a kind and details the page does not know still read well");
+  });
+
+  it("says what a person decided about a test case, a proposal, a run or a project", () => {
+    const f = (action: string, detail: Record<string, unknown>) => describeAudit(e(action, { targetUserId: null, projectId: 7, detail }), names);
+    assert.equal(f("case.status_changed", { case: 9, key: "AGE-9", from: "draft", to: "ready" }), "Ola Owner changed the status of AGE-9 from draft to ready in Acme");
+    assert.equal(f("case.status_changed", { count: 12, to: "ready", cases: [1, 2] }), "Ola Owner changed the status of 12 test cases to ready in Acme");
+    assert.equal(f("case.status_changed", { count: 1, to: "deprecated" }), "Ola Owner changed the status of 1 test case to deprecated in Acme");
+    assert.equal(f("proposal.accepted", { kind: "manual_test", from: "proposed", to: "accepted" }), "Ola Owner accepted a manual test suggestion in Acme");
+    assert.equal(f("proposal.accepted", { kind: "manual_test", case: "AGE-10" }), "Ola Owner accepted a manual test suggestion in Acme, and made it the test case AGE-10");
+    assert.equal(f("proposal.rejected", { kind: "bug_report", to: "rejected" }), "Ola Owner rejected a bug proposal in Acme");
+    assert.equal(f("proposal.rejected", { kind: "bug_report", to: "duplicate", duplicate_of: 3 }), "Ola Owner rejected a bug proposal as a duplicate in Acme");
+    assert.equal(f("proposal.accepted", { kind: "requirement", requirement: 4, to: "approved" }), "Ola Owner accepted a requirement proposal in Acme");
+    assert.equal(f("proposal.rejected", { kind: "requirement", to: "rejected" }), "Ola Owner rejected a requirement proposal in Acme");
+    assert.equal(f("proposal.case_created", { kind: "manual_test", case: "AGE-10" }), "Ola Owner made the test case AGE-10 from a manual test suggestion in Acme");
+    assert.equal(f("proposal.case_created", {}), "Ola Owner made a test case from a proposal in Acme");
+    assert.equal(f("proposal.restored", { kind: "bug_report" }), "Ola Owner moved a bug proposal back to Suggested in Acme");
+    assert.equal(f("run.finished", { run: 5 }), "Ola Owner finished run #5 in Acme");
+    assert.equal(f("run.reopened", { run: 5 }), "Ola Owner reopened run #5 in Acme");
+    assert.equal(f("project.created", { key: "ACM", name: "Acme" }), 'Ola Owner made the project "Acme" (ACM)');
+    assert.equal(f("proposal.accepted", {}), "Ola Owner accepted a proposal in Acme", "an entry without details still reads well");
+    assert.equal(f("run.finished", {}), "Ola Owner finished a run in Acme");
+    assert.equal(f("project.created", {}), "Ola Owner made a project");
   });
 
   it("says what happened, with names", () => {
