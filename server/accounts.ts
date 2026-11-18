@@ -123,9 +123,12 @@ function insertUser(input: { email: string; name: string; password: string; isOw
 
 export interface AuditCtx { userId?: number | null; label: string; ip?: string }
 const SECRET_KEY = /pass|token|secret|hash|cookie/i;
+/** The one entry the filter above would drop by mistake ("passed" matches "pass"): the number of results that passed (agent_request.results_reported). It is let through only as a whole
+ *  number, so no text, and so no token or hash, can be put under that key. Any other key, and any other value under it, is filtered as before. */
+const isPassedCount = (key: string, value: unknown) => key === "passed" && Number.isInteger(value);
 
 export function audit(ctx: AuditCtx, action: string, opts: { targetUserId?: number | null; projectId?: number | null; detail?: Record<string, unknown> } = {}) {
-  const detail = Object.fromEntries(Object.entries(opts.detail ?? {}).filter(([k]) => !SECRET_KEY.test(k)));
+  const detail = Object.fromEntries(Object.entries(opts.detail ?? {}).filter(([k, v]) => isPassedCount(k, v) || !SECRET_KEY.test(k)));
   db.prepare("INSERT INTO audit_log (actor_user_id, actor_label, action, target_user_id, project_id, ip, detail) VALUES (?, ?, ?, ?, ?, ?, ?)")
     .run(ctx.userId ?? null, ctx.label, action, opts.targetUserId ?? null, opts.projectId ?? null, ctx.ip ?? "", JSON.stringify(detail));
 }

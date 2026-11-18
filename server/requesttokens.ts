@@ -17,10 +17,10 @@ import { AuditError } from "./auditcommon.ts";
 export const REQUEST_TOKEN_PREFIX = "tbrq_";
 export const REQUEST_TOKEN_LIMITS = { tokensPerProject: 3, nameMax: 80, tokenMax: 200 };
 
-/** The six routes a request token opens: the waiting requests, taking one, giving one back (release), handing in the report of a re-run, finishing it, and (for a discover only) reporting a finding (server/agentfindings.ts). Like the other token routes they skip the login cookie and the X-Testbench header, because each handler requires the token on every call. */
+/** The seven routes a request token opens: the waiting requests, taking one, giving one back (release), handing in the report of a re-run, finishing it, (for a discover only) reporting a finding (server/agentfindings.ts), and (for a run only) reporting results by test case (server/agentresults.ts). Like the other token routes they skip the login cookie and the X-Testbench header, because each handler requires the token on every call. */
 export const isAgentRequestRoute = (method: string, url: string) =>
   (method === "GET" && /^\/api\/agent\/projects\/\d+\/requests\/?(\?.*)?$/.test(url)) ||
-  (method === "POST" && /^\/api\/agent\/projects\/\d+\/requests\/\d+\/(claim|release|complete|result|findings)\/?(\?.*)?$/.test(url));
+  (method === "POST" && /^\/api\/agent\/projects\/\d+\/requests\/\d+\/(claim|release|complete|result|findings|case-results)\/?(\?.*)?$/.test(url));
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 

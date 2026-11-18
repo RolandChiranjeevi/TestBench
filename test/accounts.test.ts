@@ -362,6 +362,17 @@ describe("the audit log", () => {
     assert.deepEqual(entry.detail, { ok: "kept" });
   });
 
+  it("lets one count through that the secret filter would drop by its name, and only as a number: 'passed' (results that passed) is kept, any text under it, and every other secret key, is not", () => {
+    audit({ label: "test" }, "test.passed", { detail: { passed: 3, failed: 1, password: "p1", token: "tbrq_secret", tokenHash: "h" } });
+    assert.deepEqual(listAudit({ limit: 1 })[0].detail, { passed: 3, failed: 1 });
+    for (const smuggled of ["tbrq_secret", "3", "a1b2c3 (a hash)", null, 1.5, true, { token: "x" }, [3]]) {
+      audit({ label: "test" }, "test.passed", { detail: { passed: smuggled, ok: "kept" } });
+      assert.deepEqual(listAudit({ limit: 1 })[0].detail, { ok: "kept" }, `a ${typeof smuggled} under "passed" is dropped: ${JSON.stringify(smuggled)}`);
+    }
+    audit({ label: "test" }, "test.passed", { detail: { Passed: 3, passedAll: 3, passwordPassed: 3, notpassed: 3, passed_by: 3 } });
+    assert.deepEqual(listAudit({ limit: 1 })[0].detail, {}, "only the exact key 'passed' is let through, not a name that merely holds it");
+  });
+
   it("everything that happened in these tests left no password and no token in the log", () => {
     const text = JSON.stringify(listAudit({ limit: 500 }));
     for (const secret of [GOOD, "a brand new passphrase", "wrong password!!"]) assert.ok(!text.includes(secret), secret);

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Bot, Plus } from "lucide-react";
-import { auditPath } from "../agentruns";
+import { auditPath, PROGRESS_TITLE, progressLabel } from "../agentruns";
 import { api, timeAgo, type AgentRequest, type RunDetail } from "../api";
 import type { Tone } from "../statuses";
 import { Badge } from "../components/Badge";
@@ -82,6 +82,7 @@ function RequestCard({ r, onCancel, cancelling }: { r: AgentRequest; onCancel: (
           <span className="muted">the run has been deleted</span>
         )}
         {r.kind === "run" && <span className="muted">{r.caseCount} {r.caseCount === 1 ? "case" : "cases"} at <code className="inline mono" style={{ overflowWrap: "anywhere" }}>{r.targetUrl}</code></span>}
+        {r.kind === "run" && progressLabel(r.progress) && <span className="chip" title={PROGRESS_TITLE}>{progressLabel(r.progress)}</span>}
         {r.environment && <span className="chip">{r.environment}</span>}
         <span className="spacer" />
         {open && <Button needs="tester" size="sm" onClick={onCancel} disabled={cancelling} aria-label={`Cancel request ${r.id}`}>Cancel</Button>}

@@ -44,6 +44,7 @@ export function makeClient(opts: { baseUrl: string; token: string; fetchImpl?: t
         case 403: throw new TestBenchError(403, `TestBench says this token may not do that. ${detail}`.trim());
         case 404: throw new TestBenchError(404, `Not found. ${detail || "There is no such request in this project, or TESTBENCH_PROJECT_ID is wrong."}`.trim());
         case 409: throw new TestBenchError(409, `Conflict: ${detail || "the request is not in the right state."}`);
+        case 413: throw new TestBenchError(413, "TestBench refused the input: it is too large (at most 256 kB for a report of results). Send fewer results, or shorter notes, in each call.");
         case 429: throw new TestBenchError(429, `Slow down: ${detail || "too many requests."} Wait and try again.`);
         case 400: throw new TestBenchError(400, `TestBench refused the input: ${detail || "invalid"}`);
         default: throw new TestBenchError(res.status, `TestBench answered ${res.status}.`);

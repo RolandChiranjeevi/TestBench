@@ -94,6 +94,13 @@ describe("the audit log in words", () => {
     assert.equal(f("something_new"), "agent: claude-a reported a finding for a discover request in Acme", "a kind the page does not know still reads well");
   });
 
+  it("says what an agent reported for a run: how many test cases, and how they went", () => {
+    const f = (detail: Record<string, unknown>) => describeAudit(e("agent_request.results_reported", { actor: "agent: claude-a", projectId: 7, detail: { request: 5, kind: "run", run: 9, credential_id: 3, ...detail } }), names);
+    assert.equal(f({ reported: 5, passed: 3, failed: 1, blocked: 1, skipped: 0 }), "agent: claude-a reported results for 5 test cases (3 passed, 1 failed, 1 blocked) in Acme");
+    assert.equal(f({ reported: 1, passed: 0, failed: 0, blocked: 0, skipped: 1 }), "agent: claude-a reported results for 1 test case (1 skipped) in Acme");
+    assert.equal(f({}), "agent: claude-a reported results for 0 test cases in Acme", "an entry without counts still reads well");
+  });
+
   it("says what happened, with names", () => {
     assert.equal(describeAudit(e("member.role_changed", { projectId: 7, detail: { from: "viewer", to: "tester" } }), names), "Ola Owner changed Pia Person's role in Acme from viewer to tester");
     assert.equal(describeAudit(e("member.added", { projectId: 7, detail: { role: "admin", via: "invitation" } }), names), "Ola Owner added Pia Person to Acme as admin (with an invitation)");

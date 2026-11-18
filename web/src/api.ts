@@ -80,8 +80,10 @@ export interface RunSummary extends Counts {
   /** The suite (a run template) the run was started from; the name is the one it had when the run started if the suite has been deleted since. */
   template_id: number | null; template_name: string | null;
   /** The request an agent was asked to run this run by (AG4), with its state; null for a run that was not asked of an agent. */
-  agentRequest?: { id: number; status: "pending" | "claimed" | "done" | "cancelled"; claimedBy: string | null } | null;
+  agentRequest?: { id: number; status: "pending" | "claimed" | "done" | "cancelled"; claimedBy: string | null; progress?: RunProgress } | null;
 }
+/** How far a run that an agent was asked to run has come: its test cases, how many have a result (whoever set it), and how many have none yet. */
+export interface RunProgress { total: number; reported: number; missing: number }
 export interface RunResult {
   id: number; case_id: number | null; automated_test_id: number | null; status: Status; flaky: number; duration_ms: number | null;
   error: string; notes: string; jira_key: string | null; attachment_count: number; has_detail: number; executed_at: string | null; case_number: number | null; case_title: string | null; case_priority: Priority | null;
@@ -89,6 +91,8 @@ export interface RunResult {
   suite_name: string | null; test_title: string | null; test_file: string | null; test_suite_path: string | null; test_full_name: string | null; step_count: number;
   /** Manual runs only: what the automated side knows about the case. Information; nothing is started. */
   automation?: Automation; automated_tests?: number; last_automated?: LastAutomated | null;
+  /** Set when an agent reported this result for a run request (AG5a): the request token's id and name. It stays when a person changes the result afterwards. */
+  reported_by_agent_token_id?: number | null; reported_by_agent?: string | null;
 }
 export interface RunDetail extends Omit<RunSummary, keyof Counts> { project_key: string; counts: Counts; results: RunResult[]; suite: RunSuiteInfo | null }
 export interface Attachment { id: number; filename: string; stored_name: string; mime: string }
@@ -159,6 +163,8 @@ export interface AgentRequest {
   tests: { id: number; framework: string; file: string; title: string; fullName: string }[];
   /** A `run` request: how many test cases it holds. A list does not carry the cases themselves (their text can be long); the run's page shows them. */
   caseCount: number;
+  /** A `run` request: how many of the test cases of its run have a result; null for the other kinds, and for a run that was deleted. */
+  progress: RunProgress | null;
   status: "pending" | "claimed" | "done" | "cancelled";
   createdBy: string; createdAt: string; claimedBy: string | null; claimedAt: string | null; finishedAt: string | null; resultRunId: number | null; resultNote: string;
   /** Set when the agent handed in the report of a re-run (the run it made is resultRunId). */

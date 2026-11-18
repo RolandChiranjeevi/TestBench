@@ -178,6 +178,8 @@ export function NewRunModal({ initialCaseIds = [], initialTitle, template, rerun
   const [saveName, setSaveName] = useState("");
   // "Ask an agent" (AG4): the run is made now, with an empty result for each case, and an agent is asked to run them in its own environment. TestBench starts nothing.
   const [agentMode, setAgentMode] = useState(false);
+  // An agent can only report results for a run when a person has switched agent results on (Settings, off by default); the dialog says so while it is off.
+  const { data: agentResults } = useQuery({ queryKey: ["agent-results"], queryFn: () => api.get<{ enabled: boolean }>("/api/settings/agent-results"), enabled: agentMode });
   const [targetUrl, setTargetUrl] = useState("");
   const [note, setNote] = useState("");
   const chooseMode = (agent: boolean) => {
@@ -254,6 +256,11 @@ export function NewRunModal({ initialCaseIds = [], initialTitle, template, rerun
             TestBench starts nothing. An agent with a request token takes this request and runs the cases in <b>your own environment</b>, then reports a result for each one.
             The run is made now and waits for the agent; you can still fill in results yourself.
           </p>
+          {agentResults && !agentResults.enabled && (
+            <p role="note" style={{ margin: "0 0 6px", color: "var(--blocked-fg)" }}>
+              <b>Agent results are off.</b> Agent results must be enabled before an agent can report results for a run. The owner switches them on in Settings, under Requests to a test agent.
+            </p>
+          )}
           <p style={{ margin: 0 }}>
             <b>The text of the chosen test cases is sent to the agent</b> (title, description, preconditions and steps, and the names of linked automated tests and spec files), but no specs
             and no requirements. Do not put secrets, passwords, API keys or other sensitive information in test cases or in the address.
