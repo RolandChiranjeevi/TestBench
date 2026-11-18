@@ -84,6 +84,21 @@ A request looks like this (times are UTC, `YYYY-MM-DD HH:MM:SS`):
 
 For a `rerun`, `runId` is the run and `tests` lists `{ id, framework, file, title, fullName }` of each failed or blocked test. `resultRunId` must be a run in the same project.
 
+### What a session that uses the token can reach
+
+The token is a secret in a file that the agent's own session can reach (`.env`, or `.mcp.json` for the MCP server). The agent is told never to open them, and the skill's helper (`testpilot/tools/request_call.py`) is the only thing that reads the token. But that is behaviour, not a lock: the session also has file and shell tools (and, with the Playwright MCP, tools that run code in a browser), so an agent that chose to could read the token. TestBench cannot prevent that, and no setting here switches it off. It is a limit of the setup. What bounds the damage:
+
+- **The token is narrow.** Seven routes of one project and nothing else (above). The routes that write test results are off until a person switches them on, and every finding stays a proposal.
+- **Only a hash is stored**, and a revoked token is refused on the next call. Revoking is one step under **Settings → Agent → Requests to a test agent**, and the list shows when each token was last used.
+- **At most three active tokens per project**, and making and revoking one is in the audit log (`token.created`, `token.revoked`). What an agent does with a request is written there too, as `agent_request.*` entries under "agent: <token name>".
+
+What to do about it:
+
+- Make a token for the work and **revoke it when the work is done**.
+- Keep the session in its normal permission mode and answer its prompts. Do not save an "always allow" rule for reading files or running shell commands.
+- Keep `.env` out of git (it is in `.gitignore`) and readable by you only (`chmod 600 .env`), and put in it only what the agent's folder needs: any other secret in that file is as reachable as the token.
+- If you think a token was read, revoke it, and look at when it was last used and at the audit log.
+
 ## Giving a request back, and linking the audit
 
 **Release.** `POST …/requests/<id>/release` with an optional `note` (at most 1000 characters). Only the token that took the request can do it, only while it is Taken, and **not after a report was handed in** (a re-run that has its result is finished, not repeated; `complete` it). The request is Waiting again, the claim is gone, and the note, `releasedBy` and `releasedAt` stay on it: the card shows *Given back by … : note* while it waits. Another agent (or the same) can take it. Each release is in the audit log (`agent_request.released`). A person can still cancel it.
