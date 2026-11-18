@@ -749,6 +749,14 @@ class RuleTests(unittest.TestCase):
         self.assertIn("more than 10 reports a minute from this token", TEXT)
         self.assertIn("**This skill supports up to 10 cases per request.**", TEXT, "the limit of 10 test cases is kept")
 
+    def test_nothing_is_installed_in_the_users_spec_project_and_missing_dependencies_are_reported_as_blocked(self):
+        self.assertIn("**Nothing is installed in `SPEC`.**", TEXT)
+        self.assertIn("Never run `npm install`, `npm ci`, `playwright install` or an `npx` that would fetch a package there.", TEXT)
+        self.assertIn("If the tests cannot start because their dependencies are missing", TEXT)
+        self.assertIn("say that the spec project has no installed dependencies", TEXT)
+        self.assertIn("Report the test cases that needed them as `blocked` with that reason", TEXT)
+        self.assertIn("they can install them themselves and ask again", TEXT)
+
     def test_the_agent_does_not_hand_in_anything_else_or_write_over_a_person(self):
         self.assertIn("The only things it may hand in are the Playwright report it just ran, of a re-run or of the automated tests of a run request's test cases (`result`), and the results of the test cases it just ran (`case-results`)", TEXT)
         self.assertIn("write over a result that a person has set", TEXT)
