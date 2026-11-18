@@ -1847,12 +1847,19 @@ app.put("/api/settings/display-name", (req, reply) => {
   }
 });
 
+// The two switches decide what an agent may write, so a change is an owner decision that the audit log must show: who, and from what to what. Only a real change is written
+// (a repeated PUT of the same value decides nothing), and the entry holds no more than the two values.
+const switchAudit = (req: FastifyRequest, action: string, from: boolean, to: boolean) => {
+  if (from !== to) audit({ userId: actorUserId(), label: actorName(), ip: req.ip }, action, { detail: { from, to } });
+};
 // Whether a test agent may make proposals at all. Off until a person switches it on.
 app.get("/api/settings/agent-proposals", () => ({ enabled: agentProposalsEnabled() }));
 app.put("/api/settings/agent-proposals", (req) => {
   ownerOnly();
   const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
+  const from = agentProposalsEnabled();
   setAgentProposalsEnabled(enabled);
+  switchAudit(req, "settings.agent_proposals_changed", from, agentProposalsEnabled());
   return { enabled: agentProposalsEnabled() };
 });
 // Whether a request token may hand in the report of a re-run (it then makes a run). Off until a person switches it on.
@@ -1860,7 +1867,9 @@ app.get("/api/settings/agent-results", () => ({ enabled: agentResultsEnabled() }
 app.put("/api/settings/agent-results", (req) => {
   ownerOnly();
   const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
+  const from = agentResultsEnabled();
   setAgentResultsEnabled(enabled);
+  switchAudit(req, "settings.agent_results_changed", from, agentResultsEnabled());
   return { enabled: agentResultsEnabled() };
 });
 app.get("/api/projects/:id/propose-tokens", (req) => listProposeTokens(idParam(req)));

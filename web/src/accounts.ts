@@ -70,6 +70,7 @@ export interface AuditEntry {
 export const AUDIT_ACTIONS = [
   "agent_request.cancelled", "agent_request.claimed", "agent_request.completed", "agent_request.created", "agent_request.finding_created", "agent_request.released", "agent_request.result_delivered", "agent_request.results_reported", "spec.created", "spec.deleted", "spec.edited", "spec.renamed", "account.created", "account.disabled", "account.enabled", "account.setup", "invitation.created", "invitation.revoked", "invitation.used", "login.failed", "login.succeeded",
   "member.added", "member.removed", "member.role_changed", "members.migrated", "password.changed", "password.reset", "password.reset_link_created", "profile.changed", "requirements.bulk_approved", "sessions.revoked_others",
+  "settings.agent_proposals_changed", "settings.agent_results_changed",
 ] as const;
 
 /** The filter choices on the audit log page: a label, and the start of the action it keeps (what `?action=` takes). */
@@ -85,6 +86,7 @@ export const AUDIT_FILTERS: readonly { label: string; prefix: string }[] = [
   { label: "Requirements", prefix: "requirements." },
   { label: "Agent requests", prefix: "agent_request." },
   { label: "Specs", prefix: "spec." },
+  { label: "Settings", prefix: "settings." },
 ];
 
 /** How to turn the ids in an entry into names. A name that is not known (an account or a project that no longer exists) is said as such, never left as a bare number. */
@@ -141,6 +143,8 @@ export function describeAudit(e: Pick<AuditEntry, "action" | "actor" | "targetUs
     case "spec.deleted": return `${who} deleted the spec ${specName(d.fileName)} in ${project}`;
     case "requirements.bulk_approved": return `${who} approved ${plural(d.count, "imported requirement")} in ${project}`;
     case "sessions.revoked_others": return `${who} signed out of ${plural(d.sessionsEnded, "other session")}`;
+    case "settings.agent_results_changed": return `${who} switched agent results ${d.to ? "on" : "off"}`;
+    case "settings.agent_proposals_changed": return `${who} switched agent proposals ${d.to ? "on" : "off"}`;
     default: return `${who}: ${e.action}`;
   }
 }
