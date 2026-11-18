@@ -9,7 +9,7 @@ TestBench starts nothing: the request waits until an agent takes it. TestBench n
 | Tool | What it does |
 | --- | --- |
 | `testbench_get_next_request` | Lists the waiting requests of the project (oldest first) and takes the first one that is still free (`claim`). Returns `{"request": null}` when nothing waits. If another agent takes one at the same moment, it moves on to the next. |
-| `testbench_update_request_status` | `done`: the work is finished (`complete`, with an optional `note`, `result_run_id` and `result_audit_id`). A **run** request can only be finished when every test case has a result. `released`: give the request back so that it waits again (`release`, with an optional reason in `note`; results already reported stay). Only the token that took the request can do either. |
+| `testbench_update_request_status` | `done`: the work is finished (`complete`, with an optional `note`, `result_run_id` and `result_audit_id`). A **run** request can only be finished when every test case has a result. If a test case names automated tests or spec files, hand in the Playwright report **before** `done` (see "Automated tests and spec files" below): afterwards it is refused, and the answer carries a `warning`. `released`: give the request back so that it waits again (`release`, with an optional reason in `note`; results already reported stay). Only the token that took the request can do either. |
 | `testbench_report_results` | Reports a result for each test case you ran of a **run** request you took (`request_id`, `results`); see "Run requests" below. |
 | `testbench_create_finding` | Hands in one finding of a **discover** request you took (`request_id`), as a draft or a proposal for a person to review. `kind` is `test_case`, `bug_report`, `observation` or `manual_test_suggestion`; see "Findings" below. |
 
@@ -33,6 +33,8 @@ A person can also ask an agent to **run chosen test cases** (in TestBench: *New 
 
 Each test case lists the `automatedTests` linked to it (`framework`, `file`, `fullName`) and its `specFiles`. If you run them in the user's own repository, the Playwright JSON report **is not handed in with an MCP tool**: it can be up to 5 MB, which does not fit a tool argument. It is handed in with the TestPilot skill (`/testpilot-requests`, action `result`), which sends the file with the request token in a header. The rules, all checked by TestBench:
 
+- **Hand the report in before `done`.** `done` is accepted as soon as every test case has a result, and the report route then answers 409 ("already done or cancelled"), so the report can no longer be handed in. If a test case names automated tests or spec files and no report was handed in, the `done` answer carries a `warning`. TestBench does not block `done` (a person may have told you not to run the tests, and can import the report under **Import results**). Tell the user what the warning says.
+- **Ask where the tests are.** Your own folder is usually not the repository that holds the specs, and nothing over MCP asks for it (the skill does). Before you run spec files, ask the user, once per request, for the absolute path of the repository that holds them (the one with `playwright.config.*`), and do not guess. Write the report and its artifacts in your own folder, never in theirs: Playwright empties its output directory at the start of every run. The skill (`/testpilot-requests`, `rerun` and `run`) shows the exact command.
 - `POST …/requests/<id>/result`, only the token that took the request, only while it is taken, only when a person has switched agent results on, **once per request**, at most 5 MB, **1000 tests** and **10 reports a minute per token** (429; refused attempts count).
 - The report may hold only tests that the request names: a test linked to one of its test cases, or a test in one of its spec files (also a test TestBench does not know yet). Anything else, a test twice, an empty report, something that is not a Playwright report, refuses the **whole** report and writes nothing.
 - It becomes **a separate automated run** marked as the agent's (`Automated tests of run #… (request #…)`), linked from the request and from the manual run. It does **not** touch the manual run or the results you reported with `testbench_report_results`.
@@ -59,7 +61,7 @@ The answer is `{"reported", "counts", "progress"}`, where `progress` is `{"total
 - **Never over a person's work**: a result a person has set, changed, put back to untested, commented, linked to an issue, given steps or attached something to is refused, and so is a result you already reported. A person may still change your results afterwards; they keep the mark that you reported them.
 - **A person must have switched agent results on** in TestBench (Settings, off by default), because your results count at once for the status of a test case, for coverage and for requirements. While it is off, TestBench answers 409.
 - Only the token that took the request, and only while it is taken.
-- When every test case has a result, finish with `testbench_update_request_status` `done`. Until then it answers 409 and says how many test cases have no result yet. The run stays **in progress**: a person reviews your results and finishes the run. If you have to stop earlier, give the request back with `released`: what you reported stays, and another agent can take the rest (`progress` in the request tells it how many are left).
+- When every test case has a result (and, if they name automated tests or spec files, the Playwright report has been handed in with the skill: see above), finish with `testbench_update_request_status` `done`. Until then it answers 409 and says how many test cases have no result yet. The run stays **in progress**: a person reviews your results and finishes the run. If you have to stop earlier, give the request back with `released`: what you reported stays, and another agent can take the rest (`progress` in the request tells it how many are left).
 
 ### Findings
 
@@ -136,7 +138,7 @@ If something is missing or wrong the server stops at once with a message on stde
 1. In TestBench, ask for a discover (**Request discover**).
 2. In Claude, call `testbench_get_next_request`. It takes the request.
 3. Do the work. For a discover, call `testbench_create_finding` for each thing you find; a person reviews every finding in TestBench. For a run request, run each test case and call `testbench_report_results` (in one or more calls, each test case once).
-4. When you are done, call `testbench_update_request_status` with `done` (for a run request, when every test case has a result; for a discover, with the audit it made, if any). If you cannot do it, call it with `released` and say why.
+4. When you are done, call `testbench_update_request_status` with `done` (for a run request, when every test case has a result and, if they name spec files, the Playwright report has been handed in; for a discover, with the audit it made, if any). If you cannot do it, call it with `released` and say why.
 
 ## Errors
 

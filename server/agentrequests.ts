@@ -279,6 +279,21 @@ export function releaseRequest(projectId: number, id: number, token: { id: numbe
   return viewOf(r);
 }
 
+/**
+ * A run request whose test cases name automated tests or spec files has one step that only the skill can do: handing in the Playwright report (`result`). It stops being possible when the
+ * request is done, and `done` is accepted as soon as every test case has a result, so an agent that never asked for the report would finish without it. TestBench does not block that
+ * (a person may have told the agent not to run the tests, and can import the report by hand): the answer says it, so that the agent can tell the user.
+ */
+function missingReport(cur: Row): { warning?: string } {
+  if (cur.kind !== "run" || cur.result_delivered_at) return {};
+  const cases = viewOf(cur).cases;
+  const tests = cases.reduce((n, c) => n + c.automatedTests.length, 0);
+  const specs = cases.reduce((n, c) => n + c.specFiles.length, 0);
+  if (!tests && !specs) return {};
+  const names = [tests ? `${tests} automated test${tests === 1 ? "" : "s"}` : "", specs ? `${specs} spec file${specs === 1 ? "" : "s"}` : ""].filter(Boolean).join(" and ");
+  return { warning: `No Playwright report was handed in, and this request names ${names}. A report can no longer be handed in now that the request is done. If you ran those tests, tell the user, who can import the report file under Import results. If you did not run them, ignore this.` };
+}
+
 /** The agent that took a request says it is done, with a note and, if it delivered something, the run that came in (a re-run) or the audit that was made (a discover). */
 export function completeRequest(projectId: number, id: number, token: { id: number; name: string }, input: { note?: unknown; resultRunId?: unknown; resultAuditId?: unknown }) {
   const cur = mustRow(projectId, id);
@@ -315,7 +330,7 @@ export function completeRequest(projectId: number, id: number, token: { id: numb
     .prepare("UPDATE agent_requests SET status = 'done', finished_at = datetime('now'), result_note = ?, result_run_id = COALESCE(result_run_id, ?), result_audit_id = ? WHERE id = ? AND project_id = ? AND status = 'claimed' AND claimed_token_id = ? RETURNING *")
     .get(note, resultRunId, resultAuditId, id, projectId, token.id) as Row | undefined;
   if (!r) throw new AuditError(409, "Another token took this request");
-  return viewOf(r);
+  return { ...viewOf(r), ...missingReport(cur) };
 }
 
 // ---------------- Handing in the report of a re-run ----------------

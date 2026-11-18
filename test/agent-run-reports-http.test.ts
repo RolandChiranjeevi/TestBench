@@ -307,6 +307,33 @@ describe("release and complete after a report", () => {
   });
 });
 
+describe("done without a report", () => {
+  it("is not blocked: the request is done at once, and the answer carries a warning that names what the request names and says the report can no longer be handed in; it is told once, not kept", async () => {
+    await switchResults(true);
+    await ok(await caseResults(tokenA, a, rid, [{ caseId: signIn, status: "passed" }, { caseId: pay, status: "passed" }]));
+    const done = await ok<{ status: string; warning?: string }>(await finish(tokenA, a, rid, "complete", { note: "ran by hand" }));
+    assert.equal(done.status, "done");
+    assert.match(done.warning ?? "", /^No Playwright report was handed in, and this request names 1 automated test and 2 spec files\. A report can no longer be handed in now that the request is done\./);
+    assert.equal((await handIn(tokenA, a, rid, good())).status, 409, "and it is true: the report is refused now");
+    assert.equal("warning" in (await requestOf(a, rid)), false);
+  });
+
+  it("has no warning when the report was handed in first, and none for a request whose test cases name no tests", async () => {
+    await switchResults(true);
+    assert.equal((await handIn(tokenA, a, rid, good())).status, 200);
+    await ok(await caseResults(tokenA, a, rid, [{ caseId: signIn, status: "passed" }, { caseId: pay, status: "failed" }]));
+    const done = await ok<{ status: string; warning?: string }>(await finish(tokenA, a, rid, "complete"));
+    assert.deepEqual([done.status, done.warning], ["done", undefined]);
+
+    const plain = await makeCase(a, "Plain");
+    const asked = await askRun(a, [plain]);
+    await ok(await take(tokenA2, a, asked.id));
+    await ok(await caseResults(tokenA2, a, asked.id, [{ caseId: plain, status: "passed" }]));
+    const plainDone = await ok<{ status: string; warning?: string }>(await finish(tokenA2, a, asked.id, "complete"));
+    assert.deepEqual([plainDone.status, plainDone.warning], ["done", undefined]);
+  });
+});
+
 describe("the audit log, the rate limit and the token", () => {
   it("has one entry for each report that was taken, by 'agent: <name>', with what came in and the credential id, and never a token or a hash", async () => {
     await switchResults(true);

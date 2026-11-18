@@ -308,6 +308,64 @@ describe("release and complete after a report", () => {
   });
 });
 
+describe("complete when no report was handed in", () => {
+  const WARNING = (names: string) => `No Playwright report was handed in, and this request names ${names}. A report can no longer be handed in now that the request is done. If you ran those tests, tell the user, who can import the report file under Import results. If you did not run them, ignore this.`;
+  const resultFor = (p: { id: number }, r: { id: number }, t: ReturnType<typeof agent>, ...cases: { id: number }[]) =>
+    reportCaseResults(p.id, r.id, t, IP, caseResultsBody.parse({ results: cases.map((c) => ({ caseId: c.id, status: "passed" })) }));
+
+  it("is not blocked: the request is done, and the answer warns that a report can no longer be handed in, naming the tests and spec files the request names; nothing about it is stored", () => {
+    const s = setup("RWA");
+    resultFor(s.p, s.r, s.t, s.signIn, s.pay);
+    const done = completeRequest(s.p.id, s.r.id, s.t, { note: "by hand" });
+    assert.equal(done.status, "done");
+    assert.equal(done.warning, WARNING("1 automated test and 2 spec files"));
+    refused(() => s.deliver(good()), 409, /already done or cancelled/);
+    assert.equal(one("SELECT result_delivered_at FROM agent_requests WHERE id = ?", s.r.id)!.result_delivered_at, null);
+    assert.equal("warning" in agentRequestOfRun(s.r.runId!)!, false, "the warning is told once, not kept");
+  });
+
+  it("has no warning after a report, and none when the test cases name no tests and no spec files", () => {
+    const s = setup("RWB");
+    s.deliver(good());
+    resultFor(s.p, s.r, s.t, s.signIn, s.pay);
+    assert.equal("warning" in completeRequest(s.p.id, s.r.id, s.t, {}), false);
+
+    const p = makeProject("RWC", "RWC");
+    const plain = makeCase(p.id, "Plain", { steps: [["Open /", "A page"]] });
+    const t = agent(p.id);
+    const r = createRequest(p.id, { kind: "run", targetUrl: URL_OK, caseIds: [plain.id] }, me);
+    claimRequest(p.id, r.id, t);
+    resultFor(p, r, t, plain);
+    assert.equal("warning" in completeRequest(p.id, r.id, t, {}), false);
+  });
+
+  it("counts a spec file and an automated test each on its own, in the singular and the plural", () => {
+    const run = (key: string, setupCase: (p: { id: number }, c: { id: number }) => void) => {
+      const p = makeProject(key, key);
+      const c = makeCase(p.id, "One", { steps: [["Open /", "A page"]] });
+      setupCase(p, c);
+      const t = agent(p.id);
+      const r = createRequest(p.id, { kind: "run", targetUrl: URL_OK, caseIds: [c.id] }, me);
+      claimRequest(p.id, r.id, t);
+      resultFor(p, r, t, c);
+      return completeRequest(p.id, r.id, t, {}).warning;
+    };
+    assert.equal(run("RWD", (p, c) => createSpec(p.id, { fileName: "a.spec.ts", text: "test('a', async () => {})", caseId: c.id })), WARNING("1 spec file"));
+    assert.equal(run("RWE", (p, c) => { known(p.id, "e2e/a.spec.ts", "a", c.id); }), WARNING("1 automated test"));
+    assert.equal(run("RWF", (p, c) => { known(p.id, "e2e/a.spec.ts", "a", c.id); known(p.id, "e2e/b.spec.ts", "b", c.id); createSpec(p.id, { fileName: "a.spec.ts", text: "test('a', async () => {})", caseId: c.id }); }), WARNING("2 automated tests and 1 spec file"));
+  });
+
+  it("is only said for a run request: a re-run and a discover are finished as before", () => {
+    const x = rerunOf("RWG", [["breaks", null]]);
+    assert.equal("warning" in completeRequest(x.p.id, x.r.id, x.t, {}), false);
+    const p = makeProject("RWH", "RWH");
+    const t = agent(p.id);
+    const d = createRequest(p.id, { kind: "discover", targetUrl: URL_OK }, me);
+    claimRequest(p.id, d.id, t);
+    assert.equal("warning" in completeRequest(p.id, d.id, t, {}), false);
+  });
+});
+
 describe("the audit entry", () => {
   it("is written with the run, by 'agent: <name>', with what came in and the credential id, and never a token or a hash", () => {
     const s = setup("RPX");

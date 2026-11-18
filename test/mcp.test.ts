@@ -127,6 +127,18 @@ describe("the tools", () => {
     assert.match(tool.description ?? "", /only be finished when every test case has a result/);
   });
 
+  it("update_request_status done hands TestBench's warning about a missing report on as it is, and the tool texts say that the report goes in before done", async () => {
+    const warning = "No Playwright report was handed in, and this request names 1 automated test and 2 spec files. A report can no longer be handed in now that the request is done. If you ran those tests, tell the user, who can import the report file under Import results. If you did not run them, ignore this.";
+    const mcp = await connect(fake(() => ({ id: 12, status: "done", warning })).client);
+    const r = await call(mcp, "testbench_update_request_status", { request_id: 12, status: "done" });
+    assert.equal(r.isError, undefined, "done is not blocked");
+    assert.deepEqual(JSON.parse(text(r)), { id: 12, status: "done", warning });
+    const said = async (name: string) => (await mcp.listTools()).tools.find((t) => t.name === name)?.description ?? "";
+    assert.match(await said("testbench_get_next_request"), /hand that report in BEFORE you finish with done: once the request is done, the report can no longer be handed in/);
+    assert.match(await said("testbench_update_request_status"), /hand in the Playwright report with the TestPilot skill \(\/testpilot-requests, action result\) BEFORE done: afterwards it is refused, and the answer then carries a `warning` when none was handed in/);
+    assert.match(await said("testbench_report_results"), /the Playwright report has been handed in with the skill\), finish with testbench_update_request_status done/);
+  });
+
   it("report_results sends one batch to case-results with TestBench's own field names, and gives TestBench's answer back as it is", async () => {
     const answer = { reported: 2, counts: { passed: 1, failed: 1, blocked: 0, skipped: 0 }, progress: { total: 3, reported: 2, missing: 1 } };
     const f = fake(() => answer);
