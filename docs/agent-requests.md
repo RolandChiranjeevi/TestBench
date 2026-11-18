@@ -95,7 +95,7 @@ For a `rerun`, `runId` is the run and `tests` lists `{ id, framework, file, titl
 (A run request can hand in a report too, with other rules about which tests it may hold and how they are linked: see *The Playwright report of a run request* below.)
 
 An agent that ran the failed tests again can hand in the Playwright JSON report, and Testbench makes a run of it, linked to the request. This writes test results (facts, not proposals), so it
-is **off by default**. The owner switches it on for the installation (**Settings → Agent → Requests to a test agent → Agent results → Switch on**, or `PUT /api/settings/agent-results` with `{"enabled": true}`). While it is off the route answers 409 and writes nothing.
+is **off by default**. The owner switches it on for the installation (**Settings → Agent → Requests to a test agent → Agent results → Switch on**, or `PUT /api/settings/agent-results` with `{"enabled": true}`). While it is off the route answers 409 and writes nothing. Every change of the switch (and of the *Agent proposals* switch) is written to the audit log, as `settings.agent_results_changed` (or `settings.agent_proposals_changed`): who changed it, and from what to what. Putting the value it already has writes nothing.
 
 ```sh
 curl -X POST -H "Authorization: Bearer $TESTBENCH_REQUEST_TOKEN" -H "Content-Type: application/json" \

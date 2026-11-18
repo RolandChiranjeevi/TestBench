@@ -72,7 +72,7 @@ describe("the audit log in words", () => {
   it("every action the server writes has words, found by reading the server's own source", () => {
     const sources = [...readdirSync("server").filter((f) => f.endsWith(".ts")).map((f) => join("server", f)), "scripts/accounts.ts"];
     const found = new Set<string>();
-    for (const f of sources) for (const m of readFileSync(f, "utf8").matchAll(/["'`]((?:account|login|password|profile|invitation|member|members|requirements|sessions?|agent_request|spec)\.[a-z_]+)["'`]/g)) found.add(m[1]);
+    for (const f of sources) for (const m of readFileSync(f, "utf8").matchAll(/["'`]((?:account|login|password|profile|invitation|member|members|requirements|sessions?|settings|agent_request|spec)\.[a-z_]+)["'`]/g)) found.add(m[1]);
     assert.deepEqual([...found].sort(), [...AUDIT_ACTIONS].sort(), "the list in web/src/accounts.ts is the server's list");
     for (const a of AUDIT_ACTIONS) assert.ok(!describeAudit(e(a), names).includes(a), `${a} has words of its own`);
   });
@@ -108,6 +108,14 @@ describe("the audit log in words", () => {
     assert.equal(f({ request: 3, kind: "run", run: 9, result_run: 10, credential_id: 1, tests: 4, new_tests: 1, linked: 3, passed: 2, failed: 1, skipped: 1 }), "agent: claude-a handed in an automated test report for a run request (4 tests: 2 passed, 1 failed, 1 skipped) in Acme");
     assert.equal(f({ kind: "run", tests: 1, passed: 1 }), "agent: claude-a handed in an automated test report for a run request (1 test: 1 passed) in Acme");
     assert.equal(f({ kind: "run" }), "agent: claude-a handed in an automated test report for a run request (0 tests) in Acme", "an entry without counts still reads well");
+  });
+
+  it("says who switched agent results or agent proposals on or off", () => {
+    const f = (action: string, to: boolean) => describeAudit(e(action, { targetUserId: null, detail: { from: !to, to } }), names);
+    assert.equal(f("settings.agent_results_changed", true), "Ola Owner switched agent results on");
+    assert.equal(f("settings.agent_results_changed", false), "Ola Owner switched agent results off");
+    assert.equal(f("settings.agent_proposals_changed", true), "Ola Owner switched agent proposals on");
+    assert.equal(f("settings.agent_proposals_changed", false), "Ola Owner switched agent proposals off");
   });
 
   it("says what happened, with names", () => {
