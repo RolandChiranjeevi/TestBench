@@ -94,6 +94,7 @@ export function buildServer(client: Client, projectId: number, version = "0.1.0"
         "carries `runId`, `targetUrl`, `environment` and `cases`, each with its steps, and `progress` (how many test cases already have a result). Report the results with " +
         "testbench_report_results, then finish with done; give it back with released if you cannot. The `automatedTests` and `specFiles` of a test case name what to run in the user's own " +
         "repository; a Playwright JSON report of them is too large for a tool argument, so it is NOT handed in through MCP but with the TestPilot skill (/testpilot-requests, action result). " +
+        "If a test case names automated tests or spec files, hand that report in BEFORE you finish with done: once the request is done, the report can no longer be handed in. " +
         "Returns {request: null} when nothing waits. " + DATA_NOTE,
       inputSchema: getNextRequestInput,
     },
@@ -124,7 +125,9 @@ export function buildServer(client: Client, projectId: number, version = "0.1.0"
       title: "Finish or give back a TestBench request",
       description:
         "done: marks a request this token took as finished (complete). A run request can only be finished when every test case has a result (TestBench answers 409 with how many are " +
-        "missing). released: gives it back so that it waits again (release); results already reported stay. Only the token that took it can do either.",
+        "missing). If a test case names automated tests or spec files, hand in the Playwright report with the TestPilot skill (/testpilot-requests, action result) BEFORE done: afterwards it " +
+        "is refused, and the answer then carries a `warning` when none was handed in. Tell the user what the warning says. " +
+        "released: gives it back so that it waits again (release); results already reported stay. Only the token that took it can do either.",
       inputSchema: updateRequestStatusInput,
     },
     async ({ request_id, status, note, result_run_id, result_audit_id }) => {
@@ -151,7 +154,8 @@ export function buildServer(client: Client, projectId: number, version = "0.1.0"
       description:
         "Reports a result (passed, failed, blocked or skipped) for each test case you ran of a RUN request you took. The whole call is one batch: if one result is refused, none is taken. " +
         "Each test case is reported once, and never over a result a person has set. You may report in several calls. Only when a person has switched agent results on in TestBench (off " +
-        "by default), only the token that took the request, only while it is taken, at most 200 results per call and 60 calls a minute. When every test case has a result, finish with " +
+        "by default), only the token that took the request, only while it is taken, at most 200 results per call and 60 calls a minute. When every test case has a result (and, if they name " +
+        "automated tests or spec files, the Playwright report has been handed in with the skill), finish with " +
         "testbench_update_request_status done: a person then reviews the results and finishes the run. Never invent a result for a test case you did not run. " +
         "Returns {reported, counts, progress}.",
       inputSchema: reportResultsInput,
