@@ -40,7 +40,7 @@ export function makeClient(opts: { baseUrl: string; token: string; fetchImpl?: t
       const said = (data as { error?: unknown } | null)?.error;
       const detail = typeof said === "string" ? said.slice(0, 500) : "";
       switch (res.status) {
-        case 401: throw new TestBenchError(401, "TestBench refused the token (missing, wrong or revoked). Make a request token for the project in TestBench and set TESTBENCH_TOKEN.");
+        case 401: throw new TestBenchError(401, "TestBench refused the token (missing, wrong or revoked). Do not retry with this token and do not look for another one: tell the user, who can make a request token for the project in TestBench and set TESTBENCH_TOKEN.");
         case 403: throw new TestBenchError(403, `TestBench says this token may not do that. ${detail}`.trim());
         case 404: throw new TestBenchError(404, `Not found. ${detail || "There is no such request in this project, or TESTBENCH_PROJECT_ID is wrong."}`.trim());
         case 409: throw new TestBenchError(409, `Conflict: ${detail || "the request is not in the right state."}`);

@@ -343,6 +343,15 @@ describe("the HTTP client", () => {
     await assert.rejects(makeClient({ baseUrl: "http://x", token: TOKEN, fetchImpl: reply(409, { error: "y".repeat(900) }) }).call("GET", "/p"), (e: unknown) => e instanceof TestBenchError && e.message.length < 560);
   });
 
+  it("tells the agent that a refused token is not retried and no other is looked for, and that the user makes a new one, without echoing the token", async () => {
+    await assert.rejects(
+      makeClient({ baseUrl: "http://x", token: TOKEN, fetchImpl: reply(401, { error: `bad ${TOKEN}` }) }).call("GET", "/p"),
+      (e: unknown) => e instanceof TestBenchError && e.status === 401
+        && /Do not retry with this token and do not look for another one: tell the user, who can make a request token for the project/.test(e.message)
+        && !e.message.includes(TOKEN) && !e.message.includes("bad"),
+    );
+  });
+
   it("explains an unreachable server and a timeout without the token", async () => {
     const down = (async () => { throw new TypeError(`connect ECONNREFUSED ${TOKEN}`); }) as typeof fetch;
     await assert.rejects(makeClient({ baseUrl: "http://localhost:9", token: TOKEN, fetchImpl: down }).call("GET", "/p"), (e: unknown) => e instanceof TestBenchError && /Could not reach TestBench at http:\/\/localhost:9/.test(e.message) && !e.message.includes(TOKEN));
