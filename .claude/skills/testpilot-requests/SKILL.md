@@ -297,6 +297,7 @@ If TestBench answers 400 that the audit was imported before the request was take
 
 For a `run` request, **mark it done only when every test case has a result**: TestBench answers 409 "N of M test cases have no result yet" until then, and nothing changes. Leave out `--result-run` and `--result-audit` (TestBench links the run itself).
 The request is then Done, and the run stays **in progress** for a person to review the results and finish. The agent never finishes a run. If the 409 says test cases are missing, report them (step 6, `run`) or go to step 8.
+If a test case of the run request names `automatedTests` or `specFiles`, hand the Playwright report in (step 6, `run`, 1a) **before** this step: once the request is Done, TestBench refuses the report (409). If `complete` still prints a `warning`, no report was handed in: show it to the user as it is, and say where the report file is if you ran those tests, so that they can import it under **Import results**.
 
 ## 8. If it stops before the end
 

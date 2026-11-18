@@ -423,6 +423,32 @@ class ReleaseAndAuditTests(unittest.TestCase):
         p = self.run_it("complete", result_audit="8", note="x")
         self.assertEqual(json.loads(p.stdout.splitlines()[-1])["result_audit"], 8)
 
+    WARNING = "No Playwright report was handed in, and this request names 1 automated test and 2 spec files. A report can no longer be handed in now that the request is done. If you ran those tests, tell the user, who can import the report file under Import results. If you did not run them, ignore this."
+
+    def test_complete_prints_the_warning_that_testbench_gives_for_a_run_request_finished_without_its_report(self):
+        self.stub.body = {**self.stub.body, "warning": self.WARNING}
+        p = self.run_it("complete", note="ran by hand")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(json.loads(p.stdout.splitlines()[-1])["warning"], self.WARNING, "shown as it is: the agent tells the user")
+
+    def test_complete_prints_no_warning_when_testbench_gives_none(self):
+        p = self.run_it("complete", note="x")
+        self.assertNotIn("warning", json.loads(p.stdout.splitlines()[-1]))
+
+    def test_the_warning_is_text_from_the_server_so_it_is_cleaned_and_cut_like_other_text(self):
+        code, out = printed(request(4, status="done", resultNote="ok", resultRunId=7, finishedAt="2026-11-16 09:00:00", warning="a\x1b[31mred\x07bell\nnewline" + "z" * 1000), action="complete", rid="4")
+        self.assertEqual(code, 0)
+        row = json.loads(out.strip())
+        self.assertEqual(len(out.strip().splitlines()), 1, "a newline in it does not make another line")
+        self.assertIsNone(re.search(r"[\x00-\x1f\x7f]", row["warning"]))
+        self.assertEqual(len(row["warning"]), 600)
+        self.assertTrue(row["warning"].startswith("a [31mred bell newline"))
+
+    def test_a_warning_is_only_shown_for_complete(self):
+        for action in ("claim", "release"):
+            code, out = printed(request(4, status="claimed", releaseNote="n", warning=self.WARNING), action=action, rid="4")
+            self.assertNotIn("warning", out, action)
+
     def test_the_printer_shows_a_release_and_nothing_from_the_answer_besides(self):
         code, out = printed(request(12, status="pending", releaseNote="why\x1b[31m", secret="x"), action="release", rid="12")
         self.assertEqual(code, 0)
@@ -558,6 +584,11 @@ class RuleTests(unittest.TestCase):
 
     def test_no_usable_token_is_a_stop_and_the_agent_does_not_look_for_it(self):
         self.assertIn("**stop and tell the user.** Do not look for the token yourself: not in `.env`, not in `.mcp.json`, not in the environment, not anywhere else.", TEXT)
+
+    def test_the_report_goes_in_before_complete_and_a_warning_from_complete_is_shown_to_the_user(self):
+        self.assertIn("hand the Playwright report in (step 6, `run`, 1a) **before** this step: once the request is Done, TestBench refuses the report (409)", TEXT)
+        self.assertIn("If `complete` still prints a `warning`, no report was handed in: show it to the user as it is", TEXT)
+        self.assertIn("so that they can import it under **Import results**", TEXT)
 
     def test_the_note_goes_on_standard_input_in_a_quoted_heredoc(self):
         self.assertIn("<<'NOTE_END'", TEXT)
