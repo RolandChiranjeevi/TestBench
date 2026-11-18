@@ -70,6 +70,8 @@ export interface HistoryEntry { id: number; status: Status; flaky: number; durat
 export interface CaseDetail extends CaseSummary {
   description: string; preconditions: string; project_key: string; steps: Required<Step>[]; automated: AutomatedTest[]; history: HistoryEntry[];
   edited_since?: boolean; requirements: RequirementRef[];
+  /** Who made it into a test case, recorded for a case made from a suggestion only (empty otherwise, and before this was recorded). */
+  created_by?: string;
   /** The agent proposal this case was made from, if any. */
   proposal?: { id: number; sourceId: string; title: string; status: string } | null;
 }
@@ -77,6 +79,8 @@ export interface Counts { total: number; passed: number; failed: number; blocked
 export interface RunSummary extends Counts {
   id: number; title: string; kind: "manual" | "automated"; source: "manual" | "upload" | "github" | "agent"; status: "in_progress" | "completed";
   environment: string; milestone: string; framework: string | null; meta: Record<string, any>; started_at: string; finished_at: string | null;
+  /** Who finished it: empty for a run that was finished before this was recorded, by an import, or not at all. */
+  finished_by?: string;
   /** The suite (a run template) the run was started from; the name is the one it had when the run started if the suite has been deleted since. */
   template_id: number | null; template_name: string | null;
   /** The request an agent was asked to run this run by (AG4), with its state; null for a run that was not asked of an agent. */

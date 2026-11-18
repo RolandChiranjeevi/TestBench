@@ -24,7 +24,7 @@ interface List { items: Item[]; counts: Record<string, number>; presenceCounts: 
 interface RunRef { run: number; importId: number; importedAt: string; source: string; github: { repo: string; runId: number; url: string } | null }
 interface Ref { id: number; kind: string; raw: string; state: string; reason: string; label: string; target: { kind: string; id: number } | null }
 interface Detail {
-  id: number; projectId: number; sourceId: string; status: Status; reviewedAt: string | null; reviewNote: string; editedAt: string | null;
+  id: number; projectId: number; sourceId: string; status: Status; reviewedBy: string | null; reviewedAt: string | null; reviewNote: string; editedAt: string | null;
   title: string; description: string; preconditions: string; steps: string[]; expected: string; category: Category; wcag: string[]; viewports: Viewport[];
   priority: { agent: Priority; human: Priority | null; effective: Priority };
   agentVersion: { title: string; steps: string[]; expected: string; priority: Priority } | null;
@@ -359,6 +359,7 @@ function DetailModal({ id, pid, onClose }: { id: number; pid: string; onClose: (
             <input className="input grow" aria-label="Short reason (optional)" placeholder="A short note about your decision (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
           </div>
         )}
+        {t.status !== "proposed" && t.reviewedBy && <div className="faint" title={t.reviewedAt ? formatDateTime(t.reviewedAt) : undefined}>{t.status === "accepted" ? "Added" : "Rejected"} by {t.reviewedBy}{t.reviewedAt ? ` · ${timeAgo(t.reviewedAt)}` : ""}</div>}
         {t.reviewNote && <div className="faint">Note: {t.reviewNote}{t.reviewedAt ? ` · ${timeAgo(t.reviewedAt)}` : ""}</div>}
         <Standing r={t.latestRun} />
 

@@ -299,7 +299,7 @@ function ManualRun({ run }: { run: RunDetail }) {
         {drift && <span className="muted" role="status" data-suite-drift style={{ fontSize: "var(--fs-sm)" }}>{drift}</span>}
         <span className="spacer" />
         {rate != null && <span className="tabular" style={{ fontWeight: 600 }}>{rate}% pass rate</span>}
-        {run.status === "completed" && <span className="faint">Completed {timeAgo(run.finished_at)}</span>}
+        {run.status === "completed" && <span className="faint">Completed {timeAgo(run.finished_at)}{run.finished_by ? ` by ${run.finished_by}` : ""}</span>}
       </div>
       <div className="split run-split" style={{ flex: 1, minHeight: 0 }}>
         <div className="pane run-list" ref={listRef}>
