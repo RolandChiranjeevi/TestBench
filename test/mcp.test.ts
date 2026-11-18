@@ -139,6 +139,14 @@ describe("the tools", () => {
     assert.match(await said("testbench_report_results"), /the Playwright report has been handed in with the skill\), finish with testbench_update_request_status done/);
   });
 
+  it("the note of update_request_status is where the environment that was used is recorded, because the request has no field for it", async () => {
+    const mcp = await connect(fake(() => ({})).client);
+    const tool = (await mcp.listTools()).tools.find((t) => t.name === "testbench_update_request_status")!;
+    const note = (tool.inputSchema.properties as Record<string, { description?: string }>).note.description ?? "";
+    assert.match(note, /For done: what was done, with the counts and the environment it ran against \(the one the user confirmed\)/);
+    assert.match(note, /For released: why\./, "the text for a release stays");
+  });
+
   it("report_results sends one batch to case-results with TestBench's own field names, and gives TestBench's answer back as it is", async () => {
     const answer = { reported: 2, counts: { passed: 1, failed: 1, blocked: 0, skipped: 0 }, progress: { total: 3, reported: 2, missing: 1 } };
     const f = fake(() => answer);

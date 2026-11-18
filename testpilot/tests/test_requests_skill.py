@@ -757,6 +757,10 @@ class RuleTests(unittest.TestCase):
         self.assertIn("Report the test cases that needed them as `blocked` with that reason", TEXT)
         self.assertIn("they can install them themselves and ask again", TEXT)
 
+    def test_the_note_of_done_names_the_environment_that_was_used_because_the_request_has_no_field_for_it(self):
+        self.assertIn("what was done, the counts, and the environment it was done against (the one the user confirmed, for example `demo`), nothing else.", TEXT)
+        self.assertIn("TestBench keeps the environment that the person typed into the request and has no field for the one that was used, so the note is where it is recorded.", TEXT)
+
     def test_the_agent_does_not_hand_in_anything_else_or_write_over_a_person(self):
         self.assertIn("The only things it may hand in are the Playwright report it just ran, of a re-run or of the automated tests of a run request's test cases (`result`), and the results of the test cases it just ran (`case-results`)", TEXT)
         self.assertIn("write over a result that a person has set", TEXT)

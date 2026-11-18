@@ -28,7 +28,7 @@ export const getNextRequestInput = {};
 export const updateRequestStatusInput = {
   request_id: z.number().int().positive().describe("The id from testbench_get_next_request"),
   status: z.enum(["done", "released"]).describe("done: the work is finished. released: give the request back so that it waits again (you could not do it)."),
-  note: z.string().max(1000).optional().describe("A short note. For released: why."),
+  note: z.string().max(1000).optional().describe("A short note. For done: what was done, with the counts and the environment it ran against (the one the user confirmed). For released: why."),
   result_run_id: z.number().int().positive().optional().describe("done only: the run the delivered report made (a rerun)"),
   result_audit_id: z.number().int().positive().optional().describe("done only: the audit the finished discover made"),
 };
