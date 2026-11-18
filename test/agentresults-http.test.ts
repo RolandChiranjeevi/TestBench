@@ -4,7 +4,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, before, describe, it } from "node:test";
+import { after, before, beforeEach, describe, it } from "node:test";
 
 // The real server, as a separate process. A request token may hand in the Playwright report of a re-run, and only when a person has switched that on. It makes one run, marked
 // source `agent`, for the request this very token took, once, with tests that request named. Anything else is refused whole and leaves nothing behind.
@@ -79,8 +79,15 @@ before(async () => {
   const login = await call("/api/login", { method: "POST", headers: { ...JSON_H, "X-Testbench": "1" }, body: JSON.stringify({ password: PASSWORD }) });
   assert.equal(login.status, 200, output);
   cookie = (login.headers.get("set-cookie") ?? "").split(";")[0];
-  a = (await ok<{ id: number }>(await person("/api/projects", { name: "Res A", key: "RSA" }))).id;
-  b = (await ok<{ id: number }>(await person("/api/projects", { name: "Res B", key: "RSB" }))).id;
+});
+after(() => server?.kill());
+
+// A report may be handed in at most 10 times a minute per token, and every attempt counts, so each test gets its own projects and tokens instead of sharing one token that would run out.
+let n = 0;
+beforeEach(async () => {
+  n++;
+  a = (await ok<{ id: number }>(await person("/api/projects", { name: `Res A${n}`, key: `RA${n}` }))).id;
+  b = (await ok<{ id: number }>(await person("/api/projects", { name: `Res B${n}`, key: `RB${n}` }))).id;
   const mk = async (projectId: number, path: string, name: string) => (await ok<{ token: string }>(await person(`/api/projects/${projectId}/${path}`, { name }))).token;
   tokenA = await mk(a, "request-tokens", "qa-agent");
   tokenA2 = await mk(a, "request-tokens", "second-agent");
@@ -88,7 +95,6 @@ before(async () => {
   readTokenA = await mk(a, "agent/tokens", "reader");
   ciTokenA = await mk(a, "ci/tokens", "ci");
 });
-after(() => server?.kill());
 
 describe("a report is refused while a person has not switched agent results on", () => {
   it("is off by default, and the route refuses and writes nothing", async () => {
@@ -148,8 +154,9 @@ describe("a report that is taken", () => {
 
   it("touches only the tests it carries: another unlinked test is not linked to a case by the ID in its name", async () => {
     // an automated test whose name holds a case ID, imported before that case existed, so it is unlinked
-    await rerunRequest(b, { "orphan RSB-1 works": "failed" });
-    const orphan = () => tests(b).then((all) => all.find((t) => t.full_name.includes("orphan RSB-1 works"))!);
+    const orphanName = `orphan RB${n}-1 works`; // the key of project b in this test
+    await rerunRequest(b, { [orphanName]: "failed" });
+    const orphan = () => tests(b).then((all) => all.find((t) => t.full_name.includes(orphanName))!);
     assert.equal((await orphan()).case_id, null);
     const r = await rerunRequest(b, { "carried works": "failed" }); // a person's import, before the case exists
     await take(tokenB, b, r.id);

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { agentRunInfo, askedRunInfo, auditPath, PROGRESS_TITLE, progressLabel, reportedByAgent } from "../web/src/agentruns.ts";
+import { agentRunInfo, askedRunInfo, auditPath, PROGRESS_TITLE, progressLabel, reportRunLabel, reportedByAgent } from "../web/src/agentruns.ts";
 
 describe("agentRunInfo", () => {
   it("names the request of a run an agent handed in", () => {
@@ -64,6 +64,19 @@ describe("progressLabel and the progress of an asked run", () => {
   });
   it("tells a person to review and finish the run when the agent is done", () => {
     assert.match(askedRunInfo({ agentRequest: { id: 1, status: "done", claimedBy: "agent: a" } })!.title, /Review the results, then finish the run/);
+  });
+});
+
+describe("the link to the report of an asked run", () => {
+  it("has the number of the automated run when the agent handed in a report, and none before or for an answer that is not a number", () => {
+    assert.equal(askedRunInfo({ agentRequest: { id: 1, status: "claimed", claimedBy: "agent: a", reportRunId: 40 } })!.reportRunId, 40);
+    for (const v of [undefined, null, "40", 1.5, NaN]) assert.equal(askedRunInfo({ agentRequest: { id: 1, status: "claimed", claimedBy: null, reportRunId: v as never } })!.reportRunId, null, String(v));
+    assert.equal(reportRunLabel(40), "Automated report: run #40");
+  });
+  it("is shown on the page of the run, and the request's card says an automated report was handed in", () => {
+    const pages = join(import.meta.dirname, "..", "web", "src", "pages");
+    assert.ok(readFileSync(join(pages, "RunDetail.tsx"), "utf8").includes("reportRunLabel(asked.reportRunId)"));
+    assert.ok(readFileSync(join(pages, "AgentRequests.tsx"), "utf8").includes("Automated report handed in: "));
   });
 });
 

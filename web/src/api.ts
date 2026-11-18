@@ -80,7 +80,7 @@ export interface RunSummary extends Counts {
   /** The suite (a run template) the run was started from; the name is the one it had when the run started if the suite has been deleted since. */
   template_id: number | null; template_name: string | null;
   /** The request an agent was asked to run this run by (AG4), with its state; null for a run that was not asked of an agent. */
-  agentRequest?: { id: number; status: "pending" | "claimed" | "done" | "cancelled"; claimedBy: string | null; progress?: RunProgress } | null;
+  agentRequest?: { id: number; status: "pending" | "claimed" | "done" | "cancelled"; claimedBy: string | null; progress?: RunProgress; reportRunId?: number } | null;
 }
 /** How far a run that an agent was asked to run has come: its test cases, how many have a result (whoever set it), and how many have none yet. */
 export interface RunProgress { total: number; reported: number; missing: number }

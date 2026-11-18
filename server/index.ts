@@ -1978,12 +1978,17 @@ app.post("/api/agent/projects/:id/requests/:rid/release", (req, reply) => {
   requestAudit(req, "agent_request.released", r, `agent: ${auth.name}`, null);
   return r;
 });
+// The Playwright report of a re-run or of a run request (submitResult). At most RESULT_LIMITS.perMinute a minute per token (429 after that); every attempt after a valid token counts,
+// so a refused one does too. The rest of the rules (switched on, taken by this token, once, named tests) and the audit entry, which is written with the run, are in submitResult.
+const resultLimiter = makeLimiter({ max: RESULT_LIMITS.perMinute, windowMs: 60_000 });
 app.post("/api/agent/projects/:id/requests/:rid/result", { bodyLimit: RESULT_LIMITS.bodyBytes }, (req, reply) => {
   const id = idParam(req);
   const auth = requestTokenAuth(req, id);
+  const key = `t${auth.id}`;
+  if (resultLimiter.blockedFor(key) > 0) throw new HttpError(429, `Too many reports from this token (at most ${RESULT_LIMITS.perMinute} a minute). Wait a minute and try again`);
+  resultLimiter.fail(key); // counts this attempt
   reply.header("Cache-Control", "no-store");
-  const out = audited(() => submitResult(id, idParam(req, "rid"), auth, req.body));
-  requestAudit(req, "agent_request.result_delivered", out.request, `agent: ${auth.name}`, null);
+  const out = audited(() => submitResult(id, idParam(req, "rid"), auth, req.body, req.ip));
   return { runId: out.runId, total: out.total, linked: out.linked };
 });
 app.post("/api/agent/projects/:id/requests/:rid/complete", (req, reply) => {

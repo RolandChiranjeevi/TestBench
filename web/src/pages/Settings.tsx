@@ -366,6 +366,8 @@ function RequestAccess({ pid }: { pid: number }) {
           <strong>Agent results.</strong> An agent that ran the failed tests of a re-run can hand in the report. It becomes a <strong>run marked as the agent's</strong>, linked to the request, and its results count like any
           others. It takes only the report of a re-run that its own token took, once, and only with tests the request named. An agent that was asked to run chosen test cases can report a result for each one
           (each test case once, never over a result a person has set or changed); those results are marked with the agent's name, and a person reviews them and finishes the run.
+          It can also hand in the <strong>Playwright report</strong> of the automated tests of those test cases, once per request. It becomes a separate run marked as the agent's: it reaches a spec by its file name and a test
+          case by the link TestBench already has (a test in a spec file of the request gets the case of that spec); tags and titles in the report link nothing, and the results of the manual run are not touched.
           They count at once for the status of a test case, for coverage and for requirements. <strong>Agent results must be enabled before an agent can report results for a run.</strong> It is off until the owner switches it on.
         </div>
         <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>

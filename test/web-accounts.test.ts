@@ -101,6 +101,15 @@ describe("the audit log in words", () => {
     assert.equal(f({}), "agent: claude-a reported results for 0 test cases in Acme", "an entry without counts still reads well");
   });
 
+  it("says what an agent handed in: the report of a re-run, or for a run request the automated test report and what came in", () => {
+    const f = (detail: Record<string, unknown>) => describeAudit(e("agent_request.result_delivered", { actor: "agent: claude-a", projectId: 7, detail }), names);
+    assert.equal(f({ request: 3, kind: "rerun" }), "agent: claude-a handed in the report of a re-run in Acme");
+    assert.equal(f({ request: 3 }), "agent: claude-a handed in the report of a re-run in Acme", "an entry from before there was a kind");
+    assert.equal(f({ request: 3, kind: "run", run: 9, result_run: 10, credential_id: 1, tests: 4, new_tests: 1, linked: 3, passed: 2, failed: 1, skipped: 1 }), "agent: claude-a handed in an automated test report for a run request (4 tests: 2 passed, 1 failed, 1 skipped) in Acme");
+    assert.equal(f({ kind: "run", tests: 1, passed: 1 }), "agent: claude-a handed in an automated test report for a run request (1 test: 1 passed) in Acme");
+    assert.equal(f({ kind: "run" }), "agent: claude-a handed in an automated test report for a run request (0 tests) in Acme", "an entry without counts still reads well");
+  });
+
   it("says what happened, with names", () => {
     assert.equal(describeAudit(e("member.role_changed", { projectId: 7, detail: { from: "viewer", to: "tester" } }), names), "Ola Owner changed Pia Person's role in Acme from viewer to tester");
     assert.equal(describeAudit(e("member.added", { projectId: 7, detail: { role: "admin", via: "invitation" } }), names), "Ola Owner added Pia Person to Acme as admin (with an invitation)");

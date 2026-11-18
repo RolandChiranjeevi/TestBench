@@ -19,7 +19,7 @@ import { AutomatedDetail } from "./AutomatedDetail";
 import { NewRunModal } from "./Runs";
 import { BugReportModal, jiraLabel, jiraUrl } from "./BugReport";
 import { useCan } from "../components/Access";
-import { agentRunInfo, askedRunInfo, PROGRESS_TITLE, reportedByAgent } from "../agentruns";
+import { agentRunInfo, askedRunInfo, PROGRESS_TITLE, reportRunLabel, reportedByAgent } from "../agentruns";
 
 export function RunDetailPage() {
   const { pid, runId } = useParams();
@@ -128,6 +128,7 @@ function RunHeader({ run, children }: { run: RunDetail; children?: ReactNode }) 
       {agent && <Link className="chip" to={`/p/${pid}/automated?view=requests`} title="An agent handed in this report for a request, not a person. Open the requests.">Handed in by agent (request #{agent.requestId})</Link>}
       {asked && <Link className="chip" to={`/p/${pid}/automated?view=requests`} title={`${asked.title} Open the requests.`}>{asked.label}</Link>}
       {asked?.progress && <span className="chip" title={PROGRESS_TITLE}>{asked.progress}</span>}
+      {asked?.reportRunId != null && <Link className="chip" to={`/p/${pid}/runs/${asked.reportRunId}`} title="The Playwright report the agent handed in for this request: a separate automated run. It does not set the results below.">{reportRunLabel(asked.reportRunId)}</Link>}
       {!!(run.meta as { scheduled?: unknown }).scheduled && <span className="chip" title="Prepared by the suite's schedule, not started by a person">Scheduled</span>}
       {suite && (
         suite.deleted ? (
