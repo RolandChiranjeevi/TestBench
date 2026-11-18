@@ -41,6 +41,11 @@ skills or test scripts.
 - The agent only proposes. Status `proposed` is the only status it creates
   (contract, Terminology rule). It never approves, rejects, edits or
   deprecates requirements, bugs or tests.
+- Do not claim that a person approved, accepted, rejected, reviewed or decided
+  anything unless the person explicitly said so in this session. That holds for
+  every text the agent writes, drafts and proposals included (for example "state
+  changes approved for this check by a person"). If approval is required, ask the
+  user and wait for an explicit answer.
 - The read token (`tbag_`) reads requirements only. It must never be used, or
   expected to work, for any write. A write that needs a session goes through the
   mechanism the skill describes (`deliver`), after the user's confirmation.
