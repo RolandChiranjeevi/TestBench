@@ -10,6 +10,9 @@ text). Run it from the folder that holds `.testpilot/`.
 manual_test_suggestion, plan_item or coverage_gap). A plan_item may carry `ref` (a name of its own in the file) and a test_case `planItemRef` (the `ref` of an earlier plan_item):
 the helper then gives the case the P-number TestBench made. Nothing is sent until the whole file has passed the checks here; it stops at the first finding TestBench refuses.
 
+With no `.testpilot/testbench.json` at all, the helper falls back to the environment (the same names the MCP set-up uses): TESTBENCH_URL, TESTBENCH_PROJECT_ID and TESTBENCH_TOKEN,
+each from the environment or from its own raw line of `.env`. A profile that exists is always used as it is, and a profile that is broken is an error, never a fallback.
+
 Why a fixed script: the token must never be in code an agent writes, on a command line, in a file or in the output. Here it is read from the environment variable that
 the project profile names (`requestTokenEnvVar`), or else from that one line of `.env`, kept in memory, and sent only in the Authorization header, to the request routes of
 that one project on `baseUrl`. Nothing else of `.env` is read. It prints the HTTP code and the data of the request(s), never the token and never more of an answer than
@@ -49,16 +52,22 @@ def fail(message, status=1):
     return status
 
 
-def read_token(var):
-    """The token from the environment variable, or else from the raw `.env` line of that name (never `source`d). None, with the reason on stderr, if there is no usable one."""
-    tok = os.environ.get(var)
-    if not tok and os.path.isfile(".env"):
+def env_value(var):
+    """The value of the environment variable, or else of the raw `.env` line of that name (never `source`d: no other line of `.env` is used). None if there is none."""
+    val = os.environ.get(var)
+    if not val and os.path.isfile(".env"):
         for line in open(".env", encoding="utf-8"):
             line = line.rstrip("\n")
             if line.startswith(var + "="):
-                tok = line[len(var) + 1:]
-                if len(tok) >= 2 and tok[0] == tok[-1] and tok[0] in "\"'":
-                    tok = tok[1:-1]
+                val = line[len(var) + 1:]
+                if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
+                    val = val[1:-1]
+    return val
+
+
+def read_token(var):
+    """The token from the environment variable, or else from the raw `.env` line of that name. None, with the reason on stderr, if there is no usable one."""
+    tok = env_value(var)
     if not tok:
         sys.stderr.write("the request token variable is not set\n")
     elif not TOKEN.fullmatch(tok):
@@ -249,14 +258,20 @@ def main(argv):
     if not whole(a.result_run) or not whole(a.result_audit):
         return fail("--result-run and --result-audit must be a number")
 
-    try:
-        g = json.load(open(".testpilot/testbench.json"))
-        p = json.load(open(f".testpilot/projects/{g['activeProject']}.json"))
-        base, pid, var = g["baseUrl"].rstrip("/"), str(p["projectId"]), p.get("requestTokenEnvVar")
-    except (OSError, ValueError, KeyError, AttributeError) as e:
-        return fail(f"The TestPilot configuration could not be read ({type(e).__name__}): .testpilot/testbench.json and the profile it names")
-    if not var:
-        return fail("requestTokenEnvVar is not set in the project profile", 3)
+    if os.path.exists(".testpilot/testbench.json"):  # a profile that exists is used as it is; one that cannot be read is an error, not a reason to fall back
+        try:
+            g = json.load(open(".testpilot/testbench.json"))
+            p = json.load(open(f".testpilot/projects/{g['activeProject']}.json"))
+            base, pid, var = g["baseUrl"].rstrip("/"), str(p["projectId"]), p.get("requestTokenEnvVar")
+        except (OSError, ValueError, KeyError, AttributeError) as e:
+            return fail(f"The TestPilot configuration could not be read ({type(e).__name__}): .testpilot/testbench.json and the profile it names")
+        if not var:
+            return fail("requestTokenEnvVar is not set in the project profile", 3)
+    else:
+        base, pid, var = (env_value("TESTBENCH_URL") or "").rstrip("/"), env_value("TESTBENCH_PROJECT_ID") or "", "TESTBENCH_TOKEN"
+        if not base or not pid:
+            return fail("There is no .testpilot/testbench.json, and TESTBENCH_URL and TESTBENCH_PROJECT_ID are not both set (in the environment or as their own lines of .env): the helper does not know which TestBench to call")
+        print("profile: none; TESTBENCH_URL, TESTBENCH_PROJECT_ID and TESTBENCH_TOKEN stand in for it")
     if not whole(pid) or not pid:
         return fail("projectId in the project profile must be a number")
     u = urlsplit(base)
