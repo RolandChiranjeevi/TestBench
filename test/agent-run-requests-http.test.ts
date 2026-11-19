@@ -222,6 +222,16 @@ describe("take, give back, cannot finish without results, cancel", () => {
 });
 
 describe("the log and the secrets", () => {
+  it("logs that a person put a request first, as that person and with the request and its kind", async () => {
+    const p = (await ok<{ id: number }>(await person("/api/projects", { name: "Put first", key: "PTF" }))).id;
+    const r = await ok<{ id: number }>(await person(`/api/projects/${p}/agent-requests`, { kind: "discover", targetUrl: "https://first.example.com" }));
+    assert.equal((await person(`/api/agent-requests/${r.id}/run-next`, {})).status, 200);
+    const mine = rows<{ actor_label: string; detail: string }>("SELECT actor_label, detail FROM audit_log WHERE action = 'agent_request.put_first'").find((l) => JSON.parse(l.detail).request === r.id);
+    assert.ok(mine, "an entry for this request");
+    assert.equal(JSON.parse(mine.detail).kind, "discover");
+    assert.equal(mine.actor_label.startsWith("agent: "), false, "it is a person's act, never an agent's");
+  });
+
   it("logs taking, giving back and cancelling a run request with the run and the number of cases, and never holds a token or a hash", () => {
     const log = rows<{ action: string; actor_label: string; detail: string }>("SELECT action, actor_label, detail FROM audit_log WHERE action IN ('agent_request.claimed', 'agent_request.released', 'agent_request.cancelled') AND detail LIKE '%\"kind\":\"run\"%'");
     for (const action of ["agent_request.claimed", "agent_request.released", "agent_request.cancelled"]) assert.ok(log.some((l) => l.action === action), action);

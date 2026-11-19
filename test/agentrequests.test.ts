@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { db } from "../server/db.ts";
 import { AuditError } from "../server/auditcommon.ts";
-import { cancelRequest, claimRequest, cleanTargetUrl, completeRequest, createRequest, DEFAULT_REQUEST_OPTIONS, listRequests, optionsNeedAdmin, pendingForAgent, releaseRequest, REQUEST_LIMITS } from "../server/agentrequests.ts";
+import { cancelRequest, claimRequest, cleanTargetUrl, completeRequest, createRequest, DEFAULT_REQUEST_OPTIONS, listRequests, optionsNeedAdmin, pendingForAgent, releaseRequest, REQUEST_LIMITS, runNextRequest } from "../server/agentrequests.ts";
 import { makeProject } from "./helpers.ts";
 
 // What a person can ask of a test agent, and what the agent can do with it (server/agentrequests.ts). Testbench starts nothing; these are rows and their states.
@@ -401,5 +401,108 @@ describe("the options of a discover request", () => {
       .get(p.id, JSON.stringify({ tests: [] })) as { id: number };
     assert.deepEqual(listRequests(p.id).find((r) => r.id === row.id)?.options, DEFAULT_REQUEST_OPTIONS);
     assert.deepEqual(pendingForAgent(p.id)[0].options, DEFAULT_REQUEST_OPTIONS);
+  });
+});
+
+describe("one request at a time, in the order a person chooses", () => {
+  const three = () => {
+    const p = makeProject(key());
+    const mk = (note: string) => createRequest(p.id, { kind: "discover", targetUrl: "https://staging.example.com", note }, me);
+    return { p, a: mk("a"), b: mk("b"), c: mk("c") };
+  };
+  const order = (projectId: number) => pendingForAgent(projectId).map((r) => r.id);
+
+  it("while one request is taken, no other of the project can be, by another agent or by the same one, and the refusal names the one that runs", () => {
+    const { p, a, b } = three();
+    claimRequest(p.id, a.id, token(1, "qa-agent"));
+    refused(() => claimRequest(p.id, b.id, token(2, "other")), 409, new RegExp(`Request #${a.id} is already being worked on \\(agent: qa-agent\\)`));
+    refused(() => claimRequest(p.id, b.id, token(1, "qa-agent")), 409, /Only one request runs at a time/);
+    assert.equal(listRequests(p.id).find((r) => r.id === b.id)?.status, "pending", "the second is untouched");
+  });
+
+  it("the next can be taken once the one that runs is done, given back or cancelled by a person", () => {
+    for (const finish of [
+      (p: number, id: number) => completeRequest(p, id, token(1), {}),
+      (p: number, id: number) => releaseRequest(p, id, token(1), { note: "no browser" }),
+      (_p: number, id: number) => cancelRequest(id),
+    ]) {
+      const { p, a, b } = three();
+      claimRequest(p.id, a.id, token(1));
+      refused(() => claimRequest(p.id, b.id, token(1)), 409, /already being worked on/);
+      finish(p.id, a.id);
+      assert.equal(claimRequest(p.id, b.id, token(1)).status, "claimed");
+    }
+  });
+
+  it("is a rule of the project: a request taken in another project holds nothing up", () => {
+    const one = three();
+    const other = three();
+    claimRequest(one.p.id, one.a.id, token(1));
+    assert.equal(claimRequest(other.p.id, other.a.id, token(2, "elsewhere")).status, "claimed");
+  });
+
+  it("an agent is given the oldest first, until a person puts another first; the one put first last goes first", () => {
+    const { p, a, b, c } = three();
+    assert.deepEqual(order(p.id), [a.id, b.id, c.id]);
+    runNextRequest(c.id);
+    assert.deepEqual(order(p.id), [c.id, a.id, b.id]);
+    runNextRequest(b.id);
+    assert.deepEqual(order(p.id), [b.id, c.id, a.id]);
+    runNextRequest(a.id);
+    assert.deepEqual(order(p.id), [a.id, b.id, c.id]);
+  });
+
+  it("putting a request first changes only its place: it is not taken, and its text is as it was", () => {
+    const { p, b } = three();
+    const made = runNextRequest(b.id);
+    assert.deepEqual([made.status, made.queuePosition, made.note, made.claimedBy], ["pending", 1, "b", null]);
+    assert.equal(listRequests(p.id).filter((r) => r.status === "claimed").length, 0);
+  });
+
+  it("putting a request first that is already first changes nothing, so the number does not climb", () => {
+    const { b, a } = three();
+    runNextRequest(b.id);
+    assert.equal(runNextRequest(b.id).queuePosition, 1);
+    assert.equal(db.prepare("SELECT priority FROM agent_requests WHERE id = ?").pluck().get(b.id), 1);
+    assert.equal(runNextRequest(a.id).queuePosition, 1, "and the oldest, put first over one that was put first, goes above it");
+    assert.equal(db.prepare("SELECT priority FROM agent_requests WHERE id = ?").pluck().get(a.id), 2);
+    const { a: oldest } = three();
+    runNextRequest(oldest.id);
+    assert.equal(db.prepare("SELECT priority FROM agent_requests WHERE id = ?").pluck().get(oldest.id), 0, "the oldest is first by age: left alone");
+  });
+
+  it("only a waiting request can be put first: not one that is taken, done or cancelled (409), and not one that is not there (404)", () => {
+    const { p, a, b, c } = three();
+    claimRequest(p.id, a.id, token(1));
+    refused(() => runNextRequest(a.id), 409, /Only a request that is waiting/);
+    completeRequest(p.id, a.id, token(1), {});
+    refused(() => runNextRequest(a.id), 409, /Only a request that is waiting/);
+    cancelRequest(b.id);
+    refused(() => runNextRequest(b.id), 409, /Only a request that is waiting/);
+    refused(() => runNextRequest(999999), 404, /not found/);
+    assert.deepEqual(order(p.id), [c.id], "nothing changed for the one that waits");
+  });
+
+  it("is per project: putting a request first in one project leaves the order of another", () => {
+    const one = three();
+    const other = three();
+    runNextRequest(one.c.id);
+    assert.deepEqual(order(other.p.id), [other.a.id, other.b.id, other.c.id]);
+  });
+
+  it("a person's list says where each waiting request stands in line (1 is next), and nothing for the others", () => {
+    const { p, a, b, c } = three();
+    const place = () => Object.fromEntries(listRequests(p.id).map((r) => [r.id, r.queuePosition]));
+    assert.deepEqual(place(), { [a.id]: 1, [b.id]: 2, [c.id]: 3 });
+    runNextRequest(c.id);
+    assert.deepEqual(place(), { [c.id]: 1, [a.id]: 2, [b.id]: 3 });
+    claimRequest(p.id, c.id, token(1));
+    assert.deepEqual(place(), { [c.id]: null, [a.id]: 1, [b.id]: 2 }, "the one that runs is not in line");
+    assert.equal(listRequests(p.id, "pending").every((r) => r.queuePosition !== null), true, "a filtered list still has the places");
+  });
+
+  it("a request that was never put first has priority 0", () => {
+    const { p, a } = three();
+    assert.equal(listRequests(p.id).find((r) => r.id === a.id)?.priority, 0);
   });
 });

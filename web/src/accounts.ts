@@ -68,7 +68,7 @@ export interface AuditEntry {
 
 /** Every action the server writes to the audit log (test/web-accounts.test.ts checks this list against the server's source, so a new action cannot be left without words). */
 export const AUDIT_ACTIONS = [
-  "agent_request.cancelled", "agent_request.claimed", "agent_request.completed", "agent_request.created", "agent_request.finding_created", "agent_request.released", "agent_request.result_delivered", "agent_request.results_reported", "spec.created", "spec.deleted", "spec.edited", "spec.renamed", "account.created", "account.disabled", "account.enabled", "account.setup", "invitation.created", "invitation.revoked", "invitation.used", "login.failed", "login.succeeded",
+  "agent_request.cancelled", "agent_request.claimed", "agent_request.completed", "agent_request.created", "agent_request.finding_created", "agent_request.put_first", "agent_request.released", "agent_request.result_delivered", "agent_request.results_reported", "spec.created", "spec.deleted", "spec.edited", "spec.renamed", "account.created", "account.disabled", "account.enabled", "account.setup", "invitation.created", "invitation.revoked", "invitation.used", "login.failed", "login.succeeded",
   "member.added", "member.removed", "member.role_changed", "members.migrated", "password.changed", "password.reset", "password.reset_link_created", "profile.changed", "requirements.bulk_approved", "sessions.revoked_others",
   "settings.agent_proposals_changed", "settings.agent_results_changed",
   "token.created", "token.revoked",
@@ -139,6 +139,7 @@ export function describeAudit(e: Pick<AuditEntry, "action" | "actor" | "targetUs
     case "agent_request.created": return `${who} asked an agent to ${d.kind === "rerun" ? "run failed automated tests again" : d.kind === "run" ? `run ${plural(d.cases ?? 0, "test case")}` : "look at a target"} in ${project}`;
     case "agent_request.cancelled": return `${who} cancelled a request to an agent in ${project}`;
     case "agent_request.claimed": return `${who} took a request in ${project}`;
+    case "agent_request.put_first": return `${who} put a request to an agent first in line in ${project}`;
     case "agent_request.released": return `${who} gave a request back in ${project}`;
     case "agent_request.result_delivered": {
       if (d.kind !== "run") return `${who} handed in the report of a re-run in ${project}`;

@@ -91,29 +91,33 @@ export function buildServer(client: Client, projectId: number, version = "0.1.0"
     {
       title: "Get the next TestBench request",
       description:
-        "Takes the oldest waiting request (a discover, a rerun of failed tests, or a run of chosen test cases) of the project and marks it claimed by this token. A run request " +
+        "Takes the first waiting request (a discover, a rerun of failed tests, or a run of chosen test cases) of the project and marks it claimed by this token. The first is the one a " +
+        "person put first, otherwise the oldest. Only one request runs at a time in a project: while another is taken, nothing can be taken, and the answer says which is running " +
+        "(a person decides what to do with it; do not work on another request meanwhile). A run request " +
         "carries `runId`, `targetUrl`, `environment` and `cases`, each with its steps, and `progress` (how many test cases already have a result). Report the results with " +
         "testbench_report_results, then finish with done; give it back with released if you cannot. The `automatedTests` and `specFiles` of a test case name what to run in the user's own " +
         "repository; a Playwright JSON report of them is too large for a tool argument, so it is NOT handed in through MCP but with the TestPilot skill (/testpilot-requests, action result). " +
         "If a test case names automated tests or spec files, hand that report in BEFORE you finish with done: once the request is done, the report can no longer be handed in. " +
-        "Returns {request: null} when nothing waits. " + DATA_NOTE,
+        "Returns {request: null} when nothing waits, and {request: null, reason} when requests wait but none could be taken (the reason says why, for example which request is running). " + DATA_NOTE,
       inputSchema: getNextRequestInput,
     },
     async () => {
       try {
         const list = waiting.safeParse(await client.call("GET", base));
         if (!list.success) throw new TestBenchError(502, "TestBench gave an answer this server does not understand.");
-        // Another agent may take one between the list and the claim: then the claim says 409 and the next one is tried.
+        // Another agent may take one between the list and the claim: then the claim says 409 and the next one is tried. If every try is refused, the last reason is handed on: with
+        // one request running at a time it is usually "request #N is already being worked on", which the agent has to be told and not given a bare null.
+        let reason = "";
         for (const candidate of list.data.slice(0, MAX_CLAIM_TRIES)) {
           try {
             const request = await client.call("POST", `${base}/${candidate.id}/claim`);
             return ok({ request, note: DATA_NOTE });
           } catch (e) {
-            if (e instanceof TestBenchError && e.status === 409) continue;
+            if (e instanceof TestBenchError && e.status === 409) { reason = e.message; continue; }
             throw e;
           }
         }
-        return ok({ request: null });
+        return ok(reason ? { request: null, reason, note: DATA_NOTE } : { request: null });
       } catch (e) {
         return refused(e);
       }

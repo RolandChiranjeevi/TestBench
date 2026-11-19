@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Bot, Copy, Plus } from "lucide-react";
 import { needsText } from "../access";
-import { auditPath, PROGRESS_TITLE, progressLabel } from "../agentruns";
+import { auditPath, byQueue, PROGRESS_TITLE, progressLabel } from "../agentruns";
 import { api, timeAgo, type AgentRequest, type RunDetail } from "../api";
 import { DEFAULT_OPTIONS, DELIVERABLES, GIT_MODES, optionsProblem, optionsSummary, START_COMMAND, START_PROMPT, TARGET_MODES, toggled, VIEWPORTS, withProduction, type RequestOptions } from "../requestOptions";
 import type { Tone } from "../statuses";
@@ -37,6 +37,13 @@ export function RequestsPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["agent-requests", pid] }); toast("success", "Request cancelled"); },
     onError: (e: Error) => toast("error", e.message),
   });
+  // One request runs at a time in a project. With several waiting, a person says which goes first; an agent is given them in that order.
+  const runNext = useMutation({
+    mutationFn: (id: number) => api.post<AgentRequest>(`/api/agent-requests/${id}/run-next`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["agent-requests", pid] }); toast("success", "Put first in line"); },
+    onError: (e: Error) => toast("error", e.message),
+  });
+  const waiting = requests?.filter((r) => r.queuePosition !== null).length ?? 0;
   return (
     <>
       <div className="topbar">
@@ -51,14 +58,15 @@ export function RequestsPage() {
         <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12, maxWidth: 900 }}>
           <div className="muted">
             A request asks a test agent to do something. <strong>Testbench starts nothing.</strong> An agent with a request token (Settings, Agent) picks the request up, works in your own
-            environment, and keeps its own stops: it asks you before it tests. What it finds comes in as proposals for you to review.
+            environment, and keeps its own stops: it asks you before it tests. What it finds comes in as proposals for you to review.{" "}
+            <strong>One request runs at a time:</strong> while one is taken, the others wait, and with several waiting you choose which goes first.
           </div>
           {requests && requests.length === 0 ? (
             <Empty icon={<Bot size={20} />} title="No requests yet" action={<Button needs="tester" variant="primary" onClick={() => setAsking(true)}><Plus size={14} /> Request discover</Button>}>
               Ask for a discover of a web address here, or ask for a failed automated run to be run again from the run itself.
             </Empty>
           ) : (
-            requests?.map((r) => <RequestCard key={r.id} r={r} onCancel={() => cancel.mutate(r.id)} cancelling={cancel.isPending} />)
+            requests?.slice().sort(byQueue).map((r) => <RequestCard key={r.id} r={r} onCancel={() => cancel.mutate(r.id)} cancelling={cancel.isPending} waiting={waiting} onRunNext={() => runNext.mutate(r.id)} putting={runNext.isPending} />)
           )}
         </div>
       </div>
@@ -67,12 +75,14 @@ export function RequestsPage() {
   );
 }
 
-function RequestCard({ r, onCancel, cancelling }: { r: AgentRequest; onCancel: () => void; cancelling: boolean }) {
+function RequestCard({ r, onCancel, cancelling, waiting, onRunNext, putting }: { r: AgentRequest; onCancel: () => void; cancelling: boolean; waiting: number; onRunNext: () => void; putting: boolean }) {
   const { pid } = useParams();
   const s = STATUS[r.status];
   const open = r.status === "pending" || r.status === "claimed";
+  // The place in line only says something when two or more wait. A request that is next is marked; the others can be put first.
+  const place = r.queuePosition !== null && waiting >= 2 ? r.queuePosition : null;
   return (
-    <div className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 6 }} data-request={r.id} data-status={r.status}>
+    <div className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 6 }} data-request={r.id} data-status={r.status} data-queue={r.queuePosition ?? ""}>
       <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <Badge tone={s.tone} title={s.title}>{s.label}</Badge>
         <span style={{ fontWeight: 500 }}>{KIND_LABEL[r.kind]}</span>
@@ -86,7 +96,13 @@ function RequestCard({ r, onCancel, cancelling }: { r: AgentRequest; onCancel: (
         {r.kind === "run" && <span className="muted">{r.caseCount} {r.caseCount === 1 ? "case" : "cases"} at <code className="inline mono" style={{ overflowWrap: "anywhere" }}>{r.targetUrl}</code></span>}
         {r.kind === "run" && progressLabel(r.progress) && <span className="chip" title={PROGRESS_TITLE}>{progressLabel(r.progress)}</span>}
         {r.environment && <span className="chip">{r.environment}</span>}
+        {place !== null && (
+          <span className="chip" title="The order an agent is given waiting requests in: the one you put first, then the oldest." data-place={place}>{place === 1 ? "Next in line" : `#${place} in line`}</span>
+        )}
         <span className="spacer" />
+        {place !== null && place > 1 && (
+          <Button needs="tester" size="sm" onClick={onRunNext} disabled={putting} aria-label={`Run request ${r.id} next`} title="Put this request first in line, so that an agent is given it before the others">Run next</Button>
+        )}
         {open && <Button needs="tester" size="sm" onClick={onCancel} disabled={cancelling} aria-label={`Cancel request ${r.id}`}>Cancel</Button>}
       </div>
       <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>

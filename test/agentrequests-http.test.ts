@@ -170,6 +170,7 @@ describe("what a request token is, and is not", () => {
       [`/api/projects/${a}/agent-requests`, "GET", undefined],
       [`/api/projects/${a}/agent-requests`, "POST", { kind: "discover", targetUrl: "https://made-by-agent.example.com" }],
       [`/api/agent-requests/${r.id}/cancel`, "POST", undefined],
+      [`/api/agent-requests/${r.id}/run-next`, "POST", undefined],
       [`/api/projects/${a}/request-tokens`, "POST", { name: "more" }],
       ["/api/projects", "GET", undefined],
     ] as const) {
@@ -301,6 +302,61 @@ describe("giving a request back, and linking the audit a discover made", () => {
     assert.equal((await finish(tokenA, r.id, { resultAuditId: "7" })).status, 400);
     assert.equal((await mine(r.id)).status, "claimed");
     assert.equal((await finish(tokenA, r.id, { note: "no audit" })).status, 200);
+  });
+});
+
+// Before "guessing": that block gets the address slowed down (429) on purpose, and these routes would be slowed with it.
+describe("one request at a time, in the order a person chooses (the routes)", () => {
+  // A project of its own: nothing else in this file leaves a request waiting or taken here.
+  let q = 0;
+  let t1 = "";
+  let t2 = "";
+  before(async () => {
+    q = (await ok<{ id: number }>(await person("/api/projects", { name: "Req Q", key: "RQQ" }))).id;
+    const mk = async (name: string) => { const t = (await ok<{ token: string }>(await person(`/api/projects/${q}/request-tokens`, { name }))).token; issued.push(t); return t; };
+    t1 = await mk("first-agent");
+    t2 = await mk("second-agent");
+  });
+  const make = (n: string) => ask(q, { kind: "discover", targetUrl: `https://${n}.example.com`, note: n });
+  const claim = (token: string, id: number) => agent(`Bearer ${token}`, `/api/agent/projects/${q}/requests/${id}/claim`, "POST");
+  const finish = (token: string, id: number) => agent(`Bearer ${token}`, `/api/agent/projects/${q}/requests/${id}/complete`, "POST", {});
+  const withdraw = async (...ids: number[]) => { for (const id of ids) await person(`/api/agent-requests/${id}/cancel`, {}); };
+
+  it("a second claim is refused (409) while one is taken, the one that runs is named, and it works once that one is done", async () => {
+    const r1 = await make("one");
+    const r2 = await make("two");
+    assert.equal((await claim(t1, r1.id)).status, 200);
+    const refused = await claim(t2, r2.id);
+    assert.equal(refused.status, 409);
+    assert.match(((await refused.json()) as { error: string }).error, new RegExp(`Request #${r1.id} is already being worked on \\(agent: first-agent\\)`));
+    assert.equal((await claim(t1, r2.id)).status, 409, "the same token is held to it too");
+    assert.equal((await finish(t1, r1.id)).status, 200);
+    assert.equal((await claim(t2, r2.id)).status, 200, "free once the first is done");
+    assert.equal((await finish(t2, r2.id)).status, 200);
+  });
+
+  it("a person puts a request first: the agent's list follows it, and the person's list says each place", async () => {
+    const r1 = await make("one");
+    const r2 = await make("two");
+    const r3 = await make("three");
+    assert.deepEqual((await waiting(t1, q)).map((x) => x.id), [r1.id, r2.id, r3.id], "oldest first until someone chooses");
+    const put = await person(`/api/agent-requests/${r3.id}/run-next`, {});
+    assert.equal(put.status, 200);
+    const body = (await put.json()) as { id: number; status: string; priority: number; queuePosition: number };
+    assert.deepEqual([body.id, body.status, body.priority, body.queuePosition], [r3.id, "pending", 1, 1]);
+    assert.deepEqual((await waiting(t1, q)).map((x) => x.id), [r3.id, r1.id, r2.id]);
+    const mine = await ok<{ id: number; queuePosition: number | null }[]>(await person(`/api/projects/${q}/agent-requests`, undefined, "GET"));
+    assert.deepEqual([r3.id, r1.id, r2.id].map((id) => mine.find((x) => x.id === id)?.queuePosition), [1, 2, 3]);
+    await withdraw(r1.id, r2.id, r3.id);
+  });
+
+  it("a request that is taken, or one that is not there, cannot be put first (409, 404), and a person needs no token for it", async () => {
+    const r = await make("taken");
+    assert.equal((await claim(t1, r.id)).status, 200);
+    assert.equal((await person(`/api/agent-requests/${r.id}/run-next`, {})).status, 409);
+    assert.equal((await person("/api/agent-requests/99999999/run-next", {})).status, 404);
+    assert.equal((await person(`/api/agent-requests/${r.id}/run-next`, undefined, "GET")).status, 404, "it is a POST, nothing is read there");
+    await withdraw(r.id);
   });
 });
 

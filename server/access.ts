@@ -66,7 +66,7 @@ export const ACCESS: Record<string, Need> = {
   "GET /api/projects/:id/propose-tokens": a(), "POST /api/projects/:id/propose-tokens": a(), "POST /api/propose-tokens/:id/revoke": a("proposetoken"),
   "GET /api/projects/:id/request-tokens": a(), "POST /api/projects/:id/request-tokens": a(), "POST /api/request-tokens/:id/revoke": a("requesttoken"),
   // what people ask a test agent to do (server/agentrequests.ts): everyone sees the list, a tester asks for something and withdraws it. Testbench runs nothing.
-  "GET /api/projects/:id/agent-requests": v(), "POST /api/projects/:id/agent-requests": t(), "POST /api/agent-requests/:id/cancel": t("agentrequest"),
+  "GET /api/projects/:id/agent-requests": v(), "POST /api/projects/:id/agent-requests": t(), "POST /api/agent-requests/:id/cancel": t("agentrequest"), "POST /api/agent-requests/:id/run-next": t("agentrequest"),
   "GET /api/projects/:id/destination": a(), "PUT /api/projects/:id/destination": a(), "DELETE /api/projects/:id/destination": a(), "POST /api/projects/:id/destination/teams": a(),
   "GET /api/projects/:id/github-sources": a(), "POST /api/projects/:id/github-sources": a(), "PATCH /api/github-sources/:id": a("githubsource"), "DELETE /api/github-sources/:id": a("githubsource"),
   "POST /api/github-sources/:id/check": a("githubsource"), "GET /api/github-sources/:id/runs": t("githubsource"), "POST /api/github-sources/:id/runs/:runId/import": t("githubsource"),

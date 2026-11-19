@@ -58,8 +58,8 @@ Made under **Settings → Agent → Requests to a test agent**, by an admin of t
 - No login cookie and no `X-Testbench` header are needed. The token is checked on every call.
 
 ```
-GET  /api/agent/projects/<project id>/requests                    the waiting requests, oldest first
-POST /api/agent/projects/<project id>/requests/<id>/claim         take one (409 if someone else did)
+GET  /api/agent/projects/<project id>/requests                    the waiting requests: the one a person put first, then the oldest
+POST /api/agent/projects/<project id>/requests/<id>/claim         take one (409 if someone else did, or if another request of the project is taken)
 POST /api/agent/projects/<project id>/requests/<id>/release       {"note": "why it is given back"}  (it waits again)
 POST /api/agent/projects/<project id>/requests/<id>/result        the Playwright JSON report of a re-run or of a run request (off by default, see below)
 POST /api/agent/projects/<project id>/requests/<id>/case-results  a result for each test case of a run request (off by default, see below)
@@ -122,6 +122,15 @@ What to do about it:
 - In the normal (`default`) mode a prompt guards shell commands, but **not the Read tool**. Measured with Claude Code 2.1.328 (appendix D of [agent-chain-verification.md](agent-chain-verification.md)): a `sed` against `.env` asked first, while Read of `.env` and of `.mcp.json` in the working folder ran with no prompt. So answering prompts does not keep a session from reading the token; the limits above do.
 - Keep `.env` out of git (it is in `.gitignore`) and readable by you only (`chmod 600 .env`), and put in it only what the agent's folder needs: any other secret in that file is as reachable as the token.
 - If you think a token was read, revoke it, and look at when it was last used and at the audit log.
+
+## One request at a time, and the order a person chooses
+
+- **At most one request of a project is taken at a time.** While one is Taken, every `claim` in that project is refused with **409**, whichever token asks, and the message names the one that runs (`Request #7 is already being worked on (agent: qa-agent)`). It is free again when that one is done, given back (`release`) or cancelled by a person. The check is part of the `UPDATE` that takes the request, so two agents asking at the same moment cannot both be given one. Another project is not held up.
+- **A person chooses which goes first.** On the *Requests* tab, a waiting request that is not next has **Run next** (the same role as *Cancel*: a tester or an admin). It puts the request above every other waiting one. The agent's list (`GET …/requests`), the MCP tool `testbench_get_next_request` and the skill's list all follow that order: the one put first, then the oldest. A request that is already first is left as it is.
+- **It is a place in line, nothing more.** It does not take the request, change what it asks, or give an agent any right it did not have. Only a waiting request can be put first (409 otherwise). It is recorded in the audit log as `agent_request.put_first`, with the person.
+- **The person's list** (`GET /api/projects/<id>/agent-requests`) carries `priority` (0 until put first) and `queuePosition` (1 is next; `null` for a request that is not waiting).
+- **A request that hangs.** There is no time limit on a taken request, so a session that died leaves it Taken. A person can **Cancel** it (that also frees the project), and the card says how long ago it was taken.
+- **MCP.** When requests wait but none can be taken, `testbench_get_next_request` answers `{"request": null, "reason": "…"}` with the reason (for example which request runs) instead of a bare `null`. `{"request": null}` alone means nothing waits.
 
 ## Giving a request back, and linking the audit
 

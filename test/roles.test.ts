@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, describe, it } from "node:test";
+import { after, before, describe, it } from "node:test";
 import { strToU8, zipSync } from "fflate";
 import { db, UPLOAD_DIR } from "../server/db.ts";
 import { ACCESS, levelRank, type Kind, type Level } from "../server/access.ts";
@@ -1305,6 +1305,8 @@ describe("Bug drafts from a screenshot", () => {
 });
 
 describe("asking an agent for more than reading: only an admin of the project", () => {
+  // The tests above (the matrix, the agent routes) leave waiting requests in A, and a project holds at most 20 (REQUEST_LIMITS.pendingPerProject): start from none.
+  before(() => { db.prepare("UPDATE agent_requests SET status = 'cancelled', finished_at = datetime('now') WHERE project_id = ? AND status = 'pending'").run(projects.A); });
   const ask = (cookie: string, options?: unknown) => call("POST", `/api/projects/${projects.A}/agent-requests`, { cookie, body: { kind: "discover", targetUrl: "https://options.example.com", options } });
   const waiting = () => (db.prepare("SELECT COUNT(*) AS n FROM agent_requests WHERE project_id = ? AND status = 'pending'").get(projects.A) as { n: number }).n;
   const lastCreated = () => JSON.parse((db.prepare("SELECT detail FROM audit_log WHERE action = 'agent_request.created' ORDER BY id DESC LIMIT 1").get() as { detail: string }).detail) as Record<string, unknown>;

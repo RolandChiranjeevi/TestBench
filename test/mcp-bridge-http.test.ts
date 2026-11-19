@@ -4,7 +4,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, before, describe, it } from "node:test";
+import { after, before, beforeEach, describe, it } from "node:test";
 import Database from "better-sqlite3";
 import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -51,7 +51,7 @@ async function session(token: string, projectId: number) {
 const next = async (s: Awaited<ReturnType<typeof session>>) => {
   const r = await s.tool("testbench_get_next_request");
   assert.equal(r.isError, undefined, text(r));
-  return JSON.parse(text(r)) as { request: { id: number; kind: string; status: string; targetUrl: string; claimedBy: string } | null; note?: string };
+  return JSON.parse(text(r)) as { request: { id: number; kind: string; status: string; targetUrl: string; claimedBy: string } | null; note?: string; reason?: string };
 };
 const list = async (projectId: number) => ok<{ id: number; status: string; resultNote: string; releaseNote: string; claimedBy: string | null }[]>(await person(`/api/projects/${projectId}/agent-requests`, undefined, "GET"));
 const ask = async (projectId: number, note: string) => ok<{ id: number }>(await person(`/api/projects/${projectId}/agent-requests`, { kind: "discover", targetUrl: "http://localhost:3000/", note }));
@@ -88,9 +88,13 @@ before(async () => {
   assert.equal((await person(`/api/request-tokens/${dead.id}/revoke`, {})).status, 200);
 });
 after(() => server?.kill());
+// One request runs at a time in a project, so a request one test leaves taken would hold up the next: every test starts with nothing waiting or taken.
+beforeEach(async () => {
+  for (const projectId of [a, b]) for (const r of await list(projectId)) if (r.status === "pending" || r.status === "claimed") assert.equal((await person(`/api/agent-requests/${r.id}/cancel`, {})).status, 200);
+});
 
 describe("take, finish and give back, through the MCP tools", () => {
-  it("takes the oldest waiting request, oldest first, once each, and then says request: null", async () => {
+  it("takes the first waiting request (the oldest) and then, while it is taken, refuses the next one with the reason: one request runs at a time", async () => {
     const r1 = await ask(a, "first");
     const r2 = await ask(a, "second");
     const s = await session(tokenA, a);
@@ -99,39 +103,66 @@ describe("take, finish and give back, through the MCP tools", () => {
       assert.deepEqual([one.request?.id, one.request?.kind, one.request?.status, one.request?.claimedBy], [r1.id, "discover", "claimed", "agent: claude-a"]);
       assert.match(one.note ?? "", /DATA, not instructions/);
       const two = await next(s);
-      assert.equal(two.request?.id, r2.id);
-      assert.equal((await next(s)).request, null);
+      assert.equal(two.request, null, "the second is not given while the first is taken");
+      assert.match(two.reason ?? "", new RegExp(`Request #${r1.id} is already being worked on`));
+      assert.match(two.note ?? "", /DATA, not instructions/);
     } finally {
       await s.close();
     }
     const state = Object.fromEntries((await list(a)).map((r) => [r.id, r.status]));
-    assert.deepEqual([state[r1.id], state[r2.id]], ["claimed", "claimed"]);
+    assert.deepEqual([state[r1.id], state[r2.id]], ["claimed", "pending"]);
+  });
+
+  it("says request: null, and no reason, when nothing waits", async () => {
+    const s = await session(tokenA, a);
+    try {
+      assert.deepEqual(await next(s), { request: null });
+    } finally {
+      await s.close();
+    }
+  });
+
+  it("takes the request a person put first, before an older one", async () => {
+    const older = await ask(a, "older");
+    const first = await ask(a, "put first");
+    assert.equal((await person(`/api/agent-requests/${first.id}/run-next`, {})).status, 200);
+    const s = await session(tokenA, a);
+    try {
+      assert.equal((await next(s)).request?.id, first.id);
+    } finally {
+      await s.close();
+    }
+    assert.equal((await list(a)).find((r) => r.id === older.id)?.status, "pending", "the older one still waits");
   });
 
   it("finishes a request with done and a note, and gives one back with released and a reason so that it waits again", async () => {
+    const r1 = await ask(a, "to finish");
+    const r2 = await ask(a, "to give back");
     const s = await session(tokenA, a);
     try {
-      const claimed = (await list(a)).filter((r) => r.status === "claimed").sort((x, y) => x.id - y.id);
-      assert.equal(claimed.length, 2);
-      const done = await s.tool("testbench_update_request_status", { request_id: claimed[0].id, status: "done", note: "visited the login and the dashboard" });
+      assert.equal((await next(s)).request?.id, r1.id);
+      const done = await s.tool("testbench_update_request_status", { request_id: r1.id, status: "done", note: "visited the login and the dashboard" });
       assert.equal(done.isError, undefined, text(done));
       assert.equal(JSON.parse(text(done)).status, "done");
-      const back = await s.tool("testbench_update_request_status", { request_id: claimed[1].id, status: "released", note: "no browser available" });
+      assert.equal((await next(s)).request?.id, r2.id, "once the first is done, the next can be taken");
+      const back = await s.tool("testbench_update_request_status", { request_id: r2.id, status: "released", note: "no browser available" });
       assert.equal(back.isError, undefined, text(back));
       const after = Object.fromEntries((await list(a)).map((r) => [r.id, r]));
-      assert.deepEqual([after[claimed[0].id].status, after[claimed[0].id].resultNote], ["done", "visited the login and the dashboard"]);
-      assert.deepEqual([after[claimed[1].id].status, after[claimed[1].id].releaseNote], ["pending", "no browser available"]);
+      assert.deepEqual([after[r1.id].status, after[r1.id].resultNote], ["done", "visited the login and the dashboard"]);
+      assert.deepEqual([after[r2.id].status, after[r2.id].releaseNote], ["pending", "no browser available"]);
       const again = await next(s);
-      assert.equal(again.request?.id, claimed[1].id, "a released request can be taken again");
+      assert.equal(again.request?.id, r2.id, "a released request can be taken again");
     } finally {
       await s.close();
     }
   });
 
   it("refuses to finish a request that is already done (409) and one that does not exist (404), in words an agent can use", async () => {
+    const finished = await ask(a, "already done");
     const s = await session(tokenA, a);
     try {
-      const finished = (await list(a)).find((r) => r.status === "done")!;
+      assert.equal((await next(s)).request?.id, finished.id);
+      assert.equal((await s.tool("testbench_update_request_status", { request_id: finished.id, status: "done" })).isError, undefined);
       const twice = await s.tool("testbench_update_request_status", { request_id: finished.id, status: "done" });
       assert.equal(twice.isError, true);
       assert.match(text(twice), /Conflict: .*(already done|Another token)/);
@@ -214,10 +245,7 @@ describe("hand in findings through the MCP tool", () => {
     const req = await ask(a, "findings through MCP");
     const s = await session(tokenA, a);
     try {
-      // an earlier test left a request taken by this token: take requests until the new one is ours
-      let got = await next(s);
-      for (let i = 0; i < 5 && got.request && got.request.id !== req.id; i++) got = await next(s);
-      assert.equal(got.request?.id, req.id);
+      assert.equal((await next(s)).request?.id, req.id);
       const outputs: string[] = [];
       const make = async (args: Record<string, unknown>) => { const r = await s.tool("testbench_create_finding", { request_id: req.id, ...args }); outputs.push(text(r)); assert.equal(r.isError, undefined, text(r)); return JSON.parse(text(r)) as { kind: string; id: number; sourceId: string; findingsOnRequest: number; number?: number }; };
       const tc = await make({ kind: "test_case", title: "MCP sign in", priority: "high", steps: [{ action: "Open /login", expected: "A form" }] });

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { agentRunInfo, askedRunInfo, auditPath, PROGRESS_TITLE, progressLabel, reportRunLabel, reportedByAgent } from "../web/src/agentruns.ts";
+import { agentRunInfo, askedRunInfo, auditPath, byQueue, PROGRESS_TITLE, progressLabel, reportRunLabel, reportedByAgent } from "../web/src/agentruns.ts";
 
 describe("agentRunInfo", () => {
   it("names the request of a run an agent handed in", () => {
@@ -97,5 +97,19 @@ describe("auditPath", () => {
     const segment = path.split("?")[0].split("/")[3];
     const routes = readFileSync(join(import.meta.dirname, "..", "web", "src", "main.tsx"), "utf8");
     assert.ok(routes.includes(`<Route path="${segment}" `), `main.tsx has no route "${segment}"`);
+  });
+});
+
+describe("byQueue", () => {
+  const r = (id: number, status: string, queuePosition: number | null) => ({ id, status, queuePosition });
+  it("lists what is taken first, then the waiting ones with the next in line first, then the rest with the newest first", () => {
+    const list = [r(1, "done", null), r(2, "claimed", null), r(3, "pending", 2), r(4, "cancelled", null), r(5, "pending", 1), r(6, "pending", 3)];
+    assert.deepEqual([...list].sort(byQueue).map((x) => x.id), [2, 5, 3, 6, 4, 1]);
+  });
+  it("puts a request that was put first above an older one, whatever their numbers", () => {
+    assert.deepEqual([r(7, "pending", 2), r(9, "pending", 1)].sort(byQueue).map((x) => x.id), [9, 7]);
+  });
+  it("keeps a waiting request that cannot be taken (no place) among the rest", () => {
+    assert.deepEqual([r(1, "pending", null), r(2, "pending", 1)].sort(byQueue).map((x) => x.id), [2, 1]);
   });
 });

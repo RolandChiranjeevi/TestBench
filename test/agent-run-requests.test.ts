@@ -241,6 +241,17 @@ describe("a database from before the run kind", () => {
   const ddlOf = (d: Database.Database) => d.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'agent_requests'").pluck().get() as string;
   const insertRun = (d: Database.Database) => d.prepare("INSERT INTO agent_requests (project_id, kind, target_url, payload) VALUES (1, 'run', 'https://a.example/', '{}')").run();
 
+  it("gets the priority column (0 on every old row) after the table was rebuilt, and a second migrate leaves what a person set", () => {
+    const d = old();
+    d.exec("ALTER TABLE agent_requests DROP COLUMN priority"); // as it was before the column existed
+    migrate(d); // rebuilds (the old CHECK), then adds the column
+    assert.deepEqual(d.prepare("SELECT id, priority FROM agent_requests ORDER BY id").all(), [{ id: 1, priority: 0 }, { id: 2, priority: 0 }]);
+    d.prepare("UPDATE agent_requests SET priority = 5 WHERE id = 1").run();
+    migrate(d);
+    assert.equal(d.prepare("SELECT priority FROM agent_requests WHERE id = 1").pluck().get(), 5, "running it again changes nothing");
+    assert.doesNotThrow(() => insertRun(d), "and the table takes the run kind");
+  });
+
   it("takes the run kind with every row and every column kept, and the index and the links to projects and runs back", () => {
     const d = old();
     assert.throws(() => insertRun(d), /CHECK/);

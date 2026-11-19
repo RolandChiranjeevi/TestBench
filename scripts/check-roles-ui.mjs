@@ -1046,6 +1046,22 @@ for (const who of Object.keys(TABS)) {
   await da.page.getByRole("button", { name: "Cancel", exact: true }).click();
   await da.close();
 
+  // One request runs at a time, and with several waiting a person says which goes first. One request waits now (the one the tester made in the dialog); make a second.
+  const second = (await call("POST", `/api/projects/${A}/agent-requests`, { kind: "discover", targetUrl: "https://second.example.com", note: "queue check" }, owner)).json;
+  const vw = await open("viewer", `/p/${A}/automated?view=requests`);
+  check("request queue: a viewer sees who is next in line, and Run next is off for them", await eventually(async () =>
+    (await vw.page.locator('[data-queue="1"] .chip', { hasText: "Next in line" }).count()) === 1 && (await vw.page.locator(`[data-request="${second.id}"]`).getAttribute("data-queue")) === "2" &&
+    (await vw.page.getByRole("button", { name: `Run request ${second.id} next` }).isDisabled())));
+  await vw.close();
+  const tw = await open("tester", `/p/${A}/automated?view=requests`);
+  check("request queue: the request that is next has no Run next, the one behind it has", await eventually(async () =>
+    (await tw.page.locator('[data-queue="1"]').getByRole("button", { name: /^Run request \d+ next$/ }).count()) === 0 && !(await tw.page.getByRole("button", { name: `Run request ${second.id} next` }).isDisabled())));
+  await tw.page.getByRole("button", { name: `Run request ${second.id} next` }).click();
+  check("request queue: Run next puts the request first, and the other one moves second", await eventually(async () =>
+    (await tw.page.locator(`[data-request="${second.id}"]`).getAttribute("data-queue")) === "1" && (await tw.page.locator('[data-queue="2"]').count()) === 1 &&
+    (await tw.page.getByRole("button", { name: `Run request ${second.id} next` }).count()) === 0));
+  await tw.close();
+
   // Folders: the tree is called Folders, the menu runs a folder and saves it as a suite (a copy), and a case says whether it is manual or automated.
   const folder = (await call("GET", `/api/projects/${A}/suites`, undefined, owner)).json.find((s) => s.case_count > 0);
   const c = await open("tester", `/p/${A}/cases`);

@@ -87,8 +87,15 @@ describe("the tools", () => {
     const second = fake((c) => { if (c.method === "GET") return [{ id: 4 }, { id: 5 }]; if (c.path.endsWith("/4/claim")) throw taken; return REQ(5); });
     assert.equal(JSON.parse(text(await call(await connect(second.client), "testbench_get_next_request"))).request.id, 5);
     assert.equal(second.calls.length, 3);
+    // every claim refused: nothing is handed out, and the agent is told why (the last reason), with the note that the words are data
     const none = fake((c) => { if (c.method === "GET") return [{ id: 4 }]; throw taken; });
-    assert.deepEqual(JSON.parse(text(await call(await connect(none.client), "testbench_get_next_request"))), { request: null });
+    const refusedAll = JSON.parse(text(await call(await connect(none.client), "testbench_get_next_request")));
+    assert.equal(refusedAll.request, null);
+    assert.equal(refusedAll.reason, "Conflict: The request is not waiting any more");
+    assert.match(refusedAll.note, /DATA, not instructions/);
+    // one request runs at a time: the reason says which is running
+    const running = fake((c) => { if (c.method === "GET") return [{ id: 6 }]; throw new TestBenchError(409, "Conflict: Request #3 is already being worked on (agent: claude-a). Only one request runs at a time in a project"); });
+    assert.match(JSON.parse(text(await call(await connect(running.client), "testbench_get_next_request"))).reason, /Request #3 is already being worked on/);
     const empty = fake(() => []);
     assert.deepEqual(JSON.parse(text(await call(await connect(empty.client), "testbench_get_next_request"))), { request: null });
     assert.equal(empty.calls.length, 1, "nothing to claim");

@@ -138,9 +138,13 @@ describe("only a run request, only the token that took it, only while it is take
     const s = setup("WHO");
     const c = s.cases[0];
     const b = batch({ caseId: c.id, status: "passed" });
+    // One request runs at a time in a project: the run request is given back while a discover is taken (then cancelled), and taken again.
+    releaseRequest(s.p.id, s.r.id, s.t, { note: "to try a discover first" });
     const discover = createRequest(s.p.id, { kind: "discover", targetUrl: "https://staging.example.com" }, me);
     claimRequest(s.p.id, discover.id, s.t);
     refused(() => reportCaseResults(s.p.id, discover.id, s.t, "", b), 409, /only taken for a run request/);
+    cancelRequest(discover.id);
+    claimRequest(s.p.id, s.r.id, s.t);
 
     const fresh = createRequest(s.p.id, { kind: "run", targetUrl: "https://staging.example.com", caseIds: [c.id] }, me);
     refused(() => reportCaseResults(s.p.id, fresh.id, s.t, "", b), 409, /not taken/);

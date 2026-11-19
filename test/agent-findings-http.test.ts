@@ -4,7 +4,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, before, describe, it } from "node:test";
+import { after, before, beforeEach, describe, it } from "node:test";
 import Database from "better-sqlite3";
 import { ACCESS } from "../server/access.ts";
 
@@ -99,6 +99,10 @@ before(async () => {
   ciTokenA = (await mk(a, "ci", "ci")).token;
 });
 after(() => server?.kill());
+// One request runs at a time in a project, so a request one test leaves taken would hold up the next: every test starts with nothing waiting or taken.
+beforeEach(async () => {
+  for (const projectId of [a, b]) for (const r of await ok<{ id: number; status: string }[]>(await person(`/api/projects/${projectId}/agent-requests`, undefined, "GET"))) if (r.status === "pending" || r.status === "claimed") await person(`/api/agent-requests/${r.id}/cancel`, {});
+});
 
 describe("who may report a finding", () => {
   it("refuses a missing, malformed, unknown, revoked, read or CI token with the same 401", async () => {
@@ -276,12 +280,14 @@ describe("the log, the secrets and the limits", () => {
 
   it("answers 429 after 60 findings a minute from one token, and does not slow another token", async () => {
     const rid = await taken(a, tokenBusy);
-    const other = await taken(a, tokenA);
     const statuses: number[] = [];
     for (let i = 0; i < 62; i++) statuses.push((await finding(tokenBusy, a, rid, { ...obs, title: `n${i}` })).status);
     assert.equal(statuses.filter((s) => s === 201).length, 60);
     assert.deepEqual(statuses.slice(60), [429, 429]);
     assert.equal(rows<{ findings_count: number }>("SELECT findings_count FROM agent_requests WHERE id = ?", rid)[0].findings_count, 60, "the refused ones were not made");
+    // One request runs at a time in a project: the first is cancelled, and the other token takes the next.
+    assert.equal((await person(`/api/agent-requests/${rid}/cancel`, {})).status, 200);
+    const other = await taken(a, tokenA);
     assert.equal((await finding(tokenA, a, other, obs)).status, 201, "another token is not slowed down");
   });
 

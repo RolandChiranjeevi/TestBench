@@ -2,7 +2,7 @@ import "./env.ts";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import Database from "better-sqlite3";
-import { claimRequest, createRequest } from "../server/agentrequests.ts";
+import { claimRequest, completeRequest, createRequest } from "../server/agentrequests.ts";
 import { AuditError } from "../server/auditcommon.ts";
 import { createFinding, FINDING_LIMITS, findingBody } from "../server/agentfindings.ts";
 import { db, migrate } from "../server/db.ts";
@@ -41,6 +41,7 @@ describe("the cap: at most 200 findings per request", () => {
     assert.equal(n("SELECT COUNT(*) FROM observations WHERE origin_audit_id = ?", `$agent-${first}`), 200, "the refused one was not made");
     assert.equal(n("SELECT COUNT(*) FROM audit_log WHERE action = 'agent_request.finding_created' AND detail LIKE ?", `%"request":${first},%`), 200, "and not logged");
 
+    completeRequest(p.id, first, token, {}); // one request runs at a time in a project: the first is finished before the second is taken
     const second = take();
     assert.equal(createFinding(p.id, second, token, "127.0.0.1", obs("a fresh request has its own count")).sourceId, `$agent-${second}-1`);
     assert.equal(n("SELECT findings_count FROM agent_requests WHERE id = ?", first), 200, "the first is still full");

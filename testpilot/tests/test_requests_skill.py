@@ -575,6 +575,13 @@ class TokenHandlingTests(unittest.TestCase):
 class RuleTests(unittest.TestCase):
     """Rules in the text that were found to matter in a real run. A change that drops one should have to say why."""
 
+    def test_one_request_runs_at_a_time_and_the_agent_stops_instead_of_trying_another(self):
+        self.assertIn("another request of the project is already being worked on", TEXT)
+        self.assertIn("Do not try another request meanwhile, and never give back or cancel the one that runs", TEXT)
+        self.assertIn("The list is in the order a person chose in TestBench: the first is next in line", TEXT)
+        self.assertIn("One request runs at a time in a project, so a request is taken only when no other one is.", TEXT)
+        self.assertIn("Do not take another request meanwhile.", TEXT)
+
     def test_the_agent_does_not_write_its_own_code_for_the_token_and_never_opens_env_or_mcp_json(self):
         self.assertIn("**Use it exactly as shown. Do not write your own code to call TestBench, do not copy, edit or re-create the helper, and do not open `.env` or `.mcp.json` yourself.**", TEXT)
         self.assertIn("**You never read `.env` or `.mcp.json` yourself**, for this token or for anything else: reading either is a stop", TEXT)
