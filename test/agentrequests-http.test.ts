@@ -170,6 +170,14 @@ describe("what a request token is, and is not", () => {
     assert.equal(mine.some((x) => x.targetUrl.includes("made-by-agent")), false, "it did not ask for anything");
   });
 
+  it("GET /login with it is refused (403) with a text that says the request is not allowed, and does not ask for a retry", async () => {
+    const res = await agent(`Bearer ${tokenA}`, "/login");
+    assert.equal(res.status, 403);
+    const { error } = (await res.json()) as { error: string };
+    assert.match(error, /not allowed/);
+    assert.doesNotMatch(error, /try again|retry|later/i);
+  });
+
   it("is not opened by the other kinds of token on its own routes, and does not open theirs", async () => {
     assert.equal((await agent(`Bearer ${readTokenA}`, `/api/agent/projects/${a}/requests`)).status, 401);
     assert.equal((await agent(`Bearer ${tokenA}`, `/api/agent/projects/${a}/requirements`)).status, 401);

@@ -107,7 +107,7 @@ registerAuth(app, auth);
 // gets "sign in" first; whatever is left is refused here, so an agent can never approve, reject, edit or deprecate a requirement, with or without a login being set up.
 app.addHook("onRequest", async (req, reply) => {
   if (agentCredentialKind(req.headers.authorization) && !isCiIngest(req.method, req.url) && !isAgentRead(req.method, req.url) && !isAgentPropose(req.method, req.url) && !isAgentRequestRoute(req.method, req.url)) {
-    return reply.code(403).send({ error: "An agent token opens only its own route. Requirements are decided by a person." });
+    return reply.code(403).send({ error: "This request is not allowed. An agent token opens only its own routes, and this is not one of them." });
   }
 });
 // Who may do what in which project (server/access.ts), once accounts are on. After the login check and the agent-token check, before every route and file.

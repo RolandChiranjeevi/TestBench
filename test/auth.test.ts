@@ -108,7 +108,12 @@ describe("with a password", async () => {
     const page = await app.inject({ url: "/" });
     assert.equal(page.statusCode, 302);
     assert.equal(page.headers.location, "/login");
-    assert.equal((await app.inject({ url: "/uploads/secret.txt" })).statusCode, 302);
+    // the redirect says why, for callers that do not follow it
+    assert.match(page.headers["content-type"] as string, /text\/plain/);
+    assert.match(page.body, /Sign in required.*\/login/);
+    const upload = await app.inject({ url: "/uploads/secret.txt" });
+    assert.equal(upload.statusCode, 302);
+    assert.match(upload.body, /Sign in required.*\/login/);
     assert.equal((await app.inject({ method: "POST", url: "/api/anything", headers: H })).statusCode, 401);
   });
 
