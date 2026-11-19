@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { db } from "../server/db.ts";
 import { AuditError } from "../server/auditcommon.ts";
-import { cancelRequest, claimRequest, cleanTargetUrl, completeRequest, createRequest, listRequests, pendingForAgent, releaseRequest, REQUEST_LIMITS } from "../server/agentrequests.ts";
+import { cancelRequest, claimRequest, cleanTargetUrl, completeRequest, createRequest, DEFAULT_REQUEST_OPTIONS, listRequests, optionsNeedAdmin, pendingForAgent, releaseRequest, REQUEST_LIMITS } from "../server/agentrequests.ts";
 import { makeProject } from "./helpers.ts";
 
 // What a person can ask of a test agent, and what the agent can do with it (server/agentrequests.ts). Testbench starts nothing; these are rows and their states.
@@ -322,5 +322,84 @@ describe("when the project goes", () => {
     db.prepare("DELETE FROM projects WHERE id = ?").run(p.id);
     assert.equal((db.prepare("SELECT COUNT(*) AS n FROM agent_requests WHERE project_id = ?").get(p.id) as { n: number }).n, 0);
     assert.equal((db.prepare("SELECT COUNT(*) AS n FROM request_tokens WHERE project_id = ?").get(p.id) as { n: number }).n, 0);
+  });
+});
+
+describe("the options of a discover request", () => {
+  // What the person chose when asking: a preselection for the agent's one confirmation, never a permission. Enumerations only, no free text.
+  const ask = (projectId: number, options?: unknown, by: { name: string; userId: number | null; mayWiden?: boolean } = me) =>
+    createRequest(projectId, { kind: "discover", targetUrl: "https://staging.example.com", options }, by);
+
+  it("without options a discover gets the defaults: read only, a local branch, a plan, cases, observations and bugs, all three viewports", () => {
+    const p = makeProject(key());
+    const r = ask(p.id);
+    assert.deepEqual(r.options, { targetMode: "observe_only", gitMode: "local", deliverables: ["plan", "cases", "observations", "bugs"], viewports: ["desktop", "tablet", "mobile"], production: false });
+    assert.notEqual(r.options?.deliverables, DEFAULT_REQUEST_OPTIONS.deliverables, "a copy: one request's options never change the defaults");
+  });
+
+  it("keeps what the person chose, each value once and in a fixed order, and gives the same to the person's list, the agent's list and the claim", () => {
+    const p = makeProject(key());
+    const r = ask(p.id, { targetMode: "full", gitMode: "pr", deliverables: ["specs", "plan", "plan"], viewports: ["mobile", "desktop"] });
+    const want = { targetMode: "full", gitMode: "pr", deliverables: ["plan", "specs"], viewports: ["desktop", "mobile"], production: false };
+    assert.deepEqual(r.options, want);
+    assert.deepEqual(listRequests(p.id)[0].options, want);
+    assert.deepEqual(pendingForAgent(p.id)[0].options, want);
+    assert.deepEqual(claimRequest(p.id, r.id, token()).options, want);
+    const stored = JSON.parse((db.prepare("SELECT payload FROM agent_requests WHERE id = ?").get(r.id) as { payload: string }).payload) as { options: unknown };
+    assert.deepEqual(stored.options, want, "what is stored is what was checked, not what was sent");
+  });
+
+  it("refuses what is not one of the choices: an unknown option, a value out of range, an empty or unknown list, and options that are not an object", () => {
+    const p = makeProject(key());
+    refused(() => ask(p.id, { color: "red" }), 400, /Unknown option "color"/);
+    refused(() => ask(p.id, { targetMode: "write" }), 400, /targetMode must be one of/);
+    refused(() => ask(p.id, { targetMode: 1 }), 400, /targetMode must be one of/);
+    refused(() => ask(p.id, { gitMode: "push" }), 400, /gitMode must be one of/);
+    refused(() => ask(p.id, { deliverables: [] }), 400, /deliverables must be a list/);
+    refused(() => ask(p.id, { deliverables: "plan" }), 400, /deliverables must be a list/);
+    refused(() => ask(p.id, { deliverables: ["plan", "everything"] }), 400, /deliverables can only hold/);
+    refused(() => ask(p.id, { viewports: ["desktop", "tablet", "mobile", "watch"] }), 400, /viewports must be a list/);
+    refused(() => ask(p.id, { viewports: ["fridge"] }), 400, /viewports can only hold/);
+    refused(() => ask(p.id, { production: "yes" }), 400, /production must be true or false/);
+    refused(() => ask(p.id, "full"), 400, /must be an object/);
+    refused(() => ask(p.id, ["full"]), 400, /must be an object/);
+    assert.equal(listRequests(p.id).length, 0, "nothing was made");
+  });
+
+  it("a production target can only be read: production with full is refused, production with observe_only is kept, and git is a separate choice", () => {
+    const p = makeProject(key());
+    refused(() => ask(p.id, { production: true, targetMode: "full" }), 400, /production target can only be read/);
+    assert.equal(ask(p.id, { production: true }).options?.production, true);
+    assert.equal(ask(p.id, { production: true, gitMode: "pr" }).options?.gitMode, "pr");
+  });
+
+  it("with accounts on, only an admin can ask for full or pr: someone who may not widen is refused (403), and nothing is made", () => {
+    const p = makeProject(key());
+    const tester = { ...me, mayWiden: false };
+    refused(() => ask(p.id, { targetMode: "full" }, tester), 403, /Only an admin/);
+    refused(() => ask(p.id, { gitMode: "pr" }, tester), 403, /Only an admin/);
+    assert.equal(listRequests(p.id).length, 0, "nothing was made");
+    assert.equal(ask(p.id, { targetMode: "observe_only", gitMode: "off" }, tester).options?.gitMode, "off");
+    assert.equal(ask(p.id, { gitMode: "local" }, tester).options?.gitMode, "local");
+    assert.equal(ask(p.id, undefined, tester).options?.targetMode, "observe_only", "no options: the defaults, which anyone may ask for");
+    assert.equal(ask(p.id, { targetMode: "full", gitMode: "pr" }, { ...me, mayWiden: true }).options?.targetMode, "full");
+    assert.equal(optionsNeedAdmin(DEFAULT_REQUEST_OPTIONS), false);
+  });
+
+  it("only a discover has options: a re-run or a run that is given some is refused, and a re-run has none", () => {
+    const p = makeProject(key());
+    const run = automatedRun(p.id, { "a works": "failed" });
+    refused(() => createRequest(p.id, { kind: "rerun", runId: run, options: { gitMode: "off" } }, me), 400, /only for a discover/);
+    refused(() => createRequest(p.id, { kind: "run", targetUrl: "https://a.example", caseIds: [1], options: {} }, me), 400, /only for a discover/);
+    assert.equal(createRequest(p.id, { kind: "rerun", runId: run }, me).options, null);
+  });
+
+  it("a discover made before options existed has none stored and reads as the defaults", () => {
+    const p = makeProject(key());
+    const row = db
+      .prepare("INSERT INTO agent_requests (project_id, kind, target_url, environment, note, run_id, payload, created_by, created_by_user_id) VALUES (?, 'discover', 'https://old.example.com/', '', '', NULL, ?, 'Tess', NULL) RETURNING id")
+      .get(p.id, JSON.stringify({ tests: [] })) as { id: number };
+    assert.deepEqual(listRequests(p.id).find((r) => r.id === row.id)?.options, DEFAULT_REQUEST_OPTIONS);
+    assert.deepEqual(pendingForAgent(p.id)[0].options, DEFAULT_REQUEST_OPTIONS);
   });
 });

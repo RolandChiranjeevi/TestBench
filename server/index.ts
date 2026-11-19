@@ -59,7 +59,7 @@ import { CASE_RESULT_LIMITS, caseResultsBody, reportCaseResults } from "./agentr
 import { currentUser } from "./accountcontext.ts";
 import { checkAccessTable, trackRoutes } from "./access.ts";
 import { registerAccessGuard } from "./accessguard.ts";
-import { roleOf } from "./members.ts";
+import { allows, roleOf } from "./members.ts";
 import { coverageGaps, getObservationLinks, setObservationLinks } from "./coveragegaps.ts";
 import { applyBugDraft, bugDraftScreenshot, checkScreenshot, createBugDraft, decideBugDraft, editBugDraft, getBugDraft, listBugDrafts, buildBugDraft, MAX_SCREENSHOT_BYTES } from "./bugdrafts.ts";
 import { compareSpec, createSpec, editSpec, getSpec, listSpecs, removeSpec, renameSpec, specFile as ownSpecFile, SPEC_LIMITS, SPEC_STATUSES } from "./specs.ts";
@@ -1972,16 +1972,21 @@ const requestBody = z.object({
   caseIds: z.array(z.number().int()).max(1000).optional(),
   title: z.string().max(1000).optional(),
   templateId: z.number().int().nullable().optional(),
+  // A discover request: what the person chose (checked by createRequest: enumerations only). A preselection for the agent's confirmation, never a permission.
+  options: z.unknown().optional(),
 });
 // For a run request the entry also names the run that was made and how many cases it holds; for the others it is as before.
-const requestAudit = (req: FastifyRequest, action: string, r: { id: number; projectId: number; kind: string; runId?: number | null; caseCount?: number }, label = actorName(), userId: number | null = actorUserId()) =>
-  audit({ userId, label, ip: req.ip }, action, { projectId: r.projectId, detail: { request: r.id, kind: r.kind, ...(r.kind === "run" ? { run: r.runId ?? null, cases: r.caseCount ?? 0 } : {}) } });
+const requestAudit = (req: FastifyRequest, action: string, r: { id: number; projectId: number; kind: string; runId?: number | null; caseCount?: number; options?: { targetMode: string; gitMode: string; production: boolean } | null }, label = actorName(), userId: number | null = actorUserId()) =>
+  audit({ userId, label, ip: req.ip }, action, { projectId: r.projectId, detail: { request: r.id, kind: r.kind, ...(r.kind === "run" ? { run: r.runId ?? null, cases: r.caseCount ?? 0 } : {}), ...(action === "agent_request.created" && r.options ? { targetMode: r.options.targetMode, gitMode: r.options.gitMode, production: r.options.production } : {}) } });
 
 app.get("/api/projects/:id/agent-requests", (req) => audited(() => listRequests(idParam(req), (req.query as { status?: string }).status)));
 app.post("/api/projects/:id/agent-requests", (req) => {
   const id = idParam(req);
   const body = requestBody.parse(req.body);
-  const r = audited(() => createRequest(id, body, { name: actorName(), userId: actorUserId() }));
+  // With accounts on, asking an agent to act on the target (full) or to open a pull request (pr) needs the admin role of the project. Without accounts there are no roles.
+  const u = currentUser();
+  const mayWiden = !u || allows(roleOf(u, id), "admin");
+  const r = audited(() => createRequest(id, body, { name: actorName(), userId: actorUserId(), mayWiden }));
   requestAudit(req, "agent_request.created", r);
   return r;
 });

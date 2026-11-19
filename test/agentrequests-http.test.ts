@@ -94,6 +94,19 @@ describe("an agent works through a request with its token alone", () => {
     assert.equal(mine.find((x) => x.id === r.id)?.status, "done", "the person sees how it went");
   });
 
+  it("the options of a discover reach the agent in the list and in the claim as the person chose them, and a wrong option is refused", async () => {
+    const options = { targetMode: "observe_only", gitMode: "off", deliverables: ["cases", "bugs"], viewports: ["mobile"], production: true };
+    const r = await ask(a, { kind: "discover", targetUrl: "https://options.example.com", options });
+    const list = (await (await agent(`Bearer ${tokenA}`, `/api/agent/projects/${a}/requests`)).json()) as { id: number; options: unknown }[];
+    assert.deepEqual(list.find((x) => x.id === r.id)?.options, options);
+    const claimed = await ok<{ options: unknown }>(await agent(`Bearer ${tokenA}`, `/api/agent/projects/${a}/requests/${r.id}/claim`, "POST"));
+    assert.deepEqual(claimed.options, options);
+    const bad = await person(`/api/projects/${a}/agent-requests`, { kind: "discover", targetUrl: "https://bad.example.com", options: { targetMode: "write" } });
+    assert.equal(bad.status, 400);
+    assert.match(await bad.text(), /targetMode must be one of/);
+    assert.equal((await agent(`Bearer ${tokenA}`, `/api/agent/projects/${a}/requests/${r.id}/complete`, "POST", {})).status, 200, "tidy: the request is finished");
+  });
+
   it("two agents cannot take the same request, and only the one that took it can finish it", async () => {
     const r = await ask(a, { kind: "discover", targetUrl: "https://second.example.com" });
     assert.equal((await agent(`Bearer ${tokenA}`, `/api/agent/projects/${a}/requests/${r.id}/claim`, "POST")).status, 200);

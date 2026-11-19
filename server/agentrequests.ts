@@ -33,6 +33,62 @@ export type RequestStatus = (typeof REQUEST_STATUSES)[number];
 const bad = (message: string) => new AuditError(400, message);
 const SECRET_KEY = /pass|token|secret|key|auth|cookie|session/i;
 
+/**
+ * The choices a person makes when asking for a discover. They are a PRESELECTION for the agent's one confirmation, never a permission: the agent still stops at its own ceiling (the
+ * profile's `permissionMode`, the repository's rules) and at what the person confirms in the session, and a request can never raise either. Nothing here is free text.
+ */
+export const REQUEST_OPTIONS = {
+  targetModes: ["observe_only", "full"],
+  gitModes: ["off", "local", "pr"],
+  deliverables: ["plan", "cases", "observations", "bugs", "specs"],
+  viewports: ["desktop", "tablet", "mobile"],
+} as const;
+export interface RequestOptions {
+  /** What the agent may do to the target: only read it, or also change its state (each action still needs the person's confirmation in the session). */
+  targetMode: (typeof REQUEST_OPTIONS.targetModes)[number];
+  /** What the agent may do in git: nothing, commit on a local branch, or also push that branch and open a pull request (never merge). */
+  gitMode: (typeof REQUEST_OPTIONS.gitModes)[number];
+  deliverables: (typeof REQUEST_OPTIONS.deliverables)[number][];
+  viewports: (typeof REQUEST_OPTIONS.viewports)[number][];
+  /** The person says the target is production. A hint only (the agent still asks for its two confirmations), but with it the target can only be read. */
+  production: boolean;
+}
+export const DEFAULT_REQUEST_OPTIONS: RequestOptions = { targetMode: "observe_only", gitMode: "local", deliverables: ["plan", "cases", "observations", "bugs"], viewports: ["desktop", "tablet", "mobile"], production: false };
+
+/** The options of a discover request, checked and with the defaults filled in. Anything unknown or out of range is refused: these are enumerations, not text. */
+export function cleanOptions(input: unknown): RequestOptions {
+  if (input === undefined || input === null) return { ...DEFAULT_REQUEST_OPTIONS, deliverables: [...DEFAULT_REQUEST_OPTIONS.deliverables], viewports: [...DEFAULT_REQUEST_OPTIONS.viewports] };
+  if (typeof input !== "object" || Array.isArray(input)) throw bad("The options must be an object");
+  const o = input as Record<string, unknown>;
+  const known = ["targetMode", "gitMode", "deliverables", "viewports", "production"];
+  const unknownKey = Object.keys(o).find((k) => !known.includes(k));
+  if (unknownKey) throw bad(`Unknown option "${unknownKey.slice(0, 40)}". The options are ${known.join(", ")}`);
+  const one = <T extends string>(v: unknown, what: string, allowed: readonly T[], fallback: T): T => {
+    if (v === undefined) return fallback;
+    if (typeof v !== "string" || !(allowed as readonly string[]).includes(v)) throw bad(`${what} must be one of ${allowed.join(", ")}`);
+    return v as T;
+  };
+  const many = <T extends string>(v: unknown, what: string, allowed: readonly T[], fallback: readonly T[]): T[] => {
+    if (v === undefined) return [...fallback];
+    if (!Array.isArray(v) || v.length === 0 || v.length > allowed.length) throw bad(`${what} must be a list of at least one of ${allowed.join(", ")}`);
+    if (!v.every((x) => typeof x === "string" && (allowed as readonly string[]).includes(x))) throw bad(`${what} can only hold ${allowed.join(", ")}`);
+    return allowed.filter((a) => v.includes(a)); // each once, in a fixed order
+  };
+  if (o.production !== undefined && typeof o.production !== "boolean") throw bad("production must be true or false");
+  const options: RequestOptions = {
+    targetMode: one(o.targetMode, "targetMode", REQUEST_OPTIONS.targetModes, DEFAULT_REQUEST_OPTIONS.targetMode),
+    gitMode: one(o.gitMode, "gitMode", REQUEST_OPTIONS.gitModes, DEFAULT_REQUEST_OPTIONS.gitMode),
+    deliverables: many(o.deliverables, "deliverables", REQUEST_OPTIONS.deliverables, DEFAULT_REQUEST_OPTIONS.deliverables),
+    viewports: many(o.viewports, "viewports", REQUEST_OPTIONS.viewports, DEFAULT_REQUEST_OPTIONS.viewports),
+    production: o.production === true,
+  };
+  if (options.production && options.targetMode !== "observe_only") throw bad("A production target can only be read: choose observe_only");
+  return options;
+}
+
+/** Choices that widen what an agent may do: acting on the target, or pushing and opening a pull request. With accounts on, only an admin of the project can ask for them. */
+export const optionsNeedAdmin = (o: RequestOptions) => o.targetMode === "full" || o.gitMode === "pr";
+
 /** An http(s) address with no password in it and nothing in its query that looks like one. Secrets do not belong in a request that an agent and a log will read. */
 export function cleanTargetUrl(input: unknown): string {
   if (typeof input !== "string" || !input.trim()) throw bad("A discover or run request needs the address to look at");
@@ -75,17 +131,20 @@ export function viewOf(r: Row, withCases = true) {
   let tests: RerunTest[] = [];
   let cases: RunCase[] = [];
   let caseCount = r.case_count ?? 0;
+  let options: RequestOptions | null = null;
   try {
     // A run request in a list is not parsed at all: its payload can be large, and the list only needs the count.
     if (withCases || r.kind !== "run") {
-      const p = JSON.parse(r.payload) as { tests?: RerunTest[]; cases?: RunCase[] };
+      const p = JSON.parse(r.payload) as { tests?: RerunTest[]; cases?: RunCase[]; options?: unknown };
       tests = p.tests ?? [];
+      // Only a discover has options. One made before options existed has none stored, and reads as the defaults.
+      if (r.kind === "discover") options = cleanOptions(p.options);
       if (r.case_count == null) caseCount = p.cases?.length ?? 0;
       if (withCases) cases = p.cases ?? [];
     }
   } catch { /* a payload that is not JSON: no tests or cases listed */ }
   return {
-    id: r.id, projectId: r.project_id, kind: r.kind, targetUrl: r.target_url, environment: r.environment, note: r.note, runId: r.run_id, tests, cases, caseCount, status: r.status,
+    id: r.id, projectId: r.project_id, kind: r.kind, targetUrl: r.target_url, environment: r.environment, note: r.note, runId: r.run_id, tests, cases, caseCount, options, status: r.status,
     createdBy: r.created_by, createdAt: r.created_at, claimedBy: r.claimed_by, claimedAt: r.claimed_at, finishedAt: r.finished_at, resultRunId: r.result_run_id, resultNote: r.result_note, resultDeliveredAt: r.result_delivered_at,
     releaseNote: r.release_note, releasedBy: r.released_by, releasedAt: r.released_at, resultAuditId: r.result_audit_id,
     // A run request: how far its run has come. An agent that takes it again after a release sees from this what is left.
@@ -140,7 +199,7 @@ export function agentRequestOfRun(runId: number): { id: number; status: RequestS
   return { ...rest, progress: runProgress(runId), ...(reportRunId ? { reportRunId } : {}) };
 }
 
-export interface NewRequest { kind: unknown; targetUrl?: unknown; environment?: unknown; note?: unknown; runId?: unknown; caseIds?: unknown; title?: unknown; templateId?: unknown }
+export interface NewRequest { kind: unknown; targetUrl?: unknown; environment?: unknown; note?: unknown; runId?: unknown; caseIds?: unknown; title?: unknown; templateId?: unknown; options?: unknown }
 
 /**
  * The test cases of a run request, as they are now: the text a person wrote (title, description, preconditions, steps), the names of the automated tests linked to the case and of
@@ -170,7 +229,8 @@ function runCases(projectId: number, input: unknown): RunCase[] {
   return cases;
 }
 
-export function createRequest(projectId: number, input: NewRequest, by: { name: string; userId: number | null }) {
+/** `by.mayWiden` is false only for a person who is not an admin of the project, with accounts on (there are no roles without accounts). */
+export function createRequest(projectId: number, input: NewRequest, by: { name: string; userId: number | null; mayWiden?: boolean }) {
   if (!db.prepare("SELECT 1 FROM projects WHERE id = ?").get(projectId)) throw new AuditError(404, "Project not found");
   if (!(REQUEST_KINDS as readonly unknown[]).includes(input.kind)) throw bad(`kind must be one of ${REQUEST_KINDS.join(", ")}`);
   const kind = input.kind as RequestKind;
@@ -189,8 +249,12 @@ export function createRequest(projectId: number, input: NewRequest, by: { name: 
   let targetUrl = "";
   let runId: number | null = null;
   let tests: RerunTest[] = [];
+  let options: RequestOptions | null = null;
+  if (kind !== "discover" && input.options !== undefined && input.options !== null) throw bad("Options are only for a discover request, so far");
   if (kind === "discover") {
     targetUrl = cleanTargetUrl(input.targetUrl);
+    options = cleanOptions(input.options);
+    if (optionsNeedAdmin(options) && by.mayWiden === false) throw new AuditError(403, "Only an admin of the project can ask an agent to act on the target (full) or to open a pull request (pr)");
   } else if (kind === "run") {
     // The address is where the agent runs the cases; the run is made together with the request, in one transaction, so there is never a request without its run.
     targetUrl = cleanTargetUrl(input.targetUrl);
@@ -228,7 +292,7 @@ export function createRequest(projectId: number, input: NewRequest, by: { name: 
   }
   const row = db
     .prepare("INSERT INTO agent_requests (project_id, kind, target_url, environment, note, run_id, payload, created_by, created_by_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *")
-    .get(projectId, kind, targetUrl, environment, note, runId, JSON.stringify({ tests }), by.name, by.userId) as Row;
+    .get(projectId, kind, targetUrl, environment, note, runId, JSON.stringify({ tests, ...(options ? { options } : {}) }), by.name, by.userId) as Row;
   return viewOf(row);
 }
 
