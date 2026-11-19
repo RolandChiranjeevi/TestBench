@@ -97,6 +97,7 @@ What to do about it:
 - Make a token for the work and **revoke it when the work is done**.
 - Keep the session in its normal permission mode and answer its prompts. Do not save an "always allow" rule for reading files or running shell commands.
 - In Claude Code's `auto` permission mode a classifier approves the calls and you are not asked, so no prompt would stop a read of `.env`. The limits above (the narrow token, revoking it, the audit log) do not depend on prompts and still hold.
+- In the normal (`default`) mode a prompt guards shell commands, but **not the Read tool**. Measured with Claude Code 2.1.328 (appendix D of [agent-chain-verification.md](agent-chain-verification.md)): a `sed` against `.env` asked first, while Read of `.env` and of `.mcp.json` in the working folder ran with no prompt. So answering prompts does not keep a session from reading the token; the limits above do.
 - Keep `.env` out of git (it is in `.gitignore`) and readable by you only (`chmod 600 .env`), and put in it only what the agent's folder needs: any other secret in that file is as reachable as the token.
 - If you think a token was read, revoke it, and look at when it was last used and at the audit log.
 
