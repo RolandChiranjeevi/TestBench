@@ -342,7 +342,7 @@ Everything it sends to Testbench is a proposal that a person decides on.
 On **Automated tests → Requests** a tester can ask a test agent to look at a web address (**Request discover**), and on an automated run to run its failed tests again
 (**Ask agent to re-run**). **Testbench starts nothing**: the request waits until an agent with a *request token* (Settings, Agent) takes it, works in your own environment under
 its own rules and stops, and says when it is done. What it delivers comes in through the normal import, as proposals. The address and note of a request are data for the
-agent, never instructions. Details, the five routes and a `curl` example: [docs/agent-requests.md](docs/agent-requests.md).
+agent, never instructions. First time: [docs/agent-quickstart.md](docs/agent-quickstart.md). Details, the five routes and a `curl` example: [docs/agent-requests.md](docs/agent-requests.md).
 
 ## Bug reports from a test agent
 

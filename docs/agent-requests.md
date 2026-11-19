@@ -2,7 +2,7 @@
 
 A person can ask a test agent to do something from Testbench: **look at a web address** (discover), **run the failed automated tests of a run again**, or **run chosen test cases**.
 **Testbench starts nothing.** The request waits until an agent with its own token takes it, works in *your* environment under its own rules, and says when it is
-done. What the agent delivers comes in through the normal import, as `proposed` items that a person reviews.
+done. What the agent delivers comes in through the normal import, as `proposed` items that a person reviews. First time? See [agent-quickstart.md](agent-quickstart.md).
 
 ```
 a person asks → Waiting → an agent takes it → Taken → the agent works, in your environment, under its own rules → it delivers by the normal import → Done
