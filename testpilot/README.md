@@ -257,7 +257,7 @@ Fields mapped by the transform for each bug: `bug_proposal_id` → `sourceId`,
 
 ## 10. Requests from TestBench
 
-People can ask the agent for something in TestBench (**Automated tests → Requests**): look at a web address, or run the failed automated tests of a run again.
+People can ask the agent for something in TestBench (**Automated tests → Requests**, or **New manual run → Ask an agent**): look at a web address, run the failed automated tests of a run again, or run chosen test cases.
 TestBench starts nothing. `/testpilot-requests` is how the agent picks a request up, in your own environment. Details of the requests and their routes: [../docs/agent-requests.md](../docs/agent-requests.md). The TestBench MCP tools are the other way to work on a request: [../docs/agent-paths.md](../docs/agent-paths.md) says what each path can do and which to use.
 
 Set it up once:
