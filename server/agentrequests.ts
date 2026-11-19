@@ -111,6 +111,8 @@ interface Row {
   id: number; project_id: number; kind: RequestKind; target_url: string; environment: string; note: string; run_id: number | null; payload: string; status: RequestStatus;
   created_by: string; created_at: string; claimed_by: string | null; claimed_token_id: number | null; claimed_at: string | null; finished_at: string | null; result_run_id: number | null; result_note: string;
   result_delivered_at: string | null; release_note: string; released_by: string | null; released_at: string | null; result_audit_id: number | null;
+  /** 0 until a person puts the request first; a higher number is served earlier (see runNextRequest). */
+  priority: number;
   /** Only in a list: the number of cases of a run request, counted by the database, so that a list does not have to carry their text. */
   case_count?: number;
 }
@@ -147,6 +149,8 @@ export function viewOf(r: Row, withCases = true) {
     id: r.id, projectId: r.project_id, kind: r.kind, targetUrl: r.target_url, environment: r.environment, note: r.note, runId: r.run_id, tests, cases, caseCount, options, status: r.status,
     createdBy: r.created_by, createdAt: r.created_at, claimedBy: r.claimed_by, claimedAt: r.claimed_at, finishedAt: r.finished_at, resultRunId: r.result_run_id, resultNote: r.result_note, resultDeliveredAt: r.result_delivered_at,
     releaseNote: r.release_note, releasedBy: r.released_by, releasedAt: r.released_at, resultAuditId: r.result_audit_id,
+    // Where a waiting request stands in the order an agent is given (1 = next), filled in for a person's list (withQueue); null for one that is not waiting.
+    priority: r.priority ?? 0, queuePosition: null as number | null,
     // A run request: how far its run has come. An agent that takes it again after a release sees from this what is left.
     progress: r.kind === "run" && r.run_id !== null ? runProgress(r.run_id) : null,
   };
@@ -178,15 +182,40 @@ export function listRequests(projectId: number, status?: string, limit = 200) {
   const rows = db
     .prepare(`SELECT *, json_array_length(payload, '$.cases') AS case_count FROM agent_requests WHERE project_id = ? ${status ? "AND status = ?" : ""} ORDER BY id DESC LIMIT ?`)
     .all(...(status ? [projectId, status, limit] : [projectId, limit])) as Row[];
-  return withAudits(rows.map((r) => viewOf(r, false)));
+  return withQueue(projectId, withAudits(rows.map((r) => viewOf(r, false))));
 }
 
-/** What an agent asks for: the requests still waiting, oldest first. */
+// A request that waits can be taken. A run request whose run was deleted cannot (it would have nothing to fill in): it stays for a person to cancel.
+const WAITING = "status = 'pending' AND NOT (kind = 'run' AND run_id IS NULL)";
+// The order an agent is given them in: the ones a person put first, then the oldest.
+const QUEUE_ORDER = "priority DESC, id ASC";
+
+/** A person's list with the place of each waiting request in that order (1 = next). */
+const withQueue = <T extends { id: number; queuePosition: number | null }>(projectId: number, views: T[]): T[] => {
+  const order = db.prepare(`SELECT id FROM agent_requests WHERE project_id = ? AND ${WAITING} ORDER BY ${QUEUE_ORDER}`).pluck().all(projectId) as number[];
+  const place = new Map(order.map((id, i) => [id, i + 1]));
+  return views.map((v) => ({ ...v, queuePosition: place.get(v.id) ?? null }));
+};
+
+/** What an agent asks for: the requests still waiting, in the order a person put them first and then the oldest. */
 export function pendingForAgent(projectId: number) {
-  // A run request whose run was deleted cannot be taken (it would have nothing to fill in): it stays for a person to cancel. A list carries the count of cases, and the cases
-  // themselves come with the claim.
+  // A list carries the count of cases, and the cases themselves come with the claim.
   return (db.prepare(`SELECT *, json_array_length(payload, '$.cases') AS case_count FROM agent_requests
-      WHERE project_id = ? AND status = 'pending' AND NOT (kind = 'run' AND run_id IS NULL) ORDER BY id ASC LIMIT 50`).all(projectId) as Row[]).map((r) => viewOf(r, false));
+      WHERE project_id = ? AND ${WAITING} ORDER BY ${QUEUE_ORDER} LIMIT 50`).all(projectId) as Row[]).map((r) => viewOf(r, false));
+}
+
+/**
+ * A person puts a waiting request first: an agent is given it before the others, and the skill lists it first. Only one request runs at a time in a project, so this is how a person
+ * says which. It is a place in the line and nothing more: it does not take the request, change what it asks, or let an agent do anything it could not. It goes above every other
+ * waiting request (their priority + 1) and stays first until another is put first. One that is already first is left as it is. Only a request that can be taken is put in line.
+ */
+export function runNextRequest(id: number) {
+  const r = rowOf(id);
+  if (!r) throw new AuditError(404, "Request not found");
+  if (!db.prepare(`SELECT 1 FROM agent_requests WHERE id = ? AND ${WAITING}`).get(id)) throw new AuditError(409, "Only a request that is waiting can be put first");
+  const first = db.prepare(`SELECT id FROM agent_requests WHERE project_id = ? AND ${WAITING} ORDER BY ${QUEUE_ORDER} LIMIT 1`).pluck().get(r.project_id) as number;
+  const row = first === id ? r : (db.prepare(`UPDATE agent_requests SET priority = (SELECT MAX(priority) + 1 FROM agent_requests WHERE project_id = ? AND ${WAITING}) WHERE id = ? RETURNING *`).get(r.project_id, id) as Row);
+  return { ...viewOf(row), queuePosition: 1 };
 }
 
 /** The run request an agent was asked to run this run by (the newest one), for the run's page: its number, state and who took it. null for a run that was not asked of an agent. */
@@ -304,15 +333,22 @@ export function cancelRequest(id: number) {
   throw new AuditError(409, "The request is already done or cancelled");
 }
 
-/** An agent takes a waiting request. Only one can: the UPDATE succeeds while the request is pending. */
+/**
+ * An agent takes a waiting request. Only one agent can take a given request (the UPDATE succeeds while it is pending), and only one request of a project is taken at a time:
+ * while another is taken, every claim is refused (409) until that one is done, given back or cancelled. A person chooses which waiting request goes first (runNextRequest).
+ */
 export function claimRequest(projectId: number, id: number, token: { id: number; name: string }) {
   const r = db
     .prepare(`UPDATE agent_requests SET status = 'claimed', claimed_by = ?, claimed_token_id = ?, claimed_at = datetime('now')
-      WHERE id = ? AND project_id = ? AND status = 'pending' AND NOT (kind = 'run' AND run_id IS NULL) RETURNING *`)
-    .get(`agent: ${token.name}`, token.id, id, projectId) as Row | undefined;
+      WHERE id = ? AND project_id = ? AND status = 'pending' AND NOT (kind = 'run' AND run_id IS NULL)
+        AND NOT EXISTS (SELECT 1 FROM agent_requests c WHERE c.project_id = ? AND c.status = 'claimed') RETURNING *`)
+    .get(`agent: ${token.name}`, token.id, id, projectId, projectId) as Row | undefined;
   if (r) return viewOf(r);
   const cur = mustRow(projectId, id);
   if (cur.status === "pending" && cur.kind === "run" && cur.run_id === null) throw new AuditError(409, "The run of this request was deleted, so there is nothing to run. A person can cancel the request");
+  // One at a time: the check is in the UPDATE above, so two agents asking together cannot both be given one.
+  const running = cur.status === "pending" ? (db.prepare("SELECT id, claimed_by FROM agent_requests WHERE project_id = ? AND status = 'claimed' ORDER BY id LIMIT 1").get(projectId) as { id: number; claimed_by: string | null } | undefined) : undefined;
+  if (running) throw new AuditError(409, `Request #${running.id} is already being worked on (${running.claimed_by ?? "an agent"}). Only one request runs at a time in a project: wait until it is done or given back, or a person can cancel it`);
   throw new AuditError(409, "The request is not waiting any more (someone else took it, or it was cancelled)");
 }
 

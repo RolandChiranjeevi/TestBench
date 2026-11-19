@@ -51,7 +51,7 @@ import { agentCredentialKind, agentProposalsEnabled, authenticateProposeToken, c
 import { approveProposal, createProposals, editProposal, getProposal, listProposals, rejectProposal } from "./reqproposals.ts";
 import { actorName, actorUserId, getDisplayName, setDisplayName } from "./actor.ts";
 import { accountsState, AccountError, audit, revokeAllSessions, updateProfile } from "./accounts.ts";
-import { agentRequestOfRun, agentResultsEnabled, cancelRequest, claimRequest, completeRequest, createRequest, listRequests, pendingForAgent, releaseRequest, RESULT_LIMITS, setAgentResultsEnabled, submitResult } from "./agentrequests.ts";
+import { agentRequestOfRun, agentResultsEnabled, cancelRequest, claimRequest, completeRequest, createRequest, listRequests, pendingForAgent, releaseRequest, RESULT_LIMITS, runNextRequest, setAgentResultsEnabled, submitResult } from "./agentrequests.ts";
 import { authenticateRequestToken, createRequestToken, isAgentRequestRoute, listRequestTokens, revokeRequestToken } from "./requesttokens.ts";
 import type { TokenKind, TokenMaker } from "./tokens.ts";
 import { createFinding, FINDING_LIMITS, findingBody } from "./agentfindings.ts";
@@ -1993,6 +1993,12 @@ app.post("/api/projects/:id/agent-requests", (req) => {
 app.post("/api/agent-requests/:id/cancel", (req) => {
   const r = audited(() => cancelRequest(idParam(req)));
   requestAudit(req, "agent_request.cancelled", r);
+  return r;
+});
+// A person puts a waiting request first, so that an agent is given it before the others (only one request runs at a time in a project).
+app.post("/api/agent-requests/:id/run-next", (req) => {
+  const r = audited(() => runNextRequest(idParam(req)));
+  requestAudit(req, "agent_request.put_first", r);
   return r;
 });
 

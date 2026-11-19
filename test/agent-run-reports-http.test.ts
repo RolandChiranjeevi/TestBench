@@ -170,11 +170,15 @@ describe("who may hand in a report", () => {
 
   it("takes only a run request or a re-run that this token took and that is still taken: 400 for a discover, 409 for a request nobody took, another token's, a cancelled one; 404 for one that is not there", async () => {
     await switchResults(true);
+    // One request runs at a time in a project: the run request is given back while a discover is taken (then cancelled), and taken again.
+    assert.equal((await finish(tokenA, a, rid, "release")).status, 200);
     const discover = await ok<{ id: number }>(await person(`/api/projects/${a}/agent-requests`, { kind: "discover", targetUrl: "http://localhost:3000/" }));
     await ok(await take(tokenA, a, discover.id));
     const d = await handIn(tokenA, a, discover.id, good());
     assert.equal(d.status, 400);
     assert.match((await d.json()).error, /Only a re-run or a run request takes a report/);
+    assert.equal((await person(`/api/agent-requests/${discover.id}/cancel`, {})).status, 200);
+    await ok(await take(tokenA, a, rid));
 
     const waiting = await askRun(a, [pay]);
     assert.equal((await handIn(tokenA, a, waiting.id, good())).status, 409, "nobody took it");
@@ -298,6 +302,7 @@ describe("release and complete after a report", () => {
     await switchResults(true);
     const failed = await importReport(a, pw([{ file: "e2e/shop.spec.ts", title: "breaks", status: "failed" }]));
     const rerun = await ok<{ id: number }>(await person(`/api/projects/${a}/agent-requests`, { kind: "rerun", runId: failed.runId }));
+    assert.equal((await person(`/api/agent-requests/${rid}/cancel`, {})).status, 200, "one request runs at a time: the run request the test started with is out of the way");
     await ok(await take(tokenA2, a, rerun.id));
     assert.equal((await handIn(tokenA2, a, rerun.id, pw([{ file: "e2e/shop.spec.ts", title: "breaks" }]))).status, 200);
     const refused = await finish(tokenA2, a, rerun.id, "release");
@@ -358,6 +363,7 @@ describe("the audit log, the rate limit and the token", () => {
     assert.equal(limited.status, 429);
     assert.match((await limited.json()).error, /at most 10 a minute/);
     assert.equal((await requestOf(a, rid)).resultDeliveredAt, null, "nothing was taken while it was limited");
+    assert.equal((await person(`/api/agent-requests/${rid}/cancel`, {})).status, 200, "one request runs at a time: the first is out of the way for the other token");
     const other = await askRun(a, [pay]);
     await ok(await take(tokenA2, a, other.id));
     assert.equal((await handIn(tokenA2, a, other.id, pw([{ file: "e2e/pay.spec.ts", title: "pays" }]))).status, 200, "another token is not slowed down");

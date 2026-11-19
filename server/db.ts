@@ -759,6 +759,15 @@ function migrateAgentFindings(d: Database.Database) {
 }
 
 /**
+ * The order of waiting requests: a person can put one first. `priority` is 0 for every request until then; a higher number is served earlier, and among equals the oldest goes
+ * first. It is added after migrateAgentRunKind, which rebuilds an old table from a fixed list of columns and would otherwise drop it.
+ */
+function migrateAgentQueue(d: Database.Database) {
+  const hasColumn = (table: string, col: string) => (d.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === col);
+  if (!hasColumn("agent_requests", "priority")) d.exec("ALTER TABLE agent_requests ADD COLUMN priority INTEGER NOT NULL DEFAULT 0");
+}
+
+/**
  * Results an agent reported for a run request (AG5a). results.reported_by_agent_token_id holds the id of the request token (request_tokens.id, no foreign key: the mark outlives
  * the token) of the agent that reported the result, and stays when a person changes it afterwards, so that it can always be seen where a result came from. NULL: a person or an import.
  */
@@ -1379,6 +1388,7 @@ CREATE INDEX IF NOT EXISTS bug_events_bug ON bug_events(bug_report_id);`);
   migrateRoles(d);
   migrateAgentFindings(d);
   migrateAgentRunKind(d);
+  migrateAgentQueue(d);
   migrateAgentResults(d);
 
   // Make sure every sprint named on a run has a sprint record.

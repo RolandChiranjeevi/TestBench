@@ -4,7 +4,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, before, describe, it } from "node:test";
+import { after, before, beforeEach, describe, it } from "node:test";
 import Database from "better-sqlite3";
 
 // The real server, started as a separate process with a password set. AG5a: an agent that took a run request reports a result for each test case. Who may (the token that took it, a
@@ -109,6 +109,10 @@ before(async () => {
   [step1, step2] = stepIdsOf(c1);
 });
 after(() => server?.kill());
+// One request runs at a time in a project, so a request one test leaves taken would hold up the next: every test starts with nothing waiting or taken.
+beforeEach(async () => {
+  for (const projectId of [a, b]) for (const r of await ok<{ id: number; status: string }[]>(await person(`/api/projects/${projectId}/agent-requests`, undefined, "GET"))) if (r.status === "pending" || r.status === "claimed") await person(`/api/agent-requests/${r.id}/cancel`, {});
+});
 
 const written = () => rows("SELECT 1 FROM results WHERE reported_by_agent_token_id IS NOT NULL").length;
 const auditRows = () => rows<{ actor_label: string; detail: string }>("SELECT actor_label, detail FROM audit_log WHERE action = 'agent_request.results_reported' ORDER BY id");
@@ -162,6 +166,7 @@ describe("who may report results", () => {
     const d = await caseResults(tokenA, a, discover.id, body);
     assert.equal(d.status, 409);
     assert.match((await d.json()).error, /only taken for a run request/);
+    await ok(await finish(tokenA, a, discover.id, "release")); // one request runs at a time in a project: the discover is given back before a run request is taken
 
     const pending = await ok<Req>(await askRun(a, [c1]));
     const p = await caseResults(tokenA, a, pending.id, body);
@@ -180,7 +185,6 @@ describe("who may report results", () => {
 
     assert.equal((await caseResults(tokenA, a, 999999, body)).status, 404);
     assert.equal(written(), before, "nothing was written");
-    await ok(await finish(tokenA, a, discover.id, "release"));
   });
 });
 
@@ -333,7 +337,6 @@ describe("the audit log and the rate limit", () => {
 
   it("answers 429 after 60 reports a minute from one token, counting the refused ones too, and does not slow another token", async () => {
     const busy = await taken(tokenBusy);
-    const other = await taken(tokenA);
     const statuses: number[] = [];
     for (let i = 0; i < 62; i++) statuses.push((await caseResults(tokenBusy, a, busy.id, { results: [] })).status); // each is refused as a bad batch, and still counts
     assert.equal(statuses.filter((s) => s === 400).length, 60);
@@ -342,6 +345,9 @@ describe("the audit log and the rate limit", () => {
     assert.equal(limited.status, 429);
     assert.match((await limited.json()).error, /at most 60 a minute/);
     assert.equal(rows("SELECT 1 FROM results WHERE run_id = ? AND status != 'untested'", busy.runId).length, 0, "nothing was written while it was limited");
+    // One request runs at a time in a project: the first is cancelled, and the other token takes the next.
+    assert.equal((await person(`/api/agent-requests/${busy.id}/cancel`, {})).status, 200);
+    const other = await taken(tokenA);
     assert.equal((await caseResults(tokenA, a, other.id, { results: [{ caseId: c1, status: "passed" }] })).status, 200, "another token is not slowed down");
   });
 

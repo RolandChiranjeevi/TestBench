@@ -237,9 +237,13 @@ describe("TestBench decides which case a test belongs to, never the text of the 
 describe("who may hand in a report, and when", () => {
   it("only a run request or a re-run, only the token that took it, only while it is taken, only when a person has switched agent results on", () => {
     const s = setup("RPP");
+    // One request runs at a time in a project: the run request is given back while a discover is taken (then cancelled), and taken again.
+    releaseRequest(s.p.id, s.r.id, s.t, { note: "to try a discover first" });
     const discover = createRequest(s.p.id, { kind: "discover", targetUrl: URL_OK }, me);
     claimRequest(s.p.id, discover.id, s.t);
     refused(() => submitResult(s.p.id, discover.id, s.t, good(), IP), 400, /Only a re-run or a run request takes a report/);
+    cancelRequest(discover.id);
+    claimRequest(s.p.id, s.r.id, s.t);
 
     const fresh = createRequest(s.p.id, { kind: "run", targetUrl: URL_OK, caseIds: [s.pay.id] }, me);
     refused(() => submitResult(s.p.id, fresh.id, s.t, good(), IP), 409, /Take the request first/);

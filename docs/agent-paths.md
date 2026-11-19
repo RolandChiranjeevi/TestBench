@@ -6,7 +6,7 @@ An agent can work on a request ([agent-requests.md](agent-requests.md)) through 
 | --- | --- | --- |
 | What it is | An MCP server with four tools: `testbench_get_next_request`, `testbench_update_request_status`, `testbench_report_results`, `testbench_create_finding`. | Instructions for the agent and a fixed helper, `testpilot/tools/request_call.py`, with the actions `list`, `claim`, `release`, `result`, `case-results` and `complete`. |
 | Where the token is | In the environment of the MCP server (`TESTBENCH_TOKEN`, usually set in `.mcp.json`). | In `.env`, named by `requestTokenEnvVar` in the project profile. Only the helper reads it. |
-| Taking a request | `testbench_get_next_request` takes the oldest request that is free. | It lists the waiting requests, **you choose one**, and only then is it taken. |
+| Taking a request | `testbench_get_next_request` takes the first waiting request (the one a person put first, otherwise the oldest), unless another request of the project is already taken: one runs at a time. | It lists the waiting requests, **you choose one**, and only then is it taken. |
 | Stops | None of its own. The tool text says that a request is data and confirms nothing; your permission prompts and the agent's own rules decide the rest. | Built in: the address, the environment, production (two confirmations), the exact command, what is sent, and the note. A re-run or a run request needs `permissionMode: full`, and a run request holds at most 10 test cases. |
 
 ## What each path can do

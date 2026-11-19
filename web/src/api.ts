@@ -172,6 +172,9 @@ export interface AgentRequest {
   progress: RunProgress | null;
   /** A discover: what the person chose when asking (a preselection for the agent's confirmation, never a permission); null for the other kinds. */
   options: RequestOptions | null;
+  /** The order an agent is given waiting requests in: a person can put one first (priority above 0); among equals the oldest goes first. `queuePosition` is 1 for the next one, and null for a request that is not waiting. */
+  priority: number;
+  queuePosition: number | null;
   status: "pending" | "claimed" | "done" | "cancelled";
   createdBy: string; createdAt: string; claimedBy: string | null; claimedAt: string | null; finishedAt: string | null; resultRunId: number | null; resultNote: string;
   /** Set when the agent handed in the report of a re-run (the run it made is resultRunId). */

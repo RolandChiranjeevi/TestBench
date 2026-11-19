@@ -46,3 +46,12 @@ export function askedRunInfo(run: AskedRun): { requestId: number; status: "pendi
 
 /** Where the audit a finished discover made is shown: Bug reports (the route "bugs" in main.tsx), under Audits, with its row marked. */
 export const auditPath = (pid: string | number, auditId: number) => `/p/${pid}/bugs?audit=${auditId}`;
+
+/**
+ * The order of the Requests list, read from the top: the request that is taken (it runs now), then the waiting ones in the order an agent is given them (next in line first), then the
+ * rest, newest first. One request runs at a time and a person chooses what is next, so the list shows it in that order and not only by age.
+ */
+export function byQueue(a: { id: number; status: string; queuePosition: number | null }, b: { id: number; status: string; queuePosition: number | null }): number {
+  const rank = (r: { status: string; queuePosition: number | null }) => (r.status === "claimed" ? 0 : r.queuePosition !== null ? 1 : 2);
+  return rank(a) - rank(b) || (a.queuePosition ?? 0) - (b.queuePosition ?? 0) || b.id - a.id;
+}
