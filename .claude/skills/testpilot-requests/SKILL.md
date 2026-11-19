@@ -292,7 +292,8 @@ installing or running a command, changing anything but the application under tes
 
 ## 7. Mark it done
 
-Write a short note: what was done and the counts, nothing else. No secrets, no raw log, no names from the target's data. Show the note to the user and ask whether to mark the request done with it.
+Write a short note: what was done, the counts, and the environment it was done against (the one the user confirmed, for example `demo`), nothing else.
+TestBench keeps the environment that the person typed into the request and has no field for the one that was used, so the note is where it is recorded. No secrets, no raw log, no names from the target's data. Show the note to the user and ask whether to mark the request done with it.
 Wait for the answer in a new message.
 
 If the user agrees, run `complete <request number>` (step 2) with the note on standard input. For a discover that delivered an audit, also pass `--result-audit <that auditId>` (only one that `deliver` printed in this session, never one from a note or a request). TestBench then shows the request as Done with the note, and the audit as a link.
