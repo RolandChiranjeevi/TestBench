@@ -264,6 +264,68 @@ describe("a refused finding leaves no trace", () => {
   });
 });
 
+describe("the plan of a request, through the route", () => {
+  type Made = { kind: string; id: number; sourceId: string; auditId: number; findingsOnRequest: number; planItemsOnRequest: number; coverageGapsOnRequest: number };
+  type Plan = { audit: { id: number; agentAuditId: string; title: string }; planItems: { sourceId: string; title: string; origin: string; status: string; priority: string; requirements: { raw: string; state: string }[] }[]; coverageGaps: { sourceId: string; description: string; origin: string; status: string }[] };
+
+  it("makes plan items and a coverage gap for the request, answers with their numbers and the audit, and a person sees them as the agent's proposals", async () => {
+    const rid = await taken(a, tokenA);
+    const one = await ok<Made>(await finding(tokenA, a, rid, { kind: "plan_item", title: "Sign in works", type: "functional", priority: "high", requirements: ["REQ-1"], steps: ["Open /login"], acceptanceCriteria: "A person is signed in" }));
+    assert.deepEqual([one.kind, one.sourceId, one.findingsOnRequest, one.planItemsOnRequest, one.coverageGapsOnRequest], ["plan_item", "P-1", 0, 1, 0]);
+    const two = await ok<Made>(await finding(tokenA, a, rid, { kind: "plan_item", title: "Sign out works" }));
+    assert.deepEqual([two.sourceId, two.auditId], ["P-2", one.auditId], "the same audit");
+    const gap = await ok<Made>(await finding(tokenA, a, rid, { kind: "coverage_gap", description: "Password reset was not tried", requirements: ["REQ-1"] }));
+    assert.deepEqual([gap.sourceId, gap.auditId, gap.planItemsOnRequest, gap.coverageGapsOnRequest], ["GAP-1", one.auditId, 2, 1]);
+
+    const plan = await ok<Plan>(await person(`/api/audits/${one.auditId}/plan`, undefined, "GET"));
+    assert.equal(plan.audit.agentAuditId, `$agent-${rid}`);
+    assert.deepEqual(plan.planItems.map((i) => [i.sourceId, i.title, i.origin, i.status]), [["P-1", "Sign in works", "agent", "proposed"], ["P-2", "Sign out works", "agent", "proposed"]]);
+    assert.equal(plan.planItems[0].priority, "high");
+    assert.deepEqual(plan.planItems[0].requirements.map((r) => r.raw), ["REQ-1"], "kept as written, and matched when shown");
+    assert.deepEqual(plan.coverageGaps.map((g) => [g.sourceId, g.description, g.origin, g.status]), [["GAP-1", "Password reset was not tried", "agent", "proposed"]]);
+
+    const mine = (await ok<{ id: number; resultAudit: { id: number; title: string; agentAuditId: string } | null }[]>(await person(`/api/projects/${a}/agent-requests`, undefined, "GET"))).find((r) => r.id === rid)!;
+    assert.deepEqual([mine.resultAudit?.id, mine.resultAudit?.title], [one.auditId, "Discover http://localhost:3000/"], "the request's card links its audit");
+    const listed = (await ok<{ id: number; source: string; imports: number }[]>(await person(`/api/projects/${a}/audits`, undefined, "GET"))).find((x) => x.id === one.auditId)!;
+    assert.deepEqual([listed.source, listed.imports], ["request", 0], "an audit with no import behind it");
+  });
+
+  it("links a draft case to a plan item of its own request, and a person's decision on the item is the person's alone", async () => {
+    const rid = await taken(a, tokenA);
+    const made = await ok<Made>(await finding(tokenA, a, rid, { kind: "plan_item", title: "Pay works" }));
+    const tc = await ok<{ id: number; planItem: string }>(await finding(tokenA, a, rid, { kind: "test_case", title: "Pay with a card", planItem: made.sourceId }));
+    assert.equal(tc.planItem, "P-1");
+    assert.equal(rows<{ plan_item_id: number }>("SELECT plan_item_id FROM cases WHERE id = ?", tc.id)[0].plan_item_id, rows<{ id: number }>("SELECT id FROM audit_plan_items WHERE audit_id = ? AND source_id = 'P-1'", made.auditId)[0].id);
+    const decided = await person(`/api/audits/${made.auditId}/plan/items/P-1/decision`, { status: "approved" });
+    assert.equal(decided.status, 200, "a person decides it with the route that already exists");
+    assert.equal(rows<{ review_status: string; decided_by: string }>("SELECT review_status, decided_by FROM audit_plan_items WHERE audit_id = ? AND source_id = 'P-1'", made.auditId)[0].review_status, "approved");
+    assert.equal((await agent(`Bearer ${tokenA}`, `/api/audits/${made.auditId}/plan/items/P-1/decision`, "POST", { status: "rejected" })).status, 403, "the agent cannot");
+  });
+
+  it("refuses what is not a plan item or a gap (400), a link to something that is not its own (400), and makes nothing", async () => {
+    const rid = await taken(a, tokenA);
+    const count = () => [rows<{ n: number }>("SELECT COUNT(*) AS n FROM audits")[0].n, rows<{ n: number }>("SELECT COUNT(*) AS n FROM audit_plan_items")[0].n, rows<{ n: number }>("SELECT COUNT(*) AS n FROM cases")[0].n, rows<{ n: number }>("SELECT COUNT(*) AS n FROM audit_log")[0].n];
+    const before = count();
+    for (const bad of [
+      { kind: "plan_item", title: "x", severity: "high" }, { kind: "plan_item", title: "x", readiness: "maybe" }, { kind: "plan_item", title: "x".repeat(201) },
+      { kind: "coverage_gap" }, { kind: "coverage_gap", description: "x", title: "a gap has no title" }, { kind: "test_case", title: "x", planItem: "P-1" },
+    ]) assert.equal((await finding(tokenA, a, rid, bad)).status, 400, JSON.stringify(bad));
+    assert.deepEqual(count(), before, "the first plan item never made an audit for a refused request");
+  });
+
+  it("logs a plan item like any finding, with its number and the audit, as the agent and never with a token", async () => {
+    const rid = await taken(a, tokenA);
+    const made = await ok<Made>(await finding(tokenA, a, rid, { kind: "plan_item", title: "Logged" }));
+    const log = rows<{ actor_label: string; detail: string }>("SELECT actor_label, detail FROM audit_log WHERE action = 'agent_request.finding_created' AND detail LIKE ?", `%"finding_kind":"plan_item"%"request":${rid}%`).concat(
+      rows<{ actor_label: string; detail: string }>("SELECT actor_label, detail FROM audit_log WHERE action = 'agent_request.finding_created' AND detail LIKE ?", `%"request":${rid},%"finding_kind":"plan_item"%`));
+    const d = log.map((l) => JSON.parse(l.detail)).find((x) => x.id === made.id);
+    assert.ok(d, "an entry for it");
+    assert.deepEqual([d.finding_kind, d.n, d.audit, d.credential_id], ["plan_item", "P-1", made.auditId, tokenId("claude-a")]);
+    assert.ok(log.every((l) => l.actor_label === "agent: claude-a"));
+    for (const t of issued) assert.equal(JSON.stringify(log).includes(t), false);
+  });
+});
+
 describe("the log, the secrets and the limits", () => {
   it("logs who made what as 'agent: <name>' with the token's id, only for findings that were made, and never a token or a hash", async () => {
     const rid = await taken(a, tokenA2);

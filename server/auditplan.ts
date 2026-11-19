@@ -376,6 +376,33 @@ function add(s: Subject, auditId: number, fields: Record<string, unknown>) {
   })();
 }
 
+/**
+ * A plan item or coverage gap that a test agent hands in while it works on a discover request (server/agentfindings.ts). It is the agent's proposal, written the way an import writes
+ * a new one (origin agent, status proposed, an entry in the history), so everything above works on it: a person owns it once they edit or decide it, and a later import never
+ * overwrites it. The agent's own ones are numbered P-1, P-2 ... (items) and GAP-1 ... (gaps), apart from a person's H-n and G-n. `label` is the actor in the history.
+ */
+function addByAgent(s: Subject, prefix: string, auditId: number, fields: Record<string, unknown>, label: string) {
+  const f = s.normalize({ ...s.blank(), ...fields });
+  s.validate(f);
+  let n = (db.prepare(`SELECT COUNT(*) AS n FROM ${s.table} WHERE audit_id = ? AND origin = 'agent'`).get(auditId) as { n: number }).n + 1;
+  while (db.prepare(`SELECT 1 FROM ${s.table} WHERE audit_id = ? AND source_id = ?`).get(auditId, `${prefix}${n}`)) n++;
+  const sourceId = `${prefix}${n}`;
+  const position = (db.prepare(`SELECT COALESCE(MAX(position), -1) + 1 AS p FROM ${s.table} WHERE audit_id = ?`).get(auditId) as { p: number }).p;
+  s.insertAgent(auditId, sourceId, position, f, s.key(f));
+  revise(s, auditId, sourceId, "agent_import", { name: label, userId: null }, f, "proposed", "New proposal from the agent");
+  const id = (db.prepare(`SELECT id FROM ${s.table} WHERE audit_id = ? AND source_id = ?`).get(auditId, sourceId) as { id: number }).id;
+  return { id, sourceId };
+}
+export const addPlanItemByAgent = (auditId: number, fields: Partial<PlanFields> & Pick<PlanFields, "title">, label: string) => addByAgent(ITEM, "P-", auditId, fields, label);
+export const addGapByAgent = (auditId: number, fields: Partial<GapFields> & Pick<GapFields, "description">, label: string) => addByAgent(GAP, "GAP-", auditId, fields, label);
+/** How many plan items and coverage gaps the agent has made in an audit: the caps of one request are counted on these. */
+export const agentPlanCounts = (auditId: number) => ({
+  planItems: (db.prepare("SELECT COUNT(*) AS n FROM audit_plan_items WHERE audit_id = ? AND origin = 'agent'").get(auditId) as { n: number }).n,
+  coverageGaps: (db.prepare("SELECT COUNT(*) AS n FROM audit_coverage_gaps WHERE audit_id = ? AND origin = 'agent'").get(auditId) as { n: number }).n,
+});
+/** The row id of one plan item of an audit that the AGENT made, or null when there is none by that id (a person's own item, H-n, is not found: the agent links only to its own). */
+export const planItemRowId = (auditId: number, sourceId: string) => (db.prepare("SELECT id FROM audit_plan_items WHERE audit_id = ? AND source_id = ? AND origin = 'agent'").pluck().get(auditId, sourceId) as number | undefined) ?? null;
+
 /** The history, oldest first: every entry says what happened, who did it and what changed against how it stood. */
 function history(s: Subject, auditId: number) {
   if (!db.prepare("SELECT 1 FROM audits WHERE id = ?").get(auditId)) throw new AuditError(404, "Audit not found");

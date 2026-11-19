@@ -1075,15 +1075,18 @@ function AuditsPanel({ pid, highlight }: { pid: string; highlight: number | null
         <div key={a.id} id={`audit-${a.id}`} ref={a.id === highlight ? (el) => el?.scrollIntoView({ block: "center" }) : undefined} className="card" style={{ padding: 12, ...(a.id === highlight ? { outline: "2px solid var(--accent-text)" } : {}) }} aria-current={a.id === highlight ? "true" : undefined}>
           <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
             <strong style={{ overflowWrap: "anywhere" }}>{a.title || a.agentAuditId}</strong>
-            <span className="chip">{a.source === "github" ? "GitHub" : "Upload"}</span>
+            <span className="chip" title={a.source === "request" ? "Made by a test agent while it worked on a discover request. There is no package behind it." : undefined}>{a.source === "github" ? "GitHub" : a.source === "request" ? "Agent request" : "Upload"}</span>
             <span className="spacer" />
             {a.planItems + a.coverageGaps > 0 && <Link className={buttonClass("secondary", "sm")} to={`/p/${pid}/test-plan?audit=${a.id}`}><ClipboardList size={12} /> Test plan</Link>}
             {a.hasReport && <Button size="sm" onClick={() => setReport(a)}><FileText size={12} /> Audit report</Button>}
             <Button needs="admin" variant="ghost" size="sm" style={DANGER} onClick={() => setDel(a)}><Trash2 size={12} /> Delete</Button>
           </div>
           <div className="faint" style={{ fontSize: "var(--fs-md)", marginTop: 4, display: "grid", gap: 2 }}>
-            <div><span className="mono">{a.agentAuditId}</span> · {a.agent || "agent unknown"} · last imported {timeAgo(a.lastImportedAt)} ({a.imports} import{a.imports === 1 ? "" : "s"})</div>
-            <div>{a.bugs} report{a.bugs === 1 ? "" : "s"}, {a.proposed} still proposed · {RUN_STATE[a.runState] ?? a.runState}{a.github ? ` (${a.github.repo}#${a.github.runId})` : ""}</div>
+            <div>
+              <span className="mono">{a.agentAuditId}</span> · {a.agent || "agent unknown"} ·{" "}
+              {a.source === "request" ? `handed in by a discover request ${timeAgo(a.lastImportedAt)}` : `last imported ${timeAgo(a.lastImportedAt)} (${a.imports} import${a.imports === 1 ? "" : "s"})`}
+            </div>
+            <div>{a.bugs} report{a.bugs === 1 ? "" : "s"}, {a.proposed} still proposed{a.source === "request" ? "" : ` · ${RUN_STATE[a.runState] ?? a.runState}${a.github ? ` (${a.github.repo}#${a.github.runId})` : ""}`}</div>
             {a.planItems + a.coverageGaps > 0 && <div>Test plan: {a.planItems} plan item{a.planItems === 1 ? "" : "s"}, {a.coverageGaps} coverage gap{a.coverageGaps === 1 ? "" : "s"}</div>}
           </div>
         </div>

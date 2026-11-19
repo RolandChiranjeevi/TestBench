@@ -755,6 +755,8 @@ BEGIN SELECT RAISE(ABORT, 'An AI-suggested requirement can only be approved by a
 function migrateAgentFindings(d: Database.Database) {
   const hasColumn = (table: string, col: string) => (d.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === col);
   if (!hasColumn("cases", "created_by_agent_token_id")) d.exec("ALTER TABLE cases ADD COLUMN created_by_agent_token_id INTEGER");
+  // The plan item a draft case from an agent was made for (a discover's plan, server/agentfindings.ts). A row id, so that it follows the item; the link goes (NULL) with the item.
+  if (!hasColumn("cases", "plan_item_id")) d.exec("ALTER TABLE cases ADD COLUMN plan_item_id INTEGER REFERENCES audit_plan_items(id) ON DELETE SET NULL");
   if (!hasColumn("agent_requests", "findings_count")) d.exec("ALTER TABLE agent_requests ADD COLUMN findings_count INTEGER NOT NULL DEFAULT 0");
 }
 
