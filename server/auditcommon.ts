@@ -4,7 +4,7 @@ import { db } from "./db.ts";
 /** Pieces shared by the bug reports and the manual test cases that arrive in an audit package. */
 
 export class AuditError extends Error {
-  constructor(public status: 400 | 404 | 409, message: string) {
+  constructor(public status: 400 | 403 | 404 | 409, message: string) {
     super(message);
   }
 }

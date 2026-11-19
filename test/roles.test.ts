@@ -1304,6 +1304,31 @@ describe("Bug drafts from a screenshot", () => {
   });
 });
 
+describe("asking an agent for more than reading: only an admin of the project", () => {
+  const ask = (cookie: string, options?: unknown) => call("POST", `/api/projects/${projects.A}/agent-requests`, { cookie, body: { kind: "discover", targetUrl: "https://options.example.com", options } });
+  const waiting = () => (db.prepare("SELECT COUNT(*) AS n FROM agent_requests WHERE project_id = ? AND status = 'pending'").get(projects.A) as { n: number }).n;
+  const lastCreated = () => JSON.parse((db.prepare("SELECT detail FROM audit_log WHERE action = 'agent_request.created' ORDER BY id DESC LIMIT 1").get() as { detail: string }).detail) as Record<string, unknown>;
+
+  it("a tester can ask for reading and a local branch, but full and pr are refused (403) and nothing is made", async () => {
+    const before = waiting();
+    assert.equal((await ask(people.tes.cookie)).statusCode, 200, "no options: the defaults");
+    assert.equal((await ask(people.tes.cookie, { targetMode: "observe_only", gitMode: "off" })).statusCode, 200);
+    const full = await ask(people.tes.cookie, { targetMode: "full" });
+    const pr = await ask(people.tes.cookie, { gitMode: "pr" });
+    assert.deepEqual([full.statusCode, pr.statusCode], [403, 403], full.body + pr.body);
+    assert.equal(waiting(), before + 2, "only the two that were allowed were made");
+  });
+
+  it("an admin and the owner can ask for full and pr, the audit log says which choices were made, and production with full is refused for everyone", async () => {
+    const adm = await ask(people.adm.cookie, { targetMode: "full", gitMode: "pr" });
+    assert.equal(adm.statusCode, 200, adm.body);
+    assert.deepEqual([adm.json().options.targetMode, adm.json().options.gitMode], ["full", "pr"]);
+    assert.deepEqual([lastCreated().targetMode, lastCreated().gitMode, lastCreated().production], ["full", "pr", false]);
+    assert.equal((await ask(ownerCookie, { gitMode: "pr" })).statusCode, 200);
+    assert.equal((await ask(people.adm.cookie, { production: true, targetMode: "full" })).statusCode, 400, "a production target can only be read, whoever asks");
+  });
+});
+
 describe("nothing left this process", () => {
   it("the routes that were let through asked for outside addresses, and every one was refused by the stub", () => {
     assert.ok(outbound.every((u) => /^https?:\/\//.test(u)), outbound.join(", "));

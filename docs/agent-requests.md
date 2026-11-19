@@ -79,10 +79,30 @@ A request looks like this (times are UTC, `YYYY-MM-DD HH:MM:SS`):
 
 ```json
 { "id": 12, "projectId": 5, "kind": "discover", "targetUrl": "https://staging.example.com/", "environment": "staging", "note": "the checkout is new",
-  "runId": null, "tests": [], "status": "pending", "createdBy": "Tess Tester", "createdAt": "2026-11-14 12:00:00" }
+  "runId": null, "tests": [], "status": "pending", "createdBy": "Tess Tester", "createdAt": "2026-11-14 12:00:00",
+  "options": { "targetMode": "observe_only", "gitMode": "local", "deliverables": ["plan", "cases", "observations", "bugs"], "viewports": ["desktop", "tablet", "mobile"], "production": false } }
 ```
 
-For a `rerun`, `runId` is the run and `tests` lists `{ id, framework, file, title, fullName }` of each failed or blocked test. `resultRunId` must be a run in the same project.
+For a `rerun`, `runId` is the run and `tests` lists `{ id, framework, file, title, fullName }` of each failed or blocked test. `resultRunId` must be a run in the same project. Only a `discover` has `options`; the others have `"options": null`.
+
+### Choices when asking for a discover (`options`)
+
+A discover can carry `options`: what the person chose when asking. They are a **preselection for the agent's one confirmation, never a permission**. The agent is meant to show them in its own confirmation, the user confirms in a message of their own, and the agent stays under its own ceiling (the profile's `permissionMode`). A request never raises either: a request is a wish, not an approval.
+
+| Option | Values | Default |
+| --- | --- | --- |
+| `targetMode` | `observe_only` (only read the target) or `full` (also change its state; each action still needs the user's confirmation) | `observe_only` |
+| `gitMode` | `off`, `local` (commit on a local branch) or `pr` (push the branch and open a pull request, never merge) | `local` |
+| `deliverables` | any of `plan`, `cases`, `observations`, `bugs`, `specs` | `plan`, `cases`, `observations`, `bugs` |
+| `viewports` | any of `desktop`, `tablet`, `mobile` | all three |
+| `production` | `true` if the person says the target is production | `false` |
+
+- **Only these choices, and nothing else.** They are enumerations, not text. An unknown option or a value that is not in the table is refused (400). Each value is kept once, in a fixed order. Without `options`, the defaults apply, and a discover made before options existed reads as the defaults.
+- **A production target can only be read.** `production: true` together with `targetMode: full` is refused (400). It is a hint: the agent still asks for its own two confirmations for a production target.
+- **With accounts on, `full` and `pr` need the admin role of the project** (403 for anyone else). Reading and a local branch are open to every tester. Without accounts there are no roles.
+- **Only a discover has options.** A re-run or a run that is given some is refused (400).
+- The audit log entry `agent_request.created` of a discover records `targetMode`, `gitMode` and `production`.
+- So far the options are stored and handed to the agent (in the list, in the claim and by the MCP tool). What the skill does with them comes with the next step.
 
 ### What a session that uses the token can reach
 
