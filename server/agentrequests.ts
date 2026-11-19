@@ -394,7 +394,10 @@ function missingReport(cur: Row): { warning?: string } {
   return { warning: `No Playwright report was handed in, and this request names ${names}. A report can no longer be handed in now that the request is done. If you ran those tests, tell the user, who can import the report file under Import results. If you did not run them, ignore this.` };
 }
 
-/** The agent that took a request says it is done, with a note and, if it delivered something, the run that came in (a re-run) or the audit that was made (a discover). */
+/**
+ * The agent that took a request says it is done, with a note and, if it delivered something, the run that came in (a re-run) or the audit that was made (a discover). An audit the request
+ * already has (the one its plan made, see server/agentfindings.ts) stays unless the agent names another.
+ */
 export function completeRequest(projectId: number, id: number, token: { id: number; name: string }, input: { note?: unknown; resultRunId?: unknown; resultAuditId?: unknown }) {
   const cur = mustRow(projectId, id);
   const note = agentNote(input.note);
@@ -427,7 +430,7 @@ export function completeRequest(projectId: number, id: number, token: { id: numb
     resultRunId = cur.run_id;
   }
   const r = db
-    .prepare("UPDATE agent_requests SET status = 'done', finished_at = datetime('now'), result_note = ?, result_run_id = COALESCE(result_run_id, ?), result_audit_id = ? WHERE id = ? AND project_id = ? AND status = 'claimed' AND claimed_token_id = ? RETURNING *")
+    .prepare("UPDATE agent_requests SET status = 'done', finished_at = datetime('now'), result_note = ?, result_run_id = COALESCE(result_run_id, ?), result_audit_id = COALESCE(?, result_audit_id) WHERE id = ? AND project_id = ? AND status = 'claimed' AND claimed_token_id = ? RETURNING *")
     .get(note, resultRunId, resultAuditId, id, projectId, token.id) as Row | undefined;
   if (!r) throw new AuditError(409, "Another token took this request");
   return { ...viewOf(r), ...missingReport(cur) };

@@ -54,7 +54,7 @@ Made under **Settings → Agent → Requests to a test agent**, by an admin of t
   in for another.
 - It is shown once and only its hash is stored. A project can have **three** active request tokens; revoking is the only way to end one. Too many wrong tokens from one address are slowed down (429).
 - It opens **seven routes of one project and nothing else**. It cannot make or cancel a request, read requirements, touch specs or accounts, or decide anything; every other route refuses it. Four of them only change the
-  status of a request (and a release adds a note, and a finished discover the audit it made). One makes findings of a discover (draft or proposed, see `mcp/README.md`). The last two (`result` and `case-results`) write test results, and are **off until a person switches them on** (below).
+  status of a request (and a release adds a note, and a finished discover the audit it made). One makes findings of a discover (draft or proposed, and the discover's plan; see `mcp/README.md`). The last two (`result` and `case-results`) write test results, and are **off until a person switches them on** (below).
 - No login cookie and no `X-Testbench` header are needed. The token is checked on every call.
 
 ```

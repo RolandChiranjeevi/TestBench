@@ -13,7 +13,7 @@ An agent can work on a request ([agent-requests.md](agent-requests.md)) through 
 
 | Work | MCP tools | Skills |
 | --- | --- | --- |
-| **Discover** | Findings handed in one at a time (`testbench_create_finding`): a draft test case, a proposed bug report, an observation or a manual test suggestion. At most 200 per request. | `/testpilot-discover`, then plan, run, report and deliver: an audit package with evidence, imported with the TestBench login (not the token) and linked to the request. |
+| **Discover** | Findings handed in one at a time (`testbench_create_finding`): a draft test case, a proposed bug report, an observation or a manual test suggestion, and the request's plan (`plan_item`, `coverage_gap`, at most 100 and 50, apart from the 200 findings). A draft case can be linked to a plan item. | `/testpilot-discover`, then plan, run, report and deliver: an audit package with evidence, imported with the TestBench login (not the token) and linked to the request. |
 | **Run request** (chosen test cases) | `testbench_report_results`: one batch, each test case once, at most 200 results and 256 kB. | `case-results` through the helper, the same route and limits. The skill runs the cases one at a time in a real browser, after you confirmed the plan. |
 | **A Playwright report** (a re-run, or the automated tests of a run request) | **Not possible.** A report can be 5 MB, which does not fit a tool argument, and no tool takes a file. | `result` through the helper, after you confirmed exactly what is sent. |
 | **Give back, done** | `testbench_update_request_status` with `released` or `done`. | `release` and `complete`. |

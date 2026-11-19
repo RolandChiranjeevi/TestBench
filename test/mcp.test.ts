@@ -8,7 +8,8 @@ import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { makeClient, TestBenchError, type Client } from "../mcp/client.ts";
-import { buildServer } from "../mcp/tools.ts";
+import { buildServer, FINDING_KINDS } from "../mcp/tools.ts";
+import { FINDING_KINDS as SERVER_FINDING_KINDS } from "../server/agentfindings.ts";
 
 // The TestBench MCP server over the existing agent-request queue: four tools (take the next request, finish or give back, report results for a run, hand in a finding), their input checks, what an agent
 // is told when TestBench says no, and that the token never leaves the process. (Against the real server: mcp-bridge-http.test.ts.)
@@ -228,6 +229,9 @@ describe("the tools", () => {
       { kind: "bug_report", title: "Overlap", steps: ["Open /"], severity: "medium", url: "http://localhost/", expected: "No overlap", actual: "Overlap" },
       { kind: "observation", title: "Slow", severity: "low", evidence: "3 s", recommendation: "Cache it", source: "home" },
       { kind: "manual_test_suggestion", title: "Screen reader", category: "accessibility", priority: "high", steps: ["Tab through"], preconditions: "A keyboard" },
+      { kind: "plan_item", title: "Sign in works", type: "functional", risk: "locked out", priority: "high", readiness: "ready", preconditions: "An account", testData: "a test account", steps: ["Open /login"], acceptanceCriteria: "Signed in", automation: "playwright", requirements: ["REQ-1"] },
+      { kind: "coverage_gap", description: "Password reset was not tried", requirements: ["REQ-1"] },
+      { kind: "test_case", title: "Sign in with a good password", planItem: "P-1" },
     ];
     for (const input of inputs) {
       const r = await call(mcp, "testbench_create_finding", { request_id: 4, ...input });
@@ -242,6 +246,22 @@ describe("the tools", () => {
     const mcp = await connect(fake(() => ({})).client);
     const props = Object.keys(((await mcp.listTools()).tools.find((t) => t.name === "testbench_create_finding")!.inputSchema as { properties: Record<string, unknown> }).properties);
     for (const field of ["status", "review_status", "approved", "accepted", "reviewed_by", "created_by_agent_token_id", "human_severity", "audit_id"]) assert.equal(props.includes(field), false, field);
+  });
+
+  it("the kinds of finding are the same list as the server's, so that a kind one side adds cannot be refused by the other", () => {
+    assert.deepEqual([...FINDING_KINDS], [...SERVER_FINDING_KINDS]);
+  });
+
+  it("create_finding refuses a plan item without a title and a coverage gap without a description before TestBench is asked, and says what is missing", async () => {
+    const f = fake(() => ({}));
+    const mcp = await connect(f.client);
+    const noTitle = await call(mcp, "testbench_create_finding", { kind: "plan_item", request_id: 4 });
+    assert.equal(noTitle.isError, true);
+    assert.match(text(noTitle), /title is required/);
+    const noText = await call(mcp, "testbench_create_finding", { kind: "coverage_gap", request_id: 4 });
+    assert.equal(noText.isError, true);
+    assert.match(text(noText), /coverage_gap needs a description/);
+    assert.equal(f.calls.length, 0, "nothing was sent");
   });
 
   it("create_finding turns TestBench's refusals (not a discover, not taken, another token, full, no such request, too many, bad input) into errors that say what to do", async () => {

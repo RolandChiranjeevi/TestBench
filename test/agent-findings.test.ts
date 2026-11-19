@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import Database from "better-sqlite3";
 import { claimRequest, completeRequest, createRequest } from "../server/agentrequests.ts";
 import { AuditError } from "../server/auditcommon.ts";
-import { createFinding, FINDING_LIMITS, findingBody } from "../server/agentfindings.ts";
+import { createFinding, FINDING_LIMITS, findingBody, PLAN_LIMITS } from "../server/agentfindings.ts";
 import { db, migrate } from "../server/db.ts";
 import { createRequestToken } from "../server/requesttokens.ts";
 import { makeProject } from "./helpers.ts";
@@ -171,5 +171,137 @@ describe("a database from before agent findings", () => {
     migrate(d);
     assert.match(ddlOf(d), /'exploratory'/);
     assert.ok(cols(d, "cases").includes("created_by_agent_token_id") && cols(d, "agent_requests").includes("findings_count"));
+  });
+});
+
+describe("the plan of a request: plan items and coverage gaps", () => {
+  const IP = "127.0.0.1";
+  const item = (title: string, more: Record<string, unknown> = {}) => findingBody.parse({ kind: "plan_item", title, ...more });
+  const gap = (description: string, more: Record<string, unknown> = {}) => findingBody.parse({ kind: "coverage_gap", description, ...more });
+  const caseOf = (title: string, planItem?: string) => findingBody.parse({ kind: "test_case", title, ...(planItem === undefined ? {} : { planItem }) });
+  const planned = (r: unknown) => r as { id: number; sourceId: string; auditId: number; planItem?: string };
+  const caseLink = (id: number) => db.prepare("SELECT plan_item_id AS l FROM cases WHERE id = ?").pluck().get(id) as number | null;
+
+  it("the first plan item makes the audit of the request and links it from the request; the next ones use it", () => {
+    const p = makeProject("PL1", "Plan one");
+    const { token, take } = asDiscover(p.id, "plan-agent");
+    const rid = take();
+    const one = planned(createFinding(p.id, rid, token, IP, item("Sign in works")));
+    assert.equal(one.sourceId, "P-1");
+    const audits = db.prepare("SELECT * FROM audits WHERE project_id = ?").all(p.id) as Record<string, any>[];
+    assert.equal(audits.length, 1);
+    assert.deepEqual([audits[0].agent_audit_id, audits[0].source, audits[0].title, audits[0].agent_name], [`$agent-${rid}`, "request", "Discover http://localhost:3000/", "plan-agent"]);
+    assert.equal(one.auditId, audits[0].id);
+    assert.equal(n("SELECT result_audit_id FROM agent_requests WHERE id = ?", rid), audits[0].id, "the request links its audit");
+    assert.equal(planned(createFinding(p.id, rid, token, IP, item("Sign out works"))).sourceId, "P-2");
+    assert.equal(n("SELECT COUNT(*) FROM audits WHERE project_id = ?", p.id), 1, "one audit for the request");
+    assert.equal(n("SELECT findings_count FROM agent_requests WHERE id = ?", rid), 0, "a plan item is not a finding");
+  });
+
+  it("keeps what the agent gave, with the fields of a package's plan item, as a proposal in the plan tables, with an entry in the history", () => {
+    const p = makeProject("PL2", "Plan fields");
+    const { token, take } = asDiscover(p.id, "plan-agent");
+    const rid = take();
+    const made = planned(createFinding(p.id, rid, token, IP, item("Pay", {
+      type: "functional", risk: "money", priority: "high", readiness: "ready", preconditions: "A cart", testData: "a test card", steps: ["Open /pay", "Pay"],
+      acceptanceCriteria: "A receipt", automation: "playwright", requirements: ["REQ-3", " REQ-3 ", "REQ-4"],
+    })));
+    const row = db.prepare("SELECT * FROM audit_plan_items WHERE id = ?").get(made.id) as Record<string, any>;
+    assert.deepEqual([row.source_id, row.origin, row.review_status, row.title, row.test_type, row.risk, row.priority, row.readiness, row.preconditions, row.test_data, row.acceptance_criteria, row.automation],
+      ["P-1", "agent", "proposed", "Pay", "functional", "money", "high", "ready", "A cart", "a test card", "A receipt", "playwright"]);
+    assert.deepEqual(JSON.parse(row.steps), ["Open /pay", "Pay"]);
+    assert.deepEqual(JSON.parse(row.requirement_refs), ["REQ-3", "REQ-4"], "trimmed, and each once");
+    assert.deepEqual(db.prepare("SELECT kind, actor, actor_user_id FROM audit_plan_revisions WHERE audit_id = ?").all(made.auditId), [{ kind: "agent_import", actor: "agent: plan-agent", actor_user_id: null }]);
+    const bare = planned(createFinding(p.id, rid, token, IP, item("Only a title")));
+    assert.deepEqual(db.prepare("SELECT priority, readiness, test_type FROM audit_plan_items WHERE id = ?").get(bare.id), { priority: "", readiness: "", test_type: "" }, "what was not given stays empty");
+    const g = planned(createFinding(p.id, rid, token, IP, gap("Password reset was not tried", { requirements: ["REQ-9"] })));
+    const grow = db.prepare("SELECT * FROM audit_coverage_gaps WHERE id = ?").get(g.id) as Record<string, any>;
+    assert.deepEqual([grow.source_id, grow.origin, grow.review_status, grow.description, JSON.parse(grow.requirement_refs)], ["GAP-1", "agent", "proposed", "Password reset was not tried", ["REQ-9"]]);
+    assert.equal(n("SELECT COUNT(*) FROM audit_gap_revisions WHERE audit_id = ?", made.auditId), 1);
+  });
+
+  it("has caps of its own (100 plan items, 50 coverage gaps), and the plan neither uses up the findings nor is stopped by them", () => {
+    const p = makeProject("PL3", "Plan caps");
+    const { token, take } = asDiscover(p.id, "cap-plan");
+    const rid = take();
+    for (let i = 1; i <= PLAN_LIMITS.planItems; i++) createFinding(p.id, rid, token, IP, item(`Item ${i}`));
+    assert.throws(() => createFinding(p.id, rid, token, IP, item("one too many")), (e) => refusal(e, 409, /already has 100 plan items/));
+    for (let i = 1; i <= PLAN_LIMITS.coverageGaps; i++) createFinding(p.id, rid, token, IP, gap(`Gap ${i}`));
+    assert.throws(() => createFinding(p.id, rid, token, IP, gap("one too many")), (e) => refusal(e, 409, /already has 50 coverage gaps/));
+    assert.equal(n("SELECT COUNT(*) FROM audit_plan_items WHERE audit_id = (SELECT result_audit_id FROM agent_requests WHERE id = ?)", rid), 100, "the refused one was not made");
+    assert.equal(n("SELECT findings_count FROM agent_requests WHERE id = ?", rid), 0);
+    assert.equal(createFinding(p.id, rid, token, IP, obs("the findings are untouched")).findingsOnRequest, 1);
+
+    const q = makeProject("PL4", "Findings full");
+    const full = asDiscover(q.id, "full-agent");
+    const rid2 = full.take();
+    for (let i = 1; i <= FINDING_LIMITS.perRequest; i++) createFinding(q.id, rid2, full.token, IP, obs(`finding ${i}`));
+    assert.equal(planned(createFinding(q.id, rid2, full.token, IP, item("the plan is not stopped by 200 findings"))).sourceId, "P-1");
+  });
+
+  it("links a draft case to a plan item the agent made in this request: cases.plan_item_id is that item, and a case without planItem has none", () => {
+    const p = makeProject("PL5", "Plan link");
+    const { token, take } = asDiscover(p.id, "link-agent");
+    const rid = take();
+    const item1 = planned(createFinding(p.id, rid, token, IP, item("Sign in works")));
+    const linked = planned(createFinding(p.id, rid, token, IP, caseOf("Sign in with a good password", "P-1")));
+    assert.equal(linked.planItem, "P-1", "the answer says which");
+    assert.equal(caseLink(linked.id), item1.id);
+    assert.equal(caseLink(planned(createFinding(p.id, rid, token, IP, caseOf("A loose case"))).id), null);
+    db.prepare("DELETE FROM audit_plan_items WHERE id = ?").run(item1.id);
+    assert.equal(caseLink(linked.id), null, "the link goes with the item, and the case stays");
+  });
+
+  it("refuses a link to a plan item that is not the agent's own in this request, makes nothing and counts nothing", () => {
+    const p = makeProject("PL6", "Plan link refused");
+    const { token, take } = asDiscover(p.id, "link-agent");
+    const first = take();
+    createFinding(p.id, first, token, IP, item("A"));
+    createFinding(p.id, first, token, IP, item("B"));
+    completeRequest(p.id, first, token, {}); // one request runs at a time in a project
+    const second = take();
+    const own = planned(createFinding(p.id, second, token, IP, item("C"))); // its own P-1
+    db.prepare("INSERT INTO audit_plan_items (audit_id, source_id, position, title, origin, review_status) VALUES (?, 'H-1', 99, 'A person''s item', 'human', 'draft')").run(own.auditId);
+    const counts = () => [n("SELECT COUNT(*) FROM cases"), n("SELECT findings_count FROM agent_requests WHERE id = ?", second), n("SELECT COUNT(*) FROM audit_log WHERE action = 'agent_request.finding_created'")];
+    const before = counts();
+    for (const bad of ["P-2", "P-9", "H-1"]) {
+      assert.throws(() => createFinding(p.id, second, token, IP, caseOf(`Link to ${bad}`, bad)), (e) => refusal(e, 400, /not a plan item of this request/), bad);
+    }
+    assert.deepEqual(counts(), before, "nothing was made, counted or logged");
+    const ok = planned(createFinding(p.id, second, token, IP, caseOf("Link to its own P-1", "P-1")));
+    assert.equal(caseLink(ok.id), own.id, "its own P-1, not the first request's");
+    const noPlan = asDiscover(makeProject("PL7", "No plan").id, "x");
+    assert.equal(n("SELECT COUNT(*) FROM audits WHERE agent_audit_id = ?", `$agent-${noPlan.take()}`), 0, "a request without a plan has no audit");
+  });
+
+  it("follows the rules of every finding: only the token that took it, and only while it is taken, and a refused one leaves no audit behind", () => {
+    const p = makeProject("PL8", "Plan rules");
+    const { token, take } = asDiscover(p.id, "plan-agent");
+    const rid = take();
+    const other = { id: createRequestToken(p.id, "other").id, name: "other" };
+    assert.throws(() => createFinding(p.id, rid, other, IP, item("not yours")), (e) => refusal(e, 409, /Another token took this request/));
+    assert.equal(n("SELECT COUNT(*) FROM audits WHERE project_id = ?", p.id), 0, "nothing was made");
+    createFinding(p.id, rid, token, IP, item("mine"));
+    completeRequest(p.id, rid, token, {});
+    assert.throws(() => createFinding(p.id, rid, token, IP, item("too late")), (e) => refusal(e, 409, /done or cancelled/));
+    assert.equal(n("SELECT COUNT(*) FROM audit_plan_items WHERE audit_id = (SELECT result_audit_id FROM agent_requests WHERE id = ?)", rid), 1);
+  });
+
+  it("finishing the request keeps the audit its plan made", () => {
+    const p = makeProject("PL9", "Plan done");
+    const { token, take } = asDiscover(p.id, "plan-agent");
+    const rid = take();
+    const made = planned(createFinding(p.id, rid, token, IP, item("Sign in works")));
+    assert.equal(completeRequest(p.id, rid, token, { note: "done" }).resultAuditId, made.auditId);
+    assert.equal(n("SELECT result_audit_id FROM agent_requests WHERE id = ?", rid), made.auditId);
+  });
+
+  it("refuses a field that does not belong, a title or text that is too long, an unknown readiness or priority, and a gap without its description", () => {
+    for (const bad of [
+      { kind: "plan_item", title: "x", severity: "high" }, { kind: "plan_item", title: "x".repeat(201) }, { kind: "plan_item", title: "x", readiness: "maybe" },
+      { kind: "plan_item", title: "x", priority: "urgent" }, { kind: "plan_item", title: "x", requirements: Array(51).fill("REQ-1") }, { kind: "plan_item", title: "x", steps: Array(51).fill("s") },
+      { kind: "coverage_gap" }, { kind: "coverage_gap", description: "x", title: "a gap has no title" }, { kind: "coverage_gap", description: "x".repeat(5001) },
+      { kind: "test_case", title: "x", planItem: "" }, { kind: "observation", title: "x", planItem: "P-1" }, { kind: "plan_item", title: "x", planItem: "P-1" },
+    ]) assert.throws(() => findingBody.parse(bad), JSON.stringify(bad));
   });
 });

@@ -91,6 +91,8 @@ describe("the audit log in words", () => {
     assert.equal(f("bug_report"), "agent: claude-a reported a bug report (a proposal) for a discover request in Acme");
     assert.equal(f("observation"), "agent: claude-a reported an observation for a discover request in Acme");
     assert.equal(f("manual_test_suggestion"), "agent: claude-a reported a manual test suggestion (a proposal) for a discover request in Acme");
+    assert.equal(f("plan_item"), "agent: claude-a reported a plan item (a proposal) for a discover request in Acme");
+    assert.equal(f("coverage_gap"), "agent: claude-a reported a coverage gap (a proposal) for a discover request in Acme");
     assert.equal(f("something_new"), "agent: claude-a reported a finding for a discover request in Acme", "a kind the page does not know still reads well");
   });
 

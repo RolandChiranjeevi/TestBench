@@ -153,7 +153,7 @@ export function describeAudit(e: Pick<AuditEntry, "action" | "actor" | "targetUs
       return `${who} reported results for ${n} test ${n === 1 ? "case" : "cases"}${parts.length ? ` (${parts.join(", ")})` : ""} in ${project}`;
     }
     case "agent_request.completed": return `${who} finished a request in ${project}`;
-    case "agent_request.finding_created": return `${who} reported ${({ test_case: "a test case (a draft)", bug_report: "a bug report (a proposal)", observation: "an observation", manual_test_suggestion: "a manual test suggestion (a proposal)" } as Record<string, string>)[String(d.finding_kind)] ?? "a finding"} for a discover request in ${project}`;
+    case "agent_request.finding_created": return `${who} reported ${({ test_case: "a test case (a draft)", bug_report: "a bug report (a proposal)", observation: "an observation", manual_test_suggestion: "a manual test suggestion (a proposal)", plan_item: "a plan item (a proposal)", coverage_gap: "a coverage gap (a proposal)" } as Record<string, string>)[String(d.finding_kind)] ?? "a finding"} for a discover request in ${project}`;
     case "spec.created": return `${who} added the spec ${specName(d.fileName)} in ${project}`;
     case "spec.edited": return `${who} changed the ${Array.isArray(d.changed) && d.changed.length ? d.changed.join(", ") : "text"} of the spec ${specName(d.fileName)} in ${project}`;
     case "spec.renamed": return `${who} renamed the spec ${specName(d.from)} to ${specName(d.to)} in ${project}`;

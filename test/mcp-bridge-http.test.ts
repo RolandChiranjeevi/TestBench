@@ -274,6 +274,37 @@ describe("hand in findings through the MCP tool", () => {
       await s.close();
     }
   });
+
+  it("hands in a plan: plan items and a gap, and a draft case linked to a plan item; a refused link says why, and a person sees the plan as the agent's proposals", async () => {
+    const req = await ask(a, "plan through MCP");
+    const s = await session(tokenA, a);
+    try {
+      assert.equal((await next(s)).request?.id, req.id);
+      const outputs: string[] = [];
+      const make = async (args: Record<string, unknown>) => { const r = await s.tool("testbench_create_finding", { request_id: req.id, ...args }); outputs.push(text(r)); assert.equal(r.isError, undefined, text(r)); return JSON.parse(text(r)) as { id: number; sourceId: string; auditId: number; planItem?: string; planItemsOnRequest?: number }; };
+      const p1 = await make({ kind: "plan_item", title: "MCP sign in works", priority: "high", requirements: ["REQ-1"], steps: ["Open /login"], testData: "a test account", acceptanceCriteria: "Signed in" });
+      const gap = await make({ kind: "coverage_gap", description: "MCP password reset was not tried" });
+      const tc = await make({ kind: "test_case", title: "MCP sign in with a good password", planItem: p1.sourceId });
+      assert.deepEqual([p1.sourceId, gap.sourceId, tc.planItem, p1.planItemsOnRequest], ["P-1", "GAP-1", "P-1", 1]);
+      assert.equal(rows<{ plan_item_id: number }>("SELECT plan_item_id FROM cases WHERE id = ?", tc.id)[0].plan_item_id, rows<{ id: number }>("SELECT id FROM audit_plan_items WHERE audit_id = ? AND source_id = 'P-1'", p1.auditId)[0].id);
+
+      const bad = await s.tool("testbench_create_finding", { request_id: req.id, kind: "test_case", title: "A bad link", planItem: "P-9" });
+      assert.equal(bad.isError, true);
+      assert.match(text(bad), /refused the input/);
+      assert.equal(rows("SELECT 1 FROM cases WHERE title = 'A bad link'").length, 0, "nothing was made");
+
+      const plan = await ok<{ audit: { agentAuditId: string }; planItems: { sourceId: string; title: string; origin: string; status: string; testData: string; acceptanceCriteria: string }[]; coverageGaps: { sourceId: string; status: string }[] }>(await person(`/api/audits/${p1.auditId}/plan`, undefined, "GET"));
+      assert.equal(plan.audit.agentAuditId, `$agent-${req.id}`);
+      assert.deepEqual(plan.planItems.map((i) => [i.sourceId, i.title, i.origin, i.status, i.testData, i.acceptanceCriteria]), [["P-1", "MCP sign in works", "agent", "proposed", "a test account", "Signed in"]]);
+      assert.deepEqual(plan.coverageGaps.map((g) => [g.sourceId, g.status]), [["GAP-1", "proposed"]]);
+      assert.equal(outputs.some((o) => issued.some((t) => o.includes(t))), false, "no token in what the tool said");
+      assert.equal((await s.tool("testbench_update_request_status", { request_id: req.id, status: "done", note: "a plan" })).isError, undefined);
+      const done = (await list(a)).find((r) => r.id === req.id) as unknown as { resultAudit: { id: number } | null };
+      assert.equal(done.resultAudit?.id, p1.auditId, "finishing keeps the audit its plan made");
+    } finally {
+      await s.close();
+    }
+  });
 });
 
 describe("a run request through the MCP tools", () => {
