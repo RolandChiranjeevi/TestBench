@@ -63,6 +63,7 @@ describe("test-plan.json in an audit package", () => {
     assert.deepEqual({ ...plan.planItems[0], requirements: undefined }, {
       sourceId: "TPI-001", title: "Add a todo", type: "Functional", risk: "High", priority: "High", readiness: "ready", preconditions: "An empty list", testData: "QA-AUDIT-1",
       steps: ["Type the text", "Press Enter"], acceptanceCriteria: "The text is shown in the list", automation: "Yes, exploration", result: null, requirements: undefined,
+      cases: [], // the test cases an agent linked to the item: an imported item has none
       origin: "agent", status: "proposed", editedBy: null, editedAt: null, decidedBy: null, decidedAt: null, pending: null,
     });
     assert.deepEqual(plan.planItems[0].requirements.map((r) => [r.raw, r.state, r.label]), [["REQ-1", "resolved", "REQ-1 · Todo can be added"]]);

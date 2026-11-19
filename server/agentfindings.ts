@@ -130,9 +130,9 @@ export function createFinding(projectId: number, requestId: number, token: { id:
       }
       const num = (db.prepare("UPDATE projects SET next_case_number = next_case_number + 1 WHERE id = ? RETURNING next_case_number - 1 AS n").get(projectId) as { n: number }).n;
       const pos = (db.prepare("SELECT COALESCE(MAX(position), -1) + 1 AS p FROM cases WHERE project_id = ?").get(projectId) as { p: number }).p;
-      const id = (db.prepare(`INSERT INTO cases (project_id, suite_id, number, title, description, preconditions, priority, status, tags, position, created_by_agent_token_id, plan_item_id)
-          VALUES (?, NULL, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?) RETURNING id`)
-        .get(projectId, num, f.title, f.description, f.preconditions, f.priority, JSON.stringify(["agent-proposed"]), pos, token.id, planRow) as { id: number }).id;
+      const id = (db.prepare(`INSERT INTO cases (project_id, suite_id, number, title, description, preconditions, priority, status, tags, position, created_by_agent_token_id, plan_item_id, agent_request_id)
+          VALUES (?, NULL, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?) RETURNING id`)
+        .get(projectId, num, f.title, f.description, f.preconditions, f.priority, JSON.stringify(["agent-proposed"]), pos, token.id, planRow, requestId) as { id: number }).id;
       f.steps.forEach((s, i) => db.prepare("INSERT INTO case_steps (case_id, position, action, expected) VALUES (?, ?, ?, ?)").run(id, i, s.action, s.expected));
       made = { id, number: num, ...(f.planItem === undefined ? {} : { planItem: f.planItem }) };
     } else if (f.kind === "bug_report") {

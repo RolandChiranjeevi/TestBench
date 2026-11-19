@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Bot, Copy, Plus } from "lucide-react";
 import { needsText } from "../access";
-import { auditPath, byQueue, PROGRESS_TITLE, progressLabel } from "../agentruns";
+import { auditPath, byQueue, deliveredSummary, PROGRESS_TITLE, progressLabel } from "../agentruns";
 import { api, timeAgo, type AgentRequest, type RunDetail } from "../api";
 import { DEFAULT_OPTIONS, DELIVERABLES, GIT_MODES, optionsProblem, optionsSummary, START_COMMAND, START_PROMPT, TARGET_MODES, toggled, VIEWPORTS, withProduction, type RequestOptions } from "../requestOptions";
 import type { Tone } from "../statuses";
@@ -114,6 +114,11 @@ function RequestCard({ r, onCancel, cancelling, waiting, onRunNext, putting }: {
       {r.kind === "discover" && r.options && (
         <div className="faint" style={{ fontSize: "var(--fs-sm)", overflowWrap: "anywhere" }} title="What the person chose when asking. A preselection for the agent, never a permission." data-options={r.id}>
           {optionsSummary(r.options)}
+        </div>
+      )}
+      {r.delivered && (
+        <div style={{ fontSize: "var(--fs-md)", overflowWrap: "anywhere" }} title="What this discover has made that is still there. Everything is a proposal or a draft for you to review: the plan in Test plan, cases in Test cases, the rest where it always is." data-delivered={r.id}>
+          <span className="muted">Delivered:</span> {deliveredSummary(r.delivered)}
         </div>
       )}
       {r.kind === "rerun" && r.tests.length > 0 && (

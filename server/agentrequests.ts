@@ -151,6 +151,8 @@ export function viewOf(r: Row, withCases = true) {
     releaseNote: r.release_note, releasedBy: r.released_by, releasedAt: r.released_at, resultAuditId: r.result_audit_id,
     // Where a waiting request stands in the order an agent is given (1 = next), filled in for a person's list (withQueue); null for one that is not waiting.
     priority: r.priority ?? 0, queuePosition: null as number | null,
+    // What a discover has made that still exists, filled in for a person's list (withDelivered); null when it made nothing, and for every other kind.
+    delivered: null as Delivered | null,
     // A run request: how far its run has come. An agent that takes it again after a release sees from this what is left.
     progress: r.kind === "run" && r.run_id !== null ? runProgress(r.run_id) : null,
   };
@@ -182,8 +184,33 @@ export function listRequests(projectId: number, status?: string, limit = 200) {
   const rows = db
     .prepare(`SELECT *, json_array_length(payload, '$.cases') AS case_count FROM agent_requests WHERE project_id = ? ${status ? "AND status = ?" : ""} ORDER BY id DESC LIMIT ?`)
     .all(...(status ? [projectId, status, limit] : [projectId, limit])) as Row[];
-  return withQueue(projectId, withAudits(rows.map((r) => viewOf(r, false))));
+  return withDelivered(projectId, withQueue(projectId, withAudits(rows.map((r) => viewOf(r, false)))));
 }
+
+/** What a discover request has made and what is still there: the plan items and coverage gaps of its audit that the agent made, and its draft cases, bugs, observations and manual tests. */
+export interface Delivered { planItems: number; coverageGaps: number; cases: number; bugs: number; observations: number; manualTests: number }
+
+/** Counted where each thing already says which request made it (the audit `$agent-<request>`, origin_audit_id, cases.agent_request_id), so a thing a person deleted is not counted. */
+function deliveredOf(projectId: number, requestId: number): Delivered {
+  const origin = `$agent-${requestId}`;
+  const n = (sql: string, ...args: unknown[]) => db.prepare(sql).pluck().get(...args) as number;
+  return {
+    planItems: n("SELECT COUNT(*) FROM audit_plan_items i JOIN audits a ON a.id = i.audit_id WHERE a.project_id = ? AND a.agent_audit_id = ? AND i.origin = 'agent'", projectId, origin),
+    coverageGaps: n("SELECT COUNT(*) FROM audit_coverage_gaps g JOIN audits a ON a.id = g.audit_id WHERE a.project_id = ? AND a.agent_audit_id = ? AND g.origin = 'agent'", projectId, origin),
+    cases: n("SELECT COUNT(*) FROM cases WHERE project_id = ? AND agent_request_id = ?", projectId, requestId),
+    bugs: n("SELECT COUNT(*) FROM bug_reports WHERE project_id = ? AND origin_audit_id = ?", projectId, origin),
+    observations: n("SELECT COUNT(*) FROM observations WHERE project_id = ? AND origin_audit_id = ?", projectId, origin),
+    manualTests: n("SELECT COUNT(*) FROM manual_tests WHERE project_id = ? AND origin_audit_id = ?", projectId, origin),
+  };
+}
+
+/** A person's list with what each discover delivered. Only a discover that has made something, and one that has not been given findings stays null. */
+const withDelivered = <T extends { id: number; kind: string; delivered: Delivered | null }>(projectId: number, views: T[]): T[] =>
+  views.map((v) => {
+    if (v.kind !== "discover") return v;
+    const d = deliveredOf(projectId, v.id);
+    return Object.values(d).some((x) => x > 0) ? { ...v, delivered: d } : v;
+  });
 
 // A request that waits can be taken. A run request whose run was deleted cannot (it would have nothing to fill in): it stays for a person to cancel.
 const WAITING = "status = 'pending' AND NOT (kind = 'run' AND run_id IS NULL)";

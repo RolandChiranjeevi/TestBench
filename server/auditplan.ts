@@ -270,10 +270,18 @@ export function auditPlan(auditId: number) {
     { id: number; agentAuditId: string; title: string; projectId: number; projectKey: string } | undefined;
   if (!a) return null;
   const link = (raw: string) => linkRequirement(a.projectId, a.projectKey, raw);
+  // The test cases an agent linked to each plan item (cases.plan_item_id, set by a finding that names planItem). Read only: a person sees them here, and nothing here changes the link.
+  const casesOf = new Map<number, { id: number; key: string; number: number; title: string; status: string }[]>();
+  for (const c of db.prepare("SELECT plan_item_id AS item, id, number, title, status FROM cases WHERE plan_item_id IN (SELECT id FROM audit_plan_items WHERE audit_id = ?) ORDER BY number").all(auditId) as { item: number; id: number; number: number; title: string; status: string }[]) {
+    const list = casesOf.get(c.item) ?? [];
+    list.push({ id: c.id, key: `${a.projectKey}-${c.number}`, number: c.number, title: c.title, status: c.status });
+    casesOf.set(c.item, list);
+  }
   const planItems = (db.prepare("SELECT * FROM audit_plan_items WHERE audit_id = ? ORDER BY position, id").all(auditId) as Record<string, any>[]).map((r) => ({
     sourceId: r.source_id as string, title: r.title as string, type: r.test_type as string, risk: r.risk as string, priority: r.priority as string, readiness: r.readiness as string,
     preconditions: r.preconditions as string, testData: r.test_data as string, steps: JSON.parse(r.steps) as string[], acceptanceCriteria: r.acceptance_criteria as string,
     automation: r.automation as string, result: r.result as string | null, requirements: (JSON.parse(r.requirement_refs) as string[]).map(link),
+    cases: casesOf.get(r.id as number) ?? [],
     ...ownership(ITEM, r),
   }));
   const coverageGaps = (db.prepare("SELECT * FROM audit_coverage_gaps WHERE audit_id = ? ORDER BY position, id").all(auditId) as Record<string, any>[]).map((r) => ({

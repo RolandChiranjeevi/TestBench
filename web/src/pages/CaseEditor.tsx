@@ -326,6 +326,11 @@ export function CaseEditor({ caseId, suites, onClose, onDeleted, onDuplicated }:
             <Button needs="tester" variant="primary" size="sm" onClick={() => update({ status: "ready" }, true)}>Mark ready</Button>
           </div>
         )}
+        {data.planItem && (
+          <div className="card" style={{ padding: "8px 12px", fontSize: "var(--fs-md)" }} data-plan-item={data.planItem.sourceId}>
+            Planned in <Link to={`/p/${pid}/test-plan?audit=${data.planItem.auditId}`} title={data.planItem.auditTitle}><span className="mono">{data.planItem.sourceId}</span> · {data.planItem.title}</Link>, a plan item the test agent made with this case ({data.planItem.status === "proposed" ? "not reviewed yet" : data.planItem.status}).
+          </div>
+        )}
         {data.proposal && (
           <div className="card" style={{ padding: "8px 12px", fontSize: "var(--fs-md)" }}>
             Made from an AI suggestion by a test agent: <Link to={`/p/${pid}/manual-tests?test=${data.proposal.id}`}>{data.proposal.title}</Link>.{data.created_by ? ` Made into a test case by ${data.created_by}.` : ""} A newer version from the agent waits there until you choose to use it; it never changes this case by itself.

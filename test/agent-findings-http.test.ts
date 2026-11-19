@@ -324,6 +324,27 @@ describe("the plan of a request, through the route", () => {
     assert.ok(log.every((l) => l.actor_label === "agent: claude-a"));
     for (const t of issued) assert.equal(JSON.stringify(log).includes(t), false);
   });
+
+  it("shows a person the link both ways and what the request delivered: the case's plan item, each plan item's cases, and the counts of the card", async () => {
+    const rid = await taken(a, tokenA);
+    const p1 = await ok<Made>(await finding(tokenA, a, rid, { kind: "plan_item", title: "Checkout works" }));
+    const tc = await ok<{ id: number }>(await finding(tokenA, a, rid, { kind: "test_case", title: "Pay with a card", planItem: "P-1" }));
+    const loose = await ok<{ id: number }>(await finding(tokenA, a, rid, { kind: "test_case", title: "A loose case" }));
+    await ok(await finding(tokenA, a, rid, { kind: "observation", title: "Slow", severity: "low" }));
+    type CaseView = { planItem: { sourceId: string; title: string; status: string; auditId: number; auditTitle: string } | null };
+    assert.deepEqual((await ok<CaseView>(await person(`/api/cases/${tc.id}`, undefined, "GET"))).planItem, { sourceId: "P-1", title: "Checkout works", status: "proposed", auditId: p1.auditId, auditTitle: "Discover http://localhost:3000/" });
+    assert.equal((await ok<CaseView>(await person(`/api/cases/${loose.id}`, undefined, "GET"))).planItem, null, "a case with no plan item says so");
+
+    const plan = await ok<{ planItems: { sourceId: string; cases: { id: number; key: string; title: string; status: string }[] }[] }>(await person(`/api/audits/${p1.auditId}/plan`, undefined, "GET"));
+    assert.deepEqual(plan.planItems[0].cases.map((c) => [c.id, c.title, c.status]), [[tc.id, "Pay with a card", "draft"]]);
+    assert.match(plan.planItems[0].cases[0].key, /^[A-Z0-9]+-\d+$/);
+
+    assert.equal((await person(`/api/audits/${p1.auditId}/plan/items/P-1/decision`, { status: "approved" })).status, 200);
+    assert.equal((await ok<CaseView>(await person(`/api/cases/${tc.id}`, undefined, "GET"))).planItem?.status, "approved", "the note follows the person's decision");
+
+    const mine = (await ok<{ id: number; delivered: Record<string, number> | null }[]>(await person(`/api/projects/${a}/agent-requests`, undefined, "GET"))).find((r) => r.id === rid)!;
+    assert.deepEqual(mine.delivered, { planItems: 1, coverageGaps: 0, cases: 2, bugs: 0, observations: 1, manualTests: 0 });
+  });
 });
 
 describe("the log, the secrets and the limits", () => {

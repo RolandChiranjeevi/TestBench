@@ -2,7 +2,7 @@ import "./env.ts";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import Database from "better-sqlite3";
-import { claimRequest, completeRequest, createRequest } from "../server/agentrequests.ts";
+import { claimRequest, completeRequest, createRequest, listRequests } from "../server/agentrequests.ts";
 import { AuditError } from "../server/auditcommon.ts";
 import { createFinding, FINDING_LIMITS, findingBody, PLAN_LIMITS } from "../server/agentfindings.ts";
 import { db, migrate } from "../server/db.ts";
@@ -303,5 +303,50 @@ describe("the plan of a request: plan items and coverage gaps", () => {
       { kind: "coverage_gap" }, { kind: "coverage_gap", description: "x", title: "a gap has no title" }, { kind: "coverage_gap", description: "x".repeat(5001) },
       { kind: "test_case", title: "x", planItem: "" }, { kind: "observation", title: "x", planItem: "P-1" }, { kind: "plan_item", title: "x", planItem: "P-1" },
     ]) assert.throws(() => findingBody.parse(bad), JSON.stringify(bad));
+  });
+});
+
+describe("what a request delivered, counted for a person's list", () => {
+  const IP = "127.0.0.1";
+  const make = (p: { id: number }, rid: number, token: { id: number; name: string }, body: Record<string, unknown>) => createFinding(p.id, rid, token, IP, findingBody.parse(body)) as { id: number; auditId?: number };
+  const delivered = (projectId: number, rid: number) => listRequests(projectId).find((r) => r.id === rid)!.delivered;
+
+  it("counts what the discover made and what is still there, and says nothing for one that made nothing", () => {
+    const p = makeProject("DLV1", "Delivered");
+    const { token, take } = asDiscover(p.id, "deliver-agent");
+    const rid = take();
+    assert.equal(delivered(p.id, rid), null, "nothing made yet");
+    const first = make(p, rid, token, { kind: "plan_item", title: "A" });
+    make(p, rid, token, { kind: "plan_item", title: "B" });
+    make(p, rid, token, { kind: "coverage_gap", description: "G" });
+    const linked = make(p, rid, token, { kind: "test_case", title: "C1", planItem: "P-1" });
+    make(p, rid, token, { kind: "test_case", title: "C2" });
+    make(p, rid, token, { kind: "bug_report", title: "Bug" });
+    make(p, rid, token, { kind: "observation", title: "Obs" });
+    make(p, rid, token, { kind: "manual_test_suggestion", title: "Man" });
+    assert.deepEqual(delivered(p.id, rid), { planItems: 2, coverageGaps: 1, cases: 2, bugs: 1, observations: 1, manualTests: 1 });
+
+    db.prepare("INSERT INTO audit_plan_items (audit_id, source_id, position, title, origin, review_status) VALUES (?, 'H-1', 99, 'A person''s item', 'human', 'draft')").run(first.auditId);
+    assert.equal(delivered(p.id, rid)!.planItems, 2, "a person's own plan item is not the agent's");
+    db.prepare("DELETE FROM cases WHERE id = ?").run(linked.id);
+    db.prepare("DELETE FROM audit_plan_items WHERE audit_id = ? AND source_id = 'P-2'").run(first.auditId);
+    assert.deepEqual([delivered(p.id, rid)!.cases, delivered(p.id, rid)!.planItems], [1, 1], "what a person removed is not counted");
+
+    completeRequest(p.id, rid, token, {});
+    const other = asDiscover(p.id, "other-agent");
+    assert.equal(delivered(p.id, other.take()), null, "another request that made nothing");
+    assert.equal(delivered(p.id, rid)!.cases, 1, "and the first one still has its own");
+  });
+
+  it("records the request on every draft case the agent makes, linked to a plan item or not", () => {
+    const p = makeProject("DLV2", "Delivered cases");
+    const { token, take } = asDiscover(p.id, "case-agent");
+    const rid = take();
+    make(p, rid, token, { kind: "plan_item", title: "A" });
+    const a = make(p, rid, token, { kind: "test_case", title: "Linked", planItem: "P-1" });
+    const b = make(p, rid, token, { kind: "test_case", title: "Loose" });
+    assert.deepEqual([a.id, b.id].map((id) => n("SELECT agent_request_id FROM cases WHERE id = ?", id)), [rid, rid]);
+    const mine = db.prepare("INSERT INTO cases (project_id, number, title) VALUES (?, 99, 'A person''s case') RETURNING id").pluck().get(p.id) as number;
+    assert.equal(db.prepare("SELECT agent_request_id AS r FROM cases WHERE id = ?").pluck().get(mine), null, "a person's case has none");
   });
 });

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { agentRunInfo, askedRunInfo, auditPath, byQueue, PROGRESS_TITLE, progressLabel, reportRunLabel, reportedByAgent } from "../web/src/agentruns.ts";
+import { agentRunInfo, askedRunInfo, auditPath, byQueue, deliveredSummary, PROGRESS_TITLE, progressLabel, reportRunLabel, reportedByAgent } from "../web/src/agentruns.ts";
 
 describe("agentRunInfo", () => {
   it("names the request of a run an agent handed in", () => {
@@ -111,5 +111,17 @@ describe("byQueue", () => {
   });
   it("keeps a waiting request that cannot be taken (no place) among the rest", () => {
     assert.deepEqual([r(1, "pending", null), r(2, "pending", 1)].sort(byQueue).map((x) => x.id), [2, 1]);
+  });
+});
+
+describe("deliveredSummary", () => {
+  const none = { planItems: 0, coverageGaps: 0, cases: 0, bugs: 0, observations: 0, manualTests: 0 };
+  it("puts what a discover made on one line, in the order a person reviews it, and leaves out what is zero", () => {
+    assert.equal(deliveredSummary({ planItems: 2, coverageGaps: 1, cases: 3, bugs: 1, observations: 2, manualTests: 1 }), "2 plan items · 1 coverage gap · 3 test cases · 1 bug report · 2 observations · 1 manual test suggestion");
+    assert.equal(deliveredSummary({ ...none, cases: 1, observations: 4 }), "1 test case · 4 observations");
+  });
+  it("says nothing when nothing was made, and says one in the singular", () => {
+    assert.equal(deliveredSummary(none), "");
+    assert.equal(deliveredSummary({ ...none, planItems: 1 }), "1 plan item");
   });
 });

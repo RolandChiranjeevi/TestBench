@@ -55,3 +55,15 @@ export function byQueue(a: { id: number; status: string; queuePosition: number |
   const rank = (r: { status: string; queuePosition: number | null }) => (r.status === "claimed" ? 0 : r.queuePosition !== null ? 1 : 2);
   return rank(a) - rank(b) || (a.queuePosition ?? 0) - (b.queuePosition ?? 0) || b.id - a.id;
 }
+
+/** What a discover has made that is still there (server/agentrequests.ts, Delivered). */
+export interface Delivered { planItems: number; coverageGaps: number; cases: number; bugs: number; observations: number; manualTests: number }
+
+/** The delivery on one line for the request card: "2 plan items · 1 coverage gap · 3 test cases". What is zero is left out. */
+export function deliveredSummary(d: Delivered): string {
+  const part = (n: number, one: string, many = `${one}s`) => (n > 0 ? `${n} ${n === 1 ? one : many}` : "");
+  return [
+    part(d.planItems, "plan item"), part(d.coverageGaps, "coverage gap"), part(d.cases, "test case"), part(d.bugs, "bug report"),
+    part(d.observations, "observation"), part(d.manualTests, "manual test suggestion"),
+  ].filter(Boolean).join(" · ");
+}
