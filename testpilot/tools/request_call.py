@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """The one way the /testpilot-requests skill talks to TestBench with a request token.
 
-    python3 -I testpilot/tools/request_call.py <action> [<request number>] [--report FILE] [--case-results FILE] [--result-run N] [--result-audit N]
+    python3 -I testpilot/tools/request_call.py <action> [<request number>] [--report FILE] [--case-results FILE] [--findings FILE] [--result-run N] [--result-audit N]
 
-<action> is list, claim, release, result, case-results or complete. For release and complete the note is read from standard input (a quoted heredoc keeps it as
+<action> is list, claim, release, result, case-results, findings or complete. For release and complete the note is read from standard input (a quoted heredoc keeps it as
 text). Run it from the folder that holds `.testpilot/`.
+
+`findings` hands in what a discover found, one finding at a time: the file is {"findings": [...]} (at most 50), each with a `kind` (test_case, bug_report, observation,
+manual_test_suggestion, plan_item or coverage_gap). A plan_item may carry `ref` (a name of its own in the file) and a test_case `planItemRef` (the `ref` of an earlier plan_item):
+the helper then gives the case the P-number TestBench made. Nothing is sent until the whole file has passed the checks here; it stops at the first finding TestBench refuses.
 
 Why a fixed script: the token must never be in code an agent writes, on a command line, in a file or in the output. Here it is read from the environment variable that
 the project profile names (`requestTokenEnvVar`), or else from that one line of `.env`, kept in memory, and sent only in the Authorization header, to the request routes of
@@ -23,10 +27,13 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
 
-ACTIONS = ("list", "claim", "release", "result", "case-results", "complete")
+ACTIONS = ("list", "claim", "release", "result", "case-results", "findings", "complete")
 LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
 TOKEN = re.compile(r"tbrq_[A-Za-z0-9_-]{1,195}")  # a request token: its prefix and base64url, at most 200 characters (what TestBench accepts)
-SEND_MAX = {"result": 5 * 1024 * 1024, "case-results": 256 * 1024}  # the most TestBench takes: the report of a re-run, and the results of a run request's test cases
+SEND_MAX = {"result": 5 * 1024 * 1024, "case-results": 256 * 1024, "findings": 2 * 1024 * 1024}  # the most TestBench takes: the report of a re-run, the results of a run request's test cases, and a file of findings
+FINDING_KINDS = ("test_case", "bug_report", "observation", "manual_test_suggestion", "plan_item", "coverage_gap")  # the list of server/agentfindings.ts (test_requests_skill.py checks it)
+FINDINGS_MAX = 50  # in one call: TestBench takes 60 findings a minute per token
+ALIAS = re.compile(r"[A-Za-z0-9_-]{1,40}")  # a `ref` of a plan_item
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -92,6 +99,73 @@ def send(method, url, headers, body, timeout):
     finally:
         if timed:
             signal.alarm(0)
+
+
+def read_findings(body):
+    """The findings of the file, ready to be sent one by one (a list), or the reason (a str) why none is. The file is {"findings": [...]}: at most FINDINGS_MAX objects, each with a
+    known `kind` and no `request_id` (the request is the number given to the helper). `ref` (a plan_item only, a name that is unique in the file) and `planItemRef` (a test_case
+    only, the `ref` of an EARLIER plan_item, and not together with `planItem`) are the helper's own: they are not sent, and the case gets the P-number TestBench gave the plan item."""
+    try:
+        doc = json.loads(body)
+    except ValueError:
+        return "the file is not JSON"
+    items = doc.get("findings") if isinstance(doc, dict) else None
+    if not isinstance(items, list) or not items:
+        return 'the file must be {"findings": [ ... ]} with at least one finding'
+    if len(items) > FINDINGS_MAX:
+        return f"at most {FINDINGS_MAX} findings in one call (TestBench takes 60 a minute per token): split them over several files"
+    refs = set()
+    for i, f in enumerate(items, 1):
+        if not isinstance(f, dict) or f.get("kind") not in FINDING_KINDS:
+            return f"finding {i}: kind must be one of {', '.join(FINDING_KINDS)}"
+        if "request_id" in f:
+            return f"finding {i}: leave request_id out: the request is the number given to the helper"
+        ref, link = f.get("ref"), f.get("planItemRef")
+        if "ref" in f:
+            if f["kind"] != "plan_item" or not isinstance(ref, str) or not ALIAS.fullmatch(ref):
+                return f"finding {i}: ref is for a plan_item only, and is 1 to 40 letters, digits, - or _"
+            if ref in refs:
+                return f"finding {i}: ref {ref} is used twice"
+            refs.add(ref)
+        if "planItemRef" in f:
+            if f["kind"] != "test_case" or "planItem" in f or not isinstance(link, str) or link not in refs:
+                return f"finding {i}: planItemRef is for a test_case only, names the ref of a plan_item EARLIER in the file, and is not given together with planItem"
+    return items
+
+
+def send_findings(base, pid, rid, headers, items):
+    """Sends the findings one at a time, with the `headers` made in main (the token is put in a header in one place only), in order, and prints what each became (its kind, its number and its link, nothing else of the answer). Stops at the first one TestBench refuses and
+    retries nothing, so what was made before it stays made, and the line `stopped_at` says where. Returns the exit status."""
+    url = f"{base}/api/agent/projects/{pid}/requests/{rid}/findings"
+    clean = lambda s, n: re.sub(r"[\x00-\x1f\x7f]", " ", str(s))[:n]
+    whole = lambda v: v if isinstance(v, int) and not isinstance(v, bool) else None
+    planned, by_kind, last = {}, {}, {}
+    for i, f in enumerate(items, 1):
+        body = {k: v for k, v in f.items() if k not in ("ref", "planItemRef")}
+        if "planItemRef" in f:
+            body["planItem"] = planned[f["planItemRef"]]
+        try:
+            code, data = send("POST", url, headers, json.dumps(body).encode(), 30)
+        except Exception as e:  # nothing here may show more than the kind of failure: no message that could carry the header
+            reason = f", {e.reason}" if isinstance(e, urllib.error.URLError) else ""
+            print(json.dumps({"stopped_at": i, "kind": f["kind"], "made_before": i - 1, "error": f"the call failed (network or timeout{reason}): not retried here"}))
+            return 1
+        try:
+            r = json.loads(data)
+        except Exception:
+            r = None
+        if code != 201 or not isinstance(r, dict):
+            error = clean(r.get("error", ""), 300) if isinstance(r, dict) else "the answer was not JSON"
+            print(json.dumps({"stopped_at": i, "kind": f["kind"], "http": code, "made_before": i - 1, "error": error}))
+            return 1
+        last = r
+        by_kind[f["kind"]] = by_kind.get(f["kind"], 0) + 1
+        if "ref" in f:
+            planned[f["ref"]] = clean(r.get("sourceId", ""), 60)
+        print(json.dumps({"n": i, "kind": f["kind"], "id": whole(r.get("id")), "sourceId": clean(r.get("sourceId", ""), 60), **({"planItem": clean(r["planItem"], 50)} if r.get("planItem") else {})}))
+    print(json.dumps({"made": len(items), "of": len(items), "by_kind": by_kind, "audit": whole(last.get("auditId")),
+                      "plan_items_on_request": whole(last.get("planItemsOnRequest")), "coverage_gaps_on_request": whole(last.get("coverageGapsOnRequest"))}))
+    return 0
 
 
 def show(data, code, action, rid):
@@ -163,12 +237,13 @@ def main(argv):
     ap.add_argument("rid", nargs="?", default="")
     ap.add_argument("--report", default="")
     ap.add_argument("--case-results", default="")
+    ap.add_argument("--findings", default="")
     ap.add_argument("--result-run", default="")
     ap.add_argument("--result-audit", default="")
     a = ap.parse_args(argv)
     whole = lambda s: re.fullmatch(r"[0-9]*", s) is not None
     if a.action not in ACTIONS:
-        return fail("The action must be list, claim, release, result, case-results or complete")
+        return fail("The action must be list, claim, release, result, case-results, findings or complete")
     if not whole(a.rid) or (a.action != "list" and not a.rid):
         return fail("The request number must be the number of a request")
     if not whole(a.result_run) or not whole(a.result_audit):
@@ -190,11 +265,15 @@ def main(argv):
     if u.scheme not in ("http", "https") or not u.hostname:
         return fail("baseUrl must be an http or https address")
 
-    body = None
+    body, items = None, None
     if a.action in SEND_MAX:
-        body = read_send_file(a.report if a.action == "result" else a.case_results, a.rid, SEND_MAX[a.action])
+        body = read_send_file({"result": a.report, "case-results": a.case_results, "findings": a.findings}[a.action], a.rid, SEND_MAX[a.action])
         if isinstance(body, str):
             return fail(body)
+        if a.action == "findings":
+            items, body = read_findings(body), None
+            if isinstance(items, str):
+                return fail(items)
     elif a.action in ("release", "complete"):
         note = "" if sys.stdin.isatty() else sys.stdin.read(20000)
         payload = {"note": note.strip()[:1000]}
@@ -208,7 +287,9 @@ def main(argv):
     tok = read_token(var)
     if tok is None:
         return fail("no usable request token")
-    headers = {"Authorization": "Bearer " + tok, **({"Content-Type": "application/json"} if body is not None else {})}
+    headers = {"Authorization": "Bearer " + tok, **({"Content-Type": "application/json"} if body is not None or items is not None else {})}  # the one place the token is put in a header
+    if items is not None:
+        return send_findings(base, pid, a.rid, headers, items)
     url = f"{base}/api/agent/projects/{pid}/requests" + ("" if a.action == "list" else f"/{a.rid}/{a.action}")
     try:
         code, data = send("GET" if a.action == "list" else "POST", url, headers, body, 120 if a.action == "result" else 30)
