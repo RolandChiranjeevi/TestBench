@@ -222,19 +222,21 @@ class Stub(HTTPServer):
 TOKEN = "tbrq_secretsecretsecret"
 
 
-def run_helper(work, port, action, rid="12", report="", note=None, result_audit=None, case_results="", result_run=None, token=TOKEN, base=None, profile_var="TB_REQ_TOK", findings=""):
+def run_helper(work, port, action, rid="12", report="", note=None, result_audit=None, case_results="", result_run=None, token=TOKEN, base=None, profile_var="TB_REQ_TOK", findings="", profile=True, env_extra=None):
     """The helper, run in the agent's folder `work`, against a stub on `port` (or at `base`), with `token` in the environment variable the profile names (none if None).
     Each value is one argument, as the shell would hand it over: no shell is involved."""
-    (work / ".testpilot" / "projects").mkdir(parents=True, exist_ok=True)
-    (work / ".testpilot" / "testbench.json").write_text(json.dumps({"baseUrl": base or f"http://127.0.0.1:{port}", "activeProject": "p"}))
-    (work / ".testpilot" / "projects" / "p.json").write_text(json.dumps({"projectId": 7, **({"requestTokenEnvVar": profile_var} if profile_var else {})}))
+    if profile:
+        (work / ".testpilot" / "projects").mkdir(parents=True, exist_ok=True)
+        (work / ".testpilot" / "testbench.json").write_text(json.dumps({"baseUrl": base or f"http://127.0.0.1:{port}", "activeProject": "p"}))
+        (work / ".testpilot" / "projects" / "p.json").write_text(json.dumps({"projectId": 7, **({"requestTokenEnvVar": profile_var} if profile_var else {})}))
     args = [action] + ([rid] if rid else [])
     for flag, value in (("--report", report), ("--case-results", case_results), ("--findings", findings), ("--result-audit", result_audit), ("--result-run", result_run)):
         if value:
             args.append(f"{flag}={value}")
-    env = {k: v for k, v in os.environ.items() if k != "TB_REQ_TOK"}
+    env = {k: v for k, v in os.environ.items() if k != "TB_REQ_TOK" and not k.startswith("TESTBENCH_")}  # nothing of the developer's own environment reaches the helper
     if token is not None:
         env["TB_REQ_TOK"] = token
+    env.update(env_extra or {})
     return subprocess.run([sys.executable, "-I", str(HELPER), *args], cwd=work, env=env, input=note or "", capture_output=True, text=True, timeout=60)
 
 
@@ -522,6 +524,102 @@ class FindingsActionTests(unittest.TestCase):
         self.assertEqual(tuple(re.findall(r'"([a-z_]+)"', m.group(1))), request_call.FINDING_KINDS)
 
 
+class NoProfileTests(unittest.TestCase):
+    """With no `.testpilot/testbench.json` the helper reads TESTBENCH_URL, TESTBENCH_PROJECT_ID and TESTBENCH_TOKEN (the names the MCP set-up uses). A profile that exists is always used, and a broken one is an error."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.work = Path(self.tmp.name).resolve()
+        self.addCleanup(self.tmp.cleanup)
+        self.stub = Stub(200, [])
+        self.addCleanup(self.stub.shutdown)
+
+    def env(self, **over):
+        return {"TESTBENCH_URL": f"http://127.0.0.1:{self.stub.server_port}", "TESTBENCH_PROJECT_ID": "9", "TESTBENCH_TOKEN": TOKEN, **over}
+
+    def run_it(self, action="list", rid="", env=None, **kw):
+        return run_helper(self.work, self.stub.server_port, action, rid, token=None, profile=False, env_extra=self.env() if env is None else env, **kw)
+
+    def test_with_no_profile_it_calls_the_project_of_the_environment_with_the_token_in_the_header_only_and_says_so(self):
+        p = self.run_it("list")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertTrue(p.stdout.splitlines()[0].startswith("profile: none"), p.stdout)
+        got = self.stub.seen[0]
+        self.assertEqual((got["method"], got["path"], got["auth"]), ("GET", "/api/agent/projects/9/requests", "Bearer " + TOKEN))
+        self.assertNotIn("secretsecret", p.stdout + p.stderr, "the token is never printed")
+        self.run_it("claim", "12")
+        self.assertEqual((self.stub.seen[1]["method"], self.stub.seen[1]["path"]), ("POST", "/api/agent/projects/9/requests/12/claim"))
+
+    def test_the_same_values_can_stand_on_their_own_lines_of_dot_env_and_nothing_else_of_it_is_used(self):
+        (self.work / ".env").write_text(f"OTHER_SECRET=hunter2\nTESTBENCH_URL=http://127.0.0.1:{self.stub.server_port}\nTESTBENCH_PROJECT_ID=9\nTESTBENCH_TOKEN=\"tbrq_fromenvfile\"\nTESTBENCH_PASSWORD=hunter3\n")
+        p = self.run_it("list", env={})
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual((self.stub.seen[0]["path"], self.stub.seen[0]["auth"]), ("/api/agent/projects/9/requests", "Bearer tbrq_fromenvfile"))
+        for s in self.stub.seen:
+            self.assertNotIn(b"hunter", (s["auth"] or "").encode() + s["body"])
+        self.assertNotIn("hunter", p.stdout + p.stderr)
+        self.assertNotIn("fromenvfile", p.stdout + p.stderr)
+
+    def test_the_environment_wins_over_dot_env(self):
+        (self.work / ".env").write_text("TESTBENCH_PROJECT_ID=1\n")
+        self.assertEqual(self.run_it("list").returncode, 0)
+        self.assertEqual(self.stub.seen[0]["path"], "/api/agent/projects/9/requests")
+
+    def test_nothing_set_means_no_call_and_the_message_names_what_is_missing(self):
+        for name, env in (("nothing", {}), ("only the address", {"TESTBENCH_URL": "http://127.0.0.1:1"}), ("only the project", {"TESTBENCH_PROJECT_ID": "9"})):
+            with self.subTest(name):
+                p = self.run_it("list", env=env)
+                self.assertNotEqual(p.returncode, 0)
+                self.assertIn("TESTBENCH_URL and TESTBENCH_PROJECT_ID", p.stdout)
+        self.assertEqual(self.stub.seen, [])
+
+    def test_a_profile_that_exists_is_used_as_it_is_and_the_environment_is_ignored(self):
+        decoy = Stub(200, [])
+        self.addCleanup(decoy.shutdown)
+        p = run_helper(self.work, self.stub.server_port, "list", "", token=TOKEN, env_extra={"TESTBENCH_URL": f"http://127.0.0.1:{decoy.server_port}", "TESTBENCH_PROJECT_ID": "99", "TESTBENCH_TOKEN": "tbrq_decoydecoydecoy"})
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertNotIn("profile: none", p.stdout)
+        self.assertEqual(decoy.seen, [], "nothing reached the address of the environment")
+        self.assertEqual((self.stub.seen[0]["path"], self.stub.seen[0]["auth"]), ("/api/agent/projects/7/requests", "Bearer " + TOKEN))
+
+    def test_a_profile_that_cannot_be_read_is_an_error_and_not_a_reason_to_fall_back(self):
+        (self.work / ".testpilot").mkdir()
+        (self.work / ".testpilot" / "testbench.json").write_text("this is not json")
+        p = self.run_it("list")
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("could not be read", p.stdout)
+        self.assertEqual(self.stub.seen, [], "the environment was not used instead")
+
+    def test_a_token_that_is_not_a_request_token_is_refused_and_is_not_shown(self):
+        for bad in ("tbag_readtokenvalue123", "hunter2password", "tbrq_"):
+            with self.subTest(token=bad[:8]):
+                p = self.run_it("list", env=self.env(TESTBENCH_TOKEN=bad))
+                self.assertNotEqual(p.returncode, 0)
+                if len(bad) > len("tbrq_"):
+                    self.assertNotIn(bad, p.stdout + p.stderr)
+        self.assertEqual(self.stub.seen, [])
+
+    def test_plain_http_to_another_host_and_a_project_that_is_not_a_number_are_refused(self):
+        p = self.run_it("list", env=self.env(TESTBENCH_URL="http://example.com"))
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("Refusing plain http to a non-local host", p.stdout)
+        for bad in ("abc", "9; ls", "-1"):
+            with self.subTest(project=bad):
+                self.assertNotEqual(self.run_it("list", env=self.env(TESTBENCH_PROJECT_ID=bad)).returncode, 0)
+        self.assertEqual(self.stub.seen, [])
+
+    def test_findings_work_the_same_way(self):
+        found = Stub(201, {"kind": "observation", "id": 3, "sourceId": "$agent-12-1", "findingsOnRequest": 1})
+        self.addCleanup(found.shutdown)
+        (self.work / "audits" / "request-12").mkdir(parents=True)
+        f = self.work / "audits" / "request-12" / "findings.json"
+        f.write_text(json.dumps({"findings": [{"kind": "observation", "title": "Slow first paint"}]}))
+        env = {"TESTBENCH_URL": f"http://127.0.0.1:{found.server_port}", "TESTBENCH_PROJECT_ID": "9", "TESTBENCH_TOKEN": TOKEN}
+        p = run_helper(self.work, found.server_port, "findings", "12", token=None, profile=False, env_extra=env, findings=str(f))
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual((found.seen[0]["path"], found.seen[0]["auth"]), ("/api/agent/projects/9/requests/12/findings", "Bearer " + TOKEN))
+
+
 class ReleaseAndAuditTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -716,6 +814,11 @@ class TokenHandlingTests(unittest.TestCase):
 
 class RuleTests(unittest.TestCase):
     """Rules in the text that were found to matter in a real run. A change that drops one should have to say why."""
+
+    def test_the_no_profile_fallback_is_described_and_no_step_relies_on_it_yet(self):
+        self.assertIn("With **no** `.testpilot/testbench.json` at all, the helper uses `TESTBENCH_URL`, `TESTBENCH_PROJECT_ID` and `TESTBENCH_TOKEN`", TEXT)
+        self.assertIn("a profile that cannot be read is an error, never a reason to fall back", TEXT)
+        self.assertIn("**No step here relies on that yet**", TEXT)
 
     def test_the_findings_action_is_described_and_no_step_uses_it_yet(self):
         self.assertIn("python3 -I testpilot/tools/request_call.py findings 12 --findings audits/request-12/findings.json", TEXT)
