@@ -2,7 +2,7 @@
 
 A bridge between Claude (or TestPilot) and TestBench's **agent-request queue**. A person asks for something in TestBench (**Automated tests → Requests → Request discover**, or a re-run on a run page). This server lets the agent take that request, report what it found or ran, say when it is done, or give it back. It runs on your machine, talks to TestBench over HTTP with a **request token** (`tbrq_`), and speaks MCP over **stdio**.
 
-TestBench starts nothing: the request waits until an agent takes it. TestBench never runs Playwright and never writes to your disk or git. The agent does its work in your own environment, under its own rules (for browsing, with Playwright MCP).
+TestBench starts nothing: the request waits until an agent takes it. TestBench never runs Playwright and never writes to your disk or git. The agent does its work in your own environment, under its own rules (for browsing, with Playwright MCP). The TestPilot skills are the other way to work on a request: what each path can do, and which to use, is in [../docs/agent-paths.md](../docs/agent-paths.md).
 
 ## Tools
 
