@@ -146,7 +146,7 @@ Errors come back as MCP tool errors with a message to act on:
 
 | Status | Meaning |
 | --- | --- |
-| 401 | The token was refused (missing, wrong, revoked, or not a request token). |
+| 401 | The token was refused (missing, wrong, revoked, or not a request token). The message tells the agent not to retry with it and not to look for another token, but to tell the user. |
 | 403 | The token belongs to another project, or may not do that. |
 | 404 | No such request in this project (or `TESTBENCH_PROJECT_ID` is wrong). |
 | 409 | The request is not in the right state (someone else took it, it is already done, another token took it). For a finding also: the request is not a discover, is not taken, or already has 200 findings. For results also: agent results are switched off, a test case already has a result, or the request is not a run. For `done` on a run request: how many test cases have no result yet. |
