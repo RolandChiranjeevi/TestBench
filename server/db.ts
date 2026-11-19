@@ -757,6 +757,9 @@ function migrateAgentFindings(d: Database.Database) {
   if (!hasColumn("cases", "created_by_agent_token_id")) d.exec("ALTER TABLE cases ADD COLUMN created_by_agent_token_id INTEGER");
   // The plan item a draft case from an agent was made for (a discover's plan, server/agentfindings.ts). A row id, so that it follows the item; the link goes (NULL) with the item.
   if (!hasColumn("cases", "plan_item_id")) d.exec("ALTER TABLE cases ADD COLUMN plan_item_id INTEGER REFERENCES audit_plan_items(id) ON DELETE SET NULL");
+  // The discover request an agent's draft case was made for, so that a request can say how many cases it delivered (bugs, observations and manual tests already carry `$agent-<request>`
+  // in origin_audit_id). A case made before this was recorded has none and is not counted.
+  if (!hasColumn("cases", "agent_request_id")) d.exec("ALTER TABLE cases ADD COLUMN agent_request_id INTEGER REFERENCES agent_requests(id) ON DELETE SET NULL");
   if (!hasColumn("agent_requests", "findings_count")) d.exec("ALTER TABLE agent_requests ADD COLUMN findings_count INTEGER NOT NULL DEFAULT 0");
 }
 

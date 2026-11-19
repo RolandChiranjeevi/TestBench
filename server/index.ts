@@ -342,6 +342,9 @@ function getCase(id: number) {
     requirements: requirementsForCase(id),
     // The agent proposal this case was made from, if any.
     proposal: (db.prepare("SELECT id, source_id AS sourceId, title, review_status AS status FROM manual_tests WHERE case_id = ?").get(id) as { id: number; sourceId: string; title: string; status: string } | undefined) ?? null,
+    // The plan item of the discover that made this case (a draft case an agent linked to its plan, server/agentfindings.ts), if any and while it exists. Read only here.
+    planItem: (db.prepare(`SELECT i.source_id AS sourceId, i.title, i.review_status AS status, a.id AS auditId, a.title AS auditTitle
+        FROM cases c JOIN audit_plan_items i ON i.id = c.plan_item_id JOIN audits a ON a.id = i.audit_id WHERE c.id = ?`).get(id) as { sourceId: string; title: string; status: string; auditId: number; auditTitle: string } | undefined) ?? null,
     automated: db.prepare("SELECT * FROM automated_tests WHERE case_id = ? ORDER BY title").all(id),
     history: db
       .prepare(`

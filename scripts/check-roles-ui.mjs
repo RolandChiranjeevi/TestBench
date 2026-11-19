@@ -1062,6 +1062,34 @@ for (const who of Object.keys(TABS)) {
     (await tw.page.getByRole("button", { name: `Run request ${second.id} next` }).count()) === 0));
   await tw.close();
 
+  // What a discover delivered: its card says what it made, a draft case says which plan item it was planned in, and the plan item says how many cases it has. A viewer sees all of it.
+  const tokenD = (await call("POST", `/api/projects/${A}/request-tokens`, { name: "ui-delivered" }, owner)).json.token;
+  const agentCall = async (path, body) => {
+    const res = await fetch(BASE + path, { method: "POST", headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), Authorization: `Bearer ${tokenD}` }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(`${path} -> ${res.status} ${JSON.stringify(json)}`);
+    return json;
+  };
+  const dr = (await call("POST", `/api/projects/${A}/agent-requests`, { kind: "discover", targetUrl: "https://delivered.example.com", note: "delivery check" }, owner)).json;
+  await agentCall(`/api/agent/projects/${A}/requests/${dr.id}/claim`);
+  const dp = await agentCall(`/api/agent/projects/${A}/requests/${dr.id}/findings`, { kind: "plan_item", title: "Delivery check: a visitor can sign in" });
+  const dc = await agentCall(`/api/agent/projects/${A}/requests/${dr.id}/findings`, { kind: "test_case", title: "Delivery check: sign in with a good password", planItem: dp.sourceId });
+  await agentCall(`/api/agent/projects/${A}/requests/${dr.id}/findings`, { kind: "observation", title: "Delivery check: slow paint", severity: "low" });
+  await agentCall(`/api/agent/projects/${A}/requests/${dr.id}/complete`, {}); // one request runs at a time in a project: nothing is left taken
+  const dv = await open("viewer", `/p/${A}/automated?view=requests`);
+  check("delivery: the card of a discover says what it made", await eventually(async () =>
+    ((await dv.page.locator(`[data-delivered="${dr.id}"]`).innerText()).replace(/\s+/g, " ")).includes("Delivered: 1 plan item · 1 test case · 1 observation")));
+  await dv.close();
+  const dk = await open("viewer", `/p/${A}/cases?case=${dc.id}`);
+  check("delivery: a draft case says which plan item it was planned in, with a link to the plan", await eventually(async () =>
+    (await dk.page.locator(`[data-plan-item="${dp.sourceId}"]`).count()) === 1 && (await dk.page.locator(`[data-plan-item="${dp.sourceId}"] a`).getAttribute("href")) === `/p/${A}/test-plan?audit=${dp.auditId}`));
+  await dk.close();
+  const dl = await open("viewer", `/p/${A}/test-plan?audit=${dp.auditId}`);
+  check("delivery: the plan item says how many test cases it has, and lists them when opened", await eventually(async () => (await dl.page.getByText("1 test case", { exact: true }).count()) >= 1));
+  await dl.page.getByRole("button", { name: /Delivery check: a visitor can sign in/ }).click();
+  check("delivery: the opened plan item links its test case", await eventually(async () => (await dl.page.locator(`[data-plan-cases="${dp.sourceId}"] a`).getAttribute("href")) === `/p/${A}/cases?case=${dc.id}`));
+  await dl.close();
+
   // Folders: the tree is called Folders, the menu runs a folder and saves it as a suite (a copy), and a case says whether it is manual or automated.
   const folder = (await call("GET", `/api/projects/${A}/suites`, undefined, owner)).json.find((s) => s.case_count > 0);
   const c = await open("tester", `/p/${A}/cases`);

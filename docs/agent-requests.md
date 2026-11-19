@@ -130,6 +130,7 @@ What to do about it:
 - **It is a place in line, nothing more.** It does not take the request, change what it asks, or give an agent any right it did not have. Only a waiting request can be put first (409 otherwise). It is recorded in the audit log as `agent_request.put_first`, with the person.
 - **The person's list** (`GET /api/projects/<id>/agent-requests`) carries `priority` (0 until put first) and `queuePosition` (1 is next; `null` for a request that is not waiting).
 - **A request that hangs.** There is no time limit on a taken request, so a session that died leaves it Taken. A person can **Cancel** it (that also frees the project), and the card says how long ago it was taken.
+- **What a discover delivered.** The person's list carries `delivered` for a discover that made something: how many plan items and coverage gaps (the agent's own, not a person's), draft cases, bug reports, observations and manual test suggestions **are still there**. A thing a person deleted is not counted, and a discover that made nothing has `null`. Draft cases made before this was recorded (`cases.agent_request_id`) are not counted. The card shows it as *Delivered: …*.
 - **MCP.** When requests wait but none can be taken, `testbench_get_next_request` answers `{"request": null, "reason": "…"}` with the reason (for example which request runs) instead of a bare `null`. `{"request": null}` alone means nothing waits.
 
 ## Giving a request back, and linking the audit

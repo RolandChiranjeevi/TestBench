@@ -1,4 +1,5 @@
 import type { Automation, LastAutomated, RunSuiteInfo } from "./automation";
+import type { Delivered } from "./agentruns";
 import type { RequestOptions } from "./requestOptions";
 
 export type Status = "untested" | "passed" | "failed" | "blocked" | "skipped";
@@ -75,6 +76,8 @@ export interface CaseDetail extends CaseSummary {
   created_by?: string;
   /** The agent proposal this case was made from, if any. */
   proposal?: { id: number; sourceId: string; title: string; status: string } | null;
+  /** The plan item of the discover that made this case (an agent linked its draft case to its plan), while that item exists. Read only. */
+  planItem?: { sourceId: string; title: string; status: string; auditId: number; auditTitle: string } | null;
 }
 export interface Counts { total: number; passed: number; failed: number; blocked: number; skipped: number; untested: number; flaky: number; duration_ms: number }
 export interface RunSummary extends Counts {
@@ -175,6 +178,8 @@ export interface AgentRequest {
   /** The order an agent is given waiting requests in: a person can put one first (priority above 0); among equals the oldest goes first. `queuePosition` is 1 for the next one, and null for a request that is not waiting. */
   priority: number;
   queuePosition: number | null;
+  /** A discover: what it has made that is still there (plan items, gaps, draft cases, bugs, observations, manual tests); null when it made nothing, and for the other kinds. */
+  delivered: Delivered | null;
   status: "pending" | "claimed" | "done" | "cancelled";
   createdBy: string; createdAt: string; claimedBy: string | null; claimedAt: string | null; finishedAt: string | null; resultRunId: number | null; resultNote: string;
   /** Set when the agent handed in the report of a re-run (the run it made is resultRunId). */

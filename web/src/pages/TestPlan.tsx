@@ -16,6 +16,8 @@ interface Change { field: string; from: string; to: string }
 interface PlanItem {
   sourceId: string; title: string; type: string; risk: string; priority: string; readiness: string; preconditions: string; testData: string;
   steps: string[]; acceptanceCriteria: string; automation: string; result: string | null; requirements: PlanLink[];
+  /** The test cases an agent linked to this item. Read only. */
+  cases: { id: number; key: string; number: number; title: string; status: string }[];
   origin: "agent" | "human"; status: PlanStatus; editedBy: string | null; editedAt: string | null; decidedBy: string | null; decidedAt: string | null;
   /** The agent's newer version (or its leaving the item out) of an item a person owns. It waits until a person applies or ignores it. */
   pending: { removed: boolean; changes: Change[] } | null;
@@ -211,7 +213,7 @@ export function TestPlanPage() {
                       <button className="plan-row" aria-expanded={isOpen} aria-controls={`${anchor(x.sourceId)}-detail`} onClick={() => toggle(x.sourceId)}>
                         <span aria-hidden="true">{isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
                         <span className="mono muted key-col">{x.sourceId}</span>
-                        <span className="plan-title">{x.title}{x.readiness === "needs-clarification" && <span className="plan-unclear"> · needs clarification</span>} <span className="plan-marks"><PlanMarks x={x} />{ownerNote(x) && <span className="faint plan-owner">{ownerNote(x)}</span>}</span></span>
+                        <span className="plan-title">{x.title}{x.readiness === "needs-clarification" && <span className="plan-unclear"> · needs clarification</span>} <span className="plan-marks"><PlanMarks x={x} />{ownerNote(x) && <span className="faint plan-owner">{ownerNote(x)}</span>}{x.cases.length > 0 && <span className="chip" title="Test cases an agent linked to this plan item. Open the item to see them.">{x.cases.length} test case{x.cases.length === 1 ? "" : "s"}</span>}</span></span>
                         <span className="muted c-type">{x.type}</span>
                         <span>{x.priority && <PriorityBadge value={x.priority} />}</span>
                         <span className="c-auto">{isAutomated(x) ? <span className="plan-auto"><Check size={12} /> Scripted</span> : <span className="muted">{x.automation ? "Manual" : ""}</span>}</span>
@@ -248,6 +250,14 @@ export function TestPlanPage() {
                               {x.steps.length > 0 && <><h4>Steps</h4><ol>{x.steps.map((st, i) => <li key={i}>{st}</li>)}</ol></>}
                               {text("Acceptance criteria", x.acceptanceCriteria)}
                               {text("Automation", x.automation)}
+                              {x.cases.length > 0 && (
+                                <>
+                                  <h4>Test cases</h4>
+                                  <ul data-plan-cases={x.sourceId}>
+                                    {x.cases.map((c) => <li key={c.id}><Link to={`/p/${pid}/cases?case=${c.id}`} style={{ color: "var(--accent-text)" }}><span className="mono">{c.key}</span> {c.title}</Link> <span className="faint">({c.status})</span></li>)}
+                                  </ul>
+                                </>
+                              )}
                               <AutomationSuggestions pid={pid} scope={{ kind: "plan_item", auditId: audit.id, sourceId: x.sourceId }} itemStatus={x.status} />
                             </>
                           )}
