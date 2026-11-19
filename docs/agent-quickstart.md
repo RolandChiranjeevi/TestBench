@@ -39,6 +39,8 @@ The first server reads its variables from `.env` itself, so the file holds no to
 
 ## 4. The profile
 
+**You can skip this step for a discover request.** With no `.testpilot/testbench.json` at all, the helper of the skills uses `TESTBENCH_URL`, `TESTBENCH_PROJECT_ID` and `TESTBENCH_TOKEN` from the `.env` you made in step 2, and the agent works with the strictest defaults (read only). A re-run and a run request still need the profile below, and a profile that exists but cannot be read is an error.
+
 `.testpilot/testbench.json`:
 
 ```json
@@ -72,6 +74,6 @@ The first server reads its variables from `.env` itself, so the file holds no to
 
 - **Nothing starts by itself.** The setup above stays; only the asking is one click.
 - **The Read tool does not ask before it reads `.env`** in the normal permission mode (measured in [appendix D of the verification](agent-chain-verification.md)). The token is narrow and you revoke it at the end: see [What a session that uses the token can reach](agent-requests.md#what-a-session-that-uses-the-token-can-reach).
-- **The skills and `.testpilot/` are read from the folder you start in**, so start from the agent's folder when you use the skills. A skill with no profile stops and asks you.
+- **The skills and `.testpilot/` are read from the folder you start in**, so start from the agent's folder when you use the skills. A skill with no profile stops and asks you, except `/testpilot-requests` for a discover request.
 - **Agent results are off by default.** A discover does not need them. A re-run and a run request do ([agent-requests.md](agent-requests.md)).
 - **What the token can and cannot do:** [agent-requests.md](agent-requests.md#the-request-token). The two ways to work on a request: [agent-paths.md](agent-paths.md).

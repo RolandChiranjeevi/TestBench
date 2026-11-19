@@ -37,6 +37,9 @@ SEND_MAX = {"result": 5 * 1024 * 1024, "case-results": 256 * 1024, "findings": 2
 FINDING_KINDS = ("test_case", "bug_report", "observation", "manual_test_suggestion", "plan_item", "coverage_gap")  # the list of server/agentfindings.ts (test_requests_skill.py checks it)
 FINDINGS_MAX = 50  # in one call: TestBench takes 60 findings a minute per token
 ALIAS = re.compile(r"[A-Za-z0-9_-]{1,40}")  # a `ref` of a plan_item
+# What a person chose when asking for a discover (server/agentrequests.ts, REQUEST_OPTIONS). Only a value from these lists is ever printed, so no free text can pass through them.
+OPTION_CHOICES = {"targetMode": ("observe_only", "full"), "gitMode": ("off", "local", "pr")}
+OPTION_LISTS = {"deliverables": ("plan", "cases", "observations", "bugs", "specs"), "viewports": ("desktop", "tablet", "mobile")}
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -177,6 +180,17 @@ def send_findings(base, pid, rid, headers, items):
     return 0
 
 
+def options_of(o):
+    """The choices of a discover as they may be shown: each one of the known values, or left out. A preselection for the agent's confirmation, never a permission."""
+    if not isinstance(o, dict):
+        return None
+    out = {k: o[k] for k, ok in OPTION_CHOICES.items() if o.get(k) in ok}
+    out.update({k: [v for v in o[k] if v in ok] for k, ok in OPTION_LISTS.items() if isinstance(o.get(k), list)})
+    if isinstance(o.get("production"), bool):
+        out["production"] = o["production"]
+    return out
+
+
 def show(data, code, action, rid):
     """Prints the answer: the data of the requests as JSON strings, so that text in a note stays text, and nothing else from it. Returns the exit status."""
     try:
@@ -217,6 +231,7 @@ def show(data, code, action, rid):
             "target": clean(q["targetUrl"], 500), "run": q["runId"], "tests": len(q["tests"]), "asked_by": clean(q["createdBy"], 80),
             "asked_at": q["createdAt"], "note": clean(q["note"], 500),
             **({"cases": q.get("caseCount"), "progress": q.get("progress")} if q["kind"] == "run" else {}),
+            **({"options": options_of(q.get("options"))} if q["kind"] == "discover" and q.get("options") is not None else {}),
         }))
         if detail and q["kind"] == "run":
             cases = q.get("cases") or []
