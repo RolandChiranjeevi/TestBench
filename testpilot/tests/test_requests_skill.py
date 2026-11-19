@@ -194,13 +194,14 @@ class RunRequestPrinterTests(unittest.TestCase):
 class Stub(HTTPServer):
     """A TestBench that records what it is sent (GET or POST) and answers with a fixed code and body, and with a Location header if `location` is given."""
 
-    def __init__(self, code=200, body=None, location=None):
+    def __init__(self, code=200, body=None, location=None, respond=None):
         class H(BaseHTTPRequestHandler):
             def answer(h):
                 n = int(h.headers.get("Content-Length") or 0)
                 self.seen.append({"method": h.command, "path": h.path, "auth": h.headers.get("Authorization"), "type": h.headers.get("Content-Type"), "body": h.rfile.read(n)})
-                out = json.dumps(self.body).encode()
-                h.send_response(self.code); h.send_header("Content-Type", "application/json"); h.send_header("Content-Length", str(len(out)))
+                code, payload = respond(len(self.seen), self.seen[-1]) if respond else (self.code, self.body)  # `respond` lets the answer differ from one call to the next
+                out = json.dumps(payload).encode()
+                h.send_response(code); h.send_header("Content-Type", "application/json"); h.send_header("Content-Length", str(len(out)))
                 if location:
                     h.send_header("Location", location)
                 h.end_headers(); h.wfile.write(out)
@@ -221,14 +222,14 @@ class Stub(HTTPServer):
 TOKEN = "tbrq_secretsecretsecret"
 
 
-def run_helper(work, port, action, rid="12", report="", note=None, result_audit=None, case_results="", result_run=None, token=TOKEN, base=None, profile_var="TB_REQ_TOK"):
+def run_helper(work, port, action, rid="12", report="", note=None, result_audit=None, case_results="", result_run=None, token=TOKEN, base=None, profile_var="TB_REQ_TOK", findings=""):
     """The helper, run in the agent's folder `work`, against a stub on `port` (or at `base`), with `token` in the environment variable the profile names (none if None).
     Each value is one argument, as the shell would hand it over: no shell is involved."""
     (work / ".testpilot" / "projects").mkdir(parents=True, exist_ok=True)
     (work / ".testpilot" / "testbench.json").write_text(json.dumps({"baseUrl": base or f"http://127.0.0.1:{port}", "activeProject": "p"}))
     (work / ".testpilot" / "projects" / "p.json").write_text(json.dumps({"projectId": 7, **({"requestTokenEnvVar": profile_var} if profile_var else {})}))
     args = [action] + ([rid] if rid else [])
-    for flag, value in (("--report", report), ("--case-results", case_results), ("--result-audit", result_audit), ("--result-run", result_run)):
+    for flag, value in (("--report", report), ("--case-results", case_results), ("--findings", findings), ("--result-audit", result_audit), ("--result-run", result_run)):
         if value:
             args.append(f"{flag}={value}")
     env = {k: v for k, v in os.environ.items() if k != "TB_REQ_TOK"}
@@ -377,7 +378,148 @@ class CaseResultsActionTests(unittest.TestCase):
     def test_an_unknown_action_is_refused_and_says_which_ones_there_are(self):
         p = run_helper(self.work, self.stub.server_port, "results")
         self.assertNotEqual(p.returncode, 0)
-        self.assertIn("The action must be list, claim, release, result, case-results or complete", p.stdout)
+        self.assertIn("The action must be list, claim, release, result, case-results, findings or complete", p.stdout)
+
+
+class FindingsActionTests(unittest.TestCase):
+    """`findings`: a file of findings, sent one at a time to the findings route, with the helper's own `ref` and `planItemRef` to link a case to a plan item of the same file."""
+
+    @staticmethod
+    def made(n, seen):
+        """TestBench's answer to the n-th finding: plan items are P-1, P-2 ..., and a case says which plan item it was linked to."""
+        body = json.loads(seen["body"])
+        plan = sum(1 for _ in range(n))  # the stub only needs a number per call
+        out = {"kind": body["kind"], "id": 100 + n, "sourceId": f"P-{n}" if body["kind"] == "plan_item" else f"$agent-12-{n}", "auditId": 5, "findingsOnRequest": 0, "planItemsOnRequest": plan, "coverageGapsOnRequest": 0}
+        if body.get("planItem"):
+            out["planItem"] = body["planItem"]
+        return 201, out
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.work = Path(self.tmp.name).resolve()
+        (self.work / "audits" / "request-12").mkdir(parents=True)
+        self.file = self.work / "audits" / "request-12" / "findings.json"
+        self.addCleanup(self.tmp.cleanup)
+
+    def write(self, findings, raw=None):
+        self.file.write_bytes(raw if raw is not None else json.dumps({"findings": findings}).encode())
+
+    def run_it(self, stub, file=None, rid="12", token=TOKEN):
+        return run_helper(self.work, stub.server_port, "findings", rid, findings=str(file if file is not None else self.file), token=token)
+
+    def stub(self, respond=None):
+        st = Stub(respond=respond or self.made)
+        self.addCleanup(st.shutdown)
+        return st
+
+    def test_each_finding_is_sent_in_order_to_the_findings_route_with_the_token_in_the_header_only_and_what_each_became_is_printed(self):
+        self.write([
+            {"kind": "plan_item", "title": "Sign in works", "ref": "login", "requirements": ["REQ-1"]},
+            {"kind": "coverage_gap", "description": "Password reset was not tried"},
+            {"kind": "test_case", "title": "Sign in with a good password", "planItemRef": "login", "steps": [{"action": "Open /login", "expected": "A form"}]},
+            {"kind": "observation", "title": "Slow first paint", "severity": "low"},
+        ])
+        st = self.stub()
+        p = self.run_it(st)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual([x["path"] for x in st.seen], ["/api/agent/projects/7/requests/12/findings"] * 4)
+        self.assertTrue(all(x["auth"] == "Bearer " + TOKEN and x["type"] == "application/json" and x["method"] == "POST" for x in st.seen))
+        sent = [json.loads(x["body"]) for x in st.seen]
+        self.assertEqual(sent[0], {"kind": "plan_item", "title": "Sign in works", "requirements": ["REQ-1"]}, "the helper's own ref is not sent")
+        self.assertEqual(sent[2], {"kind": "test_case", "title": "Sign in with a good password", "steps": [{"action": "Open /login", "expected": "A form"}], "planItem": "P-1"}, "the case is linked to the number TestBench gave")
+        self.assertNotIn("planItemRef", json.dumps(sent))
+        self.assertNotIn("secretsecret", p.stdout + p.stderr, "the token is never printed")
+        lines = [json.loads(l) for l in p.stdout.splitlines()]
+        self.assertEqual([(l["n"], l["kind"], l["sourceId"]) for l in lines[:-1]], [(1, "plan_item", "P-1"), (2, "coverage_gap", "$agent-12-2"), (3, "test_case", "$agent-12-3"), (4, "observation", "$agent-12-4")])
+        self.assertEqual(lines[2]["planItem"], "P-1")
+        self.assertEqual(lines[-1]["made"], 4)
+        self.assertEqual(lines[-1]["by_kind"], {"plan_item": 1, "coverage_gap": 1, "test_case": 1, "observation": 1})
+        self.assertEqual(lines[-1]["audit"], 5)
+
+    def test_it_stops_at_the_first_finding_TestBench_refuses_says_where_and_sends_nothing_after_it(self):
+        self.write([{"kind": "observation", "title": f"o{i}"} for i in range(1, 6)])
+        st = self.stub(lambda n, seen: (400, {"error": "Slow\x07 first paint is not allowed"}) if n == 3 else self.made(n, seen))
+        p = self.run_it(st)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertEqual(len(st.seen), 3, "nothing after the refused one was sent")
+        last = json.loads(p.stdout.splitlines()[-1])
+        self.assertEqual((last["stopped_at"], last["http"], last["made_before"], last["kind"]), (3, 400, 2, "observation"))
+        self.assertNotIn("\x07", p.stdout, "text from TestBench is cleaned like all text")
+        self.assertEqual(len(p.stdout.splitlines()), 3, "two made, then the line that says where it stopped")
+
+    def test_it_does_not_retry_a_429_and_stops_there(self):
+        self.write([{"kind": "observation", "title": "a"}, {"kind": "observation", "title": "b"}])
+        st = self.stub(lambda n, seen: (429, {"error": "Too many findings from this token"}))
+        p = self.run_it(st)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertEqual(len(st.seen), 1)
+        self.assertEqual(json.loads(p.stdout.splitlines()[-1])["http"], 429)
+
+    def test_only_the_data_it_picks_out_is_printed_from_an_answer(self):
+        self.write([{"kind": "observation", "title": "a"}])
+        st = self.stub(lambda n, seen: (201, {"kind": "observation", "id": 9, "sourceId": "$agent-12-1", "findingsOnRequest": 1, "debug": "SHOULD-NOT-SHOW", "token": "tbrq_leak"}))
+        p = self.run_it(st)
+        self.assertEqual(p.returncode, 0)
+        self.assertNotIn("SHOULD-NOT-SHOW", p.stdout)
+        self.assertNotIn("tbrq_leak", p.stdout)
+
+    def test_nothing_is_sent_when_the_file_does_not_pass_the_checks(self):
+        ok = {"kind": "plan_item", "title": "A", "ref": "a"}
+        bad = {
+            "not JSON": (None, b"not json"), "no findings key": ({"x": 1}, None), "an empty list": ([], None), "51 findings": ([{"kind": "observation", "title": "x"}] * 51, None),
+            "an unknown kind": ([{"kind": "spec", "title": "x"}], None), "a request_id": ([{"kind": "observation", "title": "x", "request_id": 12}], None),
+            "a finding that is not an object": (["text"], None), "ref on a test_case": ([{"kind": "test_case", "title": "x", "ref": "a"}], None),
+            "a ref with a space": ([{"kind": "plan_item", "title": "x", "ref": "a b"}], None), "a ref used twice": ([ok, {**ok}], None),
+            "a planItemRef that is not defined": ([{"kind": "test_case", "title": "x", "planItemRef": "nope"}], None),
+            "a planItemRef to a LATER plan item": ([{"kind": "test_case", "title": "x", "planItemRef": "a"}, ok], None),
+            "planItemRef together with planItem": ([ok, {"kind": "test_case", "title": "x", "planItemRef": "a", "planItem": "P-1"}], None),
+            "planItemRef on an observation": ([ok, {"kind": "observation", "title": "x", "planItemRef": "a"}], None),
+        }
+        for name, (findings, raw) in bad.items():
+            with self.subTest(name):
+                # A valid finding goes first. If the checks were skipped it would be sent before the bad one is reached, so this shows that nothing is sent until the whole file has passed.
+                self.write(([{"kind": "observation", "title": "valid"}] + findings) if isinstance(findings, list) and findings else findings, raw)
+                st = self.stub()
+                p = self.run_it(st)
+                self.assertNotEqual(p.returncode, 0, name)
+                self.assertEqual(st.seen, [], "no request reached TestBench")
+
+    def test_exactly_50_findings_are_allowed(self):
+        self.write([{"kind": "observation", "title": f"o{i}"} for i in range(50)])
+        st = self.stub()
+        p = self.run_it(st)
+        self.assertEqual((p.returncode, len(st.seen)), (0, 50), p.stdout[-300:])
+
+    def test_nothing_is_sent_for_a_file_that_is_not_this_requests_findings(self):
+        self.write([{"kind": "observation", "title": "x"}])
+        other = self.work / "audits" / "request-13"; other.mkdir()
+        (other / "f.json").write_text('{"findings": [{"kind": "observation", "title": "x"}]}')
+        (self.work / "elsewhere.json").write_text('{"findings": [{"kind": "observation", "title": "x"}]}')
+        d = self.work / "audits" / "request-12"
+        (d / "notes.txt").write_text("{}")
+        (d / "empty.json").write_text("")
+        (d / "big.json").write_bytes(b" " * (2 * 1024 * 1024 + 1))
+        (d / "link.json").symlink_to(self.work / "elsewhere.json")
+        (d / "inner.json").symlink_to(self.file)
+        st = self.stub()
+        for bad in [other / "f.json", self.work / "elsewhere.json", d / "notes.txt", d / "empty.json", d / "big.json", d / "link.json", d / "inner.json", d / "missing.json"]:
+            with self.subTest(file=str(bad)):
+                self.assertNotEqual(self.run_it(st, bad).returncode, 0)
+        self.assertEqual(st.seen, [], "no request reached TestBench")
+
+    def test_a_request_number_is_required_and_a_bad_token_stops_it_before_anything_is_sent(self):
+        self.write([{"kind": "observation", "title": "x"}])
+        st = self.stub()
+        self.assertNotEqual(self.run_it(st, rid="").returncode, 0)
+        self.assertNotEqual(self.run_it(st, token="not-a-request-token").returncode, 0)
+        self.assertNotEqual(self.run_it(st, token=None).returncode, 0)
+        self.assertEqual(st.seen, [])
+
+    def test_the_kinds_are_the_same_list_as_the_servers(self):
+        src = (ROOT / "server" / "agentfindings.ts").read_text()
+        m = re.search(r"export const FINDING_KINDS = \[([^\]]+)\]", src)
+        self.assertIsNotNone(m)
+        self.assertEqual(tuple(re.findall(r'"([a-z_]+)"', m.group(1))), request_call.FINDING_KINDS)
 
 
 class ReleaseAndAuditTests(unittest.TestCase):
@@ -574,6 +716,12 @@ class TokenHandlingTests(unittest.TestCase):
 
 class RuleTests(unittest.TestCase):
     """Rules in the text that were found to matter in a real run. A change that drops one should have to say why."""
+
+    def test_the_findings_action_is_described_and_no_step_uses_it_yet(self):
+        self.assertIn("python3 -I testpilot/tools/request_call.py findings 12 --findings audits/request-12/findings.json", TEXT)
+        self.assertIn("**at most 50**", TEXT)
+        self.assertIn("It **stops at the first finding TestBench refuses**", TEXT)
+        self.assertIn("**No step of this skill uses `findings` yet: do not use it unless a step says so.**", TEXT)
 
     def test_one_request_runs_at_a_time_and_the_agent_stops_instead_of_trying_another(self):
         self.assertIn("another request of the project is already being worked on", TEXT)
