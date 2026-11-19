@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Bot, Plus } from "lucide-react";
+import { Bot, Copy, Plus } from "lucide-react";
+import { needsText } from "../access";
 import { auditPath, PROGRESS_TITLE, progressLabel } from "../agentruns";
 import { api, timeAgo, type AgentRequest, type RunDetail } from "../api";
+import { DEFAULT_OPTIONS, DELIVERABLES, GIT_MODES, optionsProblem, optionsSummary, START_COMMAND, START_PROMPT, TARGET_MODES, toggled, VIEWPORTS, withProduction, type RequestOptions } from "../requestOptions";
 import type { Tone } from "../statuses";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
-import { EditScope } from "../components/Access";
+import { EditScope, useCan } from "../components/Access";
 import { Empty, Modal, useToast } from "../components/ui";
 import { useAgentRequests } from "../useAgentRequests";
 import { ViewTabs } from "./Insights";
@@ -93,6 +95,11 @@ function RequestCard({ r, onCancel, cancelling }: { r: AgentRequest; onCancel: (
         {r.finishedAt && ` · ${r.status === "cancelled" ? "cancelled" : "finished"} ${timeAgo(r.finishedAt)}`}
       </div>
       {r.note && <div style={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>{r.note}</div>}
+      {r.kind === "discover" && r.options && (
+        <div className="faint" style={{ fontSize: "var(--fs-sm)", overflowWrap: "anywhere" }} title="What the person chose when asking. A preselection for the agent, never a permission." data-options={r.id}>
+          {optionsSummary(r.options)}
+        </div>
+      )}
       {r.kind === "rerun" && r.tests.length > 0 && (
         <details>
           <summary className="muted" style={{ cursor: "pointer" }}>{r.tests.length} {r.tests.length === 1 ? "test" : "tests"} to run again</summary>
@@ -135,26 +142,130 @@ function Fields({ environment, setEnvironment, note, setNote }: { environment: s
   );
 }
 
-function useMakeRequest(onDone: () => void) {
+function useMakeRequest(onDone: (r: AgentRequest) => void) {
   const { pid } = useParams();
   const qc = useQueryClient();
   const toast = useToast();
   return useMutation({
     mutationFn: (body: Record<string, unknown>) => api.post<AgentRequest>(`/api/projects/${pid}/agent-requests`, body),
-    onSuccess: () => {
+    onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ["agent-requests", pid] });
       toast("success", "Request made. An agent can now take it");
-      onDone();
+      onDone(r);
     },
     onError: (e: Error) => toast("error", e.message),
   });
+}
+
+const LEGEND = { padding: 0, fontSize: "var(--fs-sm)", color: "var(--text-3)", fontWeight: 500 } as const;
+const GROUP = { border: 0, padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 4 } as const;
+
+/**
+ * What the person chooses when asking for a discover. A preselection for the agent's one confirmation, never a permission: the agent shows it, the user confirms in a message
+ * of their own, and the agent keeps to its own limits. With accounts on, only an admin can ask for acting on the address or for a pull request (the server refuses anyone else).
+ */
+function OptionsFields({ options, setOptions }: { options: RequestOptions; setOptions: (o: RequestOptions) => void }) {
+  const mayWiden = useCan("admin");
+  return (
+    <>
+      <fieldset style={GROUP}>
+        <legend style={LEGEND}>What may the agent do to the address?</legend>
+        {TARGET_MODES.map((m) => {
+          const blocked = m.value === "full" && (options.production || !mayWiden);
+          return (
+            <label key={m.value} className="row" style={{ gap: 6 }} title={blocked ? (options.production ? "A production address can only be read" : needsText("admin")) : m.title}>
+              <input type="radio" name="rq-target" checked={options.targetMode === m.value} disabled={blocked} onChange={() => setOptions({ ...options, targetMode: m.value })} /> {m.label}
+            </label>
+          );
+        })}
+        <label className="row" style={{ gap: 6 }} title="Only a hint: the agent still asks for its own two confirmations for a production address.">
+          <input type="checkbox" className="checkbox" checked={options.production} onChange={(e) => setOptions(withProduction(options, e.target.checked))} /> This address is production
+        </label>
+      </fieldset>
+      <fieldset style={GROUP}>
+        <legend style={LEGEND}>What may the agent do in git?</legend>
+        {GIT_MODES.map((m) => {
+          const blocked = m.value === "pr" && !mayWiden;
+          return (
+            <label key={m.value} className="row" style={{ gap: 6 }} title={blocked ? needsText("admin") : m.title}>
+              <input type="radio" name="rq-git" checked={options.gitMode === m.value} disabled={blocked} onChange={() => setOptions({ ...options, gitMode: m.value })} /> {m.label}
+            </label>
+          );
+        })}
+      </fieldset>
+      <fieldset style={GROUP}>
+        <legend style={LEGEND}>What should it deliver?</legend>
+        <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+          {DELIVERABLES.map((d) => (
+            <label key={d.value} className="row" style={{ gap: 6 }}>
+              <input type="checkbox" className="checkbox" checked={options.deliverables.includes(d.value)} onChange={() => setOptions({ ...options, deliverables: toggled(DELIVERABLES, options.deliverables, d.value) })} /> {d.label}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <fieldset style={GROUP}>
+        <legend style={LEGEND}>Which screen sizes?</legend>
+        <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+          {VIEWPORTS.map((v) => (
+            <label key={v.value} className="row" style={{ gap: 6 }}>
+              <input type="checkbox" className="checkbox" checked={options.viewports.includes(v.value)} onChange={() => setOptions({ ...options, viewports: toggled(VIEWPORTS, options.viewports, v.value) })} /> {v.label}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>
+        These are your choices for the agent to start from, not permissions. It shows them and asks you to confirm in its own session, and it keeps to its own limits.
+      </span>
+    </>
+  );
+}
+
+/** A line to copy: the agent is started by a person, so the way to start it is on screen. */
+function Copyable({ text, label }: { text: string; label: string }) {
+  const toast = useToast();
+  const failed = () => toast("error", "Could not copy. Select the text and copy it");
+  const copy = () => { try { void navigator.clipboard.writeText(text).then(() => toast("success", "Copied"), failed); } catch { failed(); } };
+  return (
+    <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 4 }}>
+      <code className="inline mono" style={{ overflowWrap: "anywhere", minWidth: 0, flex: "1 1 240px" }}>{text}</code>
+      <Button size="sm" onClick={copy} aria-label={label}><Copy size={12} /> Copy</Button>
+    </div>
+  );
+}
+
+/** After a discover was asked for: Testbench starts nothing, so what the person does next is on screen. The set-up steps are in docs/agent-quickstart.md. */
+function NextSteps({ request }: { request: AgentRequest }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }} data-next-steps={request.id}>
+      <div><strong>Request #{request.id} is waiting.</strong> Testbench starts nothing, so start your agent now:</div>
+      <ol style={{ margin: 0, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 10 }}>
+        <li>In a terminal, in your agent's folder, start Claude Code:<Copyable text={START_COMMAND} label="Copy the command that starts Claude Code" /></li>
+        <li>Tell it:<Copyable text={START_PROMPT} label="Copy the first message to the agent" />Or run <code className="inline mono">/testpilot-requests</code> to choose the request yourself.</li>
+        <li>Answer what the agent asks, in messages of your own: the address, the environment, whether it is production, and the choices you made. Answer its permission prompts with "allow once".</li>
+        <li>When it says it is done, review what it delivered. It all comes in as proposals.</li>
+      </ol>
+      <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>
+        Your choices: {request.options ? optionsSummary(request.options) : "the defaults"}. First time? The set-up steps are in docs/agent-quickstart.md in the Testbench repository.
+      </div>
+    </div>
+  );
 }
 
 function DiscoverModal({ onClose }: { onClose: () => void }) {
   const [targetUrl, setTargetUrl] = useState("");
   const [environment, setEnvironment] = useState("");
   const [note, setNote] = useState("");
-  const make = useMakeRequest(onClose);
+  const [options, setOptions] = useState<RequestOptions>(DEFAULT_OPTIONS);
+  const [made, setMade] = useState<AgentRequest | null>(null);
+  const make = useMakeRequest(setMade);
+  const problem = optionsProblem(options);
+  if (made) {
+    return (
+      <Modal title="Request made" onClose={onClose} width={560} footer={<Button variant="primary" onClick={onClose}>Close</Button>}>
+        <NextSteps request={made} />
+      </Modal>
+    );
+  }
   return (
     <Modal
       title="Request discover"
@@ -163,7 +274,7 @@ function DiscoverModal({ onClose }: { onClose: () => void }) {
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button needs="tester" variant="primary" disabled={!targetUrl.trim() || make.isPending} onClick={() => make.mutate({ kind: "discover", targetUrl, environment, note })}>Make request</Button>
+          <Button needs="tester" variant="primary" disabled={!targetUrl.trim() || !!problem || make.isPending} onClick={() => make.mutate({ kind: "discover", targetUrl, environment, note, options })}>Make request</Button>
         </>
       }
     >
@@ -178,6 +289,8 @@ function DiscoverModal({ onClose }: { onClose: () => void }) {
           <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>No password or token in the address.</span>
         </div>
         <Fields environment={environment} setEnvironment={setEnvironment} note={note} setNote={setNote} />
+        <OptionsFields options={options} setOptions={setOptions} />
+        {problem && <span role="alert" style={{ color: "var(--failed-fg)" }}>{problem}</span>}
       </EditScope>
     </Modal>
   );

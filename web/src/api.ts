@@ -1,4 +1,5 @@
 import type { Automation, LastAutomated, RunSuiteInfo } from "./automation";
+import type { RequestOptions } from "./requestOptions";
 
 export type Status = "untested" | "passed" | "failed" | "blocked" | "skipped";
 export type Priority = "low" | "medium" | "high" | "critical";
@@ -169,6 +170,8 @@ export interface AgentRequest {
   caseCount: number;
   /** A `run` request: how many of the test cases of its run have a result; null for the other kinds, and for a run that was deleted. */
   progress: RunProgress | null;
+  /** A discover: what the person chose when asking (a preselection for the agent's confirmation, never a permission); null for the other kinds. */
+  options: RequestOptions | null;
   status: "pending" | "claimed" | "done" | "cancelled";
   createdBy: string; createdAt: string; claimedBy: string | null; claimedAt: string | null; finishedAt: string | null; resultRunId: number | null; resultNote: string;
   /** Set when the agent handed in the report of a re-run (the run it made is resultRunId). */
