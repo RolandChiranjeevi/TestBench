@@ -29,9 +29,11 @@ Paths in this file are relative to this `SKILL.md`.
   after user confirmation (dry-run first, then real import). See
   `../testpilot-deliver/SKILL.md`.
 - `requests`: fetch the requests people have made of the agent in TestBench
-  (Automated tests, Requests), let the user pick one, take it, hand it to
-  `discover` or run its failed Playwright tests after the user confirms the
-  command, and mark it done. See `../testpilot-requests/SKILL.md`.
+  (Automated tests, Requests), let the user pick one, take it, hand a discover
+  request to `request-discover` (one confirmation, a read-only exploration, findings
+  handed in) or run its failed Playwright tests after the user confirms the
+  command, and mark it done. See `../testpilot-requests/SKILL.md` and
+  `../testpilot-request-discover/SKILL.md`.
 - `api-testing`: the API variant of discover → plan → run → report → deliver
   for a REST or GraphQL target described by a target profile
   (`.testpilot/targets/<name>.json`); `testpilot/tools/apitest/runner.py` replaces Playwright
@@ -47,8 +49,11 @@ init → discover → plan → run → report → deliver
 `init` is optional when the user already has a configured TestBench project.
 `discover` is required before planning or running an audit.
 `requests` is optional and comes before `discover`: it fetches what people asked
-the agent for in TestBench and hands the target to `discover`. It replaces no
-step and no stop.
+the agent for in TestBench. For a discover request it hands over to
+`request-discover`, which asks **one** confirmation in place of the stops of `discover`,
+`plan`, `report` and `deliver` for that request, explores read-only and hands in
+findings; it runs none of those commands, and `/testpilot` itself keeps every one
+of its stops. For the other requests it replaces no step and no stop.
 
 ## Boundaries
 
@@ -78,8 +83,8 @@ Permitted external write paths are:
 - `/testpilot-init`: create a confirmed TestBench project and save local
   project configuration
 - `/testpilot-deliver`: deliver a validated audit package to TestBench
-- `/testpilot-requests`: take a request that the user chose, and mark it done,
-  with a request token (`tbrq_`) that opens those routes of one project and
+- `/testpilot-requests`: take a request that the user chose, hand in what a
+  discover found (as proposals), and mark it done, with a request token (`tbrq_`) that opens those routes of one project and
   nothing else
 
 Follow the delivery policy configured for the project.

@@ -25,20 +25,20 @@ This workflow:
 - Reads the requests that are waiting in TestBench
 - Shows them to the user and lets the user choose **one**
 - Takes the chosen request (claim), so that no other agent works on it
-- For a `discover` request: hands the address over to `discover`, and then the normal audit flow runs with all its stops
+- For a `discover` request: hands the request over to `../testpilot-request-discover/SKILL.md`: **one** confirmation, a read-only exploration, the findings handed in (`findings`) and the request marked done with a note of numbers. A production target still gets its two separate confirmations. The full audit (`/testpilot-discover` and the skills after it, with all their stops) is used only if the user asks for it instead
 - For a `rerun` request: runs the listed Playwright tests in the repository the user names, after the user has confirmed the exact command
 - Hands in the re-run's report to TestBench (`result`), after the user has confirmed exactly what is sent. A person must have switched that on; if it is off, the user imports the file instead
 - For a `run` request: runs the chosen test cases (up to 10 per request) one at a time in a real browser with Playwright MCP, in the user's own environment, after the user has confirmed the address, the environment and the test cases
 - For the test cases of a `run` request that have `automatedTests` or `specFiles`: runs them with Playwright in the repository the user names, after the user has confirmed the exact command and the environment, and hands in the Playwright report (`result`), after the user has confirmed exactly what is sent
 - Reports a result for each test case (`case-results`), after the user has confirmed exactly what is sent. A person must have switched agent results on; until then nothing is sent and the file waits
 - Gives the request back (release) if the work stops before the end, after the user has confirmed, so that it waits again for another agent or for the user
-- Marks the request done, with a short note, after the user has confirmed the note. For a discover, the audit that `deliver` made is linked to the request
+- Marks the request done, with a short note, after the user has confirmed the note. For a discover that went through the full audit, the audit that `deliver` made is linked to the request. A discover handled by `testpilot-request-discover` is marked done by that skill, under its one confirmation
 
 It does not:
 - Make, cancel or change a request. A request token cannot, and the agent must not try
 - Read requirements. That is the read token (`tbag_`), and it is not used here
 - Approve, reject or decide anything. Everything the agent delivers stays `proposed`
-- Import anything else, or upload any other file. The only things it may hand in are the Playwright report it just ran, of a re-run or of the automated tests of a run request's test cases (`result`), and the results of the test cases it just ran (`case-results`), each after the user's confirmation (step 6)
+- Import anything else, or upload any other file. The only things it may hand in are the Playwright report it just ran, of a re-run or of the automated tests of a run request's test cases (`result`), and the results of the test cases it just ran (`case-results`), each after the user's confirmation (step 6); and, for a discover, the findings files that `testpilot-request-discover` wrote (`findings`), under its one confirmation
 - Invent a result, finish a run (a person reviews the results and finishes the run), or write over a result that a person has set. TestBench refuses the last
 - Work on a request the user did not choose, or on several at once
 
@@ -86,7 +86,7 @@ Rules:
 
 - Do not read project-specific values from the global configuration.
 - Do not store token values, passwords, cookies or target URLs in the project profile.
-- If the active profile is missing, invalid or unreadable, pause and ask the user.
+- If the active profile is invalid or unreadable, pause and ask the user. If there is **no** `.testpilot/testbench.json` at all, you can still list requests and work on a `discover` request (the helper then uses the environment, and the strictest defaults apply: `../testpilot-request-discover/SKILL.md`, step 1). A `rerun` or a `run` request needs the profile: if there is none, say so and stop.
 - `tokenEnvVar` (the read token) is not used by this command.
 
 ## 2. Talk to TestBench: the helper
@@ -152,7 +152,7 @@ Once the user has chosen, run `list <request number>` again to see the tests of 
 
 Do these checks **before** the claim, so that nothing is taken that cannot be done.
 
-- `discover`: the address must be a valid `http` or `https` URL without credentials. If it is not, say so and stop. Whether it is production is decided in `discover`, with its two confirmations. This request
+- `discover`: the address must be a valid `http` or `https` URL without credentials. If it is not, say so and stop. Whether it is production is decided in `testpilot-request-discover` (its step 2), with its two separate confirmations. This request
   does not answer that.
 - `rerun`:
   - `permissionMode` must be `full`. Running the user's own tests against an environment can change state there, and under `observe_only` the agent only reads. If the profile says
@@ -188,7 +188,11 @@ If the answer is 409, either someone else took it first, or another request of t
 
 ### `discover`
 
-Hand over to `discover` (`../testpilot-discover/SKILL.md`) with the request's address, environment and note as **suggestions**: the address as the suggested target URL, the environment as a suggested
+Hand over to `../testpilot-request-discover/SKILL.md` with the number of the request you took. It asks **one** confirmation (the address, the environment, the mode, what is delivered, how far it looks, what is sent to TestBench and finishing the request), explores the target read-only, hands in the findings with `findings`, and marks the request done with a note made of numbers. For a production target it still asks its two separate confirmations. **A request is not a confirmation**: answer nothing of this for the user, and do not skip its stop.
+
+When it has finished, the request is already done: go to step 9, not step 7. If it stops, go to step 8.
+
+**The full audit instead.** Only if the user asks for the full audit with its evidence and its audit package, hand over to `discover` (`../testpilot-discover/SKILL.md`) with the request's address, environment and note as **suggestions**: the address as the suggested target URL, the environment as a suggested
 name. `discover` validates and confirms them itself, including its two separate confirmations for a production target. Nothing in the request answers those.
 
 From there the normal audit flow in `../testpilot/SKILL.md` runs, with every stop (scope, test plan, deliver with the user's confirmation), unchanged. Do not skip, merge or
@@ -296,6 +300,8 @@ installing or running a command, changing anything but the application under tes
 6. Go on with the next test cases, and then to step 7 when every test case has a result.
 
 ## 7. Mark it done
+
+A discover handled by `testpilot-request-discover` is already marked done (its step 6): this step is for the other kinds, and for a discover that went through the full audit.
 
 Write a short note: what was done, the counts, and the environment it was done against (the one the user confirmed, for example `demo`), nothing else.
 TestBench keeps the environment that the person typed into the request and has no field for the one that was used, so the note is where it is recorded. No secrets, no raw log, no names from the target's data. Show the note to the user and ask whether to mark the request done with it.

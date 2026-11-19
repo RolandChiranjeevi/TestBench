@@ -151,6 +151,8 @@ skills or test scripts.
   `permissionMode`. Every confirmation the skills ask for is still asked, and
   answered by the user in a message of their own.
 - Only the request the user chose is worked on, one at a time.
+- A skill may replace several of its own confirmations by **one** that it asks itself: everything it covers is shown in one message, and the user answers it in a message of their own
+  (`testpilot-request-discover`, step 2). A request still confirms nothing, and a production target still needs its two separate confirmations.
 
 ## Priority when rules conflict
 
