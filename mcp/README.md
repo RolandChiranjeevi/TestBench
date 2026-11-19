@@ -147,10 +147,10 @@ Errors come back as MCP tool errors with a message to act on:
 | Status | Meaning |
 | --- | --- |
 | 401 | The token was refused (missing, wrong, revoked, or not a request token). The message tells the agent not to retry with it and not to look for another token, but to tell the user. |
-| 403 | The token belongs to another project, or may not do that. |
+| 403 | The token belongs to another project, or may not do that. The message tells the agent not to retry, but to tell the user. |
 | 404 | No such request in this project (or `TESTBENCH_PROJECT_ID` is wrong). |
 | 409 | The request is not in the right state (someone else took it, it is already done, another token took it). For a finding also: the request is not a discover, is not taken, or already has 200 findings. For results also: agent results are switched off, a test case already has a result, or the request is not a run. For `done` on a run request: how many test cases have no result yet. |
-| 429 | Too many wrong attempts from this address, or more than 60 findings (or 60 reports of results) a minute from this token. Wait and try again. |
+| 429 | Too many wrong attempts from this address, or more than 60 findings (or 60 reports of results) a minute from this token. The message tells the agent not to retry, but to stop and tell the user that it must wait. |
 | 400 | TestBench refused the input (for example a `result_audit_id` that is not an audit of this project, or a batch with a test case that is not in the request or a case twice). |
 | 413 | A report of results is larger than 256 kB. Send fewer results, or shorter notes, in each call. |
 
