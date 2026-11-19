@@ -102,6 +102,8 @@ A discover can carry `options`: what the person chose when asking. They are a **
 - **With accounts on, `full` and `pr` need the admin role of the project** (403 for anyone else). Reading and a local branch are open to every tester. Without accounts there are no roles.
 - **Only a discover has options.** A re-run or a run that is given some is refused (400).
 - The audit log entry `agent_request.created` of a discover records `targetMode`, `gitMode` and `production`.
+- **In the dialog**, *Request discover* has the same choices: what the agent may do to the address (only read, or act on it), what it may do in git, what to deliver and which screen sizes. *This address is production* takes acting on it away. *Act on the target* and *Push and open a pull request* are off for anyone who is not an admin of the project, with the reason as the tooltip. The request card shows the choices on one line.
+- **After the request is made**, the dialog says what to do next, since Testbench starts nothing: the line that starts Claude Code, the first message to give it (both with a Copy button), what the agent will ask you, and a pointer to [the first-time set-up](agent-quickstart.md).
 - So far the options are stored and handed to the agent (in the list, in the claim and by the MCP tool). What the skill does with them comes with the next step.
 
 ### What a session that uses the token can reach

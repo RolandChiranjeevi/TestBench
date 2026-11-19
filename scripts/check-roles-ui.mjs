@@ -1020,6 +1020,32 @@ for (const who of Object.keys(TABS)) {
   check("requests: withdrawing it marks it Cancelled", await eventually(async () => (await tq.page.locator(`[data-request="${asked.id}"]`).getAttribute("data-status")) === "cancelled"));
   await tq.close();
 
+  // The Request discover dialog: the choices for what the agent may do. A tester can pick reading and a local branch; acting on the address and a pull request are off for
+  // them (an admin can), and saying the address is production takes acting on it away. Once the request is made, how to start the agent is on screen.
+  const dq = await open("tester", `/p/${A}/automated?view=requests`);
+  await dq.page.getByRole("button", { name: "Request discover" }).first().click();
+  check("request dialog: a tester can pick reading and a local branch, but acting on the address and a pull request are off", await eventually(async () =>
+    (await dq.page.getByRole("radio", { name: "Only read" }).isEnabled()) && (await dq.page.getByRole("radio", { name: "Commit on a local branch" }).isEnabled()) &&
+    (await dq.page.getByRole("radio", { name: "Act on the target" }).isDisabled()) && (await dq.page.getByRole("radio", { name: "Push and open a pull request" }).isDisabled())));
+  await dq.page.getByLabel("Address to look at").fill("https://options-check.example.com");
+  await dq.page.getByRole("button", { name: "Make request" }).click();
+  check("request dialog: once the request is made, the next steps and the lines to copy are on screen", await eventually(async () =>
+    (await dq.page.locator("[data-next-steps]").count()) === 1 && (await dq.page.getByText("claude --permission-mode default").count()) === 1 &&
+    (await dq.page.getByRole("button", { name: "Copy the first message to the agent" }).count()) === 1));
+  await dq.page.getByRole("button", { name: "Close", exact: true }).first().click();
+  check("request dialog: the card of the new request shows the choices", await eventually(async () => (await dq.page.locator("[data-options]").first().innerText()).startsWith("Only read · Commit on a local branch")));
+  await dq.close();
+  const da = await open("admin", `/p/${A}/automated?view=requests`);
+  await da.page.getByRole("button", { name: "Request discover" }).first().click();
+  check("request dialog: an admin can pick acting on the address and a pull request", await eventually(async () =>
+    (await da.page.getByRole("radio", { name: "Act on the target" }).isEnabled()) && (await da.page.getByRole("radio", { name: "Push and open a pull request" }).isEnabled())));
+  await da.page.getByRole("radio", { name: "Act on the target" }).check();
+  await da.page.getByRole("checkbox", { name: "This address is production" }).check();
+  check("request dialog: saying the address is production takes acting on it away, for an admin too", await eventually(async () =>
+    (await da.page.getByRole("radio", { name: "Only read" }).isChecked()) && (await da.page.getByRole("radio", { name: "Act on the target" }).isDisabled())));
+  await da.page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await da.close();
+
   // Folders: the tree is called Folders, the menu runs a folder and saves it as a suite (a copy), and a case says whether it is manual or automated.
   const folder = (await call("GET", `/api/projects/${A}/suites`, undefined, owner)).json.find((s) => s.case_count > 0);
   const c = await open("tester", `/p/${A}/cases`);
