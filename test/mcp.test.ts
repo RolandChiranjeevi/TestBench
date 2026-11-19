@@ -360,6 +360,26 @@ describe("the HTTP client", () => {
     );
   });
 
+  it("tells the agent not to retry after a 403 or a 429, keeps TestBench's own words, and no longer says to try again", async () => {
+    for (const [status, why] of [[403, "wrong project"], [429, "too many wrong attempts"]] as const) {
+      await assert.rejects(
+        makeClient({ baseUrl: "http://x", token: TOKEN, fetchImpl: reply(status, { error: why }) }).call("GET", "/p"),
+        (e: unknown) => e instanceof TestBenchError && e.status === status && e.message.includes(why) && /Do not retry: /.test(e.message) && !/try again/i.test(e.message) && !e.message.includes(TOKEN),
+        `${status}`,
+      );
+    }
+    await assert.rejects(
+      makeClient({ baseUrl: "http://x", token: TOKEN, fetchImpl: reply(403) }).call("GET", "/p"),
+      (e: unknown) => e instanceof TestBenchError && e.message === "TestBench says this token may not do that. Do not retry: tell the user.",
+      "a 403 without a detail has no double space",
+    );
+    await assert.rejects(
+      makeClient({ baseUrl: "http://x", token: TOKEN, fetchImpl: reply(429) }).call("GET", "/p"),
+      (e: unknown) => e instanceof TestBenchError && e.message === "Slow down: too many requests. Do not retry: stop and tell the user that it must wait.",
+      "a 429 without a detail",
+    );
+  });
+
   it("explains an unreachable server and a timeout without the token", async () => {
     const down = (async () => { throw new TypeError(`connect ECONNREFUSED ${TOKEN}`); }) as typeof fetch;
     await assert.rejects(makeClient({ baseUrl: "http://localhost:9", token: TOKEN, fetchImpl: down }).call("GET", "/p"), (e: unknown) => e instanceof TestBenchError && /Could not reach TestBench at http:\/\/localhost:9/.test(e.message) && !e.message.includes(TOKEN));
