@@ -204,7 +204,8 @@ export function registerAuth(app: FastifyInstance, cfg: AuthConfig | null) {
     } else if (legacyAuthed(req)) allowed = true;
     if (allowed) return;
     if (path.startsWith("/api/") || (req.method !== "GET" && req.method !== "HEAD")) return reply.code(401).send({ error: "Sign in required" });
-    return reply.code(302).header("Location", "/login").send();
+    // A browser follows the redirect and never shows this text; it is for callers that do not follow it (curl, scripts, agents).
+    return reply.code(302).header("Location", "/login").type("text/plain; charset=utf-8").send("Sign in required. This page is only for signed-in users, so you are sent to /login.");
   });
 
   app.get("/api/auth/status", async (req) => {
