@@ -251,7 +251,7 @@ def write(rid, confirmed, origin, specs_file):
         bad = check_content(i["content"], origin)
         if bad:
             raise Stop(f"refused, {i['path']} {bad}")
-        lines += i["content"].count("\n") + 1
+        lines += len(i["content"].splitlines())  # as git counts them: a file that ends with a newline has no extra, empty last line
     if lines > rules["max-lines"]:
         raise Stop(f"refused, {lines} lines is over max-lines {rules['max-lines']}")
     branch = f"{rules['prefix']}discover-{rid}"

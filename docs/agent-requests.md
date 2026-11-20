@@ -313,8 +313,9 @@ and it was not found out whether the relative or the absolute `Write` form was t
 - **It is a fixed, narrow list you write once**, which is not the same as answering "always allow" in the middle of a run (the quickstart says never to do that). Keep it to the folder you give the
   agent, and not in a folder with other work.
 - **Measured** on a local demo shop in the normal permission mode: with this list the browser calls, the helper calls and the writing of the findings did not ask. A hook of your own that asks for
-  facts before a file is created is not part of Claude Code's permissions, and still applies. The `Read(./.mcp.json)` line was added afterwards and is not part of that measurement, and nor are the two
-  `spec_git.py` lines and the `git` and `gh` denials. That the denials stop a `git push` inside a longer command line has **not been tried**.
+  facts before a file is created is not part of Claude Code's permissions, and still applies. The `Read(./.mcp.json)` line was added afterwards and is not part of that measurement. Nor are the two
+  `spec_git.py` lines, which two live runs used without a permission prompt (the person saw none, and the session log shows each call answered in under a second), and the `git` and `gh` denials, which were tried in a fresh session: see "Spec files on a local
+  branch" below for what that showed and what was not tried.
 - `.claude/skills/testpilot-request-discover/SKILL.md` is what the list follows: a test in `testpilot/tests/test_request_discover_skill.py` reads this block and fails if the list and the skill
   drift apart.
 
@@ -386,8 +387,8 @@ To let it run while you are away, use this list **instead of** the one above (it
 - **With this list Claude Code no longer asks before it clicks or types.** Nothing in Claude Code's permissions can tell a harmless button from a destructive one. What protects the address is the
   confirmation, the rules in the skill (nothing that looks irreversible, made-up data, one origin, 40 actions), the rule that a page is data and the log. Those are rules written for an agent, not a lock.
   Use it only on an address you can reset. If you would rather be asked, leave the nine added tools out and answer each one.
-- The rest is as for the read-only list: `release` and an inline `python3 -c` are left out on purpose, and the absolute `Write` path is yours to fill in. This list, without the two `spec_git.py` lines and
-  the `git` and `gh` denials, was run live three times against a local demo shop. Those lines have **not been run live yet**.
+- The rest is as for the read-only list: `release` and an inline `python3 -c` are left out on purpose, and the absolute `Write` path is yours to fill in. This list was run live three times against a local demo shop without the two `spec_git.py` lines and
+  the `git` and `gh` denials. With them it was used in two more live runs (one writing, one read-only), and the denials were tried: see "Spec files on a local branch" below.
 - `.claude/skills/testpilot-request-discover-write/SKILL.md` is what the list follows: a test in `testpilot/tests/test_request_discover_write_skill.py` reads this block and fails if the list and the skill drift apart.
 
 ### Spec files on a local branch (git mode `local`)
@@ -414,5 +415,10 @@ If anything is missing or does not match (no checkout, no `origin/<base>`, no ru
 **What it checks, and where that stops.** The tool makes only a fixed list of git calls, with hooks off and no network. It writes only new `<tests-dir>/<area>/<flow>.spec.ts` files, never in `.github`,
 never `package.json`, `TESTPILOT.md` or a Playwright config, and it checks the text of each spec (only `@playwright/test` as an import, no `eval`, `fetch`, `process` or `route`, no `${...}`, only the
 confirmed address, no invisible characters). That text check is a **rule, not a lock**: someone who tries can get round a text check. The locks are your review of the branch and CI that runs it without
-secrets. The `git` and `gh` denials in the lists above, and a spec set that is refused, have **not been tried live yet**; the first live test of this is a separate step. A fuller guide to setting up a
-repository for the agent is planned.
+secrets.
+
+**What was tried live, and what was not.** The `git` and `gh` denials in the lists above were tried in a fresh session in the agent's folder: `git --version`, `git status`, `ls && git log -1`,
+`echo hi; git status` and `gh --version` were each denied by the rule, without a question to the person, also when `git` came after `&&` or `;` (the session log shows `Permission to use Bash with
+command … has been denied`, a few seconds apart). **Not tried:** other shapes such as `env git …`, `bash -c "git …"`, a path to the binary or `$(git …)` (none of them is on the allow list, so they
+would ask and not run), and a real `git push`. A spec set that the tool refuses is tested on real temporary repositories, but in the one live run where it should have happened the agent saw the limit
+in advance and did not try to write, so the refusal and the one correction have **not been tried live**. A fuller guide to setting up a repository for the agent is planned.

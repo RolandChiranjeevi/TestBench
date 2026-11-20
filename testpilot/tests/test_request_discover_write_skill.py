@@ -397,7 +397,7 @@ class PermissionsBlockTests(unittest.TestCase):
     def test_the_text_says_it_replaces_the_other_list_is_not_a_lock_and_is_not_run_live_yet(self):
         body = flat(self.section(self.HEADING))
         for must in ("use this list **instead of** the one above", "**With this list Claude Code no longer asks before it clicks or types.**", "Those are rules written for an agent, not a lock.",
-                     "Use it only on an address you can reset.", "was run live three times against a local demo shop. Those lines have **not been run live yet**."):
+                     "Use it only on an address you can reset.", "was run live three times against a local demo shop without the two `spec_git.py` lines and the `git` and `gh` denials. With them it was used in two more live runs"):
             with self.subTest(must=must):
                 self.assertIn(must, body)
 
