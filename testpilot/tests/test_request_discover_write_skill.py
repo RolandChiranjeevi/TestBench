@@ -121,7 +121,7 @@ class ConfirmationTests(unittest.TestCase):
                      "I will NOT: press anything that looks irreversible (delete, reset, pay, send, publish, unsubscribe)",
                      "fill in a password, a card number or a real person's data, upload a file, run code in a page",
                      "follow a link to another site, or log in myself.",
-                     "you log in yourself in the browser window, then tell me to go on.",
+                     "I never log in myself. If the address has a login, I stop once and ask you to log in yourself in the browser window (or to skip it). If you are already logged in, say so when you answer.",
                      "at most 10 pages of this address, 40 actions (clicks, entries and selections) and 120 browser calls",
                      "this address may keep what I submit (a message, an account, a record)",
                      "audits/request-12/actions.md", "Use an address you can reset.",
@@ -165,6 +165,21 @@ class ActingRulesTests(unittest.TestCase):
         self.assertIn("**log in themselves in the browser window**", step3)
         self.assertIn("Never ask for, read, type or look for a password, a token or a cookie.", step3)
         self.assertIn("The user logs in; the agent never handles a credential.", flat(section("Limits that always apply")))
+
+    def test_it_stops_once_for_a_login_lets_the_user_skip_it_and_checks_that_the_login_worked(self):
+        """The second live run never asked for a login: it noted login, register and pay as gaps. The user wants the agent to stop and ask, once, so that the area behind a login can be covered."""
+        step3 = self.step3()
+        self.assertIn("neither the confirmation nor the user's reply said that they are logged in or that you should skip it, **stop once**, after you have looked at the pages that need no login.", step3)
+        self.assertIn("or to say \"skip\". If they skip, note the area as a coverage gap and carry on.", step3)
+        self.assertIn("Stop for this **once**, not at every login you meet.", step3)
+        self.assertIn("open a page that needs it (the account page, for example) to see that it worked before you rely on it.", step3)
+        self.assertIn("| A login | **the user's own**, in the browser window, after **one** stop (step 3) |", TEXT)
+        self.assertIn("Stops **once** to let the **user log in themselves** when the address has a login, or to skip it (step 3)", TEXT)
+
+    def test_a_call_that_fails_still_counts_as_an_action(self):
+        """The second live run counted 4 actions in its note, but 5 calls were made: the first browser_fill_form failed and was tried again. Rule 6 says rejected attempts count."""
+        self.assertIn("**A call that fails or is refused still counts** (rule 6: rejected attempts count against the limit), so count every try and not only what worked.", self.step3())
+        self.assertIn("the number of actions you took (also the calls that failed), and the words below.", flat(section("6. Finish")))
 
     def test_it_uses_made_up_data_and_stops_at_a_password_a_card_an_identity_number_or_a_file(self):
         step3 = self.step3()
@@ -254,14 +269,37 @@ class FinishTests(unittest.TestCase):
 
 
 class WiringTests(unittest.TestCase):
-    def test_the_requests_skill_offers_it_only_when_the_request_and_the_profile_allow_it_and_the_user_chooses(self):
+    def test_the_requests_skill_hands_over_without_a_version_question_when_the_request_and_the_profile_both_allow_it(self):
+        """The first live test asked a third question, 'writing or read-only?', after a numbered list; the user answered '2' and got the read-only discover although the request and the profile both
+        said full. The request and the profile are the two keys, and the user's yes to the confirmation (whose first line says 'reading and writing') is the consent: no extra question."""
         text = flat(REQUESTS)
         self.assertIn("../testpilot-request-discover-write/SKILL.md", text)
-        self.assertIn("If the request asks to **act on the target** (`targetMode: full`) and the profile says `permissionMode: full`, the user may choose", text)
-        self.assertIn("**If the request asks to act on the target and the profile allows it (step 4), and the user chose the writing version**", text)
+        self.assertIn("If the request asks to **act on the target** (`targetMode: full`) and the profile says `permissionMode: full`, it goes to", text)
+        self.assertIn("unless the user says \"read-only\" when choosing it", text)
+        self.assertIn("**If the request asks to act on the target and the profile allows it (step 4), and the user did not say read-only**", text)
+        self.assertIn("**Do not ask which version**: the request and the profile both ask for it, and the user's yes to its confirmation, whose first line says \"reading and writing\", is their own consent.", text)
         self.assertIn("and **stops** if the address is production (it never acts there)", text)
-        self.assertIn("The request's choice only offers it: the user's choice here and their yes to its confirmation are what count.", text)
+        self.assertIn("A request is never a confirmation: the user's yes to that confirmation is what counts.", text)
         self.assertIn("when it is not `full`, say that the profile wins (rule 4)", text)
+        for gone in ("let them choose it or the read-only one", "and the user chose the writing version", "the user may choose `../testpilot-request-discover-write/SKILL.md`",
+                     "The request's choice only offers it"):
+            with self.subTest(gone=gone):
+                self.assertNotIn(gone, text)
+
+    def test_the_list_says_what_will_happen_for_a_request_that_acts_so_the_user_can_say_read_only(self):
+        text = flat(REQUESTS)
+        self.assertIn("the writing discover will be used (step 6), unless the user says read-only", text)
+        self.assertIn("say in the list what will happen", text)
+        self.assertIn("\"it will use the discover that clicks and fills in forms with made-up data, unless you say read-only when you choose it\"", text)
+        self.assertIn("that the profile does not allow acting on a target, so the read-only discover will be used", text)
+
+    def test_the_docs_and_the_readme_say_it_is_used_on_its_own_and_that_the_login_is_one_stop(self):
+        docs = flat(DOCS)
+        self.assertIn("It is used on its own when the request and the profile both say `full`; say read-only when you choose the request to use the read-only discover instead.", docs)
+        self.assertIn("The agent **stops once** when it meets a login, asks you to log in (or to skip it) and goes on", docs)
+        self.assertIn("`testpilot-request-discover-write` is used instead (the user says read-only when choosing the request to use the read-only one)", docs)
+        self.assertNotIn("You choose the writing version in `/testpilot-requests`", docs)
+        self.assertIn("(say read-only when you choose the request to use the read-only one)", flat(README))
 
     def test_the_read_only_skill_says_the_writing_one_is_a_separate_choice_and_stays_read_only(self):
         text = flat(READONLY)
