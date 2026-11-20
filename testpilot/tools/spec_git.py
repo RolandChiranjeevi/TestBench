@@ -30,6 +30,7 @@ import sys
 import tempfile
 import unicodedata
 
+ACTIONS = ("check", "write")
 MODES = ("off", "local", "pr")  # lowest first; pr counts as local until it is built
 TOP = 1
 RULES_FILE = "TESTPILOT.md"
@@ -296,6 +297,7 @@ def check(confirmed):
     r = ctx["rules"]
     print(f"repo: {r['repo']} (the profile, {RULES_FILE} on origin/{r['base']} @ {ctx['sha'][:7]} and origin agree)")
     print(f"ceiling: {ctx['ceiling']}" + (" (pr is not built yet and counts as local)" if ctx["capped"] else ""))
+    print(f"checkout: {ctx['top']}")
     if confirmed:
         print(f"mode: {lowest(ctx['ceiling'], confirmed)}")
     print(f"tests-dir: {r['tests-dir']} (only new files, one <area>/<flow>.spec.ts each)")
@@ -311,7 +313,7 @@ def main(argv):
     ap.add_argument("--origin", default="")
     ap.add_argument("--specs", default="")
     a = ap.parse_args(argv)
-    if a.action not in ("check", "write") or (a.action == "write" and not re.fullmatch(r"[0-9]{1,9}", a.rid)):
+    if a.action not in ACTIONS or (a.action == "write" and not re.fullmatch(r"[0-9]{1,9}", a.rid)):
         print("Usage: spec_git.py check [--confirmed MODE] | spec_git.py write <request number> --confirmed MODE --origin ADDRESS --specs FILE")
         return 1
     if (a.confirmed and a.confirmed not in MODES) or (a.action == "write" and not a.confirmed):

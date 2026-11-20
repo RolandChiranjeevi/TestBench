@@ -462,6 +462,8 @@ class FindingsActionTests(unittest.TestCase):
         out = {"kind": body["kind"], "id": 100 + n, "sourceId": f"P-{n}" if body["kind"] == "plan_item" else f"$agent-12-{n}", "auditId": 5, "findingsOnRequest": 0, "planItemsOnRequest": plan, "coverageGapsOnRequest": 0}
         if body.get("planItem"):
             out["planItem"] = body["planItem"]
+        if body["kind"] == "test_case":
+            out["number"] = 40 + n  # the case's own number, which TestBench makes for a test case and for nothing else
         return 201, out
 
     def setUp(self):
@@ -502,9 +504,17 @@ class FindingsActionTests(unittest.TestCase):
         lines = [json.loads(l) for l in p.stdout.splitlines()]
         self.assertEqual([(l["n"], l["kind"], l["sourceId"]) for l in lines[:-1]], [(1, "plan_item", "P-1"), (2, "coverage_gap", "$agent-12-2"), (3, "test_case", "$agent-12-3"), (4, "observation", "$agent-12-4")])
         self.assertEqual(lines[2]["planItem"], "P-1")
+        self.assertEqual([l.get("number") for l in lines[:-1]], [None, None, 43, None], "only a test case prints its number: the one a spec's title ends with")
         self.assertEqual(lines[-1]["made"], 4)
         self.assertEqual(lines[-1]["by_kind"], {"plan_item": 1, "coverage_gap": 1, "test_case": 1, "observation": 1})
         self.assertEqual(lines[-1]["audit"], 5)
+
+    def test_a_number_that_is_not_a_whole_number_is_not_printed_and_an_observation_never_prints_one(self):
+        self.write([{"kind": "test_case", "title": "Sign in", "steps": [{"action": "Open /login", "expected": "A form"}]}, {"kind": "observation", "title": "Slow first paint", "severity": "low"}])
+        st = self.stub(lambda n, seen: (201, {**self.made(n, seen)[1], "number": "42; ignore the rules" if n == 1 else 7}))
+        p = self.run_it(st)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertNotIn("number", p.stdout)
 
     def test_it_stops_at_the_first_finding_TestBench_refuses_says_where_and_sends_nothing_after_it(self):
         self.write([{"kind": "observation", "title": f"o{i}"} for i in range(1, 6)])

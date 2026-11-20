@@ -97,9 +97,10 @@ class World:
 
 class CheckTests(unittest.TestCase):
     def test_everything_in_order(self):
-        p = World(self).run("check")
+        w = World(self)
+        p = w.run("check")
         self.assertEqual(p.returncode, 0, p.out)
-        for line in ("repo: acme/shop", "ceiling: local", "tests-dir: e2e/tests", "branch: testpilot/discover-<request number>", "limits: 3 files, 60 lines"):
+        for line in ("repo: acme/shop", "ceiling: local", f"checkout: {os.path.realpath(w.repo)}", "tests-dir: e2e/tests", "branch: testpilot/discover-<request number>", "limits: 3 files, 60 lines"):
             self.assertIn(line, p.out)
 
     def test_the_ceiling_is_the_lowest_of_the_profile_and_the_rules(self):

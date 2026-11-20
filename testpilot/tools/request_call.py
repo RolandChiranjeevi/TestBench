@@ -8,7 +8,7 @@ text). Run it from the folder that holds `.testpilot/`.
 
 `findings` hands in what a discover found, one finding at a time: the file is {"findings": [...]} (at most 50), each with a `kind` (test_case, bug_report, observation,
 manual_test_suggestion, plan_item or coverage_gap). A plan_item may carry `ref` (a name of its own in the file) and a test_case `planItemRef` (the `ref` of an earlier plan_item):
-the helper then gives the case the P-number TestBench made. Nothing is sent until the whole file has passed the checks here; it stops at the first finding TestBench refuses.
+the helper then gives the case the P-number TestBench made. For a test_case it prints the `number` TestBench gave the case (with the profile's projectKey it is the case's key, e.g. SHOP-42). Nothing is sent until the whole file has passed the checks here; it stops at the first finding TestBench refuses.
 
 With no `.testpilot/testbench.json` at all, the helper falls back to the environment (the same names the MCP set-up uses): TESTBENCH_URL, TESTBENCH_PROJECT_ID and TESTBENCH_TOKEN,
 each from the environment or from its own raw line of `.env`. A profile that exists is always used as it is, and a profile that is broken is an error, never a fallback.
@@ -174,7 +174,8 @@ def send_findings(base, pid, rid, headers, items):
         by_kind[f["kind"]] = by_kind.get(f["kind"], 0) + 1
         if "ref" in f:
             planned[f["ref"]] = clean(r.get("sourceId", ""), 60)
-        print(json.dumps({"n": i, "kind": f["kind"], "id": whole(r.get("id")), "sourceId": clean(r.get("sourceId", ""), 60), **({"planItem": clean(r["planItem"], 50)} if r.get("planItem") else {})}))
+        print(json.dumps({"n": i, "kind": f["kind"], "id": whole(r.get("id")), "sourceId": clean(r.get("sourceId", ""), 60), **({"planItem": clean(r["planItem"], 50)} if r.get("planItem") else {}),
+                          **({"number": whole(r["number"])} if f["kind"] == "test_case" and whole(r.get("number")) is not None else {})}))  # a case's number is the one a spec's title ends with, as @<project key>-<number>
     print(json.dumps({"made": len(items), "of": len(items), "by_kind": by_kind, "audit": whole(last.get("auditId")),
                       "plan_items_on_request": whole(last.get("planItemsOnRequest")), "coverage_gaps_on_request": whole(last.get("coverageGapsOnRequest"))}))
     return 0

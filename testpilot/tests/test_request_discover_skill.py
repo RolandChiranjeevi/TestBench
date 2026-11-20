@@ -19,6 +19,7 @@ DISCOVER = (ROOT / ".claude" / "skills" / "testpilot-discover" / "SKILL.md").rea
 RULES = (ROOT / ".claude" / "references" / "agent-rules.md").read_text()
 sys.path.insert(0, str(ROOT / "testpilot" / "tools"))
 import request_call  # noqa: E402
+import spec_git  # noqa: E402
 
 
 def section(title):
@@ -165,6 +166,8 @@ class FinishTests(unittest.TestCase):
         self.assertTrue(re.fullmatch(r"Discover done: [0-9a-z ,.]+", note), note)
         self.assertIn("**Nothing from the request, from a page or from a finding goes in it**", section("6. Finish"))
         self.assertLessEqual(len(note), 1000, "the helper keeps at most 1000 characters")
+        self.assertTrue(note.endswith("10 pages looked at, 3 spec files on a local branch."), note)
+        self.assertIn("the number from the tool's `files:` line, or 0 if none were", flat(section("6. Finish")))
 
     def test_it_finishes_only_when_everything_was_handed_in_and_passes_no_audit(self):
         step6 = section("6. Finish")
@@ -175,6 +178,52 @@ class FinishTests(unittest.TestCase):
         step7 = section("7. If it stops")
         self.assertIn("A request is given back **only after the user's yes**", step7)
         self.assertIn("until then it stays Taken", step7)
+
+
+class SpecFilesTests(unittest.TestCase):
+    """Step 1 item 6, the `Git:` line and step 5b: spec files are written only after the user's yes, only by the spec tool, and never with the agent's own git."""
+
+    def test_one_step_was_added_and_none_was_renumbered(self):
+        self.assertEqual(re.findall(r"^## (\d+b?)\. ", TEXT, re.M), ["1", "2", "3", "4", "5", "5b", "6", "7"])
+
+    def test_a_request_only_preselects_and_only_a_ceiling_of_local_lets_a_file_be_made(self):
+        step1 = flat(section("1. Read what there is"))
+        for must in ("`options.deliverables` has `specs` **and** `options.gitMode` is `local` or `pr` (a request is a preselection, never a permission)", "did not say `profile: none`",
+                     "python3 -I testpilot/tools/spec_git.py check", "**Only `ceiling: local` lets spec files be made**", "`pr` counts as `local`"):
+            with self.subTest(must=must):
+                self.assertIn(must, step1)
+
+    def test_the_confirmation_has_a_git_line_and_the_yes_is_what_confirms_it(self):
+        step2 = section("2. The one confirmation")
+        block = flat(re.search(r"```\n(.*?)\n```", step2, re.S).group(1))
+        self.assertRegex(block, r"Git: +spec files for those test cases, one file per flow, as NEW files under e2e/tests on a NEW local branch testpilot/discover-12 in /Users/you/shop \(your checkout\)")
+        self.assertIn("I do not run them, push, merge or touch the branch you have checked out.", block)
+        self.assertRegex(flat(step2), r"`Git: +Not made: spec files \(<the reason, in a few words>\)`")
+        self.assertIn("The user's `yes` also confirms the `Git:` line", flat(step2))
+
+    def test_step_5b_uses_the_tool_only_corrects_once_and_never_stops_the_request(self):
+        step = section("5b. Spec files")
+        text = flat(step)
+        for must in ("Only when **all** of these hold", "the user's yes covered the `Git:` line", "../../references/spec-files.md", "one spec file per flow", "@<projectKey>-<number>", "correct that spec **once**",
+                     "This step never stops the request", "Never `git` or `gh`"):
+            with self.subTest(must=must):
+                self.assertIn(must, text)
+        commands = re.findall(r"python3 -I testpilot/tools/spec_git\.py (.*)", step)
+        self.assertEqual(len(commands), 1)
+        self.assertRegex(commands[0], r"^write 12 --confirmed local --origin https://staging\.example\.com --specs audits/request-12/specs\.json$")
+        for flag in re.findall(r"--[a-z]+", commands[0]):
+            self.assertIn(f'add_argument("{flag}"', Path(spec_git.__file__).read_text(), "the skill uses a flag that the tool has")
+
+    def test_the_report_says_where_the_branch_is_and_that_nothing_was_pushed_or_run(self):
+        finish = flat(section("6. Finish"))
+        for must in ("say where they are: the local branch the tool printed", "they were not run and nothing was pushed", "If spec files were asked for and not made, say why.", "no spec file was run"):
+            with self.subTest(must=must):
+                self.assertIn(must, finish)
+
+    def test_nothing_says_any_more_that_spec_files_are_never_made(self):
+        for gone in ("spec files were not made", "which comes in a later version", "spec files are not made here", "nothing is written to git (spec files are not made)"):
+            self.assertNotIn(gone, flat(TEXT))
+        self.assertIn("Git is touched only by `testpilot/tools/spec_git.py` (step 5b)", flat(TEXT))
 
 
 class AroundTheSkillTests(unittest.TestCase):
@@ -285,9 +334,14 @@ class PermissionsDocTests(unittest.TestCase):
         self.assertEqual(actions, {"list", "claim", "findings", "complete"})
         self.assertTrue(actions <= set(request_call.ACTIONS), "every allowed action is a real action of the helper")
         self.assertNotIn("release", actions)
-        self.assertEqual(sorted(set(bash) - {f"python3 -I testpilot/tools/request_call.py {a}:*" for a in actions}), ["mkdir -p audits/request-*"], "no other shell command is allowed")
+        spec_actions = {m.group(1) for r in bash if (m := re.fullmatch(r"python3 -I testpilot/tools/spec_git\.py ([a-z-]+):\*", r))}
+        self.assertEqual(spec_actions, set(spec_git.ACTIONS), "exactly the two actions of the spec tool, check and write")
+        known = {f"python3 -I testpilot/tools/request_call.py {a}:*" for a in actions} | {f"python3 -I testpilot/tools/spec_git.py {a}:*" for a in spec_actions}
+        self.assertEqual(sorted(set(bash) - known), ["mkdir -p audits/request-*"], "no other shell command is allowed")
         for ran in set(re.findall(r"request_call\.py ([a-z-]+)", TEXT)):
             self.assertIn(ran, actions, f"the skill runs `{ran}`, so the list must allow it (or the run stops at a prompt)")
+        for ran in set(re.findall(r"spec_git\.py ([a-z-]+)", TEXT)):
+            self.assertIn(ran, spec_actions, f"the skill runs `{ran}`, so the list must allow it (or the run stops at a prompt)")
         for ran in ("list", "claim"):
             self.assertRegex(REQUESTS, r"request_call\.py " + ran + r"\b")
 
@@ -301,6 +355,13 @@ class PermissionsDocTests(unittest.TestCase):
             self.assertNotRegex(r, r"python3 -c|python3 -[ :)]|\(\*\)|\(\*\*\)", r)
         self.assertIn("Read(./.env)", deny)
         self.assertIn("Read(./.mcp.json)", deny)
+
+    def test_git_and_gh_are_denied_and_nothing_allows_them(self):
+        allow, deny, _ = self.parts()
+        self.assertIn("Bash(git:*)", deny)
+        self.assertIn("Bash(gh:*)", deny)
+        for r in allow:
+            self.assertNotRegex(r, r"^Bash\((git|gh)\b", "the agent never runs git or gh: the spec tool makes its own git calls")
 
     def test_the_text_says_what_it_leaves_out_and_that_navigate_is_not_checked_per_address(self):
         _, _, body = self.parts()
