@@ -4,7 +4,7 @@
 
 export const TARGET_MODES = [
   { value: "observe_only", label: "Only read", title: "The agent looks at the target and changes nothing in it (observe-only)." },
-  { value: "full", label: "Act on the target", title: "The agent may also change the state of the target, each action only after you confirm it (full)." },
+  { value: "full", label: "Act on the target", title: "The agent may click and fill in forms with made-up data on this address (reading and writing), after the one confirmation in its own session. Never for a production address, and only if its profile allows it (full)." },
 ] as const;
 export const GIT_MODES = [
   { value: "off", label: "Nothing in git", title: "The agent writes nothing to git." },
