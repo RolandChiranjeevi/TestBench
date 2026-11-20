@@ -421,4 +421,4 @@ secrets.
 `echo hi; git status` and `gh --version` were each denied by the rule, without a question to the person, also when `git` came after `&&` or `;` (the session log shows `Permission to use Bash with
 command … has been denied`, a few seconds apart). **Not tried:** other shapes such as `env git …`, `bash -c "git …"`, a path to the binary or `$(git …)` (none of them is on the allow list, so they
 would ask and not run), and a real `git push`. A spec set that the tool refuses is tested on real temporary repositories, but in the one live run where it should have happened the agent saw the limit
-in advance and did not try to write, so the refusal and the one correction have **not been tried live**. A fuller guide to setting up a repository for the agent is planned.
+in advance and did not try to write, so the refusal and the one correction have **not been tried live**. How to set up the repository (the rules file, the profile, what to check and what to do when the mode is off) is in [agent-git-setup.md](agent-git-setup.md).
