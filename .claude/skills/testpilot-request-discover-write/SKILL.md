@@ -25,7 +25,7 @@ This workflow:
 - Reads the request and the profile: the profile's `permissionMode` must be `full` (step 1)
 - Refuses a production address: this skill is never used against production (step 2)
 - Asks **one confirmation** (step 2) that says what it may do, what it will never do, how far it goes, what can change on the address, what is sent to TestBench and finishing the request
-- Lets the **user log in themselves** when the address needs it (step 3)
+- Stops **once** to let the **user log in themselves** when the address has a login, or to skip it (step 3)
 - Explores by clicking and filling in forms with made-up data, within fixed limits (step 3)
 - Writes a log of every action, and the findings, to files (step 4)
 - Hands the findings in with the helper and marks the request done with a note made of numbers (steps 5 and 6)
@@ -50,7 +50,7 @@ This skill asks **one** confirmation in place of the stops of `/testpilot` (envi
 | The user chooses the request, and chooses this version | stays (`/testpilot-requests`, steps 3 and 6) |
 | Is the target production? | **stays, and a yes ends this skill** (step 2): it never acts on production |
 | The profile allows acting on a target | **required** (step 1): the profile wins (rule 4) |
-| A login | **the user's own**, in the browser window (step 3) |
+| A login | **the user's own**, in the browser window, after **one** stop (step 3) |
 | Stop conditions while working (a payment, a CAPTCHA, another address, a risk, repeated errors) | stay (step 3) |
 | Giving a request back | stays, only after the user's yes (`/testpilot-requests`, step 8) |
 | Environment, address, scope, plan, delivery, the note | **one confirmation** (step 2) |
@@ -89,7 +89,8 @@ Mode:          reading and writing. I may click, type and submit forms on this a
                I will NOT: press anything that looks irreversible (delete, reset, pay, send, publish, unsubscribe),
                fill in a password, a card number or a real person's data, upload a file, run code in a page,
                follow a link to another site, or log in myself.
-Login:         if the address needs one, you log in yourself in the browser window, then tell me to go on.
+Login:         I never log in myself. If the address has a login, I stop once and ask you to log in yourself in the
+               browser window (or to skip it). If you are already logged in, say so when you answer.
 Looking at:    at most 10 pages of this address, 40 actions (clicks, entries and selections) and 120 browser calls,
                at desktop, tablet and mobile size
 What can change: this address may keep what I submit (a message, an account, a record). I write every action to
@@ -118,10 +119,14 @@ Use the available Playwright MCP browser tools, and **only** these. To read: `br
 - **Where.** Only the confirmed address and pages on the **same origin**. Never to another origin, also when a link or a redirect leads there: do not click it, note it. If the confirmed address
   itself leads to another origin, stop and ask the user.
 - **How far.** At most 10 pages, at most 40 actions and at most 120 browser calls in all, and the sizes the user confirmed: desktop 1440×900, tablet 820×1180, mobile 390×844 (`browser_resize`).
-  An action is one call of `browser_click`, `browser_type`, `browser_fill_form`, `browser_select_option`, `browser_press_key` or `browser_handle_dialog`. At most 3 attempts per call, and no retry
-  after a refusal such as 401, 403 or 429 (rule 6). When the limit of actions is reached, stop acting and write what you have.
-- **Login.** If a login wall hides what the request is about, say so and ask the user to **log in themselves in the browser window**, with an account they can lose or reset, and to tell you
-  to go on in a new message. Never ask for, read, type or look for a password, a token or a cookie. After the login you act as that account: it may see and change what it may see and change.
+  An action is one call of `browser_click`, `browser_type`, `browser_fill_form`, `browser_select_option`, `browser_press_key` or `browser_handle_dialog`. **A call that fails or is refused still
+  counts** (rule 6: rejected attempts count against the limit), so count every try and not only what worked. At most 3 attempts per call, and no retry after a refusal such as 401, 403 or 429
+  (rule 6). When the limit of actions is reached, stop acting and write what you have.
+- **Login.** If you meet a login, or an area that sends you to one (an account page that redirects to a login), and neither the confirmation nor the user's reply said that they are logged in
+  or that you should skip it, **stop once**, after you have looked at the pages that need no login. Say what you found, ask the user to **log in themselves in the browser window**, with an
+  account they can lose or reset, and to tell you to go on in a new message, or to say "skip". If they skip, note the area as a coverage gap and carry on. Stop for this **once**, not at every
+  login you meet. If the user logs in, open a page that needs it (the account page, for example) to see that it worked before you rely on it. Never ask for, read, type or look for a
+  password, a token or a cookie. After the login you act as that account: it may see and change what it may see and change.
 - **Made-up data.** A name such as "Test Person", an address such as `test+12@example.com` (the reserved domain `example.com`, which delivers nowhere), a short text such as "TestPilot test".
   Never a real person's data. **Stop at** a password field, a card or bank number, an identity number or a file field: do not fill it, and note it as a coverage gap.
 - **Press nothing that looks irreversible**, in any language: delete, remove, reset, clear, close or deactivate an account, pay, buy, order, send or publish something that other people see,
@@ -166,8 +171,8 @@ The action log is not handed in.
 
 ## 6. Finish
 
-Only when **every** finding was handed in. Mark the request done with a note made only of the counts that the helper printed, the number of pages you looked at, the number of actions you took,
-and the words below. **Nothing from the request, from a page or from a finding goes in it**:
+Only when **every** finding was handed in. Mark the request done with a note made only of the counts that the helper printed, the number of pages you looked at, the number of actions you took
+(also the calls that failed), and the words below. **Nothing from the request, from a page or from a finding goes in it**:
 
 ```bash
 python3 -I testpilot/tools/request_call.py complete 12 <<'NOTE_END'
