@@ -197,5 +197,51 @@ class AroundTheSkillTests(unittest.TestCase):
         self.assertIn("A request is not a confirmation.", RULES)
 
 
+def flat(text):
+    """The text with every run of white space as one space, so a sentence that the file wraps over two lines can still be found."""
+    return " ".join(text.split())
+
+
+class ExampleAndShellTests(unittest.TestCase):
+    """What the first live runs showed an agent doing: looking for an example of a findings file in the docs and in an earlier request's files, running `mkdir`, and looking for the
+    profile with `cat`. Each of those was a permission prompt (or a wasted call) that a few written sentences and an example remove."""
+
+    def examples(self):
+        blocks = re.findall(r"```json\n(.*?)\n```", section("4. Write the findings"), re.S)
+        self.assertEqual(len(blocks), 2, "step 4 should show two example files")
+        return blocks
+
+    def test_every_example_file_is_accepted_by_the_helper(self):
+        for block in self.examples():
+            self.assertIsInstance(request_call.read_findings(block), list, request_call.read_findings(block))
+
+    def test_the_examples_show_every_kind_the_table_names_and_link_a_case_to_its_plan_item(self):
+        import json
+        found = [f for block in self.examples() for f in json.loads(block)["findings"]]
+        self.assertEqual({f["kind"] for f in found}, {"observation", "bug_report", "plan_item", "test_case", "coverage_gap"})
+        refs = {f["ref"] for f in found if f["kind"] == "plan_item"}
+        links = {f["planItemRef"] for f in found if f["kind"] == "test_case"}
+        self.assertTrue(links and links <= refs, "a test case in the example names a plan item of the example")
+
+    def test_the_skill_says_the_examples_are_a_shape_and_not_words_to_copy(self):
+        body = flat(section("4. Write the findings"))
+        self.assertIn("The words are yours, from what you saw in this run: never copy them.", body)
+        self.assertIn("Fields not listed in the table are refused by TestBench, so do not add any.", body)
+
+    def test_the_skill_tells_the_agent_not_to_read_another_requests_files(self):
+        body = flat(section("4. Write the findings"))
+        self.assertIn("You need neither `mcp/README.md` nor a file from an earlier request", body)
+        self.assertIn("**do not read what is under `audits/` for other requests**", body)
+
+    def test_the_skill_needs_no_mkdir_because_the_write_tool_makes_the_folder(self):
+        body = flat(section("4. Write the findings"))
+        self.assertIn("the Write tool creates the folder itself, so no `mkdir` is needed", body)
+        self.assertNotIn("create the folder if it is missing", body)
+
+    def test_neither_skill_looks_for_the_profile_with_a_shell_command(self):
+        self.assertIn("do not look for it with a shell command (`cat`, `ls`)", flat(section("1. Read what there is")))
+        self.assertIn("Read, with the Read tool and not with a shell command (`cat`, `ls`)", flat(REQUESTS))
+
+
 if __name__ == "__main__":
     unittest.main()
