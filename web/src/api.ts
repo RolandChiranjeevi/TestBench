@@ -164,7 +164,10 @@ export interface ScheduleDetails { next_runs: string[]; fires: ScheduleFire[]; s
 export type SchedulePreview = { ok: true; next: string[]; schedulerEnabled: boolean } | { ok: false; error: string; schedulerEnabled: boolean };
 /** What a person asked a test agent to do (server/agentrequests.ts). Testbench runs nothing: an agent with a request token takes the request and says when it is done. */
 export interface AgentRequest {
-  id: number; projectId: number; kind: "discover" | "rerun" | "run"; targetUrl: string; environment: string; note: string;
+  id: number; projectId: number; kind: "discover" | "rerun" | "run"; targetUrl: string; environment: string;
+  /** What a person called the request, so that two of them can be told apart; "" when none was given. One line, at most 60 characters. */
+  name: string;
+  note: string;
   /** The run a re-run is about, or the run a `run` request fills in; null when the run has been deleted since. */
   runId: number | null;
   /** The failed or blocked automated tests of that run, as they were when it was asked for. */

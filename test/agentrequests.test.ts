@@ -506,3 +506,43 @@ describe("one request at a time, in the order a person chooses", () => {
     assert.equal(listRequests(p.id).find((r) => r.id === a.id)?.priority, 0);
   });
 });
+
+describe("the name of a request", () => {
+  const ask = (projectId: number, extra: Record<string, unknown> = {}) => createRequest(projectId, { kind: "discover", targetUrl: "https://a.example.com", ...extra }, me);
+
+  it("is kept as typed (trimmed) and comes back in the list; a request without one has an empty name", () => {
+    const p = makeProject(key());
+    const named = ask(p.id, { name: "  Login flow  " });
+    const plain = ask(p.id);
+    assert.equal(named.name, "Login flow");
+    assert.equal(plain.name, "");
+    const listed = listRequests(p.id);
+    assert.equal(listed.find((r) => r.id === named.id)?.name, "Login flow");
+    assert.equal(listed.find((r) => r.id === plain.id)?.name, "");
+  });
+
+  it("belongs to a re-run as well as a discover, and a name is not the note", () => {
+    const p = makeProject(key());
+    const run = automatedRun(p.id, { "a one": "failed" });
+    const r = createRequest(p.id, { kind: "rerun", runId: run, name: "Nightly again", note: "the details" }, me);
+    assert.deepEqual([r.name, r.note], ["Nightly again", "the details"]);
+  });
+
+  it("takes letters of any language and an emoji, and is at most 60 characters", () => {
+    const p = makeProject(key());
+    assert.equal(ask(p.id, { name: "Inloggning, åäö é 日本語 🔒" }).name, "Inloggning, åäö é 日本語 🔒");
+    assert.equal(ask(p.id, { name: "x".repeat(REQUEST_LIMITS.nameMax) }).name.length, 60);
+    refused(() => ask(p.id, { name: "x".repeat(REQUEST_LIMITS.nameMax + 1) }), 400, /name can be at most 60/);
+  });
+
+  it("refuses a name that is not text, that runs over two lines, or that holds a control or direction character", () => {
+    const p = makeProject(key());
+    refused(() => ask(p.id, { name: 7 }), 400, /name must be text/);
+    const before = listRequests(p.id).length;
+    for (const [what, name] of [["a line break", "a\nb"], ["a carriage return", "a\rb"], ["a tab", "a\tb"], ["a delete character", "a\x7fb"], ["a line separator", "a\u2028b"],
+      ["a paragraph separator", "a\u2029b"], ["a right-to-left override", "a\u202eb"], ["an isolate", "a\u2066b"]] as const) {
+      assert.throws(() => ask(p.id, { name }), (e: unknown) => e instanceof AuditError && e.status === 400 && /one line/.test(e.message), what);
+    }
+    assert.equal(listRequests(p.id).length, before, "nothing was made by a refused name");
+  });
+});

@@ -1028,12 +1028,22 @@ for (const who of Object.keys(TABS)) {
     (await dq.page.getByRole("radio", { name: "Only read" }).isEnabled()) && (await dq.page.getByRole("radio", { name: "Commit on a local branch" }).isEnabled()) &&
     (await dq.page.getByRole("radio", { name: "Act on the target" }).isDisabled()) && (await dq.page.getByRole("radio", { name: "Push and open a pull request" }).isDisabled())));
   await dq.page.getByLabel("Address to look at").fill("https://options-check.example.com");
+  check("request names: the dialog has a Name field of one line and at most 60 characters", await eventually(async () =>
+    (await dq.page.getByLabel("Name (optional)").count()) === 1 && (await dq.page.getByLabel("Name (optional)").getAttribute("maxlength")) === "60"));
+  if ((await dq.page.getByLabel("Name (optional)").count()) === 1) await dq.page.getByLabel("Name (optional)").fill("Options check"); // without the field the checks above and below fail by name, not by a timeout
   await dq.page.getByRole("button", { name: "Make request" }).click();
   check("request dialog: once the request is made, the next steps and the lines to copy are on screen", await eventually(async () =>
     (await dq.page.locator("[data-next-steps]").count()) === 1 && (await dq.page.getByText("claude --permission-mode default").count()) === 1 &&
     (await dq.page.getByRole("button", { name: "Copy the first message to the agent" }).count()) === 1));
   await dq.page.getByRole("button", { name: "Close", exact: true }).first().click();
   check("request dialog: the card of the new request shows the choices", await eventually(async () => (await dq.page.locator("[data-options]").first().innerText()).startsWith("Only read · Commit on a local branch")));
+  // A request's number and the name a person gave it are on its card, so that two requests of the same kind and address can be told apart. One without a name shows its number only.
+  const named = dq.page.locator("[data-request]", { has: dq.page.locator("[data-request-name]") });
+  check("request names: the card of the named request shows its number and the name the tester typed", await eventually(async () =>
+    (await named.count()) === 1 && (await named.locator("[data-request-name]").innerText()) === "Options check" &&
+    (await named.locator("[data-request-number]").innerText()) === `#${await named.getAttribute("data-request")}`));
+  check("request names: a request without a name shows its number and no name", await eventually(async () =>
+    (await dq.page.locator(`[data-request="${asked.id}"] [data-request-number]`).innerText()) === `#${asked.id}` && (await dq.page.locator(`[data-request="${asked.id}"] [data-request-name]`).count()) === 0));
   await dq.close();
   const da = await open("admin", `/p/${A}/automated?view=requests`);
   await da.page.getByRole("button", { name: "Request discover" }).first().click();

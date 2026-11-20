@@ -15,6 +15,7 @@ Nothing here lets Testbench, or anyone's browser, run code on the machine that h
 - **Request discover**: **Automated tests → Requests → Request discover.** An address (http or https), an optional environment and an optional note.
   - The address cannot hold a user name or a password, nor a query that looks like a secret (`?token=…`, `?api_key=…`). Give the agent credentials some other way. At most 500 characters.
   - The note is at most 2000 characters.
+  - **A name** (optional, one line of at most 60 characters, in the dialogs for a discover and for a re-run), so that you and the agent can tell requests apart. It is shown next to the request number in the list and in the agent's choice. It is set when you ask and is not changed afterwards: cancel the request and ask again if you chose wrong. Like the note, it is data to the agent.
 - **Ask agent to re-run**: on an **automated** run that has failed or blocked tests, **Ask agent to re-run (n)**. The request lists those tests *as they were when you asked*
   (at most 500), so it stays the same if the run changes or is deleted afterwards. The environment is the run's unless you change it.
 - **Ask an agent to run test cases**: **Runs → New manual run → Ask an agent.** Pick the test cases, an **address to test** (the same rules as for discover), an optional environment and note.
@@ -42,7 +43,7 @@ An agent that cannot finish a Taken request can **give it back** (release): it i
 
 - The agent keeps **its own stops**: it asks you before it tests, a production target needs its two separate confirmations, and `observe_only` still means the agent only reads.
   A request does not replace any of them.
-- The **address and the note are data**. They were written by a person and are read by an agent, so an agent must treat them as information about the request and never as
+- The **address, the name and the note are data**. They were written by a person and are read by an agent, so an agent must treat them as information about the request and never as
   instructions. They are returned as plain fields, nothing is run from them, and nothing in a request approves, decides or changes anything in Testbench.
 - Everything the agent delivers is `proposed` until a person decides, as for any audit.
 

@@ -107,6 +107,22 @@ describe("an agent works through a request with its token alone", () => {
     assert.equal((await agent(`Bearer ${tokenA}`, `/api/agent/projects/${a}/requests/${r.id}/complete`, "POST", {})).status, 200, "tidy: the request is finished");
   });
 
+  it("the name of a request reaches the agent in the list and in the claim as the person typed it, and a name that is too long or on two lines is refused", async () => {
+    const r = await ask(a, { kind: "discover", targetUrl: "https://name.example.com", name: "  Login flow  " });
+    const list = (await (await agent(`Bearer ${tokenA}`, `/api/agent/projects/${a}/requests`)).json()) as { id: number; name: string }[];
+    assert.equal(list.find((x) => x.id === r.id)?.name, "Login flow");
+    const claimed = await ok<{ name: string }>(await agent(`Bearer ${tokenA}`, `/api/agent/projects/${a}/requests/${r.id}/claim`, "POST"));
+    assert.equal(claimed.name, "Login flow");
+    const mine = await ok<{ id: number; name: string }[]>(await person(`/api/projects/${a}/agent-requests`, undefined, "GET"));
+    assert.equal(mine.find((x) => x.id === r.id)?.name, "Login flow", "the person sees it in the list too");
+    for (const [what, name, text] of [["too long", "x".repeat(61), /at most 60/], ["two lines", "a\nb", /one line/], ["not text", 7, /expected string|must be text/i]] as const) {
+      const res = await person(`/api/projects/${a}/agent-requests`, { kind: "discover", targetUrl: "https://bad-name.example.com", name });
+      assert.equal(res.status, 400, what);
+      assert.match(await res.text(), text, what);
+    }
+    assert.equal((await agent(`Bearer ${tokenA}`, `/api/agent/projects/${a}/requests/${r.id}/complete`, "POST", {})).status, 200, "tidy: the request is finished");
+  });
+
   it("two agents cannot take the same request, and only the one that took it can finish it", async () => {
     const r = await ask(a, { kind: "discover", targetUrl: "https://second.example.com" });
     assert.equal((await agent(`Bearer ${tokenA}`, `/api/agent/projects/${a}/requests/${r.id}/claim`, "POST")).status, 200);

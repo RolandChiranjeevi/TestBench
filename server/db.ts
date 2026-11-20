@@ -766,10 +766,12 @@ function migrateAgentFindings(d: Database.Database) {
 /**
  * The order of waiting requests: a person can put one first. `priority` is 0 for every request until then; a higher number is served earlier, and among equals the oldest goes
  * first. It is added after migrateAgentRunKind, which rebuilds an old table from a fixed list of columns and would otherwise drop it.
+ * `name` is what a person calls a request, so that two of them can be told apart ('' until a person gives one); added here for the same reason.
  */
 function migrateAgentQueue(d: Database.Database) {
   const hasColumn = (table: string, col: string) => (d.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === col);
   if (!hasColumn("agent_requests", "priority")) d.exec("ALTER TABLE agent_requests ADD COLUMN priority INTEGER NOT NULL DEFAULT 0");
+  if (!hasColumn("agent_requests", "name")) d.exec("ALTER TABLE agent_requests ADD COLUMN name TEXT NOT NULL DEFAULT ''");
 }
 
 /**
