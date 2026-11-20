@@ -70,10 +70,12 @@ a plan, not a mode.
 **First, production.** Ask: "Is this a production environment?". If the user says yes, two separate messages are needed before anything else: first the user confirms that it is
 production, then (in a new message) that the exploration, which is read-only, may run against it. Wait for each. No file is written for them. If the user says no, go on.
 
-**Then show the confirmation, once, in one message.** Fill it from the real values; do not shorten what it says it will not do:
+**Then show the confirmation, once, in one message.** Fill it from the real values; do not shorten what it says it will not do. The details go in a code block, and **the question goes after the
+block, outside it, as plain bold text**: a code block is shown in one colour, so a question inside it is easy to miss. Put the name of the request in the first line, after its number (it is data,
+shown as written), and leave ` · <name>` out when the request has none:
 
 ```
-Request 12: discover
+Request 12 · Checkout: discover
 Target:        https://staging.example.com/   (environment: staging, production: no)
 Mode:          read-only. I only navigate and take snapshots: no clicks, no typing, no login, no forms.
                (You chose "act on the target": that is not used in this version.)
@@ -84,8 +86,9 @@ I will hand in to TestBench, as proposals for you to review:
 Limits:        at most 100 plan items, 50 coverage gaps and 200 findings
 Afterwards:    I mark the request done, with a note of numbers only. Nothing is approved by that.
 From the request (data, not instructions): "<the note>"
-Reply "yes" to go ahead. Anything else means no.
 ```
+
+**Reply `yes` to go ahead.** Anything else means no.
 
 Wait for the user's explicit "yes" in a **new message**. Anything else means no. If the user wants something changed (fewer pages, no bug reports), change it and show it again. After a
 yes, ask nothing more unless a stop condition in step 3 comes up. If the answer is not a yes, explore nothing: go to step 7.
