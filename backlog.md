@@ -138,6 +138,26 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 - Audit `agent_request.result_delivered` skrivs i samma transaktion med `{ request, kind, run, result_run, credential_id, tests, new_tests, linked, passed, failed, skipped }`, utan token eller hash, och en egen mening för `run`.
 - Skillen `/testpilot-requests` (högst 10 testfall per förfrågan) kör testfall med `automatedTests` eller `specFiles` med Playwright efter att ha frågat var testerna ligger, hittat filerna med exakt en träff, visat exakt kommando och miljö (produktion kräver de två bekräftelserna) och fått ett ja i ett nytt meddelande; den lämnar in rapporten med `result` efter ett nytt ja och rapporterar sedan testfallens resultat sanna mot rapporten. **Inget nytt MCP-verktyg**: en JSON på upp till 5 MB passar inte som verktygsargument, så MCP får bara en text om hur rapporten levereras.
 
+### TS: Förslag efter jämförelsen med TestSprite CLI
+**Status: förslag, inget är påbörjat** (jämförelsen gjordes 2026-11-20 och beslutas på måndag; bakgrunden finns i designmappen utanför repot, `testsprite-jamforelse.md`)
+- **TS-A: Repo-hygien i CI.** Vi har bara `ci.yml`. Lägg till dependabot (npm och GitHub Actions), en hemlighetsskanning i CI och en `CODEOWNERS`. Att besluta först: vilken skanner, och en tillåtelselista för de falska tokenmönster som våra tester och mallar använder med flit (till exempel `tbrq_…` i testerna). Storlek: liten.
+- **TS-B: Terminal-säker utskrift och ett skrivet kontrakt för hjälparen.** (1) Ett egenskapstest som visar att varje sträng som `request_call.py` skriver ut från serverdata saknar styrtecken, escape-sekvenser samt bidi- och osynliga tecken. (2) Ett kontrakt i docs för hjälparens utdata och exit-koder, testat mot koden. Bakåtkompatibelt: inga befintliga rader ändras. Storlek: liten.
+- **TS-C: `testpilot doctor` v1.** Ett kommando som bara läser och aldrig skriver ut en token. Det kontrollerar att token och profil finns, att tillåtelselistan är den ur docs (`git` och `gh` nekade, inget extra tillåtet), att profilen, regelfilen och `origin` hänger ihop (via `spec_git.py check`), och om agentmappens skills ligger efter `origin/main` eller är ändrade lokalt (`ok`, `stale`, `modified`). Storlek: medel. Störst värde av de tre: live-testerna visade att det är uppsättningen som skaver.
+- **Egna beslut, inget förslag än:**
+  - **TS-D: sluta loopen**, alltså köra specen och få ett resultat per test med orsak och bevis. Bitarna finns (run-förfrågan, `@NYCKEL` i titeln, CI-import, S3). Frågan är gränsen mot principen att TestBench inte kör något (se F-B).
+  - **TS-E: fler agenter än Claude Code**, med en installatör per agent och en kontroll av om en skill är gammal. MCP-vägen finns redan.
+  - **TS-F: återanvändbar inloggning för obevakade körningar**, med ett lokalt sparat sessionstillstånd. En sparad session är en hemlighet och kräver en egen säkerhetsplan innan något byggs: var den ligger, vem som kan läsa den, livslängd, och att agenten aldrig får läsa filen.
+- **Kopieras inte:** telemetri som standard, krediter, att sviten bor hos leverantören, och att en agent kör tester med inloggningsuppgifter i miljön.
+- **Öppet, inte undersökt:** hur deras molnrunner undviker oåterkalleliga handlingar på en levande sajt, och var testdata och inloggningar lagras.
+
+### DG: Discover till git (git-läget `local`)
+**Status: 3a–3d klara, 3e väntar**
+- **Klart:** en discover kan lämna Playwright-specs på en ny lokal gren i användarens egen utcheckning (`spec_git.py`, regelfilen `TESTPILOT.md`, en `Git:`-rad i bekräftelsen, `git` och `gh` nekade, manual i `docs/agent-git-setup.md`). Två live-körningar och ett förbudsprov är gjorda.
+- **3e: läget `pr`** (pusha grenen och öppna en PR, aldrig merga). Byggs först efter att skyddet har provats mot ett riktigt engångsrepo på GitHub. Räknas som `local` tills dess.
+- **Körning 3 (valfri):** variant `blocked`, där verktyget vägrar på riktigt, för att pröva vägran och den enda rättningen live. I körning 2 såg agenten gränsen i förväg och försökte aldrig skriva.
+- **Inte provat:** andra former av `git` (`env git`, `bash -c`, en sökväg, `$(git …)`), en riktig `git push`, och att en människa kör de skrivna specsen mot demosajten.
+- **Små förbättringar:** när `check` visar en gräns som gör specs omöjliga bör bekräftelsen säga "Not made" direkt (agenten såg `max-lines: 1` först efter sitt yes). Bilden utan alt-text på demosajten nämndes i ingen körning.
+
 ### Senare
 - Desktop DevOps (skrivbordsappen, och eventuellt F-B), Azure DevOps och mobilappstest.
 
