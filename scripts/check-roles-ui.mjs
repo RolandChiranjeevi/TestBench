@@ -1034,7 +1034,8 @@ for (const who of Object.keys(TABS)) {
   await dq.page.getByRole("button", { name: "Make request" }).click();
   check("request dialog: once the request is made, the next steps and the lines to copy are on screen", await eventually(async () =>
     (await dq.page.locator("[data-next-steps]").count()) === 1 && (await dq.page.getByText("claude --permission-mode default").count()) === 1 &&
-    (await dq.page.getByRole("button", { name: "Copy the first message to the agent" }).count()) === 1));
+    (await dq.page.getByRole("button", { name: "Copy the /testpilot-requests command" }).count()) === 1 && (await dq.page.getByText("testbench_get_next_request").count()) === 0 &&
+    (await dq.page.locator("[data-next-steps]").innerText()).includes("· Options check is waiting")));
   await dq.page.getByRole("button", { name: "Close", exact: true }).first().click();
   check("request dialog: the card of the new request shows the choices", await eventually(async () => (await dq.page.locator("[data-options]").first().innerText()).startsWith("Only read · Commit on a local branch")));
   // A request's number and the name a person gave it are on its card, so that two requests of the same kind and address can be told apart. One without a name shows its number only.

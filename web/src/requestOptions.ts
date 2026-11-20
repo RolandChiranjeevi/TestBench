@@ -60,6 +60,6 @@ export function optionsSummary(o: RequestOptions): string {
   return [label(TARGET_MODES, o.targetMode), label(GIT_MODES, o.gitMode), list(DELIVERABLES, o.deliverables), list(VIEWPORTS, o.viewports), ...(o.production ? ["production"] : [])].join(" · ");
 }
 
-/** What to run and say to start the agent on a request. The set-up steps are in docs/agent-quickstart.md. */
+/** What to run to start the agent on a request, and the skill command to run in that session (it lists what waits, and a discover from it needs one confirmation). The set-up steps are in docs/agent-quickstart.md. */
 export const START_COMMAND = "claude --permission-mode default";
-export const START_PROMPT = "Use testbench_get_next_request to fetch the next request from Testbench and work on it.";
+export const START_SKILL = "/testpilot-requests";

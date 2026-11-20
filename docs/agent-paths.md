@@ -30,9 +30,10 @@ That works, and it is what the agent did in the verification of the chain ([agen
 
 ## Which to use
 
-- A **re-run**, a **Playwright report**, or a **discover** that should end as an audit with evidence: the skills.
+- A **discover from a request** (a draft plan, test cases, observations and bug proposals, read-only, with **one** confirmation): `/testpilot-requests`, which hands it to `testpilot-request-discover`.
+- A **re-run**, a **Playwright report**, or a **discover** that should end as an audit with evidence and an audit package (the full audit): the skills.
 - A **run request** that follows test cases by hand, or discover findings handed in one by one: either path. The skill stops and asks at each step; the MCP path is shorter.
-- If you want the agent to stop and ask you at every step: the skills.
+- If you want the agent to stop and ask you at every step: the full audit (`/testpilot`), which keeps all its stops.
 
 ## What is the same
 

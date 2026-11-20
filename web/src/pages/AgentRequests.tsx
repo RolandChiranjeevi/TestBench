@@ -5,7 +5,7 @@ import { Bot, Copy, Plus } from "lucide-react";
 import { needsText } from "../access";
 import { auditPath, byQueue, deliveredSummary, PROGRESS_TITLE, progressLabel } from "../agentruns";
 import { api, timeAgo, type AgentRequest, type RunDetail } from "../api";
-import { DEFAULT_OPTIONS, DELIVERABLES, GIT_MODES, optionsProblem, optionsSummary, START_COMMAND, START_PROMPT, TARGET_MODES, toggled, VIEWPORTS, withProduction, type RequestOptions } from "../requestOptions";
+import { DEFAULT_OPTIONS, DELIVERABLES, GIT_MODES, optionsProblem, optionsSummary, START_COMMAND, START_SKILL, TARGET_MODES, toggled, VIEWPORTS, withProduction, type RequestOptions } from "../requestOptions";
 import type { Tone } from "../statuses";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
@@ -265,15 +265,15 @@ function Copyable({ text, label }: { text: string; label: string }) {
 function NextSteps({ request }: { request: AgentRequest }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }} data-next-steps={request.id}>
-      <div><strong>Request #{request.id} is waiting.</strong> Testbench starts nothing, so start your agent now:</div>
+      <div><strong>Request #{request.id}{request.name ? ` · ${request.name}` : ""} is waiting.</strong> Testbench starts nothing, so start your agent now:</div>
       <ol style={{ margin: 0, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 10 }}>
         <li>In a terminal, in your agent's folder, start Claude Code:<Copyable text={START_COMMAND} label="Copy the command that starts Claude Code" /></li>
-        <li>Tell it:<Copyable text={START_PROMPT} label="Copy the first message to the agent" />Or run <code className="inline mono">/testpilot-requests</code> to choose the request yourself.</li>
-        <li>Answer what the agent asks, in messages of your own: the address, the environment, whether it is production, and the choices you made. Answer its permission prompts with "allow once".</li>
+        <li>In that session, run this. It lists what is waiting, and you choose request #{request.id}:<Copyable text={START_SKILL} label="Copy the /testpilot-requests command" /></li>
+        <li>Answer what the agent asks, in messages of your own: which request, whether the address is production, and then its one confirmation. After that it works on its own until it is done or needs you. Answer a permission prompt with "allow once", or allow its tools once in advance so that it can run while you are away (docs/agent-requests.md, "Running a discover without sitting by").</li>
         <li>When it says it is done, review what it delivered. It all comes in as proposals.</li>
       </ol>
       <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>
-        Your choices: {request.options ? optionsSummary(request.options) : "the defaults"}. First time? The set-up steps are in docs/agent-quickstart.md in the Testbench repository.
+        Your choices: {request.options ? optionsSummary(request.options) : "the defaults"}. First time? The set-up steps are in docs/agent-quickstart.md in the Testbench repository. The MCP tools are another way to take a request: docs/agent-paths.md.
       </div>
     </div>
   );

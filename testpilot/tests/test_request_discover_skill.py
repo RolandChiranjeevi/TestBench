@@ -303,5 +303,48 @@ class PermissionsDocTests(unittest.TestCase):
         self.assertIn(self.HEADING, self.DOCS)
 
 
+class DocsAgreeTests(unittest.TestCase):
+    """Since the one-confirmation discover a few places still described the old flow (every stop, a note confirmed afterwards, the `deliver` audit link for every discover, the MCP prompt
+    first), which sent people down the path without the skill's confirmation."""
+    REQUESTS_DOC = (ROOT / "docs" / "agent-requests.md").read_text()
+    PATHS = (ROOT / "docs" / "agent-paths.md").read_text()
+    QUICKSTART = (ROOT / "docs" / "agent-quickstart.md").read_text()
+    README = (ROOT / "testpilot" / "README.md").read_text()
+    PANEL = (ROOT / "web" / "src" / "pages" / "AgentRequests.tsx").read_text()
+
+    def test_the_old_sentences_are_gone(self):
+        for where, text, old in (
+            ("agent-requests.md", self.REQUESTS_DOC, "The request is marked done with a short note after the user confirms the note. For a discover, the audit that `deliver` made is linked to it."),
+            ("agent-paths.md", self.PATHS, "- If you want the agent to stop and ask you at every step: the skills."),
+            ("testpilot/README.md", self.README, "- **discover:** the address goes to `discover` as a suggestion."),
+            ("testpilot/README.md", self.README, "- The agent marks the request done, with a short note, after you confirm the note."),
+            ("testpilot/README.md", self.README, "After a discover, the audit that `deliver` made is linked to the request"),
+            ("agent-quickstart.md", self.QUICKSTART, "and say: `Use testbench_get_next_request"),
+        ):
+            with self.subTest(where=where, old=old[:50]):
+                self.assertNotIn(old, text)
+
+    def test_they_say_it_the_new_way_and_the_panel_points_at_a_section_that_exists(self):
+        for where, text, new in (
+            ("agent-requests.md", self.REQUESTS_DOC, "finishing the request and the note (counts only) are part of its one confirmation"),
+            ("agent-requests.md", self.REQUESTS_DOC, "After the **full audit** of a discover, the audit that `deliver` made is linked"),
+            ("agent-paths.md", self.PATHS, "A **discover from a request**"),
+            ("agent-paths.md", self.PATHS, "the full audit (`/testpilot`), which keeps all its stops"),
+            ("testpilot/README.md", self.README, "- **discover:** handed to `testpilot-request-discover`: **one** confirmation"),
+            ("testpilot/README.md", self.README, "A discover is finished inside its one confirmation."),
+            ("testpilot/README.md", self.README, "After the full audit of a discover, the audit that `deliver` made is linked"),
+            ("agent-quickstart.md", self.QUICKSTART, "and run `/testpilot-requests`. It lists what is waiting, with each request's number and name"),
+            ("the panel", self.PANEL, "Running a discover without sitting by"),
+            ("agent-requests.md", self.REQUESTS_DOC, "### Running a discover without sitting by"),
+        ):
+            with self.subTest(where=where, new=new[:50]):
+                self.assertIn(new, text)
+
+    def test_the_panel_leads_with_the_skill_and_not_with_the_mcp_prompt(self):
+        self.assertIn("START_SKILL", self.PANEL)
+        self.assertNotIn("START_PROMPT", self.PANEL)
+        self.assertNotIn("Use testbench_get_next_request", self.PANEL)
+
+
 if __name__ == "__main__":
     unittest.main()
