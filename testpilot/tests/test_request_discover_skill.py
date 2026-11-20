@@ -173,6 +173,14 @@ class AroundTheSkillTests(unittest.TestCase):
         self.assertIn("A discover handled by `testpilot-request-discover` is already marked done", REQUESTS)
         self.assertIn("A `rerun` or a `run` request needs the profile", REQUESTS)
 
+    def test_nothing_else_still_says_that_every_stop_applies_to_a_discover_from_a_request(self):
+        self.assertIn("**The one exception** is a discover handled by `../testpilot-request-discover/SKILL.md`", REQUESTS)
+        self.assertIn("a request still confirms nothing there", REQUESTS)
+        self.assertIn("A discover that came from a request does not go through the plan phase", MAIN)
+        docs = (ROOT / "docs" / "agent-requests.md").read_text()
+        self.assertIn("`/testpilot-requests` hands it to `testpilot-request-discover`: **one** confirmation", docs)
+        self.assertNotIn("the address goes to `/testpilot-discover` as a suggestion, which validates and confirms it, with its two confirmations for production. The normal audit flow follows, with every stop.", docs)
+
     def test_the_main_skill_no_longer_says_that_requests_replaces_no_stop_for_a_discover(self):
         self.assertNotIn("hands the target to `discover`. It replaces no\nstep and no stop.", MAIN)
         self.assertIn("`/testpilot` itself keeps every one\nof its stops.", MAIN)
