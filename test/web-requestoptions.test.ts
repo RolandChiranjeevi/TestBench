@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { cleanOptions, DEFAULT_REQUEST_OPTIONS, optionsNeedAdmin as serverNeedsAdmin, REQUEST_OPTIONS } from "../server/agentrequests.ts";
 import {
-  DEFAULT_OPTIONS, DELIVERABLES, GIT_MODES, optionsNeedAdmin, optionsProblem, optionsSummary, START_COMMAND, START_PROMPT, TARGET_MODES, toggled, VIEWPORTS, withProduction,
+  DEFAULT_OPTIONS, DELIVERABLES, GIT_MODES, optionsNeedAdmin, optionsProblem, optionsSummary, START_COMMAND, START_SKILL, TARGET_MODES, toggled, VIEWPORTS, withProduction,
   type RequestOptions,
 } from "../web/src/requestOptions.ts";
 
@@ -83,10 +83,11 @@ describe("what the request card says", () => {
 });
 
 describe("how to start the agent, as the dialog says it", () => {
-  it("is what the set-up guide says", () => {
+  it("is what the set-up guide says, and the guide names the skill before the MCP tools", () => {
     const guide = readFileSync(join(import.meta.dirname, "..", "docs", "agent-quickstart.md"), "utf8");
     assert.ok(guide.includes(START_COMMAND), "the command is in docs/agent-quickstart.md");
-    assert.ok(guide.includes(START_PROMPT), "the first message is in docs/agent-quickstart.md");
-    assert.match(START_PROMPT, /^Use testbench_get_next_request /);
+    assert.equal(START_SKILL, "/testpilot-requests");
+    assert.ok(guide.includes(START_SKILL), "the skill command is in docs/agent-quickstart.md");
+    assert.ok(guide.indexOf(START_SKILL) < guide.indexOf("testbench_get_next_request"), "the guide leads with the skill, which has the one confirmation, and not with the MCP prompt");
   });
 });
