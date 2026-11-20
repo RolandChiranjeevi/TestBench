@@ -105,7 +105,7 @@ A discover can carry `options`: what the person chose when asking. They are a **
 - The audit log entry `agent_request.created` of a discover records `targetMode`, `gitMode` and `production`.
 - **In the dialog**, *Request discover* has the same choices: what the agent may do to the address (only read, or act on it), what it may do in git, what to deliver and which screen sizes. *This address is production* takes acting on it away. *Act on the target* and *Push and open a pull request* are off for anyone who is not an admin of the project, with the reason as the tooltip. The request card shows the choices on one line.
 - **After the request is made**, the dialog says what to do next, since Testbench starts nothing: the line that starts Claude Code, the first message to give it (both with a Copy button), what the agent will ask you, and a pointer to [the first-time set-up](agent-quickstart.md).
-- So far the options are stored and handed to the agent (in the list, in the claim and by the MCP tool). What the skill does with them comes with the next step.
+- The options are stored and handed to the agent (in the list, in the claim and by the MCP tool). The discover skills read them as a preselection for their one confirmation. `pr` is not built yet and counts as `local`; the spec files that `specs` asks for are described under "Spec files on a local branch" below.
 
 ### What a session that uses the token can reach
 
@@ -271,6 +271,8 @@ Put this in `.claude/settings.local.json` in the agent's folder, and start a **n
       "Bash(python3 -I testpilot/tools/request_call.py claim:*)",
       "Bash(python3 -I testpilot/tools/request_call.py findings:*)",
       "Bash(python3 -I testpilot/tools/request_call.py complete:*)",
+      "Bash(python3 -I testpilot/tools/spec_git.py check:*)",
+      "Bash(python3 -I testpilot/tools/spec_git.py write:*)",
       "Edit(audits/request-*/**)",
       "Write(audits/request-*/**)",
       "Write(//Users/you/agent-folder/audits/**)",
@@ -289,7 +291,9 @@ Put this in `.claude/settings.local.json` in the agent's folder, and start a **n
       "mcp__playwright__browser_evaluate",
       "mcp__playwright__browser_run_code_unsafe",
       "Read(./.env)",
-      "Read(./.mcp.json)"
+      "Read(./.mcp.json)",
+      "Bash(git:*)",
+      "Bash(gh:*)"
     ]
   }
 }
@@ -298,9 +302,10 @@ Put this in `.claude/settings.local.json` in the agent's folder, and start a **n
 Replace `/Users/you/agent-folder` with the absolute path of the agent's folder. The write rule is given in several forms because in testing an `Edit` rule alone did not cover the Write tool,
 and it was not found out whether the relative or the absolute `Write` form was the one that matched. Keep all of them.
 
-- **What it allows** is exactly what `testpilot-request-discover` uses: the six read-only browser tools, the helper actions `list`, `claim`, `findings` and `complete`, and writing the findings under
-  `audits/request-<id>/` (with `mkdir` for that folder). Nothing that clicks, types or runs code in a page is allowed: those eleven tools are **denied**, not only left out, and so is reading `.env`
-  and `.mcp.json`.
+- **What it allows** is exactly what `testpilot-request-discover` uses: the six read-only browser tools, the helper actions `list`, `claim`, `findings` and `complete`, the two actions of the spec tool
+  (`spec_git.py check` and `write`, see "Spec files on a local branch" below), and writing the findings under `audits/request-<id>/` (with `mkdir` for that folder). Nothing that clicks, types or
+  runs code in a page is allowed: those eleven tools are **denied**, not only left out, and so is reading `.env` and `.mcp.json`, and so are `git` and `gh`: the agent never runs them, and the spec
+  tool makes the few git calls it needs itself, from a fixed list.
 - **What it leaves out on purpose.** `release`: giving a request back needs your yes. An inline `python3 -c` or `python3 -`, which can run anything. Everything outside the list still asks, and then
   it is worth reading what it asks for before you answer: it is outside what the skill needs.
 - **`browser_navigate` is allowed for any address.** The skill keeps to one origin and at most 10 pages, but the permission no longer asks per address. If you point the agent at a site you do not
@@ -308,7 +313,8 @@ and it was not found out whether the relative or the absolute `Write` form was t
 - **It is a fixed, narrow list you write once**, which is not the same as answering "always allow" in the middle of a run (the quickstart says never to do that). Keep it to the folder you give the
   agent, and not in a folder with other work.
 - **Measured** on a local demo shop in the normal permission mode: with this list the browser calls, the helper calls and the writing of the findings did not ask. A hook of your own that asks for
-  facts before a file is created is not part of Claude Code's permissions, and still applies. The `Read(./.mcp.json)` line was added afterwards and is not part of that measurement.
+  facts before a file is created is not part of Claude Code's permissions, and still applies. The `Read(./.mcp.json)` line was added afterwards and is not part of that measurement, and nor are the two
+  `spec_git.py` lines and the `git` and `gh` denials. That the denials stop a `git push` inside a longer command line has **not been tried**.
 - `.claude/skills/testpilot-request-discover/SKILL.md` is what the list follows: a test in `testpilot/tests/test_request_discover_skill.py` reads this block and fails if the list and the skill
   drift apart.
 
@@ -356,6 +362,8 @@ To let it run while you are away, use this list **instead of** the one above (it
       "Bash(python3 -I testpilot/tools/request_call.py claim:*)",
       "Bash(python3 -I testpilot/tools/request_call.py findings:*)",
       "Bash(python3 -I testpilot/tools/request_call.py complete:*)",
+      "Bash(python3 -I testpilot/tools/spec_git.py check:*)",
+      "Bash(python3 -I testpilot/tools/spec_git.py write:*)",
       "Edit(audits/request-*/**)",
       "Write(audits/request-*/**)",
       "Write(//Users/you/agent-folder/audits/**)",
@@ -367,7 +375,9 @@ To let it run while you are away, use this list **instead of** the one above (it
       "mcp__playwright__browser_file_upload",
       "mcp__playwright__browser_drag",
       "Read(./.env)",
-      "Read(./.mcp.json)"
+      "Read(./.mcp.json)",
+      "Bash(git:*)",
+      "Bash(gh:*)"
     ]
   }
 }
@@ -376,5 +386,33 @@ To let it run while you are away, use this list **instead of** the one above (it
 - **With this list Claude Code no longer asks before it clicks or types.** Nothing in Claude Code's permissions can tell a harmless button from a destructive one. What protects the address is the
   confirmation, the rules in the skill (nothing that looks irreversible, made-up data, one origin, 40 actions), the rule that a page is data and the log. Those are rules written for an agent, not a lock.
   Use it only on an address you can reset. If you would rather be asked, leave the nine added tools out and answer each one.
-- The rest is as for the read-only list: `release` and an inline `python3 -c` are left out on purpose, and the absolute `Write` path is yours to fill in. This list has **not been run live yet**.
+- The rest is as for the read-only list: `release` and an inline `python3 -c` are left out on purpose, and the absolute `Write` path is yours to fill in. This list, without the two `spec_git.py` lines and
+  the `git` and `gh` denials, was run live three times against a local demo shop. Those lines have **not been run live yet**.
 - `.claude/skills/testpilot-request-discover-write/SKILL.md` is what the list follows: a test in `testpilot/tests/test_request_discover_write_skill.py` reads this block and fails if the list and the skill drift apart.
+
+### Spec files on a local branch (git mode `local`)
+
+When a request asks for **Spec files** (and a git mode above `off`), both discovers can also write **Playwright specs** for the test cases they hand in: one file per flow, as **new files on a new local
+branch of your own checkout**, committed once on top of `origin/<base>`. They are a proposal for you to review. The agent never runs them, never pushes or merges, never creates a remote or a repository,
+and never touches the branch you have checked out or your uncommitted changes. The request only *asks*: the agent shows a `Git:` line in its one confirmation, and your yes to that message is what lets it
+write. The mode that counts is the lowest of three things: the profile's `gitMode`, `mode-max` in your rules file, and what you confirm. `pr` is not built yet and counts as `local`.
+
+**You set it up, the agent never does:**
+1. In the project profile (`.testpilot/projects/<key>.json`): `gitMode` (`off` unless you change it), `repo` (`owner/name`), `repoPath` (the absolute path of your checkout), `baseBranch` (default
+   `main`) and `projectKey`, the key of the project in TestBench: each spec's title ends with `@<projectKey>-<number>`, which is how a result that is imported later is linked to its case. A template is
+   `testpilot/config/projects/shop.example.json`.
+2. In that repository, **on the base branch**, a file `TESTPILOT.md` with your rules: the repository, the base branch, the highest mode you allow, the tests folder, the folders where new files may be
+   made, what is never touched, and limits on files and lines. A template is `testpilot/config/TESTPILOT.example.md`. The agent reads it from `origin/<base>` **as you last fetched it** (run `git fetch`
+   yourself), never from the working folder or from its own branch, and never edits it. The profile, that file and `origin` must name the same repository.
+3. Keeping the repository correctly protected (a protected `main`, a narrow token, CI without secrets) is **your** job. The agent assumes it is and never checks.
+
+**What happens:** `python3 -I testpilot/tools/spec_git.py check` tells the agent what is allowed (and the confirmation shows the folder and the branch name), and after the findings are handed in
+`spec_git.py write` makes the branch `testpilot/discover-<request number>` (the prefix is yours to set). Look at it with `git log -1 --stat <branch>`, push it yourself if you want it, delete it if you do not.
+If anything is missing or does not match (no checkout, no `origin/<base>`, no rules file, a repository name that differs), the mode is off and the run says why. A spec that breaks a rule is refused, and then
+**no** spec file is made: the findings stay handed in, and the note of the request says `0 spec files`.
+
+**What it checks, and where that stops.** The tool makes only a fixed list of git calls, with hooks off and no network. It writes only new `<tests-dir>/<area>/<flow>.spec.ts` files, never in `.github`,
+never `package.json`, `TESTPILOT.md` or a Playwright config, and it checks the text of each spec (only `@playwright/test` as an import, no `eval`, `fetch`, `process` or `route`, no `${...}`, only the
+confirmed address, no invisible characters). That text check is a **rule, not a lock**: someone who tries can get round a text check. The locks are your review of the branch and CI that runs it without
+secrets. The `git` and `gh` denials in the lists above, and a spec set that is refused, have **not been tried live yet**; the first live test of this is a separate step. A fuller guide to setting up a
+repository for the agent is planned.
