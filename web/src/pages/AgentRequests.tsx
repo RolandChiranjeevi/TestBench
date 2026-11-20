@@ -85,6 +85,8 @@ function RequestCard({ r, onCancel, cancelling, waiting, onRunNext, putting }: {
     <div className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 6 }} data-request={r.id} data-status={r.status} data-queue={r.queuePosition ?? ""}>
       <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <Badge tone={s.tone} title={s.title}>{s.label}</Badge>
+        <span className="muted mono" title="The request number: the number an agent shows when you choose" data-request-number>#{r.id}</span>
+        {r.name && <span style={{ fontWeight: 600, overflowWrap: "anywhere", minWidth: 0 }} data-request-name>{r.name}</span>}
         <span style={{ fontWeight: 500 }}>{KIND_LABEL[r.kind]}</span>
         {r.kind === "discover" ? (
           <code className="inline mono" style={{ overflowWrap: "anywhere", minWidth: 0 }}>{r.targetUrl}</code>
@@ -146,10 +148,15 @@ function RequestCard({ r, onCancel, cancelling, waiting, onRunNext, putting }: {
   );
 }
 
-/** The two things every request has: where it runs, and a note. The note is read by an agent as information, never as instructions. */
-function Fields({ environment, setEnvironment, note, setNote }: { environment: string; setEnvironment: (v: string) => void; note: string; setNote: (v: string) => void }) {
+/** The three things every request has: a name, where it runs, and a note. The name and the note are read by an agent as information, never as instructions. */
+function Fields({ name, setName, environment, setEnvironment, note, setNote }: { name: string; setName: (v: string) => void; environment: string; setEnvironment: (v: string) => void; note: string; setNote: (v: string) => void }) {
   return (
     <>
+      <div className="field">
+        <label htmlFor="rq-name">Name (optional)</label>
+        <input id="rq-name" className="input" placeholder="A short name, for example Login flow" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} />
+        <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>Shown next to the request number, so that you can tell requests apart. The agent reads it as information, not as instructions.</span>
+      </div>
       <div className="field">
         <label htmlFor="rq-env">Environment (optional)</label>
         <input id="rq-env" className="input" placeholder="staging, prod…" value={environment} maxLength={100} onChange={(e) => setEnvironment(e.target.value)} />
@@ -275,6 +282,7 @@ function NextSteps({ request }: { request: AgentRequest }) {
 function DiscoverModal({ onClose }: { onClose: () => void }) {
   const [targetUrl, setTargetUrl] = useState("");
   const [environment, setEnvironment] = useState("");
+  const [name, setName] = useState("");
   const [note, setNote] = useState("");
   const [options, setOptions] = useState<RequestOptions>(DEFAULT_OPTIONS);
   const [made, setMade] = useState<AgentRequest | null>(null);
@@ -295,7 +303,7 @@ function DiscoverModal({ onClose }: { onClose: () => void }) {
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button needs="tester" variant="primary" disabled={!targetUrl.trim() || !!problem || make.isPending} onClick={() => make.mutate({ kind: "discover", targetUrl, environment, note, options })}>Make request</Button>
+          <Button needs="tester" variant="primary" disabled={!targetUrl.trim() || !!problem || make.isPending} onClick={() => make.mutate({ kind: "discover", targetUrl, environment, name, note, options })}>Make request</Button>
         </>
       }
     >
@@ -309,7 +317,7 @@ function DiscoverModal({ onClose }: { onClose: () => void }) {
           <input id="rq-url" className="input" placeholder="https://staging.example.com" value={targetUrl} maxLength={500} onChange={(e) => setTargetUrl(e.target.value)} autoFocus />
           <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>No password or token in the address.</span>
         </div>
-        <Fields environment={environment} setEnvironment={setEnvironment} note={note} setNote={setNote} />
+        <Fields name={name} setName={setName} environment={environment} setEnvironment={setEnvironment} note={note} setNote={setNote} />
         <OptionsFields options={options} setOptions={setOptions} />
         {problem && <span role="alert" style={{ color: "var(--failed-fg)" }}>{problem}</span>}
       </EditScope>
@@ -320,6 +328,7 @@ function DiscoverModal({ onClose }: { onClose: () => void }) {
 /** From a run page: ask an agent to run the failed or blocked automated tests of an automated run again. */
 export function RerunRequestModal({ run, onClose }: { run: RunDetail; onClose: () => void }) {
   const [environment, setEnvironment] = useState(run.environment);
+  const [name, setName] = useState("");
   const [note, setNote] = useState("");
   const make = useMakeRequest(onClose);
   const tests = run.results.filter((r) => r.automated_test_id != null && (r.status === "failed" || r.status === "blocked"));
@@ -331,7 +340,7 @@ export function RerunRequestModal({ run, onClose }: { run: RunDetail; onClose: (
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button needs="tester" variant="primary" disabled={tests.length === 0 || make.isPending} onClick={() => make.mutate({ kind: "rerun", runId: run.id, environment, note })}>Make request</Button>
+          <Button needs="tester" variant="primary" disabled={tests.length === 0 || make.isPending} onClick={() => make.mutate({ kind: "rerun", runId: run.id, environment, name, note })}>Make request</Button>
         </>
       }
     >
@@ -344,7 +353,7 @@ export function RerunRequestModal({ run, onClose }: { run: RunDetail; onClose: (
           {tests.slice(0, 8).map((t) => <li key={t.id} style={{ overflowWrap: "anywhere" }}>{t.test_full_name ?? t.test_title}</li>)}
           {tests.length > 8 && <li className="muted">and {tests.length - 8} more</li>}
         </ul>
-        <Fields environment={environment} setEnvironment={setEnvironment} note={note} setNote={setNote} />
+        <Fields name={name} setName={setName} environment={environment} setEnvironment={setEnvironment} note={note} setNote={setNote} />
       </EditScope>
     </Modal>
   );

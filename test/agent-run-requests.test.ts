@@ -39,6 +39,15 @@ describe("asking for a run", () => {
     assert.equal(agentRequestOfRun(999999), null);
   });
 
+  it("keeps the name a person gave the request, apart from the name of the run it makes", () => {
+    const p = makeProject("RUNNAME", "Run name");
+    const c = makeCase(p.id, "Pay", { steps: [["Open /pay", "A form"]] });
+    const r = ask(p.id, [c.id], { name: " Pay flow ", title: "Run of the pay case" });
+    assert.equal(r.name, "Pay flow");
+    assert.equal(db.prepare("SELECT title FROM runs WHERE id = ?").pluck().get(r.runId), "Run of the pay case");
+    assert.equal(ask(p.id, [c.id]).name, "", "a request without a name has an empty one");
+  });
+
   it("holds exactly the approved structure: the run, the address, the environment, the note and, for each case, its text, steps, test names and spec file names", () => {
     const p = makeProject("PLD", "Payload");
     const c = makeCase(p.id, "Sign in", { steps: [["Open /login", "A form"], ["Submit", "Signed in"]] });

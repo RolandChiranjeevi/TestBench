@@ -24,7 +24,7 @@ import { fileMatchesSpec } from "./specs.ts";
 
 /** A Playwright report handed in for a re-run or a run: at most 5 MB and 1000 tests, and at most 10 handed in a minute per token (every attempt counts). */
 export const RESULT_LIMITS = { bodyBytes: 5 * 1024 * 1024, testsMax: 1000, perMinute: 10 };
-export const REQUEST_LIMITS = { pendingPerProject: 20, urlMax: 500, environmentMax: 100, noteMax: 2000, resultNoteMax: 1000, rerunTestsMax: 500, runCasesMax: 200, runPayloadBytes: 1024 * 1024, runTitleMax: 200 };
+export const REQUEST_LIMITS = { pendingPerProject: 20, urlMax: 500, environmentMax: 100, nameMax: 60, noteMax: 2000, resultNoteMax: 1000, rerunTestsMax: 500, runCasesMax: 200, runPayloadBytes: 1024 * 1024, runTitleMax: 200 };
 export const REQUEST_KINDS = ["discover", "rerun", "run"] as const;
 export const REQUEST_STATUSES = ["pending", "claimed", "done", "cancelled"] as const;
 export type RequestKind = (typeof REQUEST_KINDS)[number];
@@ -108,7 +108,7 @@ export function cleanTargetUrl(input: unknown): string {
 }
 
 interface Row {
-  id: number; project_id: number; kind: RequestKind; target_url: string; environment: string; note: string; run_id: number | null; payload: string; status: RequestStatus;
+  id: number; project_id: number; kind: RequestKind; target_url: string; environment: string; name: string; note: string; run_id: number | null; payload: string; status: RequestStatus;
   created_by: string; created_at: string; claimed_by: string | null; claimed_token_id: number | null; claimed_at: string | null; finished_at: string | null; result_run_id: number | null; result_note: string;
   result_delivered_at: string | null; release_note: string; released_by: string | null; released_at: string | null; result_audit_id: number | null;
   /** 0 until a person puts the request first; a higher number is served earlier (see runNextRequest). */
@@ -146,7 +146,7 @@ export function viewOf(r: Row, withCases = true) {
     }
   } catch { /* a payload that is not JSON: no tests or cases listed */ }
   return {
-    id: r.id, projectId: r.project_id, kind: r.kind, targetUrl: r.target_url, environment: r.environment, note: r.note, runId: r.run_id, tests, cases, caseCount, options, status: r.status,
+    id: r.id, projectId: r.project_id, kind: r.kind, targetUrl: r.target_url, environment: r.environment, name: r.name, note: r.note, runId: r.run_id, tests, cases, caseCount, options, status: r.status,
     createdBy: r.created_by, createdAt: r.created_at, claimedBy: r.claimed_by, claimedAt: r.claimed_at, finishedAt: r.finished_at, resultRunId: r.result_run_id, resultNote: r.result_note, resultDeliveredAt: r.result_delivered_at,
     releaseNote: r.release_note, releasedBy: r.released_by, releasedAt: r.released_at, resultAuditId: r.result_audit_id,
     // Where a waiting request stands in the order an agent is given (1 = next), filled in for a person's list (withQueue); null for one that is not waiting.
@@ -255,7 +255,7 @@ export function agentRequestOfRun(runId: number): { id: number; status: RequestS
   return { ...rest, progress: runProgress(runId), ...(reportRunId ? { reportRunId } : {}) };
 }
 
-export interface NewRequest { kind: unknown; targetUrl?: unknown; environment?: unknown; note?: unknown; runId?: unknown; caseIds?: unknown; title?: unknown; templateId?: unknown; options?: unknown }
+export interface NewRequest { kind: unknown; targetUrl?: unknown; environment?: unknown; name?: unknown; note?: unknown; runId?: unknown; caseIds?: unknown; title?: unknown; templateId?: unknown; options?: unknown }
 
 /**
  * The test cases of a run request, as they are now: the text a person wrote (title, description, preconditions, steps), the names of the automated tests linked to the case and of
@@ -285,6 +285,20 @@ function runCases(projectId: number, input: unknown): RunCase[] {
   return cases;
 }
 
+/**
+ * What a person calls a request, so that two of them can be told apart in a list and in an agent's choice: one line of at most 60 characters, '' when none is given. Like the note it is
+ * written by a person and read by an agent, so it is DATA, never an instruction. Control characters, line and paragraph separators and the characters that reorder text (a right-to-left
+ * override can make one name look like another) are refused rather than cleaned, so that what the person typed is what everybody sees.
+ */
+function requestName(v: unknown): string {
+  if (v === undefined || v === null) return "";
+  if (typeof v !== "string") throw bad("The name must be text");
+  const t = v.trim();
+  if (t.length > REQUEST_LIMITS.nameMax) throw bad(`The name can be at most ${REQUEST_LIMITS.nameMax} characters`);
+  if (/[\p{Cc}\p{Zl}\p{Zp}\u202a-\u202e\u2066-\u2069]/u.test(t)) throw bad("The name must be on one line, without control or direction characters");
+  return t;
+}
+
 /** `by.mayWiden` is false only for a person who is not an admin of the project, with accounts on (there are no roles without accounts). */
 export function createRequest(projectId: number, input: NewRequest, by: { name: string; userId: number | null; mayWiden?: boolean }) {
   if (!db.prepare("SELECT 1 FROM projects WHERE id = ?").get(projectId)) throw new AuditError(404, "Project not found");
@@ -298,6 +312,7 @@ export function createRequest(projectId: number, input: NewRequest, by: { name: 
     return t;
   };
   const note = text(input.note, "The note", REQUEST_LIMITS.noteMax);
+  const name = requestName(input.name);
   let environment = text(input.environment, "The environment", REQUEST_LIMITS.environmentMax);
   const waiting = (db.prepare("SELECT COUNT(*) AS n FROM agent_requests WHERE project_id = ? AND status = 'pending'").get(projectId) as { n: number }).n;
   if (waiting >= REQUEST_LIMITS.pendingPerProject) throw new AuditError(409, `At most ${REQUEST_LIMITS.pendingPerProject} requests can be waiting. Cancel one, or wait for an agent to take them`);
@@ -325,8 +340,8 @@ export function createRequest(projectId: number, input: NewRequest, by: { name: 
     return db.transaction(() => {
       const run = createManualRun(projectId, { title, environment, caseIds: cases.map((c) => c.caseId), templateId });
       const row = db
-        .prepare("INSERT INTO agent_requests (project_id, kind, target_url, environment, note, run_id, payload, created_by, created_by_user_id) VALUES (?, 'run', ?, ?, ?, ?, ?, ?, ?) RETURNING *")
-        .get(projectId, targetUrl, environment, note, run.id, JSON.stringify({ runId: run.id, targetUrl, environment, note, cases }), by.name, by.userId) as Row;
+        .prepare("INSERT INTO agent_requests (project_id, kind, target_url, environment, name, note, run_id, payload, created_by, created_by_user_id) VALUES (?, 'run', ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *")
+        .get(projectId, targetUrl, environment, name, note, run.id, JSON.stringify({ runId: run.id, targetUrl, environment, note, cases }), by.name, by.userId) as Row;
       db.prepare("UPDATE runs SET meta = json_set(meta, '$.agentRequest', ?) WHERE id = ?").run(row.id, run.id); // the run says which request it was asked by
       return viewOf(row);
     })();
@@ -347,8 +362,8 @@ export function createRequest(projectId: number, input: NewRequest, by: { name: 
     environment = environment || run.environment;
   }
   const row = db
-    .prepare("INSERT INTO agent_requests (project_id, kind, target_url, environment, note, run_id, payload, created_by, created_by_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *")
-    .get(projectId, kind, targetUrl, environment, note, runId, JSON.stringify({ tests, ...(options ? { options } : {}) }), by.name, by.userId) as Row;
+    .prepare("INSERT INTO agent_requests (project_id, kind, target_url, environment, name, note, run_id, payload, created_by, created_by_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *")
+    .get(projectId, kind, targetUrl, environment, name, note, runId, JSON.stringify({ tests, ...(options ? { options } : {}) }), by.name, by.userId) as Row;
   return viewOf(row);
 }
 

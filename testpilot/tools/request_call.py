@@ -227,7 +227,7 @@ def show(data, code, action, rid):
                               **({"warning": clean(q["warning"], 600)} if q.get("warning") else {})}))
             continue
         print(json.dumps({
-            "id": q["id"], "kind": q["kind"], "status": q["status"], "environment": clean(q["environment"], 100),
+            "id": q["id"], "name": clean(q.get("name", ""), 60), "kind": q["kind"], "status": q["status"], "environment": clean(q["environment"], 100),
             "target": clean(q["targetUrl"], 500), "run": q["runId"], "tests": len(q["tests"]), "asked_by": clean(q["createdBy"], 80),
             "asked_at": q["createdAt"], "note": clean(q["note"], 500),
             **({"cases": q.get("caseCount"), "progress": q.get("progress")} if q["kind"] == "run" else {}),

@@ -1969,6 +1969,8 @@ const requestBody = z.object({
   kind: z.enum(["discover", "rerun", "run"]),
   targetUrl: z.string().max(1000).optional(),
   environment: z.string().max(500).optional(),
+  // What a person calls the request (checked by createRequest: one line, at most 60 characters). Data for the agent, like the note.
+  name: z.string().max(1000).optional(),
   note: z.string().max(10000).optional(),
   runId: z.number().int().optional(),
   // A run request: the test cases to run (checked by createRequest: 1 to 200, in this project, not deprecated), the name of the run, and the suite it comes from, if any.

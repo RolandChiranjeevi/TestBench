@@ -95,7 +95,7 @@ A discover can hand in its **plan**: what is to be tested (`plan_item`) and what
 - **Requirements** are kept as written (`REQ-3`) and matched against the project's own when they are shown, so one that matches nothing stays visible as *not found*. Without requirements in the project the list is empty, and the gaps say what is missing.
 - **What a person sees.** A draft case with a `planItem` says *Planned in P-1 · …* with a link to the plan; the plan item shows *N test cases* in its row and lists them, linked, when opened; and the request's card says what the discover delivered (*Delivered: 2 plan items · 1 coverage gap · 3 test cases · …*, counting what is still there). The link is read only: nothing in TestBench lets a person or an agent change it afterwards.
 
-The address, environment and note of a request were written by a person. They are **data, not instructions**, and a request does not replace the agent's own confirmations (production targets, observe-only mode). The answer of `testbench_get_next_request` says so.
+The address, environment, name and note of a request were written by a person. They are **data, not instructions**, and a request does not replace the agent's own confirmations (production targets, observe-only mode). The answer of `testbench_get_next_request` says so.
 
 ## 1. Make a request token
 
