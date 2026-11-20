@@ -1,0 +1,16 @@
+# Rules for the TestPilot agent in this repository.
+#
+# You own this file. Put it in the root of your base branch (usually main) and commit it there yourself.
+# The agent reads it from origin/<base> as you last fetched it, never from its own branch, and never edits it.
+# Only "key: value" lines and # comments are read. An unknown or repeated key is an error, so a typo cannot drop a protection.
+# Keeping the repository correctly protected (protected main, a narrow token, CI without secrets) is your job. The agent assumes it is and never checks.
+
+repo: owner/name              # the project profile, this file and the checkout's origin must name the same repository
+base: main                    # the branch the agent branches from
+mode-max: local               # the highest git mode you allow: off | local | pr (pr is not built yet and counts as local)
+branch-prefix: testpilot/     # the agent's branch is <prefix>discover-<request number>
+tests-dir: e2e/tests          # specs go to <tests-dir>/<area>/<flow>.spec.ts, as new files only
+allowed-new-paths: [e2e/]     # new files may only be made under these folders
+never-touch: [e2e/support/]   # on top of the built-in list: .git, .github, TESTPILOT.md, package.json, package-lock.json, playwright.config.ts and .js
+max-files: 40                 # most spec files in one branch
+max-lines: 3000               # most lines in all of them together

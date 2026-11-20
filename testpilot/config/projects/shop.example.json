@@ -7,5 +7,9 @@
   "tokenEnvVar": "TESTBENCH_API_TOKEN_SHOP",
   "requestTokenEnvVar": "TESTBENCH_REQUEST_TOKEN_SHOP",
   "deliveryEnabled": false,
-  "permissionMode": "observe_only"
+  "permissionMode": "observe_only",
+  "gitMode": "off",
+  "repo": "owner/name",
+  "repoPath": "/path/to/your/checkout",
+  "baseBranch": "main"
 }
