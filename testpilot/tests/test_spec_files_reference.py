@@ -79,9 +79,19 @@ class DocsTests(unittest.TestCase):
         text = flat(self.SECTION)
         for must in ("`gitMode`", "`repo`", "`repoPath`", "`baseBranch`", "`projectKey`", "testpilot/config/projects/shop.example.json", "testpilot/config/TESTPILOT.example.md", "`git fetch`",
                      "never touches the branch you have checked out", "never runs them, never pushes or merges", "your yes to that message is what lets it write", "`pr` is not built yet and counts as `local`",
-                     "a **rule, not a lock**", "have **not been tried live yet**", "`0 spec files`", "is **your** job", "never edits it"):
+                     "a **rule, not a lock**", "were each denied by the rule, without a question to the person", "also when `git` came after `&&` or `;`", "**Not tried:** other shapes such as",
+                     "and a real `git push`", "the refusal and the one correction have **not been tried live**", "`0 spec files`", "is **your** job", "never edits it"):
             with self.subTest(must=must):
                 self.assertIn(must, text)
+
+    def test_the_lists_say_what_was_tried_and_no_longer_that_nothing_was(self):
+        text = flat(DOCS)
+        for must in ("which two live runs used without a permission prompt (the person saw none, and the session log shows each call answered in under a second)", "the `git` and `gh` denials, which were tried in a fresh session", "With them it was used in two more live runs (one writing, one read-only)"):
+            with self.subTest(must=must):
+                self.assertIn(must, text)
+        for gone in ("have **not been tried live yet**", "Those lines have **not been run live yet**", "has **not been tried**."):
+            with self.subTest(gone=gone):
+                self.assertNotIn(gone, text)
 
     def test_the_profile_template_has_every_field_the_docs_name(self):
         profile = json.loads((CONFIG / "projects" / "shop.example.json").read_text())

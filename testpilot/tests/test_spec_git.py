@@ -222,6 +222,9 @@ class WriteTests(unittest.TestCase):
             self.assertIn(want, p.out)
         self.assertEqual(sh(w.repo, "rev-parse", "testpilot/discover-7^").stdout.strip(), origin_sha)
         self.assertEqual(sorted(sh(w.repo, "diff", "--name-status", "origin/main", "testpilot/discover-7").stdout.split("\n"))[1:], ["A\te2e/tests/shop/cart.spec.ts", "A\te2e/tests/shop/pay.spec.ts"])
+        added = sum(int(line.split("\t")[0]) for line in sh(w.repo, "diff", "--numstat", "origin/main", "testpilot/discover-7").stdout.splitlines())
+        self.assertEqual(added, 10)
+        self.assertIn(f"files: 2, {added} lines (not run)", p.out, "the tool reports the lines git counts, not one more per file")
         self.assertEqual(sh(w.repo, "show", "testpilot/discover-7:e2e/tests/shop/cart.spec.ts").stdout, GOOD)
         self.assertIn("request 7", sh(w.repo, "log", "-1", "--format=%B", "testpilot/discover-7").stdout)
         self.assertEqual(sh(w.repo, "symbolic-ref", "HEAD").stdout.strip(), "refs/heads/main")
@@ -299,6 +302,13 @@ class WriteTests(unittest.TestCase):
         self.assertEqual(w.write([S("e2e/tests/shop/a.spec.ts", big)]).returncode, 0)
         w = World(self)
         self.assertRefused(w, [S("e2e/tests/shop/a.spec.ts", big), S("e2e/tests/shop/b.spec.ts", big)], "over max-lines 60")
+
+    def test_the_line_limit_is_the_number_of_lines_git_counts(self):
+        two = [S(), S("e2e/tests/shop/pay.spec.ts", spec('await page.goto("https://shop.example.com/pay");'))]  # five lines each
+        w = World(self, rules=RULES.replace("max-lines: 60", "max-lines: 10"))
+        self.assertEqual(w.write(two).returncode, 0, "exactly the limit is allowed")
+        w = World(self, rules=RULES.replace("max-lines: 60", "max-lines: 9"))
+        self.assertRefused(w, two, "10 lines is over max-lines 9")
 
     def test_the_branch_is_made_once(self):
         w = World(self)
