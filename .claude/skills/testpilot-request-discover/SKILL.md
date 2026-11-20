@@ -58,8 +58,8 @@ a plan, not a mode.
 2. **The profile, if there is one.** The first line the helper prints says it: `profile: none` means there is none, and then it uses the environment and everything below uses the
    strictest defaults. **No profile is not a stop here**, and a missing `.testpilot/testbench.json` is the normal case, so do not look for it with a shell command (`cat`, `ls`). If the
    helper did not say `profile: none`, read `.testpilot/testbench.json` and the project profile it names with the Read tool. A profile that exists but cannot be read is a stop: say so and ask.
-3. **The mode is read-only.** This version explores `observe_only` whatever the request's `targetMode` or the profile's `permissionMode` says. If either says `full`, say in the
-   confirmation that it is not used here. No git mode is used either: nothing is written to git (spec files are not made).
+3. **The mode is read-only.** This version explores `observe_only` whatever the request's `targetMode` or the profile's `permissionMode` says. If the request says `full`, say in the
+   confirmation that this discover is read-only, and that the writing one (`../testpilot-request-discover-write/SKILL.md`) is a separate choice that also needs the profile to say `full`. No git mode is used either: nothing is written to git (spec files are not made).
 4. **What to deliver and how far to look.** From `options`: `deliverables` (plan, cases, observations, bugs) and `viewports` (desktop, tablet, mobile). If `options` is missing, deliver
    plan, cases, observations and bugs, at all three sizes. `specs` is not made in this version: say so in the confirmation.
 5. **The address.** It must be a valid `http` or `https` address, without credentials in it and without a query that looks like a secret. If it is not, say why and go to step 7. Whether
@@ -78,7 +78,7 @@ shown as written), and leave ` · <name>` out when the request has none:
 Request 12 · Checkout: discover
 Target:        https://staging.example.com/   (environment: staging, production: no)
 Mode:          read-only. I only navigate and take snapshots: no clicks, no typing, no login, no forms.
-               (You chose "act on the target": that is not used in this version.)
+               (You chose "act on the target": this discover is read-only. The writing one is a separate choice.)
 Looking at:    at most 10 pages of this address, at desktop, tablet and mobile size
 I will hand in to TestBench, as proposals for you to review:
                a test plan (plan items and coverage gaps), draft test cases, observations and bug reports

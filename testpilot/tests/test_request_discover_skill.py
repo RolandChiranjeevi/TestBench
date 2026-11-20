@@ -182,7 +182,7 @@ class AroundTheSkillTests(unittest.TestCase):
         self.assertIn("../testpilot-request-discover/SKILL.md", REQUESTS)
         self.assertIn("**A request is not a confirmation**: answer nothing of this for the user, and do not skip its stop.", REQUESTS)
         self.assertIn("**The full audit instead.** Only if the user asks for the full audit", REQUESTS)
-        self.assertIn("A discover handled by `testpilot-request-discover` is already marked done", REQUESTS)
+        self.assertIn("A discover handled by `testpilot-request-discover` or `testpilot-request-discover-write` is already marked done", REQUESTS)
         self.assertIn("A `rerun` or a `run` request needs the profile", REQUESTS)
 
     def test_nothing_else_still_says_that_every_stop_applies_to_a_discover_from_a_request(self):

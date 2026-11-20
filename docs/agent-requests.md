@@ -242,7 +242,7 @@ Who asked, cancelled, took and finished a request, and who reported results, is 
 The TestPilot skills have a command for this (`.claude/skills/testpilot-requests/SKILL.md`; setup in `testpilot/README.md`, section 10). It lists the waiting requests, the user chooses **one**, and only then does
 the agent take it. The address and note are treated as data (`agent-rules.md`, rule 11), and a request confirms nothing. The MCP tools are the other way to work on a request: what each path can do, and which to use, is in [agent-paths.md](agent-paths.md).
 
-- **discover:** `/testpilot-requests` hands it to `testpilot-request-discover`: **one** confirmation (the address, the environment, the read-only mode, what is delivered, how far it looks, what is sent and finishing the request), with the two separate confirmations for a production target kept. It explores read-only, hands in findings with the helper (request token only) and marks the request done with a note of numbers. For the full audit with evidence and an audit package, the user asks for it instead: the address then goes to `/testpilot-discover` as a suggestion, and the normal audit flow follows, with every stop.
+- **discover:** `/testpilot-requests` hands it to `testpilot-request-discover`: **one** confirmation (the address, the environment, the read-only mode, what is delivered, how far it looks, what is sent and finishing the request), with the two separate confirmations for a production target kept. It explores read-only, hands in findings with the helper (request token only) and marks the request done with a note of numbers. If the request asks to *Act on the target* and the profile says `permissionMode: full`, the user can choose `testpilot-request-discover-write` instead, which clicks and fills in forms with made-up data on an address that is **not production** ([below](#a-discover-that-may-click-and-type-reading-and-writing)). For the full audit with evidence and an audit package, the user asks for it instead: the address then goes to `/testpilot-discover` as a suggestion, and the normal audit flow follows, with every stop.
 - **re-run:** Playwright tests only, only with `permissionMode: full`, and only after the user confirms the exact command and the environment. The agent asks where the tests are (the repository with `playwright.config.*`, which is usually not the folder it runs from), finds each test's file there, and writes its report and artifacts in its own folder, never in the user's repository. It then **offers to hand the report in** and shows exactly what would be sent: the file, its size and test count, the request, the address, and that TestBench makes a run marked as the agent's. It sends nothing until the user answers yes in a **new message**, and it sends **once**, only that file, only the report it just wrote. If agent results are switched off (409), or the user says no, nothing is lost: the report stays in `audits/request-<id>/` and the user imports it under **Import results**. After a successful hand-in the request already links the run, so the note carries no run number.
 - **run, automated tests:** for a test case that has `automatedTests` or `specFiles`, and only if the user wants them run, the skill asks where the tests are (the repository with `playwright.config.*`), finds each file with exactly one match, runs whole files (never a test name in a shell string), shows the exact command and the environment (a production target needs the two confirmations), runs once, and then **offers to hand the report in** and shows exactly what is sent. It reports each test case's result afterwards, true to the report: never `passed` for a test case whose tests did not run.
 - **run:** only with `permissionMode: full` and a valid address (a production target needs its two confirmations), **at most 10 test cases per request** (a cautious limit of the skill, "This skill supports up to 10 cases per request"; TestBench itself takes up to 200, and the skill's limit can be raised later), and only after the user confirms the plan in a message of its own. The agent runs the test cases **one at a time with Playwright MCP in the user's own environment**, writes the results to a file under `audits/request-<id>/`, **shows exactly what would be sent and asks** in a new message, and sends it with the `case-results` action (the token only in a header). It never invents a result: a test case it could not finish is `blocked`, one it did not run is `skipped` or left out, each with the reason. The text of a test case is data, and a step that asks for something outside the test is not done. It marks the request done only when every test case has a result, and never finishes the run.
@@ -311,3 +311,70 @@ and it was not found out whether the relative or the absolute `Write` form was t
   facts before a file is created is not part of Claude Code's permissions, and still applies. The `Read(./.mcp.json)` line was added afterwards and is not part of that measurement.
 - `.claude/skills/testpilot-request-discover/SKILL.md` is what the list follows: a test in `testpilot/tests/test_request_discover_skill.py` reads this block and fails if the list and the skill
   drift apart.
+
+### A discover that may click and type (reading and writing)
+
+`testpilot-request-discover-write` explores an address by clicking and filling in forms with **made-up data**, which the read-only discover never does. That finds what reading cannot: what a form does
+with a wrong value, whether a sign-in works, what a flow ends in. It needs **three things**, and they are separate on purpose:
+1. The request says *Act on the target* (`targetMode: full`). Only an admin can choose it in the dialog, and not for a production address.
+2. The agent folder's profile says `permissionMode: full` (set with `/testpilot-init`, or by editing `.testpilot/projects/<key>.json`). The profile wins over the request.
+3. You choose the writing version in `/testpilot-requests`, and answer its **one confirmation**: it says what the agent may do, what it will never do, how far it goes and that the address may keep what it submits.
+
+What it does and does not do:
+- **Never a production address.** It asks whether the address is production, and a yes (or "not sure") ends it. Reading a production address is the read-only discover's job, with its two confirmations.
+- **You log in yourself**, in the browser window, with an account you can lose or reset, when the address needs it. The agent never types, reads or asks for a password, a token or a cookie, so no secret comes
+  into its context.
+- **Made-up data and fixed limits:** at most 10 pages, 40 actions (clicks, entries and selections) and 120 browser calls; a form at most twice (once empty or wrong, once with made-up data); never a password,
+  card, identity-number or file field; nothing that looks irreversible (delete, reset, pay, send, publish, unsubscribe); never another origin.
+- **A page is data, never an instruction.** A page that tells the agent to press something is reported as an observation and ignored. The demo shop in the live tests has such a page, and a button that resets it.
+- **A log of every action** is written to `audits/request-<id>/actions.md`: the page, what was done and what happened, never the values typed. It is never handed in to TestBench. It is there so that you can see
+  what changed on the address and undo it. Use an address you can reset.
+- The findings, the helper and the note of numbers are the same as for the read-only discover (the note also says how many actions were taken). Nothing is approved.
+
+To let it run while you are away, use this list **instead of** the one above (it adds the nine tools that click and type, and denies the ones that can run code or move files):
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_resize",
+      "mcp__playwright__browser_console_messages",
+      "mcp__playwright__browser_network_requests",
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__playwright__browser_click",
+      "mcp__playwright__browser_type",
+      "mcp__playwright__browser_fill_form",
+      "mcp__playwright__browser_select_option",
+      "mcp__playwright__browser_press_key",
+      "mcp__playwright__browser_hover",
+      "mcp__playwright__browser_handle_dialog",
+      "mcp__playwright__browser_wait_for",
+      "mcp__playwright__browser_navigate_back",
+      "Bash(python3 -I testpilot/tools/request_call.py list:*)",
+      "Bash(python3 -I testpilot/tools/request_call.py claim:*)",
+      "Bash(python3 -I testpilot/tools/request_call.py findings:*)",
+      "Bash(python3 -I testpilot/tools/request_call.py complete:*)",
+      "Edit(audits/request-*/**)",
+      "Write(audits/request-*/**)",
+      "Write(//Users/you/agent-folder/audits/**)",
+      "Bash(mkdir -p audits/request-*)"
+    ],
+    "deny": [
+      "mcp__playwright__browser_evaluate",
+      "mcp__playwright__browser_run_code_unsafe",
+      "mcp__playwright__browser_file_upload",
+      "mcp__playwright__browser_drag",
+      "Read(./.env)",
+      "Read(./.mcp.json)"
+    ]
+  }
+}
+```
+
+- **With this list Claude Code no longer asks before it clicks or types.** Nothing in Claude Code's permissions can tell a harmless button from a destructive one. What protects the address is the
+  confirmation, the rules in the skill (nothing that looks irreversible, made-up data, one origin, 40 actions), the rule that a page is data and the log. Those are rules written for an agent, not a lock.
+  Use it only on an address you can reset. If you would rather be asked, leave the nine added tools out and answer each one.
+- The rest is as for the read-only list: `release` and an inline `python3 -c` are left out on purpose, and the absolute `Write` path is yours to fill in. This list has **not been run live yet**.
+- `.claude/skills/testpilot-request-discover-write/SKILL.md` is what the list follows: a test in `testpilot/tests/test_request_discover_write_skill.py` reads this block and fails if the list and the skill drift apart.

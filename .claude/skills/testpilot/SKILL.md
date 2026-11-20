@@ -187,7 +187,7 @@ Requirements, inputs, audit scope, the test plan and the execution-order
 prerequisites are defined in `../testpilot-plan/SKILL.md`. The plan phase ends only after
 the user has approved both the scope and the test plan. Do not begin browser
 execution before that. A discover that came from a request does not go through the plan phase:
-`../testpilot-request-discover/SKILL.md` explores read-only after its one confirmation and runs no checks.
+`../testpilot-request-discover/SKILL.md` explores read-only after its one confirmation and runs no checks. (`../testpilot-request-discover-write/SKILL.md` may click and fill in forms on an address that is not production, after its one confirmation, only when the request and the profile both say `full`.)
 
 ## Stop conditions
 
