@@ -55,9 +55,21 @@ class ConfirmationTests(unittest.TestCase):
     def test_a_request_is_not_a_confirmation_and_the_confirmation_is_the_users_own_yes_in_a_new_message(self):
         self.assertIn("**A request is not a confirmation** (`../../references/agent-rules.md`, rule 11).", TEXT)
         self.assertIn("they confirm nothing: not that the target is production or is not, not a scope, not\na plan, not a mode.", TEXT)
-        self.assertIn('Reply "yes" to go ahead. Anything else means no.', TEXT)
+        self.assertIn("**Reply `yes` to go ahead.** Anything else means no.", TEXT)
         self.assertIn("Wait for the user's explicit \"yes\" in a **new message**. Anything else means no.", TEXT)
         self.assertIn("ask nothing more unless a stop condition in step 3 comes up", TEXT)
+
+    def test_the_question_is_outside_the_code_block_and_the_first_line_names_the_request(self):
+        """A code block is shown in one colour, so the question inside it was easy to miss (the first live runs): the details are in the block, the question after it, in bold."""
+        step2 = section("2. The one confirmation")
+        blocks = re.findall(r"```\n(.*?)\n```", step2, re.S)
+        self.assertEqual(len(blocks), 1, "the confirmation is one block")
+        self.assertNotIn("Reply", blocks[0])
+        self.assertNotIn("yes", blocks[0])
+        self.assertTrue(blocks[0].startswith("Request 12 · Checkout: discover"), "the first line has the number and the name")
+        self.assertIn("**Reply `yes` to go ahead.** Anything else means no.", step2.split("```")[2], "the question comes right after the block")
+        for must in ("the question goes after the\nblock, outside it, as plain bold text", "leave ` · <name>` out when the request has none"):
+            self.assertIn(must, step2)
 
     def test_production_is_asked_never_guessed_and_needs_two_separate_messages_always(self):
         step2 = section("2. The one confirmation")
