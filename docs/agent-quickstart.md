@@ -67,7 +67,7 @@ The first server reads its variables from `.env` itself, so the file holds no to
 
 1. In Testbench: **Automated tests → Requests → Request discover** (the address, the environment and a note).
 2. In the agent's folder: `claude --permission-mode default`, and say: `Use testbench_get_next_request to fetch the next request from Testbench and work on it.` Or run `/testpilot-requests`, which lists what is waiting and lets you choose one.
-3. Answer what the agent asks in messages of your own: the address, the environment, whether it is production, and the mode. Answer its permission prompts with *allow once*, never "always allow".
+3. Answer what the agent asks in messages of your own: the address, the environment, whether it is production, and the mode. Answer its permission prompts with *allow once*, never "always allow". To let a discover run while you are away, write the fixed list in [Running a discover without sitting by](agent-requests.md#running-a-discover-without-sitting-by) once instead.
 4. When it says it is done, review what came in as proposals in Testbench. Then revoke the token.
 
 ## Good to know

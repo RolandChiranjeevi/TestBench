@@ -243,5 +243,65 @@ class ExampleAndShellTests(unittest.TestCase):
         self.assertIn("Read, with the Read tool and not with a shell command (`cat`, `ls`)", flat(REQUESTS))
 
 
+class PermissionsDocTests(unittest.TestCase):
+    """The settings block in docs/agent-requests.md lets a discover run with nobody at the keyboard, so it must allow exactly what the skill uses and nothing the skill forbids: if the two
+    drift apart, either the run stops at a prompt nobody sees, or the agent is allowed more than the skill says."""
+    DOCS = (ROOT / "docs" / "agent-requests.md").read_text()
+    QUICKSTART = (ROOT / "docs" / "agent-quickstart.md").read_text()
+    HEADING = "### Running a discover without sitting by"
+
+    def parts(self):
+        import json
+        m = re.search(r"^" + re.escape(self.HEADING) + r"\n(.*?)(?=^#{1,3} |\Z)", self.DOCS, re.S | re.M)
+        self.assertTrue(m, "the section is missing from docs/agent-requests.md")
+        block = re.search(r"```json\n(.*?)\n```", m.group(1), re.S)
+        self.assertTrue(block, "the section has no JSON block")
+        perms = json.loads(block.group(1))["permissions"]
+        return perms["allow"], perms["deny"], m.group(1)
+
+    def test_it_allows_exactly_the_browser_tools_the_skill_uses_and_denies_exactly_the_ones_it_forbids(self):
+        allow, deny, _ = self.parts()
+        pw = lambda rules: {r.split("__", 2)[2] for r in rules if r.startswith("mcp__playwright__")}
+        self.assertEqual(pw(allow), set(ExplorationTests.ALLOWED))
+        self.assertEqual(pw(deny), set(ExplorationTests.FORBIDDEN))
+        self.assertFalse(pw(allow) & pw(deny))
+
+    def test_it_allows_exactly_the_helper_actions_the_skills_run_and_never_release(self):
+        allow, _, _ = self.parts()
+        bash = [m.group(1) for r in allow if (m := re.fullmatch(r"Bash\((.*)\)", r))]
+        actions = {m.group(1) for r in bash if (m := re.fullmatch(r"python3 -I testpilot/tools/request_call\.py ([a-z-]+):\*", r))}
+        self.assertEqual(actions, {"list", "claim", "findings", "complete"})
+        self.assertTrue(actions <= set(request_call.ACTIONS), "every allowed action is a real action of the helper")
+        self.assertNotIn("release", actions)
+        self.assertEqual(sorted(set(bash) - {f"python3 -I testpilot/tools/request_call.py {a}:*" for a in actions}), ["mkdir -p audits/request-*"], "no other shell command is allowed")
+        for ran in set(re.findall(r"request_call\.py ([a-z-]+)", TEXT)):
+            self.assertIn(ran, actions, f"the skill runs `{ran}`, so the list must allow it (or the run stops at a prompt)")
+        for ran in ("list", "claim"):
+            self.assertRegex(REQUESTS, r"request_call\.py " + ran + r"\b")
+
+    def test_it_writes_only_under_the_findings_folder_and_allows_no_other_scope(self):
+        allow, deny, _ = self.parts()
+        scoped = [r for r in allow if not r.startswith(("mcp__playwright__", "Bash("))]
+        self.assertTrue(any(r.startswith("Write(") for r in scoped) and any(r.startswith("Edit(") for r in scoped))
+        for r in scoped:
+            self.assertRegex(r, r"^(Edit|Write)\((audits/request-\*/\*\*|//\S+/audits/\*\*)\)$", r)
+        for r in allow:
+            self.assertNotRegex(r, r"python3 -c|python3 -[ :)]|\(\*\)|\(\*\*\)", r)
+        self.assertIn("Read(./.env)", deny)
+        self.assertIn("Read(./.mcp.json)", deny)
+
+    def test_the_text_says_what_it_leaves_out_and_that_navigate_is_not_checked_per_address(self):
+        _, _, body = self.parts()
+        body = flat(body)
+        for must in ("`release`: giving a request back needs your yes", "An inline `python3 -c` or `python3 -`, which can run anything",
+                     "`browser_navigate` is allowed for any address", "start a **new** session there"):
+            with self.subTest(must=must):
+                self.assertIn(must, body)
+
+    def test_the_quickstart_points_at_the_section_and_the_anchor_exists(self):
+        self.assertIn("agent-requests.md#running-a-discover-without-sitting-by", self.QUICKSTART)
+        self.assertIn(self.HEADING, self.DOCS)
+
+
 if __name__ == "__main__":
     unittest.main()

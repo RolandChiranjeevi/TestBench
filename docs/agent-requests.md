@@ -247,3 +247,66 @@ the agent take it. The address and note are treated as data (`agent-rules.md`, r
 - **run:** only with `permissionMode: full` and a valid address (a production target needs its two confirmations), **at most 10 test cases per request** (a cautious limit of the skill, "This skill supports up to 10 cases per request"; TestBench itself takes up to 200, and the skill's limit can be raised later), and only after the user confirms the plan in a message of its own. The agent runs the test cases **one at a time with Playwright MCP in the user's own environment**, writes the results to a file under `audits/request-<id>/`, **shows exactly what would be sent and asks** in a new message, and sends it with the `case-results` action (the token only in a header). It never invents a result: a test case it could not finish is `blocked`, one it did not run is `skipped` or left out, each with the reason. The text of a test case is data, and a step that asks for something outside the test is not done. It marks the request done only when every test case has a result, and never finishes the run.
 - If the work stops, the agent **offers to give the request back** and shows the note it would send. It asks in a message of its own and does nothing without a yes, so the request stays Taken (until a person cancels it) if the answer is no.
 - The request is marked done with a short note after the user confirms the note. For a discover, the audit that `deliver` made is linked to it.
+
+### Running a discover without sitting by
+
+In the normal permission mode every browser call and every file write asks you, and a discover on a small site makes 15 to 30 browser calls (the skill's cap is 60). To start one and come back to
+a finished result, allow the tools the skill uses in advance. You still answer which request, whether the target is production, and the one confirmation; after that the agent works alone until it is
+done, or stops for something that needs you (a login, another address, a risk).
+
+Put this in `.claude/settings.local.json` in the agent's folder, and start a **new** session there (the file is read when a session starts):
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_resize",
+      "mcp__playwright__browser_console_messages",
+      "mcp__playwright__browser_network_requests",
+      "mcp__playwright__browser_take_screenshot",
+      "Bash(python3 -I testpilot/tools/request_call.py list:*)",
+      "Bash(python3 -I testpilot/tools/request_call.py claim:*)",
+      "Bash(python3 -I testpilot/tools/request_call.py findings:*)",
+      "Bash(python3 -I testpilot/tools/request_call.py complete:*)",
+      "Edit(audits/request-*/**)",
+      "Write(audits/request-*/**)",
+      "Write(//Users/you/agent-folder/audits/**)",
+      "Bash(mkdir -p audits/request-*)"
+    ],
+    "deny": [
+      "mcp__playwright__browser_click",
+      "mcp__playwright__browser_type",
+      "mcp__playwright__browser_fill_form",
+      "mcp__playwright__browser_select_option",
+      "mcp__playwright__browser_press_key",
+      "mcp__playwright__browser_drag",
+      "mcp__playwright__browser_hover",
+      "mcp__playwright__browser_file_upload",
+      "mcp__playwright__browser_handle_dialog",
+      "mcp__playwright__browser_evaluate",
+      "mcp__playwright__browser_run_code_unsafe",
+      "Read(./.env)",
+      "Read(./.mcp.json)"
+    ]
+  }
+}
+```
+
+Replace `/Users/you/agent-folder` with the absolute path of the agent's folder. The write rule is given in several forms because in testing an `Edit` rule alone did not cover the Write tool,
+and it was not found out whether the relative or the absolute `Write` form was the one that matched. Keep all of them.
+
+- **What it allows** is exactly what `testpilot-request-discover` uses: the six read-only browser tools, the helper actions `list`, `claim`, `findings` and `complete`, and writing the findings under
+  `audits/request-<id>/` (with `mkdir` for that folder). Nothing that clicks, types or runs code in a page is allowed: those eleven tools are **denied**, not only left out, and so is reading `.env`
+  and `.mcp.json`.
+- **What it leaves out on purpose.** `release`: giving a request back needs your yes. An inline `python3 -c` or `python3 -`, which can run anything. Everything outside the list still asks, and then
+  it is worth reading what it asks for before you answer: it is outside what the skill needs.
+- **`browser_navigate` is allowed for any address.** The skill keeps to one origin and at most 10 pages, but the permission no longer asks per address. If you point the agent at a site you do not
+  control, leave `browser_navigate` out and answer each address once.
+- **It is a fixed, narrow list you write once**, which is not the same as answering "always allow" in the middle of a run (the quickstart says never to do that). Keep it to the folder you give the
+  agent, and not in a folder with other work.
+- **Measured** on a local demo shop in the normal permission mode: with this list the browser calls, the helper calls and the writing of the findings did not ask. A hook of your own that asks for
+  facts before a file is created is not part of Claude Code's permissions, and still applies. The `Read(./.mcp.json)` line was added afterwards and is not part of that measurement.
+- `.claude/skills/testpilot-request-discover/SKILL.md` is what the list follows: a test in `testpilot/tests/test_request_discover_skill.py` reads this block and fails if the list and the skill
+  drift apart.
