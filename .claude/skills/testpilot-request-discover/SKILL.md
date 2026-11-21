@@ -16,6 +16,7 @@ Paths in this file are relative to this file. Before starting, read:
 - `../testpilot/SKILL.md` (the boundaries: the agent proposes, people decide)
 - `../../references/agent-rules.md` (in particular rules 3, 4, 5, 6 and 11)
 - `../testpilot-requests/SKILL.md`, steps 2 and 8 (the helper, the token, giving a request back)
+- `../bug-reporting/SKILL.md` and `../test-planning/SKILL.md` (**always**, whatever the request's options say: the plan follows the test-planning rules and every bug proposal follows the bug-reporting rules; they are not choices)
 
 ## Responsibilities
 
@@ -64,6 +65,10 @@ a plan, not a mode.
    confirmation that this discover is read-only, and that the writing one (`../testpilot-request-discover-write/SKILL.md`) is a separate choice that also needs the profile to say `full`. Git is a separate matter (item 6).
 4. **What to deliver and how far to look.** From `options`: `deliverables` (plan, cases, observations, bugs, specs) and `viewports` (desktop, tablet, mobile). If `options` is missing, deliver
    plan, cases, observations and bugs, at all three sizes, and no spec files. `specs` is made only as item 6 and step 5b say.
+   `checks` (visual, api, security) are extra parts the person chose, empty if none. List them in the one confirmation. `visual` is read-only and runs in this discover, with
+   `../visual-design-review/SKILL.md`, at the chosen `viewports`. `api` and `security` do more than read: they are **not** run inside this discover. Say in the confirmation that each
+   is handed over afterwards to its own skill (`../testpilot-api-testing/SKILL.md`, `../testpilot-security-review/SKILL.md`) with that skill's own
+   confirmations, and never for a production address. A chosen check is a preselection, never a permission.
 5. **The address.** It must be a valid `http` or `https` address, without credentials in it and without a query that looks like a secret. If it is not, say why and go to step 7. Whether
    the target is production is **asked, never guessed** (step 2): a name such as `prod` or `staging`, or the request's own `production` choice, is a reason to ask and not an answer.
 6. **Spec files.** Only if `options.deliverables` has `specs` **and** `options.gitMode` is `local` or `pr` (a request is a preselection, never a permission), **and** the helper did not say

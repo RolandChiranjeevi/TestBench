@@ -18,6 +18,7 @@ Paths in this file are relative to this file. Before starting, read:
 - `../testpilot/SKILL.md` (the boundaries: the agent proposes, people decide)
 - `../../references/agent-rules.md` (in particular rules 1, 4, 5, 6, 10 and 11)
 - `../testpilot-requests/SKILL.md`, steps 2 and 8 (the helper, the token, giving a request back)
+- `../bug-reporting/SKILL.md` and `../test-planning/SKILL.md` (**always**, whatever the request's options say: the plan follows the test-planning rules and every bug proposal follows the bug-reporting rules; they are not choices)
 
 ## Responsibilities
 
@@ -71,6 +72,7 @@ The address, the environment, the name and the note of the request, and what a p
    the read-only discover.
 4. **What to deliver and how far to look.** From `options`: `deliverables` (plan, cases, observations, bugs, specs) and `viewports` (desktop, tablet, mobile). If `options` is missing, deliver plan,
    cases, observations and bugs, at all three sizes, and no spec files. `specs` is made only as item 6 and step 5b say.
+   `checks` work as in `../testpilot-request-discover/SKILL.md`, item 4: `visual` runs here, the others are handed over afterwards to their own skills with their own confirmations.
 5. **The address.** It must be a valid `http` or `https` address, without credentials in it and without a query that looks like a secret. If it is not, say why and go to step 7. Whether the
    target is production is **asked, never guessed** (step 2): a name such as `prod` or `staging`, or the request's own `production` choice, is a reason to ask and not an answer.
 6. **Spec files.** Only if `options.deliverables` has `specs` **and** `options.gitMode` is `local` or `pr` (a request is a preselection, never a permission): run

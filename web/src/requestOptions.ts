@@ -24,13 +24,20 @@ export const VIEWPORTS = [
   { value: "mobile", label: "Mobile" },
 ] as const;
 
+export const CHECKS = [
+  { value: "visual", label: "Visual review", title: "A design review at the chosen screen sizes (visual-design-review). Reads only." },
+  { value: "api", label: "API checks", title: "Checks of the API against its contract, if there is one (testpilot-api-testing)." },
+  { value: "security", label: "Security review", title: "A limited, non-destructive security review (testpilot-security-review). Not a penetration test. Not for a production address." },
+] as const;
+
 export type TargetMode = (typeof TARGET_MODES)[number]["value"];
 export type GitMode = (typeof GIT_MODES)[number]["value"];
 export type Deliverable = (typeof DELIVERABLES)[number]["value"];
 export type Viewport = (typeof VIEWPORTS)[number]["value"];
-export interface RequestOptions { targetMode: TargetMode; gitMode: GitMode; deliverables: Deliverable[]; viewports: Viewport[]; production: boolean }
+export type Check = (typeof CHECKS)[number]["value"];
+export interface RequestOptions { targetMode: TargetMode; gitMode: GitMode; deliverables: Deliverable[]; viewports: Viewport[]; checks: Check[]; production: boolean }
 
-export const DEFAULT_OPTIONS: RequestOptions = { targetMode: "observe_only", gitMode: "local", deliverables: ["plan", "cases", "observations", "bugs"], viewports: ["desktop", "tablet", "mobile"], production: false };
+export const DEFAULT_OPTIONS: RequestOptions = { targetMode: "observe_only", gitMode: "local", deliverables: ["plan", "cases", "observations", "bugs"], viewports: ["desktop", "tablet", "mobile"], checks: [], production: false };
 
 /** Acting on the target, or pushing and opening a pull request: with accounts on, only an admin of the project can ask for these (the server refuses anyone else). */
 export const optionsNeedAdmin = (o: Pick<RequestOptions, "targetMode" | "gitMode">) => o.targetMode === "full" || o.gitMode === "pr";
@@ -44,7 +51,8 @@ export function toggled<T extends string>(all: readonly { value: T }[], list: re
 }
 
 /** A production address can only be read: saying it is production takes the choice to act on it away. */
-export const withProduction = (o: RequestOptions, production: boolean): RequestOptions => (production ? { ...o, production, targetMode: "observe_only" } : { ...o, production });
+export const withProduction = (o: RequestOptions, production: boolean): RequestOptions =>
+  production ? { ...o, production, targetMode: "observe_only", checks: o.checks.filter((c) => c === "visual") } : { ...o, production };
 
 /** What stops the request from being made, or null. The server checks the same things. */
 export function optionsProblem(o: RequestOptions): string | null {
@@ -57,7 +65,7 @@ export function optionsProblem(o: RequestOptions): string | null {
 export function optionsSummary(o: RequestOptions): string {
   const label = <T extends string>(all: readonly { value: T; label: string }[], v: T) => all.find((a) => a.value === v)?.label ?? v;
   const list = <T extends string>(all: readonly { value: T; label: string }[], vs: readonly T[]) => vs.map((v) => label(all, v).toLowerCase()).join(", ");
-  return [label(TARGET_MODES, o.targetMode), label(GIT_MODES, o.gitMode), list(DELIVERABLES, o.deliverables), list(VIEWPORTS, o.viewports), ...(o.production ? ["production"] : [])].join(" · ");
+  return [label(TARGET_MODES, o.targetMode), label(GIT_MODES, o.gitMode), list(DELIVERABLES, o.deliverables), list(VIEWPORTS, o.viewports), ...(o.checks.length ? [`checks: ${list(CHECKS, o.checks)}`] : []), ...(o.production ? ["production"] : [])].join(" · ");
 }
 
 /** What to run to start the agent on a request, and the skill command to run in that session (it lists what waits, and a discover from it needs one confirmation). The set-up steps are in docs/agent-quickstart.md. */
