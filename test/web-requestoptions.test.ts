@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { cleanOptions, DEFAULT_REQUEST_OPTIONS, optionsNeedAdmin as serverNeedsAdmin, REQUEST_OPTIONS } from "../server/agentrequests.ts";
 import {
-  DEFAULT_OPTIONS, DELIVERABLES, GIT_MODES, optionsNeedAdmin, optionsProblem, optionsSummary, START_COMMAND, START_SKILL, TARGET_MODES, toggled, VIEWPORTS, withProduction,
+  DEFAULT_OPTIONS, DELIVERABLES, GIT_MODES, optionsNeedAdmin, optionsProblem, optionsSummary, START_COMMAND, START_SKILL, TARGET_MODES, toggled, VIEWPORTS, withProduction, CHECKS,
   type RequestOptions,
 } from "../web/src/requestOptions.ts";
 
@@ -19,6 +19,7 @@ describe("the choices of the dialog and the server", () => {
     assert.deepEqual(values(GIT_MODES), [...REQUEST_OPTIONS.gitModes]);
     assert.deepEqual(values(DELIVERABLES), [...REQUEST_OPTIONS.deliverables]);
     assert.deepEqual(values(VIEWPORTS), [...REQUEST_OPTIONS.viewports]);
+    assert.deepEqual(values(CHECKS), [...REQUEST_OPTIONS.checks]);
   });
 
   it("start from the same defaults", () => {
@@ -75,7 +76,7 @@ describe("what the request card says", () => {
   it("puts the choices on one line", () => {
     assert.equal(optionsSummary(DEFAULT_OPTIONS), "Only read · Commit on a local branch · test plan, test cases, observations, bug proposals · desktop, tablet, mobile");
     assert.equal(
-      optionsSummary({ targetMode: "full", gitMode: "pr", deliverables: ["specs"], viewports: ["mobile"], production: false }),
+      optionsSummary({ targetMode: "full", gitMode: "pr", deliverables: ["specs"], viewports: ["mobile"], checks: [], production: false }),
       "Act on the target · Push and open a pull request · spec files · mobile",
     );
     assert.match(optionsSummary(withProduction(DEFAULT_OPTIONS, true)), / · production$/);

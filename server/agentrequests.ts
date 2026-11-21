@@ -42,6 +42,8 @@ export const REQUEST_OPTIONS = {
   gitModes: ["off", "local", "pr"],
   deliverables: ["plan", "cases", "observations", "bugs", "specs"],
   viewports: ["desktop", "tablet", "mobile"],
+  /** Extra parts besides the discover itself. The test plan and the bug proposals always follow test-planning and bug-reporting, so those are not choices. */
+  checks: ["visual", "api", "security"],
 } as const;
 export interface RequestOptions {
   /** What the agent may do to the target: only read it, or also change its state (each action still needs the person's confirmation in the session). */
@@ -50,17 +52,19 @@ export interface RequestOptions {
   gitMode: (typeof REQUEST_OPTIONS.gitModes)[number];
   deliverables: (typeof REQUEST_OPTIONS.deliverables)[number][];
   viewports: (typeof REQUEST_OPTIONS.viewports)[number][];
+  /** Extra parts to run: visual design review, API checks, a limited security review. Empty is allowed (none). */
+  checks: (typeof REQUEST_OPTIONS.checks)[number][];
   /** The person says the target is production. A hint only (the agent still asks for its two confirmations), but with it the target can only be read. */
   production: boolean;
 }
-export const DEFAULT_REQUEST_OPTIONS: RequestOptions = { targetMode: "observe_only", gitMode: "local", deliverables: ["plan", "cases", "observations", "bugs"], viewports: ["desktop", "tablet", "mobile"], production: false };
+export const DEFAULT_REQUEST_OPTIONS: RequestOptions = { targetMode: "observe_only", gitMode: "local", deliverables: ["plan", "cases", "observations", "bugs"], viewports: ["desktop", "tablet", "mobile"], checks: [], production: false };
 
 /** The options of a discover request, checked and with the defaults filled in. Anything unknown or out of range is refused: these are enumerations, not text. */
 export function cleanOptions(input: unknown): RequestOptions {
-  if (input === undefined || input === null) return { ...DEFAULT_REQUEST_OPTIONS, deliverables: [...DEFAULT_REQUEST_OPTIONS.deliverables], viewports: [...DEFAULT_REQUEST_OPTIONS.viewports] };
+  if (input === undefined || input === null) return { ...DEFAULT_REQUEST_OPTIONS, deliverables: [...DEFAULT_REQUEST_OPTIONS.deliverables], viewports: [...DEFAULT_REQUEST_OPTIONS.viewports], checks: [] };
   if (typeof input !== "object" || Array.isArray(input)) throw bad("The options must be an object");
   const o = input as Record<string, unknown>;
-  const known = ["targetMode", "gitMode", "deliverables", "viewports", "production"];
+  const known = ["targetMode", "gitMode", "deliverables", "viewports", "checks", "production"];
   const unknownKey = Object.keys(o).find((k) => !known.includes(k));
   if (unknownKey) throw bad(`Unknown option "${unknownKey.slice(0, 40)}". The options are ${known.join(", ")}`);
   const one = <T extends string>(v: unknown, what: string, allowed: readonly T[], fallback: T): T => {
@@ -74,15 +78,22 @@ export function cleanOptions(input: unknown): RequestOptions {
     if (!v.every((x) => typeof x === "string" && (allowed as readonly string[]).includes(x))) throw bad(`${what} can only hold ${allowed.join(", ")}`);
     return allowed.filter((a) => v.includes(a)); // each once, in a fixed order
   };
+  const optional = <T extends string>(v: unknown, what: string, allowed: readonly T[]): T[] => {
+    if (v === undefined) return [];
+    if (!Array.isArray(v) || !v.every((x) => typeof x === "string" && (allowed as readonly string[]).includes(x))) throw bad(`${what} must be a list that can hold ${allowed.join(", ")}`);
+    return allowed.filter((a) => v.includes(a));
+  };
   if (o.production !== undefined && typeof o.production !== "boolean") throw bad("production must be true or false");
   const options: RequestOptions = {
     targetMode: one(o.targetMode, "targetMode", REQUEST_OPTIONS.targetModes, DEFAULT_REQUEST_OPTIONS.targetMode),
     gitMode: one(o.gitMode, "gitMode", REQUEST_OPTIONS.gitModes, DEFAULT_REQUEST_OPTIONS.gitMode),
     deliverables: many(o.deliverables, "deliverables", REQUEST_OPTIONS.deliverables, DEFAULT_REQUEST_OPTIONS.deliverables),
     viewports: many(o.viewports, "viewports", REQUEST_OPTIONS.viewports, DEFAULT_REQUEST_OPTIONS.viewports),
+    checks: optional(o.checks, "checks", REQUEST_OPTIONS.checks),
     production: o.production === true,
   };
   if (options.production && options.targetMode !== "observe_only") throw bad("A production target can only be read: choose observe_only");
+  if (options.production && options.checks.some((c) => c !== "visual")) throw bad("A production target can only be read: of the checks only visual is allowed");
   return options;
 }
 

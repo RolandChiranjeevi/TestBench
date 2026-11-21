@@ -5,7 +5,7 @@ import { Bot, Copy, Plus } from "lucide-react";
 import { needsText } from "../access";
 import { auditPath, byQueue, deliveredSummary, PROGRESS_TITLE, progressLabel } from "../agentruns";
 import { api, timeAgo, type AgentRequest, type RunDetail } from "../api";
-import { DEFAULT_OPTIONS, DELIVERABLES, GIT_MODES, optionsProblem, optionsSummary, START_COMMAND, START_SKILL, TARGET_MODES, toggled, VIEWPORTS, withProduction, type RequestOptions } from "../requestOptions";
+import { CHECKS, DEFAULT_OPTIONS, DELIVERABLES, GIT_MODES, optionsProblem, optionsSummary, START_COMMAND, START_SKILL, TARGET_MODES, toggled, VIEWPORTS, withProduction, type RequestOptions } from "../requestOptions";
 import type { Tone } from "../statuses";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
@@ -239,6 +239,19 @@ function OptionsFields({ options, setOptions }: { options: RequestOptions; setOp
               <input type="checkbox" className="checkbox" checked={options.viewports.includes(v.value)} onChange={() => setOptions({ ...options, viewports: toggled(VIEWPORTS, options.viewports, v.value) })} /> {v.label}
             </label>
           ))}
+        </div>
+      </fieldset>
+      <fieldset style={GROUP}>
+        <legend style={LEGEND}>Which extra checks? The test plan and bug proposals always follow our rules for them.</legend>
+        <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+          {CHECKS.map((c) => {
+            const blocked = options.production && c.value !== "visual";
+            return (
+              <label key={c.value} className="row" style={{ gap: 6 }} title={blocked ? "A production address can only be read" : c.title}>
+                <input type="checkbox" className="checkbox" checked={options.checks.includes(c.value)} disabled={blocked} onChange={() => setOptions({ ...options, checks: toggled(CHECKS, options.checks, c.value) })} /> {c.label}
+              </label>
+            );
+          })}
         </div>
       </fieldset>
       <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>
