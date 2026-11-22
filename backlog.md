@@ -45,6 +45,22 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 - **Torsdag:** protokollet skrivs klart och provkörs mot den egna sidan.
 - **Fredag:** första jämförelsen mot en eller två sajter, en publik och en bakom inloggning.
 
+**Arbetsfördelning (beslutat 2026-11-22).** Användaren kör de andra verktygen **separat** och tar med verktyg, version och fynd. Vår sida **jämför** fynden efteråt och kör bara vårt eget verktyg. Alla verktyg behöver inte nå hela vägen: några kan sållas bort tidigt.
+
+**Steg 0: utsållning, snabbt och ja eller nej per verktyg.** Den som faller ut redovisas med skälet och går inte vidare.
+- Går det att installera och köra mot en testsajt inom en timme?
+- Kan användaren logga in själv utan att lämna ut ett lösenord?
+- Kan det köra utan att fråga efter varje klick, eller finns ett rimligt sätt att tillåta det?
+- Lämnar det fynd i ett format som går att exportera och läsa?
+- Läcker det hemligheter i loggar eller filer?
+- Skickas data någonstans användaren inte godkänt (telemetri, moln)?
+
+**Steg 1: en liten uppgift.** En publik sajt, en uppgift, en körning vardera, för att se vilka som är värda mer tid. **Steg 2: hela protokollet** nedan, bara för dem som återstår (minst tre körningar, en sajt bakom inloggning).
+
+**Intag av fynd.** Fynd från de andra verktygen tas in i ett gemensamt, anonymiserat format (märkta A, B, C: sida, titel, beskrivning, bevis, allvarlighet), så att den som bedömer inte ser verktygets namn. Ingen importör byggs före första jämförelsen: ett kalkylblad räcker. Vårt eget verktyg lämnar sina fynd i samma format.
+
+**Opartiskhet.** Vårt verktyg är byggt med AI-hjälp i samma arbetsflöde som den här planen, och det skadar inte att vara tydlig med det. Bedömningen görs därför av en människa som inte vet vilket fynd som kommer från vilket verktyg, och bedömningsreglerna (vad som är ett godtaget respektive falskt fynd) skrivs **före** körningarna.
+
 **Protokollet (att skriva före första jämförelsen).**
 - **Fasta förutsättningar:** samma sajter, samma uppgifter och samma instruktioner till varje verktyg, och verktygens versioner, modeller och inställningar nedskrivna. Verktygslistan fylls i av användaren (inte i repot med namn).
 - **Upprepning:** minst tre körningar per verktyg och sajt, så att slumpen syns, och alla körningar redovisas, inte bara de bästa.
