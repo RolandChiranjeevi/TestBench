@@ -8,6 +8,7 @@ import { ConfirmProvider, Empty, Modal, ToastProvider, useHotkeys, useToast } fr
 import { CasesPage } from "./pages/Cases";
 import { RequirementsPage } from "./pages/Requirements";
 import { RunsPage } from "./pages/Runs";
+import { LoadReportPage } from "./pages/LoadReport";
 import { RunDetailPage } from "./pages/RunDetail";
 import { AutomatedPage } from "./pages/Automated";
 import { ImportPage } from "./pages/Import";
@@ -350,6 +351,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="cases" element={<CasesPage />} />
               <Route path="runs" element={<RunsPage />} />
               <Route path="runs/:runId" element={<RunDetailPage />} />
+              <Route path="requests/:requestId/load" element={<LoadReportPage />} />
               <Route path="automated" element={<AutomatedPage />} />
               <Route path="import" element={<ImportPage />} />
               <Route path="bugs" element={<BugReportsPage />} />

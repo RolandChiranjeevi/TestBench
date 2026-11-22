@@ -54,8 +54,8 @@ Made under **Settings → Agent → Requests to a test agent**, by an admin of t
 - It is a fourth kind of agent token, **`tbrq_`**, apart from the read token (`tbag_`), the proposal token (`tbpr_`) and the CI token (`tbci_`). Each kind is refused by its prefix, so none can stand
   in for another.
 - It is shown once and only its hash is stored. A project can have **three** active request tokens; revoking is the only way to end one. Too many wrong tokens from one address are slowed down (429).
-- It opens **seven routes of one project and nothing else**. It cannot make or cancel a request, read requirements, touch specs or accounts, or decide anything; every other route refuses it. Four of them only change the
-  status of a request (and a release adds a note, and a finished discover the audit it made). One makes findings of a discover (draft or proposed, and the discover's plan; see `mcp/README.md`). The last two (`result` and `case-results`) write test results, and are **off until a person switches them on** (below).
+- It opens **eight routes of one project and nothing else**. It cannot make or cancel a request, read requirements, touch specs or accounts, or decide anything; every other route refuses it. Four of them only change the
+  status of a request (and a release adds a note, and a finished discover the audit it made). One makes findings of a discover (draft or proposed, and the discover's plan; see `mcp/README.md`). One hands in the result of a load test (`load-result`, below). Two (`result` and `case-results`) write test results, and are **off until a person switches them on** (below).
 - No login cookie and no `X-Testbench` header are needed. The token is checked on every call.
 
 ```
@@ -65,6 +65,7 @@ POST /api/agent/projects/<project id>/requests/<id>/release       {"note": "why 
 POST /api/agent/projects/<project id>/requests/<id>/result        the Playwright JSON report of a re-run or of a run request (off by default, see below)
 POST /api/agent/projects/<project id>/requests/<id>/case-results  a result for each test case of a run request (off by default, see below)
 POST /api/agent/projects/<project id>/requests/<id>/findings      one finding of a discover (draft or proposed, see mcp/README.md)
+POST /api/agent/projects/<project id>/requests/<id>/load-result   the result of a load test, once (below)
 POST /api/agent/projects/<project id>/requests/<id>/complete      {"note": "...", "resultRunId": 42, "resultAuditId": 8}  (all optional)
 Authorization: Bearer $TESTBENCH_REQUEST_TOKEN
 ```
@@ -112,7 +113,7 @@ A discover can carry `options`: what the person chose when asking. They are a **
 
 The token is a secret in a file that the agent's own session can reach (`.env`, or `.mcp.json` for the MCP server). The agent is told never to open them, and the skill's helper (`testpilot/tools/request_call.py`) is the only thing that reads the token. But that is behaviour, not a lock: the session also has file and shell tools (and, with the Playwright MCP, tools that run code in a browser), so an agent that chose to could read the token. TestBench cannot prevent that, and no setting here switches it off. It is a limit of the setup. What bounds the damage:
 
-- **The token is narrow.** Seven routes of one project and nothing else (above). The routes that write test results are off until a person switches them on, and every finding stays a proposal.
+- **The token is narrow.** Eight routes of one project and nothing else (above). The routes that write test results are off until a person switches them on, and every finding stays a proposal.
 - **Only a hash is stored**, and a revoked token is refused on the next call. Revoking is one step under **Settings → Agent → Requests to a test agent**, and the list shows when each token was last used.
 - **At most three active tokens per project**, and making and revoking one is in the audit log (`token.created`, `token.revoked`). What an agent does with a request is written there too, as `agent_request.*` entries under "agent: <token name>".
 
@@ -220,15 +221,35 @@ It takes the same rules as the report of a re-run (*Agent results* on, a request
 A run request **can be given back after its report** (the report stays, and another agent can take the rest, but it cannot hand in another report); a re-run that has its report is still finished, not given back. `complete` is as it was:
 it needs a result for every test case.
 
+## A load test (`loadtest`)
+
+A person who is an **admin** of the project asks an agent for a small, bounded load test (**Request load test** on the Requests tab). It is its own kind of request, because it puts load on a system and has its own choices. Like every request it is a wish, not an approval: the agent shows the choices in its own confirmation and asks before it sends any load.
+
+**Status:** the server, this form and the report exist; the agent side (the skill and the tool that sends the load) comes with the next change, so no agent takes this kind yet.
+
+| Choice (`loadOptions`) | Values | Default |
+| --- | --- | --- |
+| `vus` (users at most) | 5, 10, 25 or 50 | 10 |
+| `durationSeconds` | 30, 60 or 120 | 60 |
+| `rampUpSeconds` | 0, 10 or 30, and at most half of the duration | 10 |
+| `paths` | 1 to 10 paths that start with a single `/` (GET only; no spaces, no `#`, no secret in the query) | `/` |
+| `maxErrorRatePercent` (stop above this share of failed requests) | 1, 5 or 10 | 5 |
+| `maxP95Ms` (stop when p95 passes this) | none, 1000, 2000 or 5000 | none |
+
+- **Only a local or private address**, for now: `localhost`, `*.localhost`, `*.local`, `::1`, `127.x`, `10.x`, `172.16-31.x`, `192.168.x`. Anything else is refused (400). A name that points somewhere else is refused too, which is the safe side.
+- **The choices are a ceiling for the result.** The agent hands in one result (`load-result`, at most 1 MB, once). TestBench checks it field by field and against what was asked: more users, a longer test or a path that was not asked for is refused (400) and nothing is kept. The result is rebuilt from the known fields and kept apart from the request, so a list of requests never carries it. TestBench checks the shape and the ceilings, **not the measurements**: they are what the agent reports.
+- **A request with a result cannot be given back**, and it can only be finished (`complete`) once the result is in.
+- **The report** is under **View the load test report** on the request: the verdict and its reason, the totals, the p95 over time with the limit drawn in, a table per path, and **Copy as Markdown** and **Download JSON**.
+
 ## Who can do what
 
 | Role | Requests |
 | --- | --- |
 | **Viewer** | Sees the Requests tab, the list and each request's state. Cannot ask or cancel. |
 | **Tester** and above | Asks for a discover or a re-run, and cancels a request that is Waiting or Taken. |
-| **Admin** | Also makes and revokes request tokens. Both are written to the audit log (`token.created`, `token.revoked`: who, the project, and the token's name and prefix, never the token or its hash), and the token keeps who made it. |
+| **Admin** | Also asks for a load test, and makes and revokes request tokens. Both are written to the audit log (`token.created`, `token.revoked`: who, the project, and the token's name and prefix, never the token or its hash), and the token keeps who made it. |
 | **Owner** | Also switches agent results on or off (off by default). |
-| **An agent with a request token** | The seven routes above, for its own project. Nothing else. |
+| **An agent with a request token** | The eight routes above, for its own project. Nothing else. |
 
 Who asked, cancelled, took and finished a request, and who reported results, is written to the audit log (shown to the owner when accounts are on; the filter is *Agent requests*).
 
