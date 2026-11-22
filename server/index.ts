@@ -51,7 +51,8 @@ import { agentCredentialKind, agentProposalsEnabled, authenticateProposeToken, c
 import { approveProposal, createProposals, editProposal, getProposal, listProposals, rejectProposal } from "./reqproposals.ts";
 import { actorName, actorUserId, getDisplayName, setDisplayName } from "./actor.ts";
 import { accountsState, AccountError, audit, revokeAllSessions, updateProfile } from "./accounts.ts";
-import { agentRequestOfRun, agentResultsEnabled, cancelRequest, claimRequest, completeRequest, createRequest, listRequests, pendingForAgent, releaseRequest, RESULT_LIMITS, runNextRequest, setAgentResultsEnabled, submitResult } from "./agentrequests.ts";
+import { agentRequestOfRun, agentResultsEnabled, cancelRequest, claimRequest, completeRequest, createRequest, getLoadResult, listRequests, pendingForAgent, releaseRequest, RESULT_LIMITS, runNextRequest, setAgentResultsEnabled, submitLoadResult, submitResult } from "./agentrequests.ts";
+import { LOAD_LIMITS } from "./loadtest.ts";
 import { authenticateRequestToken, createRequestToken, isAgentRequestRoute, listRequestTokens, revokeRequestToken } from "./requesttokens.ts";
 import type { TokenKind, TokenMaker } from "./tokens.ts";
 import { createFinding, FINDING_LIMITS, findingBody } from "./agentfindings.ts";
@@ -1966,7 +1967,7 @@ app.post("/api/agent/projects/:id/requirement-proposals", { bodyLimit: 2 * 1024 
 // A person asks an agent to look at a target (discover) or to run the failed automated tests of a run again. Testbench starts nothing: the request waits until an agent with a
 // request token takes it, and says when it is done. What the agent delivers comes in through the normal import and is `proposed` until a person decides.
 const requestBody = z.object({
-  kind: z.enum(["discover", "rerun", "run"]),
+  kind: z.enum(["discover", "rerun", "run", "loadtest"]),
   targetUrl: z.string().max(1000).optional(),
   environment: z.string().max(500).optional(),
   // What a person calls the request (checked by createRequest: one line, at most 60 characters). Data for the agent, like the note.
@@ -1979,6 +1980,8 @@ const requestBody = z.object({
   templateId: z.number().int().nullable().optional(),
   // A discover request: what the person chose (checked by createRequest: enumerations only). A preselection for the agent's confirmation, never a permission.
   options: z.unknown().optional(),
+  // A loadtest request: the parameters (checked by createRequest: enumerations and paths). A preselection and a ceiling for what the agent may report, never a permission.
+  loadOptions: z.unknown().optional(),
 });
 // For a run request the entry also names the run that was made and how many cases it holds; for the others it is as before.
 const requestAudit = (req: FastifyRequest, action: string, r: { id: number; projectId: number; kind: string; runId?: number | null; caseCount?: number; options?: { targetMode: string; gitMode: string; production: boolean } | null }, label = actorName(), userId: number | null = actorUserId()) =>
@@ -2000,6 +2003,8 @@ app.post("/api/agent-requests/:id/cancel", (req) => {
   requestAudit(req, "agent_request.cancelled", r);
   return r;
 });
+// What a load test found, for a person (the agent hands it in below).
+app.get("/api/agent-requests/:id/load-result", (req) => audited(() => getLoadResult(idParam(req))));
 // A person puts a waiting request first, so that an agent is given it before the others (only one request runs at a time in a project).
 app.post("/api/agent-requests/:id/run-next", (req) => {
   const r = audited(() => runNextRequest(idParam(req)));
@@ -2073,6 +2078,17 @@ app.post("/api/agent/projects/:id/requests/:rid/result", { bodyLimit: RESULT_LIM
   reply.header("Cache-Control", "no-store");
   const out = audited(() => submitResult(id, idParam(req, "rid"), auth, req.body, req.ip));
   return { runId: out.runId, total: out.total, linked: out.linked };
+});
+// The result of the load test this token took (submitLoadResult): once, at most LOAD_LIMITS.bodyBytes, at most LOAD_LIMITS.perMinute a minute per token (429); every attempt after a valid token counts.
+const loadResultLimiter = makeLimiter({ max: LOAD_LIMITS.perMinute, windowMs: 60_000 });
+app.post("/api/agent/projects/:id/requests/:rid/load-result", { bodyLimit: LOAD_LIMITS.bodyBytes }, (req, reply) => {
+  const id = idParam(req);
+  const auth = requestTokenAuth(req, id);
+  const key = `t${auth.id}`;
+  if (loadResultLimiter.blockedFor(key) > 0) throw new HttpError(429, `Too many results from this token (at most ${LOAD_LIMITS.perMinute} a minute). Wait a minute and try again`);
+  loadResultLimiter.fail(key); // counts this attempt
+  reply.header("Cache-Control", "no-store");
+  return audited(() => submitLoadResult(id, idParam(req, "rid"), auth, req.body, req.ip));
 });
 app.post("/api/agent/projects/:id/requests/:rid/complete", (req, reply) => {
   const id = idParam(req);
