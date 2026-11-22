@@ -5,6 +5,7 @@ import { Bot, Copy, Plus } from "lucide-react";
 import { needsText } from "../access";
 import { auditPath, byQueue, deliveredSummary, PROGRESS_TITLE, progressLabel } from "../agentruns";
 import { api, timeAgo, type AgentRequest, type RunDetail } from "../api";
+import { addressIsLocal, DEFAULT_LOAD, LOAD_DURATIONS, LOAD_ERROR_RATES, LOAD_P95S, LOAD_RAMPS, LOAD_VUS, loadProblem, loadSummary, parsePaths, type LoadOptions } from "../loadOptions";
 import { CHECKS, DEFAULT_OPTIONS, DELIVERABLES, GIT_MODES, optionsProblem, optionsSummary, START_COMMAND, START_SKILL, TARGET_MODES, toggled, VIEWPORTS, withProduction, type RequestOptions } from "../requestOptions";
 import type { Tone } from "../statuses";
 import { Badge } from "../components/Badge";
@@ -32,6 +33,7 @@ export function RequestsPage() {
   const toast = useToast();
   const { data: requests } = useAgentRequests();
   const [asking, setAsking] = useState(false);
+  const [askingLoad, setAskingLoad] = useState(false);
   const cancel = useMutation({
     mutationFn: (id: number) => api.post<AgentRequest>(`/api/agent-requests/${id}/cancel`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["agent-requests", pid] }); toast("success", "Request cancelled"); },
@@ -53,6 +55,9 @@ export function RequestsPage() {
         <Button needs="tester" variant="primary" onClick={() => setAsking(true)} title="Ask a test agent to look at a web address and propose what to test">
           <Plus size={14} /> Request discover
         </Button>
+        <Button needs="admin" onClick={() => setAskingLoad(true)} title="Ask a test agent to run a small, bounded load test against a local or private address">
+          <Plus size={14} /> Request load test
+        </Button>
       </div>
       <div className="content">
         <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12, maxWidth: 900 }}>
@@ -71,6 +76,7 @@ export function RequestsPage() {
         </div>
       </div>
       {asking && <DiscoverModal onClose={() => setAsking(false)} />}
+      {askingLoad && <LoadTestModal onClose={() => setAskingLoad(false)} />}
     </>
   );
 }
@@ -88,7 +94,7 @@ function RequestCard({ r, onCancel, cancelling, waiting, onRunNext, putting }: {
         <span className="muted mono" title="The request number: the number an agent shows when you choose" data-request-number>#{r.id}</span>
         {r.name && <span style={{ fontWeight: 600, overflowWrap: "anywhere", minWidth: 0 }} data-request-name>{r.name}</span>}
         <span style={{ fontWeight: 500 }}>{KIND_LABEL[r.kind]}</span>
-        {r.kind === "discover" ? (
+        {r.kind === "discover" || r.kind === "loadtest" ? (
           <code className="inline mono" style={{ overflowWrap: "anywhere", minWidth: 0 }}>{r.targetUrl}</code>
         ) : r.runId ? (
           <Link to={`/p/${pid}/runs/${r.runId}`} style={{ color: "var(--accent-text)" }}>Run #{r.runId}</Link>
@@ -118,6 +124,11 @@ function RequestCard({ r, onCancel, cancelling, waiting, onRunNext, putting }: {
           {optionsSummary(r.options)}
         </div>
       )}
+      {r.kind === "loadtest" && r.loadOptions && (
+        <div className="faint" style={{ fontSize: "var(--fs-sm)", overflowWrap: "anywhere" }} title="What the person chose when asking. A preselection and a ceiling for the result, never a permission." data-load-options={r.id}>
+          {loadSummary(r.loadOptions)}
+        </div>
+      )}
       {r.delivered && (
         <div style={{ fontSize: "var(--fs-md)", overflowWrap: "anywhere" }} title="What this discover has made that is still there. Everything is a proposal or a draft for you to review: the plan in Test plan, cases in Test cases, the rest where it always is." data-delivered={r.id}>
           <span className="muted">Delivered:</span> {deliveredSummary(r.delivered)}
@@ -140,6 +151,7 @@ function RequestCard({ r, onCancel, cancelling, waiting, onRunNext, putting }: {
         <div style={{ overflowWrap: "anywhere" }}>
           {r.resultNote && <span>{r.resultNote} </span>}
           {r.resultDeliveredAt && <span>{r.kind === "run" ? "Automated report handed in: " : "Report handed in by the agent. "}</span>}
+          {r.kind === "loadtest" && r.resultDeliveredAt && <Link to={`/p/${pid}/requests/${r.id}/load`} style={{ color: "var(--accent-text)" }} data-load-report-link>View the load test report</Link>}
           {r.resultRunId && <Link to={`/p/${pid}/runs/${r.resultRunId}`} style={{ color: "var(--accent-text)" }}>Run #{r.resultRunId}</Link>}
           {r.resultAudit && <Link to={auditPath(pid!, r.resultAudit.id)} style={{ color: "var(--accent-text)" }} title="The audit this discover made. Opens it in Bug reports, under Audits.">Audit: {r.resultAudit.title || r.resultAudit.agentAuditId}</Link>}
         </div>
@@ -286,7 +298,7 @@ function NextSteps({ request }: { request: AgentRequest }) {
         <li>When it says it is done, review what it delivered. It all comes in as proposals.</li>
       </ol>
       <div className="faint" style={{ fontSize: "var(--fs-sm)" }}>
-        Your choices: {request.options ? optionsSummary(request.options) : "the defaults"}. First time? The set-up steps are in docs/agent-quickstart.md in the Testbench repository. The MCP tools are another way to take a request: docs/agent-paths.md.
+        Your choices: {request.options ? optionsSummary(request.options) : request.loadOptions ? loadSummary(request.loadOptions) : "the defaults"}. First time? The set-up steps are in docs/agent-quickstart.md in the Testbench repository. The MCP tools are another way to take a request: docs/agent-paths.md.
       </div>
     </div>
   );
@@ -333,6 +345,82 @@ function DiscoverModal({ onClose }: { onClose: () => void }) {
         <Fields name={name} setName={setName} environment={environment} setEnvironment={setEnvironment} note={note} setNote={setNote} />
         <OptionsFields options={options} setOptions={setOptions} />
         {problem && <span role="alert" style={{ color: "var(--failed-fg)" }}>{problem}</span>}
+      </EditScope>
+    </Modal>
+  );
+}
+
+/** One choice out of a few numbers, as a row of radio buttons. */
+function NumberChoice<T extends number | null>({ legend, name, values, value, onChange, label }: { legend: string; name: string; values: readonly T[]; value: T; onChange: (v: T) => void; label: (v: T) => string }) {
+  return (
+    <fieldset style={GROUP}>
+      <legend style={LEGEND}>{legend}</legend>
+      <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+        {values.map((v) => (
+          <label key={String(v)} className="row" style={{ gap: 6 }}>
+            <input type="radio" name={name} checked={value === v} onChange={() => onChange(v)} /> {label(v)}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+/**
+ * A load test of a local or private address (admin only). The choices are a preselection for the agent's one confirmation and a ceiling for the result it may hand in, never a
+ * permission. Only GET requests; the agent stops when the error rate or the p95 limit is passed.
+ */
+function LoadTestModal({ onClose }: { onClose: () => void }) {
+  const [targetUrl, setTargetUrl] = useState("");
+  const [environment, setEnvironment] = useState("");
+  const [name, setName] = useState("");
+  const [note, setNote] = useState("");
+  const [load, setLoad] = useState<LoadOptions>(DEFAULT_LOAD);
+  const [pathsText, setPathsText] = useState("/");
+  const [made, setMade] = useState<AgentRequest | null>(null);
+  const make = useMakeRequest(setMade);
+  const options: LoadOptions = { ...load, paths: parsePaths(pathsText) };
+  const problem = loadProblem(options, targetUrl);
+  if (made) {
+    return (
+      <Modal title="Request made" onClose={onClose} width={560} footer={<Button variant="primary" onClick={onClose}>Close</Button>}>
+        <NextSteps request={made} />
+      </Modal>
+    );
+  }
+  return (
+    <Modal
+      title="Request load test"
+      onClose={onClose}
+      width={560}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button needs="admin" variant="primary" disabled={!!problem || make.isPending} onClick={() => make.mutate({ kind: "loadtest", targetUrl, environment, name, note, loadOptions: options })}>Make request</Button>
+        </>
+      }
+    >
+      <EditScope>
+        <div className="muted" style={{ fontSize: "var(--fs-sm)" }}>
+          Ask a test agent to run a small, bounded load test: GET requests only, against a <strong>local or private address</strong> (never production or shared systems). Testbench starts
+          nothing: an agent with a request token takes the request, shows these choices and asks you before it sends any load. The result can never use more than you choose here.
+        </div>
+        <div className="field">
+          <label htmlFor="rq-load-url">Address to test</label>
+          <input id="rq-load-url" className="input" placeholder="http://localhost:3000" value={targetUrl} maxLength={500} onChange={(e) => setTargetUrl(e.target.value)} autoFocus />
+          {addressIsLocal(targetUrl) === false && <span role="alert" style={{ color: "var(--failed-fg)", fontSize: "var(--fs-sm)" }}>Not a local or private address: localhost, 127.x, 10.x, 172.16-31.x, 192.168.x or a .local name.</span>}
+        </div>
+        <Fields name={name} setName={setName} environment={environment} setEnvironment={setEnvironment} note={note} setNote={setNote} />
+        <NumberChoice legend="How many users at most?" name="rq-load-vus" values={LOAD_VUS} value={load.vus} onChange={(vus) => setLoad({ ...load, vus })} label={(v) => String(v)} />
+        <NumberChoice legend="How long?" name="rq-load-dur" values={LOAD_DURATIONS} value={load.durationSeconds} onChange={(durationSeconds) => setLoad({ ...load, durationSeconds })} label={(v) => `${v} s`} />
+        <NumberChoice legend="Ramp-up (time to reach all users)" name="rq-load-ramp" values={LOAD_RAMPS} value={load.rampUpSeconds} onChange={(rampUpSeconds) => setLoad({ ...load, rampUpSeconds })} label={(v) => `${v} s`} />
+        <NumberChoice legend="Stop if more than this share of requests fail" name="rq-load-err" values={LOAD_ERROR_RATES} value={load.maxErrorRatePercent} onChange={(maxErrorRatePercent) => setLoad({ ...load, maxErrorRatePercent })} label={(v) => `${v} %`} />
+        <NumberChoice legend="Stop if p95 passes (optional)" name="rq-load-p95" values={[null, ...LOAD_P95S] as readonly (number | null)[]} value={load.maxP95Ms} onChange={(maxP95Ms) => setLoad({ ...load, maxP95Ms })} label={(v) => (v === null ? "no limit" : `${v} ms`)} />
+        <div className="field">
+          <label htmlFor="rq-load-paths">Paths to request, one per line (GET only, at most 10)</label>
+          <textarea id="rq-load-paths" className="textarea mono" rows={4} value={pathsText} onChange={(e) => setPathsText(e.target.value)} placeholder="/&#10;/api/health" />
+        </div>
+        {problem && addressIsLocal(targetUrl) !== false && <span role="alert" style={{ color: "var(--failed-fg)" }}>{problem}</span>}
       </EditScope>
     </Modal>
   );

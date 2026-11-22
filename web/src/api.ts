@@ -1,5 +1,6 @@
 import type { Automation, LastAutomated, RunSuiteInfo } from "./automation";
 import type { Delivered } from "./agentruns";
+import type { LoadOptions, LoadResult } from "./loadOptions";
 import type { RequestOptions } from "./requestOptions";
 
 export type Status = "untested" | "passed" | "failed" | "blocked" | "skipped";
@@ -178,6 +179,8 @@ export interface AgentRequest {
   progress: RunProgress | null;
   /** A discover: what the person chose when asking (a preselection for the agent's confirmation, never a permission); null for the other kinds. */
   options: RequestOptions | null;
+  /** A load test: what the person chose (a preselection and a ceiling for the result, never a permission); null for the other kinds. */
+  loadOptions: LoadOptions | null;
   /** The order an agent is given waiting requests in: a person can put one first (priority above 0); among equals the oldest goes first. `queuePosition` is 1 for the next one, and null for a request that is not waiting. */
   priority: number;
   queuePosition: number | null;
@@ -192,6 +195,8 @@ export interface AgentRequest {
   /** The audit a finished discover made (null if none, or if it was deleted since), with its name. */
   resultAuditId: number | null; resultAudit: { id: number; title: string; agentAuditId: string } | null;
 }
+/** GET /api/agent-requests/:id/load-result: what a load test found, with the request it belongs to. */
+export interface LoadReportData { request: AgentRequest; result: LoadResult; deliveredAt: string }
 /** An own spec (S2): a copy of a file in the person's repo, kept as text with its history. TestBench never runs it. */
 export interface SpecSummary {
   id: number; projectId: number; fileName: string; status: "draft" | "ready"; testCase: { id: number; number: number; key: string } | null; size: number;

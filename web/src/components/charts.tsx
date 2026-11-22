@@ -143,3 +143,50 @@ export function CoverageBar({ label, value, total }: { label: string; value: num
     </div>
   );
 }
+
+interface LoadPoint { t: number; vus: number; requests: number; errors: number; p95Ms: number }
+
+/**
+ * A load test over time: the p95 response time as a line, a dot in red where requests failed in that interval, and the limit the person set as a dashed line. Every point has a text for
+ * hover (with its users) and the whole chart one for a screen reader; the table of paths on the report says the same in numbers.
+ */
+export function LoadChart({ timeline, p95Limit }: { timeline: LoadPoint[]; p95Limit: number | null }) {
+  const W = 640, H = 220, L = 52, R = 16, T = 16, B = 28;
+  if (timeline.length < 1) return <div className="muted" style={{ padding: 24 }}>The agent handed in no points over time.</div>;
+  const tMax = Math.max(1, ...timeline.map((p) => p.t));
+  const top = Math.max(10, ...timeline.map((p) => p.p95Ms), p95Limit ?? 0);
+  // The top of the scale: the first of 1, 2, 5 or 10 times a power of ten that holds the highest value (2400 ms gets 5 s, 1100 ms gets 2 s).
+  const mag = Math.pow(10, Math.floor(Math.log10(top)));
+  const niceTop = [1, 2, 5, 10].map((m) => m * mag).find((v) => v >= top)!;
+  const x = (t: number) => L + (t * (W - L - R)) / tMax;
+  const y = (v: number) => T + ((niceTop - v) * (H - T - B)) / niceTop;
+  const line = timeline.map((p) => `${x(p.t)},${y(p.p95Ms)}`);
+  const worst = timeline.reduce((a, p) => (p.p95Ms > a.p95Ms ? p : a), timeline[0]);
+  const summary = `p95 response time over ${tMax} seconds, highest ${Math.round(worst.p95Ms)} ms at ${worst.t} s, ${timeline.filter((p) => p.errors > 0).length} intervals with errors`;
+  const ticks = [0, niceTop / 2, niceTop];
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={summary} style={{ display: "block" }}>
+      {ticks.map((v) => (
+        <g key={v}>
+          <line x1={L} x2={W - R} y1={y(v)} y2={y(v)} stroke="var(--border)" strokeDasharray={v === niceTop / 2 ? "3 4" : undefined} />
+          <text x={L - 8} y={y(v) + 4} textAnchor="end" fontSize="12" fill="var(--text-4)">{v >= 1000 ? `${v / 1000} s` : `${Math.round(v)} ms`}</text>
+        </g>
+      ))}
+      {p95Limit != null && p95Limit <= niceTop && (
+        <g>
+          <line x1={L} x2={W - R} y1={y(p95Limit)} y2={y(p95Limit)} stroke="var(--failed)" strokeDasharray="6 4" />
+          <text x={W - R} y={y(p95Limit) - 4} textAnchor="end" fontSize="12" fill="var(--failed)">limit {p95Limit} ms</text>
+        </g>
+      )}
+      <path d={`M${line.join("L")}`} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+      {timeline.map((p) => (
+        <circle key={p.t} cx={x(p.t)} cy={y(p.p95Ms)} r={p.errors > 0 ? 4.5 : 2.5} fill={p.errors > 0 ? "var(--failed)" : "var(--accent)"} stroke="var(--bg-panel)" strokeWidth="1.5">
+          <title>{`${p.t} s · ${p.vus} users · p95 ${Math.round(p.p95Ms)} ms · ${p.requests} requests, ${p.errors} failed`}</title>
+        </circle>
+      ))}
+      <text x={L} y={H - 6} fontSize="12" fill="var(--text-4)">0 s</text>
+      <text x={W - R} y={H - 6} textAnchor="end" fontSize="12" fill="var(--text-4)">{tMax} s</text>
+      <text x={W / 2} y={H - 6} textAnchor="middle" fontSize="12" fill="var(--text-4)">red = requests failed in that interval</text>
+    </svg>
+  );
+}
