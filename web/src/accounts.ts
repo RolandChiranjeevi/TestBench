@@ -68,7 +68,7 @@ export interface AuditEntry {
 
 /** Every action the server writes to the audit log (test/web-accounts.test.ts checks this list against the server's source, so a new action cannot be left without words). */
 export const AUDIT_ACTIONS = [
-  "agent_request.cancelled", "agent_request.claimed", "agent_request.completed", "agent_request.created", "agent_request.finding_created", "agent_request.put_first", "agent_request.released", "agent_request.result_delivered", "agent_request.results_reported", "spec.created", "spec.deleted", "spec.edited", "spec.renamed", "account.created", "account.disabled", "account.enabled", "account.setup", "invitation.created", "invitation.revoked", "invitation.used", "login.failed", "login.succeeded",
+  "agent_request.cancelled", "agent_request.claimed", "agent_request.completed", "agent_request.created", "agent_request.finding_created", "agent_request.load_result_delivered", "agent_request.put_first", "agent_request.released", "agent_request.result_delivered", "agent_request.results_reported", "spec.created", "spec.deleted", "spec.edited", "spec.renamed", "account.created", "account.disabled", "account.enabled", "account.setup", "invitation.created", "invitation.revoked", "invitation.used", "login.failed", "login.succeeded",
   "member.added", "member.removed", "member.role_changed", "members.migrated", "password.changed", "password.reset", "password.reset_link_created", "profile.changed", "requirements.bulk_approved", "sessions.revoked_others",
   "settings.agent_proposals_changed", "settings.agent_results_changed",
   "token.created", "token.revoked",
@@ -136,7 +136,7 @@ export function describeAudit(e: Pick<AuditEntry, "action" | "actor" | "targetUs
     case "password.reset": return `${target} set a new password${d.via === "command line" ? " (set on the server)" : " with a reset link"}${d.sessionsEnded ? `, which ended ${plural(d.sessionsEnded, "session")}` : ""}`;
     case "password.reset_link_created": return `${who} made a password reset link for ${target}`;
     case "profile.changed": return `${who} changed their ${Array.isArray(d.fields) && d.fields.length ? d.fields.join(" and ") : "profile"}`;
-    case "agent_request.created": return `${who} asked an agent to ${d.kind === "rerun" ? "run failed automated tests again" : d.kind === "run" ? `run ${plural(d.cases ?? 0, "test case")}` : "look at a target"} in ${project}`;
+    case "agent_request.created": return `${who} asked an agent to ${d.kind === "rerun" ? "run failed automated tests again" : d.kind === "run" ? `run ${plural(d.cases ?? 0, "test case")}` : d.kind === "loadtest" ? "run a load test" : "look at a target"} in ${project}`;
     case "agent_request.cancelled": return `${who} cancelled a request to an agent in ${project}`;
     case "agent_request.claimed": return `${who} took a request in ${project}`;
     case "agent_request.put_first": return `${who} put a request to an agent first in line in ${project}`;
@@ -147,6 +147,7 @@ export function describeAudit(e: Pick<AuditEntry, "action" | "actor" | "targetUs
       const parts = (["passed", "failed", "skipped"] as const).map((s) => [Number(d[s]) || 0, s] as const).filter(([c]) => c > 0).map(([c, s]) => `${c} ${s}`);
       return `${who} handed in an automated test report for a run request (${tests} ${tests === 1 ? "test" : "tests"}${parts.length ? `: ${parts.join(", ")}` : ""}) in ${project}`;
     }
+    case "agent_request.load_result_delivered": return `${who} handed in the result of a load test (${String(d.verdict ?? "no verdict")}) in ${project}`;
     case "agent_request.results_reported": {
       const n = Number(d.reported) || 0;
       const parts = (["passed", "failed", "blocked", "skipped"] as const).map((s) => [Number(d[s]) || 0, s] as const).filter(([c]) => c > 0).map(([c, s]) => `${c} ${s}`);

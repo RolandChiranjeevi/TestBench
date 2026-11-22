@@ -132,6 +132,7 @@ describe("who may report a finding", () => {
       "POST /api/projects/:id/ci/test-results", "GET /api/agent/projects/:id/requirements", "POST /api/agent/projects/:id/requirement-proposals", "GET /api/agent/projects/:id/requests",
       "POST /api/agent/projects/:id/requests/:rid/claim", "POST /api/agent/projects/:id/requests/:rid/release", "POST /api/agent/projects/:id/requests/:rid/result",
       "POST /api/agent/projects/:id/requests/:rid/complete", "POST /api/agent/projects/:id/requests/:rid/findings", "POST /api/agent/projects/:id/requests/:rid/case-results",
+      "POST /api/agent/projects/:id/requests/:rid/load-result",
     ]);
     const others = Object.keys(ACCESS).filter((k) => !tokenRoutes.has(k));
     assert.ok(others.length > 200, "the whole table, not a sample");

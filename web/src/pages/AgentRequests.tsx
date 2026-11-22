@@ -23,7 +23,7 @@ const STATUS: Record<AgentRequest["status"], { tone: Tone; label: string; title:
   done: { tone: "ok", label: "Done", title: "The agent says it is finished" },
   cancelled: { tone: "neutral", label: "Cancelled", title: "A person withdrew it" },
 };
-const KIND_LABEL = { discover: "Discover", rerun: "Re-run failed tests", run: "Run test cases" } as const;
+const KIND_LABEL = { discover: "Discover", rerun: "Re-run failed tests", run: "Run test cases", loadtest: "Load test" } as const;
 
 /** The Requests tab of Automated tests. */
 export function RequestsPage() {

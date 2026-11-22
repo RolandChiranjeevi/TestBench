@@ -50,7 +50,7 @@ export const ACCESS: Record<string, Need> = {
   "GET /api/invitations": "custom", "POST /api/invitations": "custom", "POST /api/invitations/:id/revoke": "custom",
   // ---- machine tokens: each opens one route of one project and nothing else ----
   "POST /api/projects/:id/ci/test-results": "token", "GET /api/agent/projects/:id/requirements": "token", "POST /api/agent/projects/:id/requirement-proposals": "token",
-  "GET /api/agent/projects/:id/requests": "token", "POST /api/agent/projects/:id/requests/:rid/claim": "token", "POST /api/agent/projects/:id/requests/:rid/release": "token", "POST /api/agent/projects/:id/requests/:rid/result": "token", "POST /api/agent/projects/:id/requests/:rid/complete": "token", "POST /api/agent/projects/:id/requests/:rid/findings": "token", "POST /api/agent/projects/:id/requests/:rid/case-results": "token",
+  "GET /api/agent/projects/:id/requests": "token", "POST /api/agent/projects/:id/requests/:rid/claim": "token", "POST /api/agent/projects/:id/requests/:rid/release": "token", "POST /api/agent/projects/:id/requests/:rid/result": "token", "POST /api/agent/projects/:id/requests/:rid/complete": "token", "POST /api/agent/projects/:id/requests/:rid/findings": "token", "POST /api/agent/projects/:id/requests/:rid/case-results": "token", "POST /api/agent/projects/:id/requests/:rid/load-result": "token",
 
   // ---- a project ----
   "PATCH /api/projects/:id": a(), "POST /api/projects/:id/delete": a(), "GET /api/projects/:id/deletion-preview": a(),
@@ -66,7 +66,7 @@ export const ACCESS: Record<string, Need> = {
   "GET /api/projects/:id/propose-tokens": a(), "POST /api/projects/:id/propose-tokens": a(), "POST /api/propose-tokens/:id/revoke": a("proposetoken"),
   "GET /api/projects/:id/request-tokens": a(), "POST /api/projects/:id/request-tokens": a(), "POST /api/request-tokens/:id/revoke": a("requesttoken"),
   // what people ask a test agent to do (server/agentrequests.ts): everyone sees the list, a tester asks for something and withdraws it. Testbench runs nothing.
-  "GET /api/projects/:id/agent-requests": v(), "POST /api/projects/:id/agent-requests": t(), "POST /api/agent-requests/:id/cancel": t("agentrequest"), "POST /api/agent-requests/:id/run-next": t("agentrequest"),
+  "GET /api/projects/:id/agent-requests": v(), "POST /api/projects/:id/agent-requests": t(), "POST /api/agent-requests/:id/cancel": t("agentrequest"), "POST /api/agent-requests/:id/run-next": t("agentrequest"), "GET /api/agent-requests/:id/load-result": v("agentrequest"),
   "GET /api/projects/:id/destination": a(), "PUT /api/projects/:id/destination": a(), "DELETE /api/projects/:id/destination": a(), "POST /api/projects/:id/destination/teams": a(),
   "GET /api/projects/:id/github-sources": a(), "POST /api/projects/:id/github-sources": a(), "PATCH /api/github-sources/:id": a("githubsource"), "DELETE /api/github-sources/:id": a("githubsource"),
   "POST /api/github-sources/:id/check": a("githubsource"), "GET /api/github-sources/:id/runs": t("githubsource"), "POST /api/github-sources/:id/runs/:runId/import": t("githubsource"),

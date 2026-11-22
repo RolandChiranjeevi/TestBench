@@ -358,7 +358,7 @@ CREATE INDEX IF NOT EXISTS request_tokens_project ON request_tokens(project_id);
 CREATE TABLE IF NOT EXISTS agent_requests (
   id INTEGER PRIMARY KEY,
   project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL CHECK (kind IN ('discover', 'rerun', 'run')),
+  kind TEXT NOT NULL CHECK (kind IN ('discover', 'rerun', 'run', 'loadtest')),
   target_url TEXT NOT NULL DEFAULT '',
   environment TEXT NOT NULL DEFAULT '',
   note TEXT NOT NULL DEFAULT '',
@@ -376,6 +376,13 @@ CREATE TABLE IF NOT EXISTS agent_requests (
   result_note TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS agent_requests_project ON agent_requests(project_id, status);
+-- The result of a load test (kind loadtest), kept apart so that a list of requests never carries it. At most 1 MB of JSON, checked by server/loadtest.ts.
+CREATE TABLE IF NOT EXISTS agent_load_results (
+  request_id INTEGER PRIMARY KEY REFERENCES agent_requests(id) ON DELETE CASCADE,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  result TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 -- Own specs (S2, server/specs.ts): a Playwright spec that a person wrote or pasted. A copy of a file in their own repo: TestBench keeps the text, never runs it and never writes it anywhere.
 CREATE TABLE IF NOT EXISTS specs (
   id INTEGER PRIMARY KEY,
@@ -829,6 +836,30 @@ CREATE TABLE agent_requests_new (
     d.exec("CREATE INDEX IF NOT EXISTS agent_requests_project ON agent_requests(project_id, status)");
   })();
   d.pragma("foreign_keys = ON");
+}
+
+/**
+ * The `loadtest` kind of agent request. A table made before it has a CHECK that refuses the kind, and SQLite cannot change a CHECK, so the table is rebuilt from its own stored
+ * CREATE TABLE text with only that list changed. The columns are then exactly the old ones, in the old order (the ones added with ALTER included), so nothing can be forgotten, and
+ * every row is copied with SELECT *. Foreign keys are off only while the table is swapped: other tables (cases.agent_request_id, agent_load_results) point at it by name and keep
+ * pointing at the new one. It runs after every migration that adds columns to the table. A table that already allows `loadtest` is left alone.
+ */
+function migrateAgentLoadtest(d: Database.Database) {
+  const ddl = d.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'agent_requests'").pluck().get() as string | undefined;
+  if (!ddl || ddl.includes("'loadtest'")) return;
+  const next = ddl.replace(/^CREATE TABLE\s+"?agent_requests"?/i, "CREATE TABLE agent_requests_new").replace("'discover', 'rerun', 'run'", "'discover', 'rerun', 'run', 'loadtest'");
+  if (!next.includes("agent_requests_new") || !next.includes("'loadtest'")) throw new Error("Could not rebuild agent_requests: its table text is not as expected");
+  d.pragma("foreign_keys = OFF");
+  try {
+    d.transaction(() => {
+      d.exec(next);
+      d.exec("INSERT INTO agent_requests_new SELECT * FROM agent_requests");
+      d.exec("DROP TABLE agent_requests; ALTER TABLE agent_requests_new RENAME TO agent_requests;");
+      d.exec("CREATE INDEX IF NOT EXISTS agent_requests_project ON agent_requests(project_id, status)");
+    })();
+  } finally {
+    d.pragma("foreign_keys = ON");
+  }
 }
 
 /** Creates missing tables and columns, and fills in data for features added later. Safe to run on every start. */
@@ -1397,6 +1428,7 @@ CREATE INDEX IF NOT EXISTS bug_events_bug ON bug_events(bug_report_id);`);
   migrateAgentRunKind(d);
   migrateAgentQueue(d);
   migrateAgentResults(d);
+  migrateAgentLoadtest(d);
 
   // Make sure every sprint named on a run has a sprint record.
   const named = d.prepare("SELECT DISTINCT project_id, milestone FROM runs WHERE milestone != ''").all() as { project_id: number; milestone: string }[];

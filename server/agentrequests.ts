@@ -5,6 +5,7 @@ import { AuditError } from "./auditcommon.ts";
 import { audit } from "./accounts.ts";
 import { createManualRun } from "./runsuites.ts";
 import { fileMatchesSpec } from "./specs.ts";
+import { cleanLoadOptions, cleanLoadResult, isLocalHost, type LoadOptions } from "./loadtest.ts";
 
 /**
  * Requests to a test agent. A person asks for something: look at a target (discover), run the failed automated tests of a run again (rerun), or run chosen test cases (run:
@@ -25,7 +26,7 @@ import { fileMatchesSpec } from "./specs.ts";
 /** A Playwright report handed in for a re-run or a run: at most 5 MB and 1000 tests, and at most 10 handed in a minute per token (every attempt counts). */
 export const RESULT_LIMITS = { bodyBytes: 5 * 1024 * 1024, testsMax: 1000, perMinute: 10 };
 export const REQUEST_LIMITS = { pendingPerProject: 20, urlMax: 500, environmentMax: 100, nameMax: 60, noteMax: 2000, resultNoteMax: 1000, rerunTestsMax: 500, runCasesMax: 200, runPayloadBytes: 1024 * 1024, runTitleMax: 200 };
-export const REQUEST_KINDS = ["discover", "rerun", "run"] as const;
+export const REQUEST_KINDS = ["discover", "rerun", "run", "loadtest"] as const;
 export const REQUEST_STATUSES = ["pending", "claimed", "done", "cancelled"] as const;
 export type RequestKind = (typeof REQUEST_KINDS)[number];
 export type RequestStatus = (typeof REQUEST_STATUSES)[number];
@@ -145,19 +146,21 @@ export function viewOf(r: Row, withCases = true) {
   let cases: RunCase[] = [];
   let caseCount = r.case_count ?? 0;
   let options: RequestOptions | null = null;
+  let loadOptions: LoadOptions | null = null;
   try {
     // A run request in a list is not parsed at all: its payload can be large, and the list only needs the count.
     if (withCases || r.kind !== "run") {
-      const p = JSON.parse(r.payload) as { tests?: RerunTest[]; cases?: RunCase[]; options?: unknown };
+      const p = JSON.parse(r.payload) as { tests?: RerunTest[]; cases?: RunCase[]; options?: unknown; loadOptions?: unknown };
       tests = p.tests ?? [];
       // Only a discover has options. One made before options existed has none stored, and reads as the defaults.
       if (r.kind === "discover") options = cleanOptions(p.options);
+      if (r.kind === "loadtest") loadOptions = cleanLoadOptions(p.loadOptions);
       if (r.case_count == null) caseCount = p.cases?.length ?? 0;
       if (withCases) cases = p.cases ?? [];
     }
   } catch { /* a payload that is not JSON: no tests or cases listed */ }
   return {
-    id: r.id, projectId: r.project_id, kind: r.kind, targetUrl: r.target_url, environment: r.environment, name: r.name, note: r.note, runId: r.run_id, tests, cases, caseCount, options, status: r.status,
+    id: r.id, projectId: r.project_id, kind: r.kind, targetUrl: r.target_url, environment: r.environment, name: r.name, note: r.note, runId: r.run_id, tests, cases, caseCount, options, loadOptions, status: r.status,
     createdBy: r.created_by, createdAt: r.created_at, claimedBy: r.claimed_by, claimedAt: r.claimed_at, finishedAt: r.finished_at, resultRunId: r.result_run_id, resultNote: r.result_note, resultDeliveredAt: r.result_delivered_at,
     releaseNote: r.release_note, releasedBy: r.released_by, releasedAt: r.released_at, resultAuditId: r.result_audit_id,
     // Where a waiting request stands in the order an agent is given (1 = next), filled in for a person's list (withQueue); null for one that is not waiting.
@@ -266,7 +269,7 @@ export function agentRequestOfRun(runId: number): { id: number; status: RequestS
   return { ...rest, progress: runProgress(runId), ...(reportRunId ? { reportRunId } : {}) };
 }
 
-export interface NewRequest { kind: unknown; targetUrl?: unknown; environment?: unknown; name?: unknown; note?: unknown; runId?: unknown; caseIds?: unknown; title?: unknown; templateId?: unknown; options?: unknown }
+export interface NewRequest { kind: unknown; targetUrl?: unknown; environment?: unknown; name?: unknown; note?: unknown; runId?: unknown; caseIds?: unknown; title?: unknown; templateId?: unknown; options?: unknown; loadOptions?: unknown }
 
 /**
  * The test cases of a run request, as they are now: the text a person wrote (title, description, preconditions, steps), the names of the automated tests linked to the case and of
@@ -332,11 +335,19 @@ export function createRequest(projectId: number, input: NewRequest, by: { name: 
   let runId: number | null = null;
   let tests: RerunTest[] = [];
   let options: RequestOptions | null = null;
+  let loadOptions: LoadOptions | null = null;
+  if (kind !== "loadtest" && input.loadOptions !== undefined && input.loadOptions !== null) throw bad("loadOptions are only for a loadtest request");
   if (kind !== "discover" && input.options !== undefined && input.options !== null) throw bad("Options are only for a discover request, so far");
   if (kind === "discover") {
     targetUrl = cleanTargetUrl(input.targetUrl);
     options = cleanOptions(input.options);
     if (optionsNeedAdmin(options) && by.mayWiden === false) throw new AuditError(403, "Only an admin of the project can ask an agent to act on the target (full) or to open a pull request (pr)");
+  } else if (kind === "loadtest") {
+    // A load test puts load on a system, so only an admin of the project asks for it, and for now only for a local or private address (never production or shared infrastructure).
+    if (by.mayWiden === false) throw new AuditError(403, "Only an admin of the project can ask an agent to run a load test");
+    targetUrl = cleanTargetUrl(input.targetUrl);
+    if (!isLocalHost(new URL(targetUrl).hostname)) throw bad("A load test can only be asked for a local or private address for now (localhost, 127.x, 10.x, 172.16-31.x, 192.168.x or a .local name)");
+    loadOptions = cleanLoadOptions(input.loadOptions);
   } else if (kind === "run") {
     // The address is where the agent runs the cases; the run is made together with the request, in one transaction, so there is never a request without its run.
     targetUrl = cleanTargetUrl(input.targetUrl);
@@ -374,7 +385,7 @@ export function createRequest(projectId: number, input: NewRequest, by: { name: 
   }
   const row = db
     .prepare("INSERT INTO agent_requests (project_id, kind, target_url, environment, name, note, run_id, payload, created_by, created_by_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *")
-    .get(projectId, kind, targetUrl, environment, name, note, runId, JSON.stringify({ tests, ...(options ? { options } : {}) }), by.name, by.userId) as Row;
+    .get(projectId, kind, targetUrl, environment, name, note, runId, JSON.stringify({ tests, ...(options ? { options } : {}), ...(loadOptions ? { loadOptions } : {}) }), by.name, by.userId) as Row;
   return viewOf(row);
 }
 
@@ -472,6 +483,11 @@ export function completeRequest(projectId: number, id: number, token: { id: numb
     resultRunId = input.resultRunId as number;
   }
   if (cur.status !== "claimed") throw new AuditError(409, cur.status === "pending" ? "Take the request first" : "The request is already done or cancelled");
+  if (cur.kind === "loadtest") {
+    if (cur.claimed_token_id !== token.id) throw new AuditError(409, "Another token took this request");
+    if (!cur.result_delivered_at) throw new AuditError(409, "Hand in the result of the load test (load-result) first, or give the request back with release");
+    if (input.resultRunId !== undefined && input.resultRunId !== null) throw bad("A load test request has no run. Leave resultRunId out");
+  }
   if (cur.kind === "run") {
     // A run request is finished when every test case that is still there has a result, whoever set it (the agent, or a person by hand). The run stays in progress: a person reviews it
     // and finishes it. TestBench links the run itself, so the agent cannot name another one.
@@ -487,6 +503,37 @@ export function completeRequest(projectId: number, id: number, token: { id: numb
     .get(note, resultRunId, resultAuditId, id, projectId, token.id) as Row | undefined;
   if (!r) throw new AuditError(409, "Another token took this request");
   return { ...viewOf(r), ...missingReport(cur) };
+}
+
+// ---------------- The result of a load test ----------------
+
+/**
+ * The agent that took a load test hands in its result, once. TestBench checks it against what was asked (no more users, no longer a test, no other path: cleanLoadResult), rebuilds it from
+ * the known fields and keeps it in its own table, so that a list of requests never carries it. The request is marked delivered, which also stops it from being given back.
+ */
+export function submitLoadResult(projectId: number, id: number, token: { id: number; name: string }, body: unknown, ip = "") {
+  const cur = mustRow(projectId, id);
+  if (cur.kind !== "loadtest") throw bad("Only a load test request takes a load result");
+  if (cur.status !== "claimed") throw new AuditError(409, cur.status === "pending" ? "Take the request first" : "The request is already done or cancelled");
+  if (cur.claimed_token_id !== token.id) throw new AuditError(409, "Another token took this request");
+  if (cur.result_delivered_at) throw new AuditError(409, "A result was already handed in for this request. Finish it with complete");
+  const result = cleanLoadResult(body, cleanLoadOptions((JSON.parse(cur.payload) as { loadOptions?: unknown }).loadOptions));
+  db.transaction(() => {
+    const done = db.prepare("UPDATE agent_requests SET result_delivered_at = datetime('now') WHERE id = ? AND project_id = ? AND status = 'claimed' AND claimed_token_id = ? AND result_delivered_at IS NULL").run(id, projectId, token.id);
+    if (done.changes !== 1) throw new AuditError(409, "The request changed while the result was being handed in");
+    db.prepare("INSERT INTO agent_load_results (request_id, project_id, result) VALUES (?, ?, ?)").run(id, projectId, JSON.stringify(result));
+    audit({ userId: null, label: `agent: ${token.name}`, ip }, "agent_request.load_result_delivered", { projectId, detail: { request: id, verdict: result.verdict, outcome: result.outcome } });
+  })();
+  return { verdict: result.verdict, outcome: result.outcome };
+}
+
+/** The result of a load test, for a person: with the request it belongs to. */
+export function getLoadResult(id: number) {
+  const r = rowOf(id);
+  if (!r || r.kind !== "loadtest") throw new AuditError(404, "Request not found");
+  const row = db.prepare("SELECT result FROM agent_load_results WHERE request_id = ?").get(id) as { result: string } | undefined;
+  if (!row) throw new AuditError(404, "This load test has no result yet");
+  return { request: viewOf(r, false), result: JSON.parse(row.result) as ReturnType<typeof cleanLoadResult>, deliveredAt: r.result_delivered_at };
 }
 
 // ---------------- Handing in the report of a re-run ----------------
