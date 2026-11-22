@@ -9,6 +9,7 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 
 - **Det tunga som är byggt sedan sist:** extra delar vid en discover (`checks`, #159), belastningstest som egen sorts request (server #160, formulär och rapport #161, agentsidan #162), och att bug-reporting och test-planning alltid följs av discover-skillsen.
 - **Att göra först på måndag:** merga #162 (agentsidan av belastningstestet) och göra de live-prov som står under "Att prova live" nedan.
+- **Designbeslut före bygge:** M (en discover levererar allt man kryssar i) och de två stora spåren, den lokala appen och dashboarden, som egna designer.
 - **Sedan:** besluta om J-A till J-C (se J, rekommenderad ordning: J-C först), ta DG 3e och de små skillförbättringarna, och därefter UI/UX-justeringarna. **Dashboarden på startsidan tas sist**, när mer av det tunga är klart.
 - **Kan vara föråldrat (kontrollera innan något görs):** leverans 1 av auditpaketet (committad lokalt 2 nov, aldrig bekräftad pushad) och valet av workflow för auditpaket. Backloggen nämner dem inte, så de är antingen klara eller bortglömda.
 
@@ -22,6 +23,28 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 - **Belastningstest:** ingen MCP-väg för sorten (bara skillen och hjälparen), ingen jämförelse med en tidigare körning, och varje `run` är ett Bash-anrop som kan ge en rättighetsfråga i `default`-läget. Fjärradresser nekas helt i första versionen; att tillåta dem kräver ett eget, uttryckligt val och ett extra bekräftande.
 - **`checks`:** api och säkerhet lämnas över till sina egna skills efter discovern, med deras egna bekräftanden. Det är inte provat från en request.
 - **Från live-testen 20 nov (kontrollera vad som redan är gjort):** ett rekommenderat `permissions`-block provat med `Write`-regler (docs i #147), och skillförbättringarna: skippa `mkdir` (Write skapar mappen), skippa `cat .testpilot/…`, och säga åt agenten att inte läsa en tidigare requests fynd.
+
+### M: En discover levererar allt man kryssar i, som ett paket
+**Status: förslag, inget är byggt** (formulerat 2026-11-22; besluten längst ned tas på måndag)
+
+**Tanken.** Man kör en request från TestBench (`/testpilot-requests`), kryssar i delar i UI:t (visuell granskning, API, säkerhet) och agenten gör dem **i samma request** och paketerar allt enligt planen: planen, testfallen, specfilerna i git, och fynden som förslag som en människa granskar. Inget godkänns av agenten.
+
+**Läget idag (kontrollerat i koden 2026-11-22).**
+- **Visuell granskning** körs inne i discovern och lämnar fynd. Aldrig körd live.
+- **Säkerhet och API** lämnas i dag över till `testpilot-security-review` och `testpilot-api-testing`, med egna bekräftanden. Det valet gjorde jag i #159 utan att fråga, och det stämmer inte med tanken ovan. Deras resultat har dessutom ingen plats i requesten: fyndvägen (`findings`) kan bara lämna in observationer av sorten `exploratory` (`server/agentfindings.ts`), och `testpilot-api-testing` skriver ett audit-paket och säger själv att API-observationer inte importeras eftersom sorten `api_test` saknas. Det som kryssas i leder alltså till ett arbete som inte paketeras.
+- Databasen tillåter redan observationssorten `security_review`, men fyndvägen sätter den aldrig.
+
+**Förslag.**
+- **Säkerhet:** körs i discovern och lämnar fynd som observationer av sorten `security_review` (fyndvägen får ett valfritt fält för sort: `exploratory` eller `security_review`). Begränsad och icke-destruktiv som i `testpilot-security-review`, bara mot en adress som inte är produktion (servern nekar redan allt utom visuell granskning på produktion).
+- **API: agenten skapar API-tester, den kör dem inte i första versionen.** (A) API-testfall som förslag ("POST /orders med giltig kropp ger 201", "utan token ger 401"), granskade av en människa som alla andra testfall. (B) När git-läget är på: API-tester som specfiler på samma lokala gren som UI-specsen (`spec_git.py`), troligen Playwrights `request`-fixtur (inte verifierat). Då behövs ingen ny observationssort `api_test`, och inget skrivande anrop skickas av misstag.
+- **Anropen hittar agenten genom att utforska i första hand.** Finns ett **OpenAPI-dokument** ska det kunna läggas till som underlag, ungefär som ett krav hjälper vid skapandet av testfall: kontraktet gör att agenten inte behöver gissa vilka anrop som finns. Det befintliga verktyget (`testpilot/tools/apitest/contract.py` och `validate.py`) kan återanvändas för att läsa kontraktet. Var dokumentet läggs (som ett krav i TestBench, på requesten eller en fil i git) är ett öppet val.
+- **Att också köra API-testerna** är ett senare steg, via det skrivande discover-läget (en icke-produktionsadress, `full`, ett bekräftande, en logg över varje åtgärd). POST, PUT och DELETE räknas redan som skrivande av `is_state_changing`.
+
+**Beslut för måndag.**
+1. Ska ett enda ja täcka även säkerhet och API (rekommenderat, med dem uttryckligen i bekräftelsen), eller ska de ha egna bekräftanden som i dag?
+2. API i första versionen: skapa tester (A och B) utan att köra dem? (rekommenderat)
+3. Var läggs ett OpenAPI-dokument: som krav, på requesten eller i git?
+4. Ska belastningstest förbli en egen request (som nu), eller också kunna kryssas i? (rekommenderat: egen, eftersom det lägger last på ett system)
 
 ### D1: Automatiseringsförslag för planposter
 **Status: klart** (mergad i #70)
