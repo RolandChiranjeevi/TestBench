@@ -24,6 +24,37 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 - **`checks`:** api och säkerhet lämnas över till sina egna skills efter discovern, med deras egna bekräftanden. Det är inte provat från en request.
 - **Från live-testen 20 nov (kontrollera vad som redan är gjort):** ett rekommenderat `permissions`-block provat med `Write`-regler (docs i #147), och skillförbättringarna: skippa `mkdir` (Write skapar mappen), skippa `cat .testpilot/…`, och säga åt agenten att inte läsa en tidigare requests fynd.
 
+### V: Veckoplan 2026-11-23 till 11-27, jämförelse mot andra agentverktyg
+**Status: förslag** (formulerat 2026-11-22; riktning och ordning, ingen utfästelse)
+
+**Målet.** Kunna testköra mot livesidor i testmiljö, både publika och sådana bakom inloggning, och jämföra med andra agentverktyg. Jämförelsen är både för eget beslut och för att kunna visas för andra, så protokollet måste vara noggrant.
+
+**Inloggning.** Sidorna bakom inloggning loggar användaren in på själv, och **inga lösenord lämnas ut** till agenten, i en fil, i en request eller på en kommandorad. Det är det skrivande discover-läget som redan finns ("du loggar in själv"). Följder att veta: sessionen finns bara så länge webbläsaren i körningen lever, så en lång körning kan tappa inloggningen, och en körning kan inte lämnas helt obevakad förrän användaren loggat in i början. En sparad session (J-F) är en hemlighet och kräver en egen säkerhetsplan, så den ligger **utanför veckan**.
+
+**Vad ett rättvist prov kräver.**
+1. En discover som gör det man kryssar i och levererar det som ett paket (sektion M).
+2. Körningar utan att sitta bredvid: det rekommenderade `permissions`-blocket, verifierat på riktigt (`Write`-reglerna föll i live-testet 20 nov).
+3. En uppsättning att lita på på en annan maskin eller sajt: `testpilot doctor` (J-C).
+4. Ett jämförelseprotokoll (nedan).
+5. Inte i veckan: belastningstest mot fjärradresser (nekas idag, och behövs inte för jämförelsen), lokal app och dashboard.
+
+**Ordning.**
+- **Måndag:** besluten i M (fyra) och J (A–C). Live-proven under "Att prova live" görs av användaren under tiden.
+- **Måndag–tisdag:** M del 1: säkerhet som observationer av sorten `security_review`, API som skapade testfall, kryssade delar i ett paket. Medel.
+- **Tisdag–onsdag:** permissions-blocket (liten) och `doctor` (medel).
+- **Torsdag:** protokollet skrivs klart och provkörs mot den egna sidan.
+- **Fredag:** första jämförelsen mot en eller två sajter, en publik och en bakom inloggning.
+
+**Protokollet (att skriva före första jämförelsen).**
+- **Fasta förutsättningar:** samma sajter, samma uppgifter och samma instruktioner till varje verktyg, och verktygens versioner, modeller och inställningar nedskrivna. Verktygslistan fylls i av användaren (inte i repot med namn).
+- **Upprepning:** minst tre körningar per verktyg och sajt, så att slumpen syns, och alla körningar redovisas, inte bara de bästa.
+- **Mått:** tid; antal gånger en människa måste ingripa; kostnad; antal fynd; **andel fynd som en människa godtar** och antal falska; antal skapade tester som faktiskt går att köra; om något hemligt läckte ut i en logg eller en fil.
+- **Bedömning:** en människa granskar fynden utan att veta vilket verktyg som gav dem, med en skriven definition av falskt och godtaget fynd.
+- **Det som gör det möjligt att visa för andra:** protokollet och rådata sparas, sajterna avidentifieras, inga riktiga uppgifter finns i loggarna, och begränsningarna skrivs ut (få sajter, få körningar, en bedömare).
+- **Var det bor:** utanför repot, i designmappen, som tidigare jämförelser. I repot hamnar bara det vi bygger.
+
+**Inte lovat.** Tidsplanen styrs av beslut, design och granskning av varje del. Hur bra agenten är på riktiga sajter vet vi först efter proven.
+
 ### M: En discover levererar allt man kryssar i, som ett paket
 **Status: förslag, inget är byggt** (formulerat 2026-11-22; besluten längst ned tas på måndag)
 
