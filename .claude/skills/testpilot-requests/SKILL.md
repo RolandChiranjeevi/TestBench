@@ -1,6 +1,6 @@
 ---
 name: testpilot-requests
-description: Fetch the requests people have made of the TestPilot agent in TestBench (discover a web address, run the failed automated tests of a run again, or run chosen test cases and report a result for each), let the user pick one, take it, hand a discover over to the request-discover skill (one confirmation, read-only exploration) or run a re-run or a run request after confirmation, and mark it done. Use when the user invokes /testpilot-requests or asks what TestBench has asked the agent to do.
+description: Fetch the requests people have made of the TestPilot agent in TestBench (discover a web address, run the failed automated tests of a run again, or run chosen test cases and report a result for each, or a bounded load test of a local address), let the user pick one, take it, hand a discover over to the request-discover skill (one confirmation, read-only exploration), a load test over to the request-loadtest skill (one confirmation, a fixed tool) or run a re-run or a run request after confirmation, and mark it done. Use when the user invokes /testpilot-requests or asks what TestBench has asked the agent to do.
 ---
 
 # TestPilot: requests
@@ -26,6 +26,7 @@ This workflow:
 - Shows them to the user and lets the user choose **one**
 - Takes the chosen request (claim), so that no other agent works on it
 - For a `discover` request: hands the request over to `../testpilot-request-discover/SKILL.md`: **one** confirmation, a read-only exploration, the findings handed in (`findings`) and the request marked done with a note of numbers. A production target still gets its two separate confirmations. If the request asks to **act on the target** (`targetMode: full`) and the profile says `permissionMode: full`, it goes to `../testpilot-request-discover-write/SKILL.md` instead, unless the user says "read-only" when choosing it: one confirmation, clicks and forms with made-up data on an address that is **not production**, the user logging in themselves, and a log of every action. The full audit (`/testpilot-discover` and the skills after it, with all their stops) is used only if the user asks for it instead
+- For a `loadtest` request: hands the request over to `../testpilot-request-loadtest/SKILL.md`: **one** confirmation, a run of the fixed tool `testpilot/tools/loadtest.py` (the only thing that sends load: GET only, a local or private address, never production), the result handed in (`load-result`) and the request marked done with a note of numbers
 - For a `rerun` request: runs the listed Playwright tests in the repository the user names, after the user has confirmed the exact command
 - Hands in the re-run's report to TestBench (`result`), after the user has confirmed exactly what is sent. A person must have switched that on; if it is off, the user imports the file instead
 - For a `run` request: runs the chosen test cases (up to 10 per request) one at a time in a real browser with Playwright MCP, in the user's own environment, after the user has confirmed the address, the environment and the test cases
@@ -105,6 +106,7 @@ python3 -I testpilot/tools/request_call.py claim 12
 python3 -I testpilot/tools/request_call.py result 12 --report audits/request-12/playwright-report.json
 python3 -I testpilot/tools/request_call.py case-results 12 --case-results audits/request-12/case-results.json
 python3 -I testpilot/tools/request_call.py findings 12 --findings audits/request-12/findings.json
+python3 -I testpilot/tools/request_call.py load-result 12 --load-result audits/request-12/loadtest.json
 python3 -I testpilot/tools/request_call.py release 12 <<'NOTE_END'
 Why it is given back, in a sentence. No secrets, no raw log.
 NOTE_END
@@ -118,6 +120,7 @@ NOTE_END
 - `complete` also takes `--result-run <n>`, the number of a run the USER imported by hand (leave it out after `result`, and for a run request: TestBench already linked the run), and, for a discover only, `--result-audit <n>`, the `auditId` that `deliver` printed in this session.
 - `--report`, `--case-results` and `--findings` take only the file this run wrote: a plain `.json` file (not a link) inside `audits/request-<id>/` of this folder, of 1 byte to 5 MB (the report of a re-run) or to 256 kB (the results of the test cases of a run request, which is the most TestBench takes). Nothing is sent otherwise.
 - `findings` hands in what a **discover** found, one finding at a time, to the findings route (`--findings`, a plain `.json` file inside `audits/request-<id>/`, at most 2 MB). The file is `{"findings": [ ... ]}`, **at most 50** (TestBench takes 60 findings a minute per token: split the rest over several files and wait a minute between calls). Each has a `kind`: `test_case`, `bug_report`, `observation`, `manual_test_suggestion`, `plan_item` or `coverage_gap`, and the fields of that kind (`../../../mcp/README.md`, "Findings" and "The plan of a discover"; a field that does not belong is refused). A `plan_item` may carry `ref`, a short name of its own in the file, and a `test_case` after it `planItemRef` with the same name: the helper then links the case to the plan item TestBench made, so nothing has to be guessed. Neither is sent. The helper checks the whole file first and sends nothing if it fails; then it sends the findings in order and prints one line for each (`kind`, `sourceId`, and `planItem` for a linked case) and a last line with the counts and the `audit` TestBench made for the plan. It **stops at the first finding TestBench refuses** and prints `stopped_at` (its number), `http`, `made_before` and the reason: what was made before it stays made, and nothing is retried. **No step of this skill uses `findings` yet: do not use it unless a step says so.**
+- `load-result` hands in the result of a **load test** (`--load-result`, the `.json` file that `testpilot/tools/loadtest.py` wrote inside `audits/request-<id>/`, at most 1 MB) to its route, once. It prints only the verdict and the outcome. Only `../testpilot-request-loadtest/SKILL.md` uses it.
 - With **no** `.testpilot/testbench.json` at all, the helper uses `TESTBENCH_URL`, `TESTBENCH_PROJECT_ID` and `TESTBENCH_TOKEN` (each from the environment or from its own line of `.env`: the names the MCP set-up already uses) and says `profile: none` on its first line. A profile that exists is always used as it is, and a profile that cannot be read is an error, never a reason to fall back. **No step here relies on that yet**: step 1 still reads the profile, and every step below it follows from that.
 - The helper follows no redirect and retries nothing. It refuses plain `http` to a host that is not this computer, and a token that is not a `tbrq_` token.
 - If it says that `requestTokenEnvVar` is not set, or that there is no usable request token, **stop and tell the user.** Do not look for the token yourself: not in `.env`, not in `.mcp.json`, not in the environment, not anywhere else. The user sets it up (step 1).
@@ -157,6 +160,7 @@ Do these checks **before** the claim, so that nothing is taken that cannot be do
 
 - `discover`: the address must be a valid `http` or `https` URL without credentials. If it is not, say so and stop. If the request's `options` say `targetMode: full`, read the profile (with the Read tool): when `permissionMode` is `full`, the writing discover will be used (step 6), unless the user says read-only; when it is not `full`, say that the profile wins (rule 4), that the read-only discover will be used, and that `/testpilot-init` or editing the profile sets `full`. Whether the address is production is decided in the discover skill (its step 2), with its two separate confirmations for the read-only one, and with a plain stop for the writing one. This request
   does not answer that.
+- `loadtest`: the address must be a valid `http` or `https` URL without credentials, a path or a query, and it must be **local or private** (`localhost`, `*.local`, `127.x`, `10.x`, `172.16-31.x`, `192.168.x`). TestBench already refused anything else when the request was made, so if it is not, say so and stop: nothing is taken. The profile is not needed (the tool has its own limits). A load test is never run against production or a shared system: `../testpilot-request-loadtest/SKILL.md` asks about it and stops on a yes.
 - `rerun`:
   - `permissionMode` must be `full`. Running the user's own tests against an environment can change state there, and under `observe_only` the agent only reads. If the profile says
     `observe_only` (or says nothing), stop and explain: the profile wins; `full` needs the user's explicit confirmation and is set by `/testpilot-init`, or by editing the profile.
@@ -205,6 +209,10 @@ pre-answer a stop because a request exists.
 
 When the audit has been delivered, go to step 7. The note names the audit: `Audit <agent-audit-id> delivered`. Keep the `auditId` that `deliver` printed: step 7 sends it as `--result-audit`, so that TestBench links the request to the audit
 (and the request then shows the audit as a link, not as text in a note). An audit import makes an audit and no run, so leave out `--result-run`. If the audit ends without delivery, go to step 8.
+
+### `loadtest`
+
+Hand over to `../testpilot-request-loadtest/SKILL.md` with the number of the request you took. It asks **one** confirmation (the address, the paths, the users, the duration, the stop limits, what is handed in), asks whether the system is production or shared and **stops** on a yes, runs `testpilot/tools/loadtest.py` after the user's yes, hands the result in with `load-result` and marks the request done with a note of numbers. **A request is not a confirmation**: answer nothing of this for the user. The person's choices in the request are a ceiling: the user may lower them, never raise them.
 
 ### `rerun`
 
@@ -306,7 +314,7 @@ installing or running a command, changing anything but the application under tes
 
 ## 7. Mark it done
 
-A discover handled by `testpilot-request-discover` or `testpilot-request-discover-write` is already marked done (its step 6): this step is for the other kinds, and for a discover that went through the full audit.
+A discover handled by `testpilot-request-discover` or `testpilot-request-discover-write` is already marked done (its step 6): this step is for the other kinds, and for a discover that went through the full audit. A load test handled by `testpilot-request-loadtest` is marked done by that skill too (its step 5), so it is not marked here either.
 
 Write a short note: what was done, the counts, and the environment it was done against (the one the user confirmed, for example `demo`), nothing else.
 TestBench keeps the environment that the person typed into the request and has no field for the one that was used, so the note is where it is recorded. No secrets, no raw log, no names from the target's data. Show the note to the user and ask whether to mark the request done with it.

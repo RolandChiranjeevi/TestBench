@@ -2,8 +2,9 @@
 """The one way the /testpilot-requests skill talks to TestBench with a request token.
 
     python3 -I testpilot/tools/request_call.py <action> [<request number>] [--report FILE] [--case-results FILE] [--findings FILE] [--result-run N] [--result-audit N]
+                                             [--load-result FILE]
 
-<action> is list, claim, release, result, case-results, findings or complete. For release and complete the note is read from standard input (a quoted heredoc keeps it as
+<action> is list, claim, release, result, case-results, findings, load-result or complete. For release and complete the note is read from standard input (a quoted heredoc keeps it as
 text). Run it from the folder that holds `.testpilot/`.
 
 `findings` hands in what a discover found, one finding at a time: the file is {"findings": [...]} (at most 50), each with a `kind` (test_case, bug_report, observation,
@@ -30,16 +31,20 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
 
-ACTIONS = ("list", "claim", "release", "result", "case-results", "findings", "complete")
+ACTIONS = ("list", "claim", "release", "result", "case-results", "findings", "load-result", "complete")
 LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
 TOKEN = re.compile(r"tbrq_[A-Za-z0-9_-]{1,195}")  # a request token: its prefix and base64url, at most 200 characters (what TestBench accepts)
-SEND_MAX = {"result": 5 * 1024 * 1024, "case-results": 256 * 1024, "findings": 2 * 1024 * 1024}  # the most TestBench takes: the report of a re-run, the results of a run request's test cases, and a file of findings
+SEND_MAX = {"result": 5 * 1024 * 1024, "case-results": 256 * 1024, "findings": 2 * 1024 * 1024, "load-result": 1024 * 1024}  # the most TestBench takes: the report of a re-run, the results of a run request's test cases, and a file of findings
 FINDING_KINDS = ("test_case", "bug_report", "observation", "manual_test_suggestion", "plan_item", "coverage_gap")  # the list of server/agentfindings.ts (test_requests_skill.py checks it)
 FINDINGS_MAX = 50  # in one call: TestBench takes 60 findings a minute per token
 ALIAS = re.compile(r"[A-Za-z0-9_-]{1,40}")  # a `ref` of a plan_item
 # What a person chose when asking for a discover (server/agentrequests.ts, REQUEST_OPTIONS). Only a value from these lists is ever printed, so no free text can pass through them.
 OPTION_CHOICES = {"targetMode": ("observe_only", "full"), "gitMode": ("off", "local", "pr")}
-OPTION_LISTS = {"deliverables": ("plan", "cases", "observations", "bugs", "specs"), "viewports": ("desktop", "tablet", "mobile")}
+OPTION_LISTS = {"deliverables": ("plan", "cases", "observations", "bugs", "specs"), "viewports": ("desktop", "tablet", "mobile"), "checks": ("visual", "api", "security")}
+# What a person chose when asking for a load test (server/loadtest.ts, LOAD_LIMITS). Only a value from these lists, or a cleaned path, is ever printed.
+LOAD_CHOICES = {"vus": (5, 10, 25, 50), "durationSeconds": (30, 60, 120), "rampUpSeconds": (0, 10, 30), "maxErrorRatePercent": (1, 5, 10), "maxP95Ms": (1000, 2000, 5000)}
+LOAD_VERDICTS = ("pass", "warning", "fail")
+LOAD_OUTCOMES = ("completed", "stopped_error_rate", "stopped_p95", "stopped_by_agent")
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -192,6 +197,16 @@ def options_of(o):
     return out
 
 
+def load_options_of(o):
+    """The choices of a load test as they may be shown: each one of the known values, the paths cleaned and cut, or left out. A preselection and a ceiling, never a permission."""
+    if not isinstance(o, dict):
+        return None
+    out = {k: o[k] for k, ok in LOAD_CHOICES.items() if o.get(k) in ok}
+    if isinstance(o.get("paths"), list):
+        out["paths"] = [re.sub(r"[\x00-\x1f\x7f]", " ", str(p))[:200] for p in o["paths"][:10]]
+    return out
+
+
 def show(data, code, action, rid):
     """Prints the answer: the data of the requests as JSON strings, so that text in a note stays text, and nothing else from it. Returns the exit status."""
     try:
@@ -205,6 +220,9 @@ def show(data, code, action, rid):
     clean = lambda s, n: re.sub(r"[\x00-\x1f\x7f]", " ", str(s))[:n]
     if action == "result":
         print(json.dumps({"run": r.get("runId"), "tests": r.get("total"), "linked": r.get("linked")}))
+        return 0
+    if action == "load-result":
+        print(json.dumps({"verdict": r.get("verdict") if r.get("verdict") in LOAD_VERDICTS else None, "outcome": r.get("outcome") if r.get("outcome") in LOAD_OUTCOMES else None}))
         return 0
     if action == "case-results":
         c, p = r.get("counts") or {}, r.get("progress") or {}  # only these numbers are printed, nothing else from the answer
@@ -233,6 +251,7 @@ def show(data, code, action, rid):
             "asked_at": q["createdAt"], "note": clean(q["note"], 500),
             **({"cases": q.get("caseCount"), "progress": q.get("progress")} if q["kind"] == "run" else {}),
             **({"options": options_of(q.get("options"))} if q["kind"] == "discover" and q.get("options") is not None else {}),
+            **({"loadOptions": load_options_of(q.get("loadOptions"))} if q["kind"] == "loadtest" and q.get("loadOptions") is not None else {}),
         }))
         if detail and q["kind"] == "run":
             cases = q.get("cases") or []
@@ -263,12 +282,13 @@ def main(argv):
     ap.add_argument("--report", default="")
     ap.add_argument("--case-results", default="")
     ap.add_argument("--findings", default="")
+    ap.add_argument("--load-result", default="")
     ap.add_argument("--result-run", default="")
     ap.add_argument("--result-audit", default="")
     a = ap.parse_args(argv)
     whole = lambda s: re.fullmatch(r"[0-9]*", s) is not None
     if a.action not in ACTIONS:
-        return fail("The action must be list, claim, release, result, case-results, findings or complete")
+        return fail("The action must be list, claim, release, result, case-results, findings, load-result or complete")
     if not whole(a.rid) or (a.action != "list" and not a.rid):
         return fail("The request number must be the number of a request")
     if not whole(a.result_run) or not whole(a.result_audit):
@@ -298,7 +318,7 @@ def main(argv):
 
     body, items = None, None
     if a.action in SEND_MAX:
-        body = read_send_file({"result": a.report, "case-results": a.case_results, "findings": a.findings}[a.action], a.rid, SEND_MAX[a.action])
+        body = read_send_file({"result": a.report, "case-results": a.case_results, "findings": a.findings, "load-result": a.load_result}[a.action], a.rid, SEND_MAX[a.action])
         if isinstance(body, str):
             return fail(body)
         if a.action == "findings":

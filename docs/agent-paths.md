@@ -30,6 +30,7 @@ That works, and it is what the agent did in the verification of the chain ([agen
 
 ## Which to use
 
+- A **load test** (a request of its own kind, a bounded GET-only test of a local or private address, with **one** confirmation): `/testpilot-requests`, which hands it to `testpilot-request-loadtest`. **There is no MCP path for it**: the load is sent by a fixed tool, and the result goes in with `load-result` through the helper.
 - A **discover from a request** (a draft plan, test cases, observations and bug proposals, read-only, with **one** confirmation): `/testpilot-requests`, which hands it to `testpilot-request-discover`.
 - A **discover that may click and fill in forms** (made-up data, an address that is not production, you log in yourself, a log of every action, **one** confirmation): `/testpilot-requests`, which hands it to `testpilot-request-discover-write` when the request says *Act on the target* and the profile says `permissionMode: full`.
 - A **re-run**, a **Playwright report**, or a **discover** that should end as an audit with evidence and an audit package (the full audit): the skills.
