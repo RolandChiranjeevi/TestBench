@@ -4,6 +4,25 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 
 ## Nästa
 
+### Läget 2026-11-22 (inför måndag)
+**Status: sammanfattning, inget här är beslutat utöver det som står som klart**
+
+- **Det tunga som är byggt sedan sist:** extra delar vid en discover (`checks`, #159), belastningstest som egen sorts request (server #160, formulär och rapport #161, agentsidan #162), och att bug-reporting och test-planning alltid följs av discover-skillsen.
+- **Att göra först på måndag:** merga #162 (agentsidan av belastningstestet) och göra de live-prov som står under "Att prova live" nedan.
+- **Sedan:** besluta om J-A till J-C (se J, rekommenderad ordning: J-C först), ta DG 3e och de små skillförbättringarna, och därefter UI/UX-justeringarna. **Dashboarden på startsidan tas sist**, när mer av det tunga är klart.
+- **Kan vara föråldrat (kontrollera innan något görs):** leverans 1 av auditpaketet (committad lokalt 2 nov, aldrig bekräftad pushad) och valet av workflow för auditpaket. Backloggen nämner dem inte, så de är antingen klara eller bortglömda.
+
+#### Att prova live (flödet vi byggt)
+1. **Belastningstest, första körningen.** Skapa en `loadtest`-request i UI:t (bara admin) mot en lokal app och med liten last (till exempel 5 användare, 30 s), kör `/testpilot-requests`, svara på produktionsfrågan och bekräftelsen, och läs rapporten under "View the load test report". Titta på: hur många rättighetsfrågor som kommer, om bekräftelsen blir ett meddelande, och om rapporten säger något användbart.
+2. **Discover med extra delar.** Kryssa i visuell granskning (och senare API och säkerhet) och se att agenten faktiskt visar valen i bekräftelsen. Före #162 nådde `checks` aldrig agenten, så den vägen är aldrig körd live.
+3. **Bug-reporting och test-planning i en discover.** Se om fynden följer reglerna i de två skillsen (de läses nu alltid, men ingen har kört det).
+4. **Stopp i belastningstestet.** En app som svarar 5xx eller är långsam, för att se `stopped_error_rate` och `stopped_p95` på riktigt, och att en `fail` visas som ett resultat och inte som ett fel.
+
+#### Luckor i det som är byggt
+- **Belastningstest:** ingen MCP-väg för sorten (bara skillen och hjälparen), ingen jämförelse med en tidigare körning, och varje `run` är ett Bash-anrop som kan ge en rättighetsfråga i `default`-läget. Fjärradresser nekas helt i första versionen; att tillåta dem kräver ett eget, uttryckligt val och ett extra bekräftande.
+- **`checks`:** api och säkerhet lämnas över till sina egna skills efter discovern, med deras egna bekräftanden. Det är inte provat från en request.
+- **Från live-testen 20 nov (kontrollera vad som redan är gjort):** ett rekommenderat `permissions`-block provat med `Write`-regler (docs i #147), och skillförbättringarna: skippa `mkdir` (Write skapar mappen), skippa `cat .testpilot/…`, och säga åt agenten att inte läsa en tidigare requests fynd.
+
 ### D1: Automatiseringsförslag för planposter
 **Status: klart** (mergad i #70)
 - Regelbaserade förslag från godkända planposter.
@@ -139,7 +158,7 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 - Skillen `/testpilot-requests` (högst 10 testfall per förfrågan) kör testfall med `automatedTests` eller `specFiles` med Playwright efter att ha frågat var testerna ligger, hittat filerna med exakt en träff, visat exakt kommando och miljö (produktion kräver de två bekräftelserna) och fått ett ja i ett nytt meddelande; den lämnar in rapporten med `result` efter ett nytt ja och rapporterar sedan testfallens resultat sanna mot rapporten. **Inget nytt MCP-verktyg**: en JSON på upp till 5 MB passar inte som verktygsargument, så MCP får bara en text om hur rapporten levereras.
 
 ### J: Förslag efter jämförelsen med ett annat verktyg
-**Status: förslag, inget är påbörjat** (jämförelsen gjordes 2026-11-20 och beslutas på måndag; bakgrunden finns i designmappen utanför repot, `annat-verktyg-jamforelse.md`)
+**Status: förslag, inget är påbörjat** (jämförelsen gjordes 2026-11-20 och beslutas på måndag 2026-11-23, rekommenderad ordning: J-C först, sedan J-B och J-A; bakgrunden finns i designmappen utanför repot, `annat-verktyg-jamforelse.md`)
 - **J-A: Repo-hygien i CI.** Vi har bara `ci.yml`. Lägg till dependabot (npm och GitHub Actions), en hemlighetsskanning i CI och en `CODEOWNERS`. Att besluta först: vilken skanner, och en tillåtelselista för de falska tokenmönster som våra tester och mallar använder med flit (till exempel `tbrq_…` i testerna). Storlek: liten.
 - **J-B: Terminal-säker utskrift och ett skrivet kontrakt för hjälparen.** (1) Ett egenskapstest som visar att varje sträng som `request_call.py` skriver ut från serverdata saknar styrtecken, escape-sekvenser samt bidi- och osynliga tecken. (2) Ett kontrakt i docs för hjälparens utdata och exit-koder, testat mot koden. Bakåtkompatibelt: inga befintliga rader ändras. Storlek: liten.
 - **J-C: `testpilot doctor` v1.** Ett kommando som bara läser och aldrig skriver ut en token. Det kontrollerar att token och profil finns, att tillåtelselistan är den ur docs (`git` och `gh` nekade, inget extra tillåtet), att profilen, regelfilen och `origin` hänger ihop (via `spec_git.py check`), och om agentmappens skills ligger efter `origin/main` eller är ändrade lokalt (`ok`, `stale`, `modified`). Storlek: medel. Störst värde av de tre: live-testerna visade att det är uppsättningen som skaver.
@@ -149,6 +168,13 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
   - **J-F: återanvändbar inloggning för obevakade körningar**, med ett lokalt sparat sessionstillstånd. En sparad session är en hemlighet och kräver en egen säkerhetsplan innan något byggs: var den ligger, vem som kan läsa den, livslängd, och att agenten aldrig får läsa filen.
 - **Kopieras inte:** telemetri som standard, krediter, att sviten bor hos leverantören, och att en agent kör tester med inloggningsuppgifter i miljön.
 - **Öppet, inte undersökt:** hur deras molnrunner undviker oåterkalleliga handlingar på en levande sajt, och var testdata och inloggningar lagras.
+
+### L: Belastningstest som egen request
+**Status: klart i tre delar** (server #160, formulär och rapportsida #161, agentsida #162, den sista öppen när detta skrevs)
+- **Sorten `loadtest`:** bara projektets admin begär den, och bara för en lokal eller privat adress. Valen är fasta listor (5–50 användare, 30–120 s, ramp-up, 1–10 sökvägar, stoppgräns för fel och för p95) och är ett **tak** för resultatet: servern nekar ett resultat som använt fler användare, längre tid eller andra sökvägar.
+- **Verktyget `testpilot/tools/loadtest.py`** är det enda som skickar last. Taken ligger i koden (50 användare, 120 s, 10 sökvägar, 200 000 anrop), bara GET, ingen inloggning, inga omdirigeringar, inga omförsök. Betyget räknas av fasta regler från siffror, och ingen text från målsidan hamnar i resultatet.
+- **Rapporten** (`/p/:projekt/requests/:id/load`): betyg med skäl, nyckeltal, p95 över tid med gränsen inritad, tabell per sökväg, kopiera som Markdown och ladda ner JSON.
+- **Kvar:** se "Luckor i det som är byggt" ovan. Dessutom en tidigare idé: en Playwright-webbläsare som mäter laddtid under lasten (Playwright är inget lastverktyg, men fungerar som komplement).
 
 ### DG: Discover till git (git-läget `local`)
 **Status: 3a–3d klara, 3e väntar**
