@@ -263,6 +263,41 @@ class ActingRulesTests(unittest.TestCase):
         self.assertIn("so write **one observation** of severity `info` for each kind of picker you meet, saying where it is and that its rules need a person.", step3)
         self.assertIn("**Every flow is also tried with nothing in it:** press through to the end with an empty cart, an empty list or no selection (for example, check out with an empty cart and press Finish); a page that lets an empty order through is a bug.", step3)
 
+    CLASSES = ("empty", "wrong-kind", "too-long", "boundary", "format", "date-range", "end-to-end", "cancel-back", "empty-state", "amounts", "order", "links", "menu", "size", "console", "session")
+
+    def catalogue(self):
+        m = re.search(r"- \*\*The catalogue of checks\.\*\*(.*?)- \*\*Undo only what you made", self.step3(), re.S)
+        assert m, "the catalogue"
+        return m.group(1)
+
+    def test_the_catalogue_names_each_class_of_check_once_under_the_kind_of_thing_it_belongs_to(self):
+        cat = self.catalogue()
+        at = [cat.find(f"`{c}`") for c in self.CLASSES]
+        self.assertNotIn(-1, at, "every class is named")
+        self.assertEqual(at, sorted(at), "in the order the catalogue gives them: field, flow, list, page, session")
+        for kind in ("a **field**:", "a **flow** (a path of several steps):", "a **list** (things that can be sorted or filtered):", "a **page**:", "the **session**:"):
+            with self.subTest(kind=kind):
+                self.assertIn(kind, cat)
+        self.assertIn("Everything that applies to a thing in the catalogue is done or is named as not done: nothing is left out silently.", flat(cat))
+        self.assertIn("A class that does not apply to a thing is left out (`date-range` for a field that is not a date). Every class that does apply gets a row in the coverage record.", flat(cat))
+
+    def test_the_catalogue_covers_what_the_two_bugs_found_by_hand_were_made_of(self):
+        """Letters in a postal code (wrong-kind) and Finish with an empty cart (empty-state) were missed by every run before."""
+        cat = flat(self.catalogue())
+        self.assertIn("`wrong-kind` (letters in a number field", cat)
+        self.assertIn("`empty-state` (with nothing in it: an empty cart or list)", cat)
+        self.assertIn("`amounts` (five different carts, exact text)", cat)
+
+    def test_the_coverage_record_is_one_true_observation_per_page_and_a_row_without_actions_is_not_tried(self):
+        step4 = flat(section("4. Write the action log and the findings"))
+        self.assertIn("**The coverage record.** For each page, hand in **one observation** with severity `info`, the title `Coverage: <the path of the page>`, `source` that page", step4)
+        self.assertIn("`<thing> · <class> · tried | issue | not tried · actions <numbers from your log> · <the reason, if not tried>`", step4)
+        self.assertIn("**Every row that says `tried` or `issue` names the numbers of the actions in your log; a row without numbers counts as `not tried`.**", step4)
+        self.assertIn("Never leave out a class that applies: a missing row is read as forgotten.", step4)
+        self.assertIn("If the lines do not fit in 4000 characters, make a second observation for that page (`Coverage: <path> (2)`).", step4)
+        self.assertIn("it is true or it is not handed in. It is a record of what **you did** and nothing says that the page is right.", step4)
+        self.assertIn("`not tried` needs a hard reason, of the kind of a coverage gap", step4)
+
     def test_it_logs_out_only_after_its_list_is_done_and_says_so_if_it_did_not(self):
         step3 = self.step3()
         self.assertIn("**Before you press it, read your list: every item is ticked, or has a coverage gap with a hard reason.** \"It does not need the session\" is never a reason, and neither is that the list is long.", step3)
