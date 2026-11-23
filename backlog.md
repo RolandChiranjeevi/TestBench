@@ -88,10 +88,39 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 - **Att också köra API-testerna** är ett senare steg, via det skrivande discover-läget (en icke-produktionsadress, `full`, ett bekräftande, en logg över varje åtgärd). POST, PUT och DELETE räknas redan som skrivande av `is_state_changing`.
 
 **Beslut för måndag.**
-1. Ska ett enda ja täcka även säkerhet och API (rekommenderat, med dem uttryckligen i bekräftelsen), eller ska de ha egna bekräftanden som i dag?
+1. Ska ett enda ja täcka även säkerhet och API (rekommenderat, med dem uttryckligen i bekräftelsen), eller ska de ha egna bekräftanden som i dag? **Besvarat 2026-11-23: ja, och mer än så. Förfrågan i UI:t är beslutet (se "Frågebudget" nedan).**
 2. API i första versionen: skapa tester (A och B) utan att köra dem? (rekommenderat)
 3. Var läggs ett OpenAPI-dokument: som krav, på requesten eller i git?
 4. Ska belastningstest förbli en egen request (som nu), eller också kunna kryssas i? (rekommenderat: egen, eftersom det lägger last på ett system)
+
+#### Frågebudget: förfrågan är beslutet
+**Status: beslutat som riktning 2026-11-23 (efter live-testet), inget är byggt.** Ersätter beslutet från 2026-11-20 att alla tre stopp (vilken request, produktion, ett yes) skulle vara kvar.
+
+**Varför.** Målet är att kunna starta en körning och gå på lunch. Live-testet 2026-11-23 visade hur långt det är dit: en discover gav de tre stoppen, belastningstestet tre rättighetsfrågor, och API- och säkerhetsdelen ungefär 15–20 stopp, av vilka bara cirka fyra var riktiga beslut (resten var skriv- och Python-frågor, plus planfasens audit-ID, krav, scope och plan). Fynden godkändes dessutom i agentens session och sedan en gång till som förslag i TestBench.
+
+**Beslutat.**
+1. **UI:t är bekräftelsen.** Det som kryssas i när requesten skapas är det som gäller. Formuläret visar en sammanfattning ("du ber agenten göra detta"), och knappen är det enda godkännandet. Agenten visar ingen egen bekräftelse för det som kryssats och frågar inte om samma sak igen.
+2. **Bara läsa: inga frågor**, även mot en adress som i UI:t är markerad som produktion (läsning, och valet är gjort).
+3. **Full (skriver mot sajten): en enda extra fråga, om det är produktion.** Den frågas en gång per adress och gäller alla delar i körningen (discover, API, säkerhet). Byts adressen, eller kan den inte avgöras som lokal, frågas den igen.
+4. **Vilken request: alla väntande, äldsta först**, så att flera kan läggas och körningen lämnas.
+5. **Säkerhet:** de aktiva kontrollerna räknas som godkända av UI-valen, med skillens egna gränser som tak.
+6. **Fynd lämnas in utan fråga.** Granskningen sker en gång, i TestBench, där de redan ligger som förslag.
+7. **Ett stopp väntar inte på användaren.** Det avslutar den delen med vad som hann göras och en tydlig notering, som syns vid återkomsten.
+
+**Vad som ersätter frågorna (måste finnas, annars är det inte säkert).**
+- Hårda gränser i verktygens kod (belastningstestets tak, bara GET, bara lokala adresser), inte frågor.
+- Spärrlistan för förbjudna verktyg och ett **rekommenderat `permissions`-block** per sort (discover som läser, discover som skriver, belastningstest, API, säkerhet), provat på riktigt. Rättighetsfrågor styrs av Claude Codes inställningar och kan inte tas bort av en skill.
+- Handlande sorter är bara för admin, texten i en request är data, och allt som lämnas in är förslag.
+
+**Gränser att veta.** En inloggning kräver användaren (webbläsarsessionen finns bara så länge fönstret lever), så en körning bakom inloggning är inte helt oövervakad förrän användaren loggat in. Utan tillåtelseblocket går noll frågor inte.
+
+**Ordning.**
+1. **A och B (liten, med test).** A: ett tillåtelseblock för belastningstestet (`loadtest.py plan` och `run`, `request_call.py load-result`) i docs, med ett paritetstest. B: ett exempel på en findings-fil i discover-skillarna (med `automation` som sträng, som orsakade 400 tre gånger) och en rad om att filer läses med `Read` och aldrig med inline-Python. Inget `Write(audits/**)`: testerna kräver idag uttryckligen att agenten bara skriver under `audits/request-*`, och det behövs inte om punkt 2 görs.
+2. **API och säkerhet via fyndvägen** i stället för audit-flödet när de startas från en request: resultatet lämnas som fynd (observationer) på samma sätt som en discover, utan planfas, paket, validering och leverans. Det tar bort den största delen av kedjan i live-testet (leveransen krävde dessutom ett lösenord och en omställning i profilen), och är det som ger flest färre stopp.
+3. **Skillarna:** ingen egen bekräftelse vid bara läsa, produktionsfrågan en gång, fynd utan fråga, stopp som avslutar. Ett steg per sort, med live-test efter varje.
+4. **UI:t:** sammanfattningen som bekräftelse. UI/UX, tas efter de stora sakerna.
+
+**Mått.** Antal stopp per körning räknas i varje live-test. Målet: noll frågor vid bara läsa, en vid full.
 
 ### D1: Automatiseringsförslag för planposter
 **Status: klart** (mergad i #70)
