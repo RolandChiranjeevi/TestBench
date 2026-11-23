@@ -405,7 +405,7 @@ class PermissionsBlockTests(unittest.TestCase):
 
     def test_the_shell_commands_that_read_a_file_are_denied_in_the_writing_list_too(self):
         perms = self.block(self.HEADING)
-        for rule in ("Bash(cat:*)", "Bash(grep:*)", "Bash(head:*)", "Bash(sed:*)"):
+        for rule in ("Bash(cat:*)", "Bash(grep:*)", "Bash(head:*)", "Bash(sed:*)", "Bash(find:*)", "Bash(ls:*)"):
             self.assertIn(rule, perms["deny"])
         for r in perms["allow"]:
             self.assertNotRegex(r, r"^Bash\((cat|grep|head|sed)\b", "a file is read with the Read tool")
@@ -504,6 +504,20 @@ class LoginFirstTests(unittest.TestCase):
 
     def test_the_docs_say_that_a_login_on_the_address_itself_is_before_the_first_action(self):
         self.assertIn("if the address itself shows a login, that is **before its first action**, so you can log in at the start and leave", flat(DOCS))
+
+
+
+class ThirdPartyAndShellListingTests(unittest.TestCase):
+    """A live run (#19, 2026-11-23) listed a folder with `find ... -exec ls`, which was neither allowed nor denied, so it asked; an analytics 401 is the site's neighbour, not its bug."""
+
+    def test_an_error_from_another_origin_is_an_observation_and_never_a_bug_report(self):
+        text = flat(TEXT)
+        self.assertIn("**An error from another origin** (an analytics service, an advert, a widget) is an **observation**, never a bug report of the site", text)
+
+    def test_ls_and_find_are_not_a_way_around_the_read_tool(self):
+        text = flat(TEXT)
+        self.assertIn("`ls` and `find` are denied too", text)
+        self.assertIn("do not list the folder with `find ... -exec ls`", text)
 
 
 if __name__ == "__main__":

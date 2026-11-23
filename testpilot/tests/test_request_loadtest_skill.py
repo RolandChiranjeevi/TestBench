@@ -139,7 +139,7 @@ class PermissionsDocTests(unittest.TestCase):
 
     def test_the_shell_commands_that_read_a_file_are_denied_and_the_section_says_why(self):
         allow, deny, text = self.parts()
-        for rule in ("Bash(cat:*)", "Bash(grep:*)", "Bash(head:*)", "Bash(sed:*)"):
+        for rule in ("Bash(cat:*)", "Bash(grep:*)", "Bash(head:*)", "Bash(sed:*)", "Bash(find:*)", "Bash(ls:*)"):
             self.assertIn(rule, deny)
         body = " ".join(text.split())
         self.assertIn("`cat`, `grep`, `head` and `sed` are denied", body)

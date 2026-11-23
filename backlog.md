@@ -15,7 +15,16 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 3. **Belastningstest, små saker:** `tool_limit`, p95-varning, UI visar `Done` trots `fail`, sammanfattning som bekräftelse.
 4. **Dashboard** som slår ihop dagens med belastningstestets resultat. Sent, som alla UI-ändringar.
 5. **Knapp som startar git-runnern (A).** Beslutad men inte nu. Skiss, lagrad token och ett ja först, eftersom TestBench då startar något.
-6. **Okänt, bör utredas:** varför varukorgsklicket inte gjorde något i live-prov #13, och varför en bild utan alt-text missades i varje körning (9+).
+6. **Okänt, bör utredas:** varför en bild utan alt-text missades i varje körning (10+). (Varukorgsklicket i live-prov #13 var Chromes lösenordsruta, se nedan.)
+7. **Läsa ett git-repo och föreslå `spec.ts`** (nytt mål 2026-11-23, beslutat: **nivå 1**). Agenten läser koden i repot och föreslår testfall och `spec.ts`, **utan att köra något**. Att köra repots egna tester (nivå 2) eller starta appen (nivå 3) är inte beslutat och kräver ett eget säkerhetsbeslut. Oklart än: hur repot kommer in (en lokal sökväg du anger, eller att agenten klonar det, vilket är en utgående åtgärd), om det är en ny sorts request eller en del av discover, och hur det går ihop med att agenten inte läser människans egna specar (S2).
+
+**Jämförelse med TestSprite.** TestSprite kördes mot saucedemo 2026-11-23 som mätpunkt. Spara dess råa utdata orörd, med datum, och hur många stopp och frågor det krävde, hur lång tid det tog, kostnad och vad testverktyget fick veta på förhand. Protokollet (mått, vem som avgör vad som är ett riktigt fel, saucedemos kända fel som facit) skrivs **torsdag**, inte före.
+
+**Lärt av live-proven 2026-11-23 (saucedemo, skrivande discover, #13 till #19).**
+- Chromes varning om läckt lösenord blockerar fliken, och Playwright ser den inte. `--browser chromium` hjälpte inte. En egen webbläsarprofil för agenten med lösenordshanteraren, läckkontrollen och Safe Browsing avstängda fungerade i ett prov (#19). Står i `docs/agent-requests.md`.
+- Resultat för #19: normala stopp, inga frågor om `grep`/`cat`/`head`/`sed`, en oväntad fråga (`find`), nu nekad. Demolösenordet rapporteras inte om säkerhet inte är vald, fel från andra ursprung blir observationer.
+- En tagen request förblir tagen när sessionen stängs. Den släpps bara av agenten (`release`) eller genom att en person avbryter den. Förslag, inte beslutat: en knapp eller en tidsgräns i TestBench.
+- Inte provat: att agenten lämnar något som redan låg i varukorgen ifred.
 
 **Regler för ändringar efter prov.**
 - Varje prov slutar med en kort "vad vi lärde oss"-lista som skrivs ner innan något byggs.
