@@ -45,11 +45,11 @@ test("Sign in with a good password @SHOP-43", async () => {
 
 ## How to hand them over
 
-Write `audits/request-<id>/specs.json` with the Write tool: `{"specs": [{"path": "<tests-dir>/<area>/<flow>.spec.ts", "content": "<the whole file>"}]}`, at most the number of files and lines
+Write `specs.json` in the folder of this claim (`audits/request-<id>/<time>/`, the `folder:` that `claim` printed) with the Write tool: `{"specs": [{"path": "<tests-dir>/<area>/<flow>.spec.ts", "content": "<the whole file>"}]}`, at most the number of files and lines
 that `check` printed under `limits`. Then one call, with the confirmed address as `scheme://host[:port]` and no path:
 
 ```bash
-python3 -I testpilot/tools/spec_git.py write 12 --confirmed local --origin https://staging.example.com --specs audits/request-12/specs.json
+python3 -I testpilot/tools/spec_git.py write 12 --confirmed local --origin https://staging.example.com --specs audits/request-12/20261123-194213/specs.json
 ```
 
 `--confirmed` is the mode the user confirmed in their own message, never what the request preselected. Nothing is written if one spec is refused. The tool prints the branch, the commit and the

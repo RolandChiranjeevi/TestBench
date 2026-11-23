@@ -91,6 +91,30 @@ class PrinterTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertIn('"test"', out)
 
+    def test_claim_prints_the_folder_of_this_claim_made_from_the_time_testbench_gave_it(self):
+        rc, out = printed(request(1, kind="discover", status="claimed", claimedAt="2026-11-23 19:42:13"), action="claim", rid="1")
+        self.assertEqual(rc, 0)
+        self.assertEqual(json.loads(out.strip().splitlines()[0])["folder"], "audits/request-1/20261123-194213")
+
+    def test_the_same_request_number_claimed_at_another_time_gets_another_folder(self):
+        """The number starts again after TestBench is reset: the folder must not."""
+        first = json.loads(printed(request(1, kind="discover", status="claimed", claimedAt="2026-11-23 16:03:00"), action="claim", rid="1")[1].splitlines()[0])["folder"]
+        again = json.loads(printed(request(1, kind="discover", status="claimed", claimedAt="2026-11-23 19:42:13"), action="claim", rid="1")[1].splitlines()[0])["folder"]
+        self.assertNotEqual(first, again)
+
+    def test_no_folder_is_printed_when_the_time_is_missing_or_not_a_time_or_the_action_is_not_a_claim(self):
+        for bad in ({}, {"claimedAt": None}, {"claimedAt": ""}, {"claimedAt": "yesterday"}, {"claimedAt": "../../etc"}, {"claimedAt": "2026-11-23 19:42"}):
+            with self.subTest(bad=bad):
+                rc, out = printed(request(1, kind="discover", status="claimed", **bad), action="claim", rid="1")
+                self.assertNotIn("folder", json.loads(out.strip().splitlines()[0]))
+        rc, out = printed([request(1, kind="discover", claimedAt="2026-11-23 19:42:13")])
+        self.assertNotIn("folder", json.loads(out.strip().splitlines()[0]), "a list is not a claim")
+
+    def test_the_folder_holds_only_digits_and_a_fixed_shape_so_nothing_from_the_server_can_change_the_path(self):
+        rc, out = printed(request(7, kind="discover", status="claimed", claimedAt="2026-11-23T19:42:13.456Z"), action="claim", rid="7")
+        folder = json.loads(out.strip().splitlines()[0])["folder"]
+        self.assertRegex(folder, r"^audits/request-7/[0-9]{8}-[0-9]{6}$")
+
     def test_complete_shows_the_result_note_not_the_request_note(self):
         rc, out = printed(request(4, status="done", note="the person's note", resultNote="2 of 2 passed", resultRunId=7, finishedAt="2026-11-16 09:00:00"), action="complete", rid="4")
         self.assertEqual(rc, 0)
@@ -1010,7 +1034,7 @@ class RuleTests(unittest.TestCase):
         self.assertIn("**No step here relies on that yet**", TEXT)
 
     def test_the_findings_action_is_described_and_no_step_uses_it_yet(self):
-        self.assertIn("python3 -I testpilot/tools/request_call.py findings 12 --findings audits/request-12/findings.json", TEXT)
+        self.assertIn("python3 -I testpilot/tools/request_call.py findings 12 --findings audits/request-12/20261123-194213/findings.json", TEXT)
         self.assertIn("**at most 50**", TEXT)
         self.assertIn("It **stops at the first finding TestBench refuses**", TEXT)
         self.assertIn("**No step of this skill uses `findings` yet: do not use it unless a step says so.**", TEXT)
@@ -1042,13 +1066,13 @@ class RuleTests(unittest.TestCase):
         self.assertIn("**quoted** heredoc", TEXT)
 
     def test_every_action_is_shown_as_a_call_of_the_helper(self):
-        for call in ("request_call.py list\n", "request_call.py list 12\n", "request_call.py claim 12\n", "request_call.py result 12 --report audits/request-12/playwright-report.json\n",
-                     "request_call.py case-results 12 --case-results audits/request-12/case-results.json\n", "request_call.py release 12 <<'NOTE_END'", "request_call.py complete 12 <<'NOTE_END'"):
+        for call in ("request_call.py list\n", "request_call.py list 12\n", "request_call.py claim 12\n", "request_call.py result 12 --report audits/request-12/20261123-194213/playwright-report.json\n",
+                     "request_call.py case-results 12 --case-results audits/request-12/20261123-194213/case-results.json\n", "request_call.py release 12 <<'NOTE_END'", "request_call.py complete 12 <<'NOTE_END'"):
             self.assertIn("python3 -I testpilot/tools/" + call, TEXT)
 
     def test_the_agent_never_writes_in_the_users_repository(self):
         self.assertIn("PLAYWRIGHT_JSON_OUTPUT_NAME=", TEXT)
-        self.assertIn("--output=<AGENT>/audits/request-12/artifacts", TEXT)
+        self.assertIn("--output=<AGENT>/audits/request-12/20261123-194213/artifacts", TEXT)
         self.assertIn("empties its own output directory", TEXT)
 
     def test_a_file_is_found_by_name_and_only_a_single_match_is_used(self):
@@ -1144,7 +1168,7 @@ class RuleTests(unittest.TestCase):
         self.assertIn("the run stays in progress: a person reviews the results and finishes it", TEXT)
 
     def test_the_results_file_is_in_the_names_testbench_takes_and_under_audits_request(self):
-        self.assertIn("<AGENT>/audits/request-<id>/case-results.json", TEXT)
+        self.assertIn("`<AGENT>/<folder>/case-results.json`", TEXT)
         self.assertIn("which are not the MCP tool's names", TEXT)
         self.assertIn('"caseId": 17', TEXT)
         self.assertIn("Each test case once, at most 200 results and 256 kB per file", TEXT)
@@ -1171,7 +1195,7 @@ class RuleTests(unittest.TestCase):
         self.assertIn("**Run whole files**, never single test names", TEXT)
         self.assertIn("**Show the exact command, the environment and the count, and ask.**", TEXT)
         self.assertIn("**A production environment needs the user's two separate confirmations**", TEXT)
-        self.assertIn("PLAYWRIGHT_JSON_OUTPUT_NAME=<AGENT>/audits/request-12/playwright-report.json", TEXT, "the report is written in the agent's own folder, never in the user's repository")
+        self.assertIn("PLAYWRIGHT_JSON_OUTPUT_NAME=<AGENT>/audits/request-12/20261123-194213/playwright-report.json", TEXT, "the report is written in the agent's own folder, never in the user's repository")
         self.assertIn("**Run it once**", TEXT)
 
     def test_the_playwright_report_of_a_run_request_is_handed_in_after_a_yes_in_a_new_message_and_once(self):

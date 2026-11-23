@@ -48,7 +48,7 @@ class TheCommandsAreReal(unittest.TestCase):
     def test_the_helper_has_the_action_the_skill_hands_in_with_and_the_flag_it_gives(self):
         self.assertIn("load-result", request_call.ACTIONS)
         self.assertIn("load-result", request_call.SEND_MAX)
-        self.assertIn("python3 -I testpilot/tools/request_call.py load-result 12 --load-result audits/request-12/loadtest.json", TEXT)
+        self.assertIn("python3 -I testpilot/tools/request_call.py load-result 12 --load-result audits/request-12/20261123-194213/loadtest.json", TEXT)
         self.assertIn("python3 -I testpilot/tools/request_call.py complete 12 <<'NOTE_END'", TEXT)
 
     def test_every_file_it_points_at_exists(self):
