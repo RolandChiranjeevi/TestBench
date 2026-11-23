@@ -81,7 +81,7 @@ The answer says what was made: `{"kind", "id", "sourceId", "findingsOnRequest"}`
 Rules, all checked by TestBench:
 
 - Only the token that **took** the request, only **while it is taken**, and only for a **discover**. A rerun hands in its report through TestBench's result route and gets 409 here.
-- At most **200 findings per request** (409 after that) and **60 findings a minute per token** (429). The plan has caps of its own and does not count as findings: **100 plan items** and **50 coverage gaps** per request.
+- At most **1000 findings per request** (409 after that) and **60 findings a minute per token** (429). The plan has caps of its own and does not count as findings: **300 plan items** and **150 coverage gaps** per request. These are the highest of the three depths (quick, normal, thorough); the skills hold to the depth's own, lower numbers.
 - Test cases made by the agent are not ticked by *Select all* when you build a run: review them first.
 - Each finding is written to TestBench's audit log (`agent_request.finding_created`) with the agent's name and the token's id, never the token.
 

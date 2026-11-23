@@ -125,7 +125,9 @@ class ConfirmationTests(unittest.TestCase):
                      "follow a link to another site, or log in myself.",
                      "I press Logout last, so that you are logged out afterwards. Then I open a protected page by its address and try the login with a made-up wrong password",
                      "I never log in myself. If the address has a login, I stop once, before I do anything else, and ask you to log in yourself in the browser window (or to skip it). If you are already logged in, say so when you answer.",
-                     "at most 10 pages of this address, a ceiling of 1000 actions (clicks, entries and selections) and 3000 browser calls",
+                     "Depth: thorough",
+                     "at most 40 pages of this address, a ceiling of 1000 actions (clicks, entries and selections) and 3000 browser calls",
+                     "at most 300 plan items, 150 coverage gaps and 1000 findings",
                      "(I stop earlier when everything I can reach is done, or after 15 actions in a row that find nothing new)",
                      "this address may keep what I submit (a message, an account, a record)",
                      "audits/request-12/actions.md", "Use an address you can reset.",
@@ -135,8 +137,8 @@ class ConfirmationTests(unittest.TestCase):
 
     def test_the_limits_in_the_confirmation_are_the_limits_of_step_3(self):
         step3 = flat(section("3. Explore, reading and writing"))
-        self.assertIn("at most 10 pages, at most 1000 actions and at most 3000 browser calls in all", step3)
-        self.assertIn("The run ends when everything on your list (the bullet \"Everything, not a sample\") is done, **or** after 15 actions in a row that found nothing new (a new page, a new state or a new finding), **or** at the ceiling", step3)
+        self.assertIn("its pages, actions and browser calls in all (thorough: at most 40 pages, 1000 actions and 3000 browser calls)", step3)
+        self.assertIn("The run ends when everything on your list (the bullet \"Everything, not a sample\") is done, **or** after the depth's number of actions in a row that found nothing new (a new page, a new state or a new finding; step 1, item 7), **or** at the ceiling of the depth", step3)
         self.assertIn("At most 3 attempts per call, and no retry after a refusal such as 401, 403 or 429 (rule 6).", step3)
 
 
@@ -205,6 +207,24 @@ class ActingRulesTests(unittest.TestCase):
         self.assertIn("**A dialog** (an alert or a confirm) is dismissed, unless it is a plain notice.", step3)
         self.assertIn("Never accept one that asks you to confirm what the bullet above forbids.", step3)
         self.assertIn("Never a production address.", flat(section("Limits that always apply")))
+
+    def test_the_depth_sets_the_numbers_of_the_run_and_nothing_else(self):
+        step1 = flat(section("1. Read what there is"))
+        self.assertIn("`options.depth` is `quick`, `normal` or `thorough`; a request without it counts as `normal`.", step1)
+        self.assertIn("It sets the ceilings of this run and nothing else: it never gives a permission, and the rules of step 3 about what you may press are the same at every depth.", step1)
+        for row in ("| quick | 5 | 60 | 180 | 8 | 50 | 25 | 100 |", "| normal | 10 | 250 | 750 | 12 | 100 | 50 | 200 |", "| thorough | 40 | 1000 | 3000 | 15 | 300 | 150 | 1000 |"):
+            with self.subTest(row=row):
+                self.assertIn(row, step1)
+        self.assertIn("At most 50 findings go in one file at every depth.", step1)
+        self.assertIn("The numbers in the confirmation block of step 2 are those of `thorough`.", step1)
+        self.assertIn("Fill the `Depth:`, `Looking at:` and `Limits:` lines with the numbers of the request's depth (step 1, item 7)", flat(section("2. The one confirmation")))
+
+    def test_the_depth_is_never_a_permission_so_production_and_the_press_rules_do_not_move_with_it(self):
+        text = flat(TEXT)
+        self.assertIn("Never a production address.", flat(section("Limits that always apply")))
+        self.assertEqual(text.count("never gives a permission"), 1)
+        self.assertNotIn("thorough lets", text)
+        self.assertNotIn("thorough may", text)
 
     def test_a_form_is_tried_as_often_as_it_needs_not_twice(self):
         step3 = self.step3()
@@ -317,7 +337,7 @@ class FinishTests(unittest.TestCase):
 
     def test_the_limits_that_always_apply_repeat_the_important_ones(self):
         limits = flat(section("Limits that always apply"))
-        for must in ("Never a production address.", "at most 10 pages, 1000 actions and 3000 browser calls", "made-up data only", "No code in a page, no file upload, no drag.",
+        for must in ("Never a production address.", "at thorough at most 40 pages, 1000 actions and 3000 browser calls: the ceiling, a run normally ends sooner", "and the plan items, coverage gaps and findings in all of the depth (step 1, item 7)", "made-up data only", "No code in a page, no file upload, no drag.",
                      "If Claude Code asks for permission for a tool that is not named in step 3, answer no and say so."):
             with self.subTest(must=must):
                 self.assertIn(must, limits)

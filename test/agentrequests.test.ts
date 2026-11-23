@@ -333,14 +333,33 @@ describe("the options of a discover request", () => {
   it("without options a discover gets the defaults: read only, a local branch, a plan, cases, observations and bugs, all three viewports", () => {
     const p = makeProject(key());
     const r = ask(p.id);
-    assert.deepEqual(r.options, { targetMode: "observe_only", gitMode: "local", deliverables: ["plan", "cases", "observations", "bugs"], viewports: ["desktop", "tablet", "mobile"], checks: [], production: false });
+    assert.deepEqual(r.options, { targetMode: "observe_only", gitMode: "local", deliverables: ["plan", "cases", "observations", "bugs"], viewports: ["desktop", "tablet", "mobile"], checks: [], depth: "normal", production: false });
     assert.notEqual(r.options?.deliverables, DEFAULT_REQUEST_OPTIONS.deliverables, "a copy: one request's options never change the defaults");
+  });
+
+  it("has a depth of quick, normal or thorough: normal when it is not given, kept as chosen, and nothing else is accepted", () => {
+    const p = makeProject(key());
+    assert.equal(ask(p.id, {}).options?.depth, "normal", "a request without a depth, such as one made before depth existed");
+    for (const depth of ["quick", "normal", "thorough"]) assert.equal(ask(p.id, { depth }).options?.depth, depth);
+    refused(() => ask(p.id, { depth: "deep" }), 400, /depth must be one of quick, normal, thorough/);
+    refused(() => ask(p.id, { depth: 3 }), 400, /depth must be one of/);
+    refused(() => ask(p.id, { depth: ["thorough"] }), 400, /depth must be one of/);
+  });
+
+  it("does not let the depth widen what the agent may do: acting on the target still needs an admin, and a production address can still only be read, at any depth", () => {
+    const p = makeProject(key());
+    const tester = { ...me, mayWiden: false };
+    for (const depth of ["quick", "normal", "thorough"]) {
+      assert.equal(ask(p.id, { depth }, tester).options?.targetMode, "observe_only", "the depth alone changes no mode");
+      refused(() => ask(p.id, { depth, targetMode: "full" }, tester), 403, /Only an admin/);
+      refused(() => ask(p.id, { depth, production: true, targetMode: "full" }), 400, /production target can only be read/);
+    }
   });
 
   it("keeps what the person chose, each value once and in a fixed order, and gives the same to the person's list, the agent's list and the claim", () => {
     const p = makeProject(key());
     const r = ask(p.id, { targetMode: "full", gitMode: "pr", deliverables: ["specs", "plan", "plan"], viewports: ["mobile", "desktop"], checks: ["security", "visual", "visual"] });
-    const want = { targetMode: "full", gitMode: "pr", deliverables: ["plan", "specs"], viewports: ["desktop", "mobile"], checks: ["visual", "security"], production: false };
+    const want = { targetMode: "full", gitMode: "pr", deliverables: ["plan", "specs"], viewports: ["desktop", "mobile"], checks: ["visual", "security"], depth: "normal", production: false };
     assert.deepEqual(r.options, want);
     assert.deepEqual(listRequests(p.id)[0].options, want);
     assert.deepEqual(pendingForAgent(p.id)[0].options, want);

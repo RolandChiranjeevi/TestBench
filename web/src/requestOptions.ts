@@ -30,14 +30,27 @@ export const CHECKS = [
   { value: "security", label: "Security review", title: "A limited, non-destructive security review (testpilot-security-review). Not a penetration test. Not for a production address." },
 ] as const;
 
+export const DEPTHS = [
+  { value: "quick", label: "Quick", title: "A short look: few pages and few actions. For a first impression or a small change." },
+  { value: "normal", label: "Normal", title: "The usual amount of work for a page or a small site." },
+  { value: "thorough", label: "Thorough", title: "As far as it can go: every page, flow and form it can reach, with a very high ceiling. It takes the longest. It never gives the agent more permissions." },
+] as const;
+
 export type TargetMode = (typeof TARGET_MODES)[number]["value"];
 export type GitMode = (typeof GIT_MODES)[number]["value"];
 export type Deliverable = (typeof DELIVERABLES)[number]["value"];
 export type Viewport = (typeof VIEWPORTS)[number]["value"];
 export type Check = (typeof CHECKS)[number]["value"];
-export interface RequestOptions { targetMode: TargetMode; gitMode: GitMode; deliverables: Deliverable[]; viewports: Viewport[]; checks: Check[]; production: boolean }
+export type Depth = (typeof DEPTHS)[number]["value"];
+export interface RequestOptions { targetMode: TargetMode; gitMode: GitMode; deliverables: Deliverable[]; viewports: Viewport[]; checks: Check[]; depth: Depth; production: boolean }
 
-export const DEFAULT_OPTIONS: RequestOptions = { targetMode: "observe_only", gitMode: "local", deliverables: ["plan", "cases", "observations", "bugs"], viewports: ["desktop", "tablet", "mobile"], checks: [], production: false };
+export const DEFAULT_OPTIONS: RequestOptions = { targetMode: "observe_only", gitMode: "local", deliverables: ["plan", "cases", "observations", "bugs"], viewports: ["desktop", "tablet", "mobile"], checks: [], depth: "normal", production: false };
+
+/** Choosing to act on the target moves the depth to thorough, and choosing to only read moves it back to normal, but only if the person has not picked another depth (a convenience: the depth is always theirs to change). */
+export function withTargetMode(o: RequestOptions, targetMode: TargetMode): RequestOptions {
+  const depth: Depth = targetMode === "full" && o.depth === "normal" ? "thorough" : targetMode === "observe_only" && o.depth === "thorough" ? "normal" : o.depth;
+  return { ...o, targetMode, depth };
+}
 
 /** Acting on the target, or pushing and opening a pull request: with accounts on, only an admin of the project can ask for these (the server refuses anyone else). */
 export const optionsNeedAdmin = (o: Pick<RequestOptions, "targetMode" | "gitMode">) => o.targetMode === "full" || o.gitMode === "pr";
@@ -65,7 +78,7 @@ export function optionsProblem(o: RequestOptions): string | null {
 export function optionsSummary(o: RequestOptions): string {
   const label = <T extends string>(all: readonly { value: T; label: string }[], v: T) => all.find((a) => a.value === v)?.label ?? v;
   const list = <T extends string>(all: readonly { value: T; label: string }[], vs: readonly T[]) => vs.map((v) => label(all, v).toLowerCase()).join(", ");
-  return [label(TARGET_MODES, o.targetMode), label(GIT_MODES, o.gitMode), list(DELIVERABLES, o.deliverables), list(VIEWPORTS, o.viewports), ...(o.checks.length ? [`checks: ${list(CHECKS, o.checks)}`] : []), ...(o.production ? ["production"] : [])].join(" · ");
+  return [label(TARGET_MODES, o.targetMode), label(GIT_MODES, o.gitMode), list(DELIVERABLES, o.deliverables), list(VIEWPORTS, o.viewports), ...(o.checks.length ? [`checks: ${list(CHECKS, o.checks)}`] : []), `depth: ${label(DEPTHS, o.depth).toLowerCase()}`, ...(o.production ? ["production"] : [])].join(" · ");
 }
 
 /** What to run to start the agent on a request, and the skill command to run in that session (it lists what waits, and a discover from it needs one confirmation). The set-up steps are in docs/agent-quickstart.md. */

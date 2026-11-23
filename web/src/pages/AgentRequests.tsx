@@ -6,7 +6,7 @@ import { needsText } from "../access";
 import { auditPath, byQueue, deliveredSummary, PROGRESS_TITLE, progressLabel } from "../agentruns";
 import { api, timeAgo, type AgentRequest, type RunDetail } from "../api";
 import { addressIsLocal, DEFAULT_LOAD, LOAD_DURATIONS, LOAD_ERROR_RATES, LOAD_P95S, LOAD_RAMPS, LOAD_VUS, loadProblem, loadSummary, parsePaths, type LoadOptions } from "../loadOptions";
-import { CHECKS, DEFAULT_OPTIONS, DELIVERABLES, GIT_MODES, optionsProblem, optionsSummary, START_COMMAND, START_SKILL, TARGET_MODES, toggled, VIEWPORTS, withProduction, type RequestOptions } from "../requestOptions";
+import { CHECKS, DEFAULT_OPTIONS, DELIVERABLES, DEPTHS, GIT_MODES, optionsProblem, optionsSummary, START_COMMAND, START_SKILL, TARGET_MODES, toggled, VIEWPORTS, withProduction, withTargetMode, type RequestOptions } from "../requestOptions";
 import type { Tone } from "../statuses";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
@@ -214,13 +214,21 @@ function OptionsFields({ options, setOptions }: { options: RequestOptions; setOp
           const blocked = m.value === "full" && (options.production || !mayWiden);
           return (
             <label key={m.value} className="row" style={{ gap: 6 }} title={blocked ? (options.production ? "A production address can only be read" : needsText("admin")) : m.title}>
-              <input type="radio" name="rq-target" checked={options.targetMode === m.value} disabled={blocked} onChange={() => setOptions({ ...options, targetMode: m.value })} /> {m.label}
+              <input type="radio" name="rq-target" checked={options.targetMode === m.value} disabled={blocked} onChange={() => setOptions(withTargetMode(options, m.value))} /> {m.label}
             </label>
           );
         })}
         <label className="row" style={{ gap: 6 }} title="Only a hint: the agent still asks for its own two confirmations for a production address.">
           <input type="checkbox" className="checkbox" checked={options.production} onChange={(e) => setOptions(withProduction(options, e.target.checked))} /> This address is production
         </label>
+      </fieldset>
+      <fieldset style={GROUP}>
+        <legend style={LEGEND}>How much work?</legend>
+        {DEPTHS.map((d) => (
+          <label key={d.value} className="row" style={{ gap: 6 }} title={d.title}>
+            <input type="radio" name="rq-depth" checked={options.depth === d.value} onChange={() => setOptions({ ...options, depth: d.value })} /> {d.label}
+          </label>
+        ))}
       </fieldset>
       <fieldset style={GROUP}>
         <legend style={LEGEND}>What may the agent do in git?</legend>

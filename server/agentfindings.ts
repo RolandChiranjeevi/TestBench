@@ -18,15 +18,16 @@ import { PRIORITIES } from "./shapes.ts";
  *    and their own number inside the request is `$agent-<request>-<n>`.
  *  - plan_item and coverage_gap make the request's PLAN: a plan item (what is to be tested) or a coverage gap (what was not verified), as proposals in the same tables a package's
  *    test-plan.json fills (server/auditplan.ts), so a person owns one by editing or deciding it. They need an audit, so the first one makes it: `$agent-<request>`, source `request`,
- *    linked from the request (result_audit_id). They have caps of their own (PLAN_LIMITS) and do not count towards the 200 findings. Their numbers are P-1 ... and GAP-1 ...
+ *    linked from the request (result_audit_id). They have caps of their own (PLAN_LIMITS) and do not count towards the findings cap. Their numbers are P-1 ... and GAP-1 ...
  *  - A test_case may name `planItem` (the P-n it was given): the case is then linked to that plan item (cases.plan_item_id). Only a plan item of this request's own plan.
  *  - Everything happens in one transaction, audit entry included, so a refused finding leaves no trace. The audit entry names the agent (`agent: <token name>`, like the
  *    other request-token entries) and the token's id (`credential_id`), never the token or its hash.
  */
 
-export const FINDING_LIMITS = { perRequest: 200, perMinute: 60, bodyBytes: 256 * 1024 };
+// The caps are the highest of the three depths a request can ask for (REQUEST_OPTIONS.depths): the server guards against a flood, the skills hold to the depth's own, lower numbers.
+export const FINDING_LIMITS = { perRequest: 1000, perMinute: 60, bodyBytes: 256 * 1024 };
 /** The plan of one request: at most this many plan items and coverage gaps, counted apart from the findings. */
-export const PLAN_LIMITS = { planItems: 100, coverageGaps: 50 };
+export const PLAN_LIMITS = { planItems: 300, coverageGaps: 150 };
 export const FINDING_KINDS = ["test_case", "bug_report", "observation", "manual_test_suggestion", "plan_item", "coverage_gap"] as const;
 
 const text = (max: number) => z.string().max(max).default("");
