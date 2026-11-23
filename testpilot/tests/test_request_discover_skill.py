@@ -83,13 +83,40 @@ class ConfirmationTests(unittest.TestCase):
         for must in ("the question goes after the\nblock, outside it, as plain bold text", "leave ` · <name>` out when the request has none"):
             self.assertIn(must, step2)
 
-    def test_production_is_asked_never_guessed_and_needs_two_separate_messages_always(self):
-        step2 = section("2. The one confirmation")
-        self.assertIn('Ask: "Is this a production environment?"', step2)
+    def test_production_is_the_requests_own_choice_and_asked_with_two_separate_messages_only_when_the_request_or_the_host_name_says_production(self):
+        # the user's rule 2026-11-23: a choice made in the request applies, and the confirmation shows it; the separate question stays only where production is likely
+        step2 = flat(section("2. The one confirmation"))
+        step1 = flat(section("1. Read what there is"))
+        self.assertIn("**Whether the target is production is the request's own choice**", step1)
+        self.assertIn("It is **asked, never guessed** (step 2) only when the request says `production`, or when the host name has `prod` or `production` as a word of its own", step1)
+        self.assertIn("`production: no (as chosen in the request)`", step2)
+        self.assertIn("ask **no** separate question", step2)
+        self.assertIn('In the other cases ask: "Is this a production environment?"', step2)
         self.assertIn("two separate messages are needed before anything else", step2)
-        self.assertIn("first the user confirms that it is\nproduction, then (in a new message) that the exploration", step2)
-        self.assertIn("**asked, never guessed**", section("1. Read what there is"))
-        self.assertIn("Production needs two separate confirmations, always.", TEXT)
+        self.assertIn("first the user confirms that it is production, then (in a new message) that the exploration", step2)
+        self.assertIn("it needs two separate confirmations, always.", flat(TEXT))
+
+    def test_the_exception_is_for_this_read_only_discover_alone_and_the_rules_say_so(self):
+        self.assertIn("The one exception is the production question of this read-only discover", flat(TEXT))
+        rules = flat(RULES)
+        self.assertIn("**One exception, for a read-only discover only**", rules)
+        self.assertIn("For everything that acts on a target or puts load on it (`testpilot-request-discover-write`, `testpilot-request-loadtest`) the question is asked as before.", rules)
+        self.assertIn("A request still confirms nothing, and a production target still needs its two separate confirmations.", rules)
+        self.assertIn("the request's own `production` choice is the answer to the production question", flat(REQUESTS))
+        # the writing skill and the load test keep their own separate question
+        self.assertIn('Ask: "Is this a production environment?". If the user says yes, or is not sure, **stop**', (ROOT / ".claude" / "skills" / "testpilot-request-discover-write" / "SKILL.md").read_text())
+
+    def test_a_redirect_that_only_adds_or_removes_www_or_upgrades_to_https_is_the_same_site_and_any_other_redirect_stops(self):
+        # live test 2026-11-23: saucedemo.com redirected to www.saucedemo.com and the agent stopped after the user's yes
+        body = flat(section("3. Explore, read-only"))
+        self.assertIn("A redirect that only adds or removes `www.` on the same host name, or only changes `http` to `https`, is the same site, not another origin:", body)
+        self.assertIn("write in the observations (severity `info`) that the address redirected there", body)
+        self.assertIn("Any other redirect (another domain, another subdomain, another port) stops as above.", body)
+        self.assertIn("If the confirmed address itself leads to another origin, stop and ask the user.", body)
+        self.assertIn("(the same site with or without www., or on https)", flat(section("2. The one confirmation")))
+
+    def test_files_are_read_with_the_read_tool_and_not_with_cat_ls_grep_head_or_sed(self):
+        self.assertIn("The same goes for the shell commands `cat`, `ls`, `grep`, `head` and `sed`: use the Read tool, which does not ask.", flat(TEXT))
 
     def test_the_confirmation_says_what_will_not_be_done_and_what_will_be_sent(self):
         step2 = section("2. The one confirmation")
@@ -101,7 +128,7 @@ class ConfirmationTests(unittest.TestCase):
     def test_what_stays_and_what_is_replaced_is_listed(self):
         stops = section("The stops")
         self.assertIn("**one** confirmation in place of the stops that `/testpilot` asks", stops)
-        for row in ("| The user chooses the request | stays", "| Is the target production? May it be run against? | **stays, in two separate messages**", "| Giving a request back | stays, only after the user's yes"):
+        for row in ("| The user chooses the request | stays", "| Is the target production? | **the request's own choice, shown in the one confirmation**","| Giving a request back | stays, only after the user's yes"):
             self.assertIn(row, stops)
 
     def test_the_mode_is_read_only_whatever_the_request_or_the_profile_says_and_a_missing_profile_is_not_a_stop(self):

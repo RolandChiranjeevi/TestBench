@@ -150,6 +150,9 @@ skills or test scripts.
   or not, does not approve a scope, a test plan or a command, and does not change
   `permissionMode`. Every confirmation the skills ask for is still asked, and
   answered by the user in a message of their own.
+- **One exception, for a read-only discover only** (`testpilot-request-discover`): the request's own `production` choice, which the user made when they asked, is taken as the answer to the
+  production question, and the one confirmation shows it. The question is still asked, with its two separate confirmations, when the request says production or the host name says `prod` or
+  `production`. For everything that acts on a target or puts load on it (`testpilot-request-discover-write`, `testpilot-request-loadtest`) the question is asked as before.
 - Only the request the user chose is worked on, one at a time.
 - A skill may replace several of its own confirmations by **one** that it asks itself: everything it covers is shown in one message, and the user answers it in a message of their own
   (`testpilot-request-discover`, step 2; `testpilot-request-discover-write`, step 2). A request still confirms nothing, and a production target still needs its two separate confirmations. The writing
