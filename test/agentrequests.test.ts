@@ -43,6 +43,12 @@ describe("the address of a discover request", () => {
 });
 
 describe("making a request", () => {
+  it("a discover without an environment is made, with an empty one: the dialog says production with a button and sends no environment", () => {
+    const p = makeProject(key());
+    const r = createRequest(p.id, { kind: "discover", targetUrl: "https://staging.example.com", options: { production: true } }, me);
+    assert.deepEqual([r.kind, r.environment, r.status, r.options?.production], ["discover", "", "pending", true]);
+  });
+
   it("a discover request keeps the address, environment and note, and starts pending", () => {
     const p = makeProject(key());
     const r = createRequest(p.id, { kind: "discover", targetUrl: "https://staging.example.com", environment: " staging ", note: "  the checkout is new  " }, me);

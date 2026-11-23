@@ -226,6 +226,11 @@ class ActingRulesTests(unittest.TestCase):
         self.assertNotIn("thorough lets", text)
         self.assertNotIn("thorough may", text)
 
+    def test_the_confirmation_names_only_whether_it_is_production_because_a_discover_has_no_environment_field(self):
+        block = flat(section("2. The one confirmation"))
+        self.assertIn("Target: https://staging.example.com/ (production: no)", block)
+        self.assertNotIn("(environment: staging", block)
+
     def test_a_form_is_tried_as_often_as_it_needs_not_twice(self):
         step3 = self.step3()
         self.assertNotIn("submitted at most twice", step3)
