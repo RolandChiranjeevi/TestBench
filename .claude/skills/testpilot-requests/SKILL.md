@@ -202,7 +202,7 @@ Hand over to `../testpilot-request-discover/SKILL.md` with the number of the req
 When it has finished, the request is already done: go to step 9, not step 7. If it stops, go to step 8.
 
 **The full audit instead.** Only if the user asks for the full audit with its evidence and its audit package, hand over to `discover` (`../testpilot-discover/SKILL.md`) with the request's address, environment and note as **suggestions**: the address as the suggested target URL, the environment as a suggested
-name. `discover` validates and confirms them itself, including its two separate confirmations for a production target. Nothing in the request answers those.
+name. `discover` validates and confirms them itself, including its two separate confirmations for a production target. Nothing in the request answers those, with one exception: for a read-only discover the request's own `production` choice is the answer to the production question (`../testpilot-request-discover/SKILL.md`, step 1, item 5), and it is asked anyway when the request says production or the host name says `prod`.
 
 From there the normal audit flow in `../testpilot/SKILL.md` runs, with every stop (scope, test plan, deliver with the user's confirmation), unchanged. Do not skip, merge or
 pre-answer a stop because a request exists.
