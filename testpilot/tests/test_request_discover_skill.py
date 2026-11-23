@@ -417,6 +417,22 @@ class PermissionsDocTests(unittest.TestCase):
         for r in allow:
             self.assertNotRegex(r, r"^Bash\((git|gh)\b", "the agent never runs git or gh: the spec tool makes its own git calls")
 
+    def test_the_shell_commands_that_read_a_file_are_denied_so_a_file_is_read_with_the_read_tool_and_nothing_asks(self):
+        # live run 2026-11-23: 18 grep commands on page snapshots, two of them asked; and `Read(./.env)` does not stop `cat .env` through the shell
+        allow, deny, body = self.parts()
+        for rule in ("Bash(cat:*)", "Bash(grep:*)", "Bash(head:*)", "Bash(sed:*)"):
+            self.assertIn(rule, deny)
+        for r in allow:
+            self.assertNotRegex(r, r"^Bash\((cat|grep|head|sed)\b", "a file is read with the Read tool")
+        self.assertIn("`cat`, `grep`, `head` and `sed` are denied", flat(body))
+        self.assertIn("Read(./.env)", flat(body))
+
+    def test_the_skill_says_a_snapshot_is_read_with_the_read_tool_and_not_checked_with_ls(self):
+        step3 = flat(section("3. Explore, read-only"))
+        self.assertIn("**A snapshot is read with the Read tool.**", step3)
+        self.assertIn("never with `grep`, `cat`, `head` or `sed`", step3)
+        self.assertIn("and no `ls` to see whether it exists", flat(section("4. Write the findings")))
+
     def test_the_text_says_what_it_leaves_out_and_that_navigate_is_not_checked_per_address(self):
         _, _, body = self.parts()
         body = flat(body)

@@ -137,6 +137,14 @@ class PermissionsDocTests(unittest.TestCase):
         for rule in ("Read(./.env)", "Read(./.mcp.json)", "Bash(git:*)", "Bash(gh:*)"):
             self.assertIn(rule, deny)
 
+    def test_the_shell_commands_that_read_a_file_are_denied_and_the_section_says_why(self):
+        allow, deny, text = self.parts()
+        for rule in ("Bash(cat:*)", "Bash(grep:*)", "Bash(head:*)", "Bash(sed:*)"):
+            self.assertIn(rule, deny)
+        body = " ".join(text.split())
+        self.assertIn("`cat`, `grep`, `head` and `sed` are denied", body)
+        self.assertIn("`Read(./.env)` stops the Read tool, but not `cat .env` through the shell", body)
+
     def test_the_section_says_that_run_is_not_asked_by_claude_code_and_what_stands_in_the_way(self):
         _, _, text = self.parts()
         body = " ".join(text.split())
