@@ -420,7 +420,7 @@ class PermissionsDocTests(unittest.TestCase):
     def test_the_shell_commands_that_read_a_file_are_denied_so_a_file_is_read_with_the_read_tool_and_nothing_asks(self):
         # live run 2026-11-23: 18 grep commands on page snapshots, two of them asked; and `Read(./.env)` does not stop `cat .env` through the shell
         allow, deny, body = self.parts()
-        for rule in ("Bash(cat:*)", "Bash(grep:*)", "Bash(head:*)", "Bash(sed:*)"):
+        for rule in ("Bash(cat:*)", "Bash(grep:*)", "Bash(head:*)", "Bash(sed:*)", "Bash(find:*)", "Bash(ls:*)"):
             self.assertIn(rule, deny)
         for r in allow:
             self.assertNotRegex(r, r"^Bash\((cat|grep|head|sed)\b", "a file is read with the Read tool")
@@ -487,6 +487,20 @@ class DocsAgreeTests(unittest.TestCase):
         self.assertIn("START_SKILL", self.PANEL)
         self.assertNotIn("START_PROMPT", self.PANEL)
         self.assertNotIn("Use testbench_get_next_request", self.PANEL)
+
+
+
+class ThirdPartyAndShellListingTests(unittest.TestCase):
+    def test_an_error_from_another_origin_is_an_observation_and_never_a_bug_report(self):
+        self.assertIn("**An error from another origin** (an analytics service, an advert, a widget) is an **observation**, never a bug report of the site", flat(TEXT))
+
+    def test_a_published_demo_account_is_reported_only_when_the_security_check_was_chosen(self):
+        self.assertIn("A demo account that a site publishes on purpose is **not reported** unless the request chose the `security` check", flat(TEXT))
+
+    def test_ls_and_find_are_not_a_way_around_the_read_tool(self):
+        text = flat(TEXT)
+        self.assertIn("`ls` and `find` are denied too", text)
+        self.assertIn("do not list a folder with `find ... -exec ls`", text)
 
 
 if __name__ == "__main__":
