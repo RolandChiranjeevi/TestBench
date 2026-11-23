@@ -218,6 +218,19 @@ class ActingRulesTests(unittest.TestCase):
     def test_secrets_a_page_shows_are_masked(self):
         self.assertIn("mask the value as `[redacted]` in everything you write", self.step3())
 
+    def test_a_published_demo_account_is_reported_only_when_the_security_check_was_chosen(self):
+        step3 = flat(self.step3())
+        self.assertIn("A demo account that a site publishes on purpose is **not reported** unless the request chose the `security` check", step3)
+        self.assertIn("Anything but a demo account is reported as its own observation of severity `high`", step3)
+
+    def test_clicks_that_do_nothing_stop_once_and_end_as_an_observation_about_the_environment(self):
+        step3 = flat(self.step3())
+        self.assertIn("**Clicks that do nothing.**", step3)
+        self.assertIn("`browser_select_option`, a navigation or a snapshot still works", step3)
+        self.assertIn("do not ask about the account", step3)
+        self.assertIn("**the test environment and not a fault of the site**", step3)
+        self.assertIn("Clicks that failed for that reason are not bug reports.", step3)
+
 
 class LogAndFindingsTests(unittest.TestCase):
     def test_every_action_is_logged_without_values_and_the_log_is_not_handed_in(self):
