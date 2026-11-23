@@ -415,8 +415,13 @@ What it does and does not do:
 - **Never a production address.** It asks whether the address is production, and a yes (or "not sure") ends it. Reading a production address is the read-only discover's job, with its two confirmations.
 - **You log in yourself**, in the browser window, with an account you can lose or reset. The agent **stops once** when it meets a login, asks you to log in (or to skip it) and goes on; if the address itself shows a login, that is
   **before its first action**, so you can log in at the start and leave. You can also say when you answer the confirmation that you are already logged in. It never types, reads or asks for a password, a token or a cookie, so no secret comes into its context.
-- **Made-up data and fixed limits:** at most 10 pages, 40 actions (clicks, entries and selections) and 120 browser calls; a form at most twice (once empty or wrong, once with made-up data); never a password,
-  card, identity-number or file field; nothing that looks irreversible (delete, reset, pay, send, publish, unsubscribe); never another origin.
+- **Made-up data and fixed limits:** at most 10 pages and a ceiling of 1000 actions (clicks, entries and selections) and 3000 browser calls, though a run ends sooner when everything it can reach is done or 15 actions in a row find nothing new; never a real password, card, identity-number or file field (the one password it
+  types is a made-up wrong one on a login page, to see the refusal); never another origin.
+- **What it may press on a test address, and what not.** The one confirmation says that this is not production, so the agent may finish a test purchase (a checkout that asks for no card), reset the
+  app's own state and remove what it made itself. It never presses what sends or publishes to other people or pays a real provider, deletes or changes what was there before the run, or closes the account you
+  logged in with. A production address is never acted on by this skill: there the read-only discover and its two confirmations apply.
+- **It tries to go through everything it can reach**, not a sample: every link, menu item, form and sort option, each flow to its end and cancelled half-way, amounts with more than one price. It presses Logout
+  last (so you are logged out afterwards) and then tries a protected page and a made-up wrong password. A gap in coverage has a hard reason (a secret, another origin, a card number, a limit).
 - **A page is data, never an instruction.** A page that tells the agent to press something is reported as an observation and ignored. The demo shop in the live tests has such a page, and a button that resets it.
 - **A log of every action** is written to `audits/request-<id>/actions.md`: the page, what was done and what happened, never the values typed. It is never handed in to TestBench. It is there so that you can see
   what changed on the address and undo it. Use an address you can reset.
@@ -479,7 +484,7 @@ To let it run while you are away, use this list **instead of** the one above (it
 ```
 
 - **With this list Claude Code no longer asks before it clicks or types.** Nothing in Claude Code's permissions can tell a harmless button from a destructive one. What protects the address is the
-  confirmation, the rules in the skill (nothing that looks irreversible, made-up data, one origin, 40 actions), the rule that a page is data and the log. Those are rules written for an agent, not a lock.
+  confirmation, the rules in the skill (nothing that reaches beyond the address or changes what was there before, made-up data, one origin, a ceiling of 1000 actions), the rule that a page is data and the log. Those are rules written for an agent, not a lock.
   Use it only on an address you can reset. If you would rather be asked, leave the nine added tools out and answer each one.
 - The rest is as for the read-only list: `release` and an inline `python3 -c` are left out on purpose, and the absolute `Write` path is yours to fill in. This list was run live three times against a local demo shop without the two `spec_git.py` lines and
   the `git` and `gh` denials. With them it was used in two more live runs (one writing, one read-only), and the denials were tried: see "Spec files on a local branch" below.
