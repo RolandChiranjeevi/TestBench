@@ -97,5 +97,54 @@ class AroundTheSkill(unittest.TestCase):
         self.assertIn("testpilot-request-loadtest", (ROOT / "docs" / "agent-requests.md").read_text())
 
 
+class PermissionsDocTests(unittest.TestCase):
+    """The settings block in docs/agent-requests.md lets a load test run with nobody at the keyboard, so it must allow exactly the commands the skill runs and nothing else: if the two drift
+    apart, the run stops at a prompt nobody sees, or the agent may run more than the skill says."""
+    DOCS = (ROOT / "docs" / "agent-requests.md").read_text()
+    HEADING = "### Running a load test without sitting by"
+
+    def parts(self):
+        import json
+        m = re.search(r"^" + re.escape(self.HEADING) + r"\n(.*?)(?=^#{1,3} |\Z)", self.DOCS, re.S | re.M)
+        self.assertTrue(m, "the section is missing from docs/agent-requests.md")
+        block = re.search(r"```json\n(.*?)\n```", m.group(1), re.S)
+        self.assertTrue(block, "the section has no JSON block")
+        perms = json.loads(block.group(1))["permissions"]
+        return perms["allow"], perms["deny"], m.group(1)
+
+    def test_it_allows_exactly_the_helper_actions_and_the_two_tool_commands_the_skill_runs(self):
+        allow, _, _ = self.parts()
+        self.assertTrue(all(r.startswith("Bash(") for r in allow), "only shell commands: the tool writes its own result file")
+        bash = {m.group(1) for r in allow if (m := re.fullmatch(r"Bash\((.*)\)", r))}
+        helper = {m.group(1) for r in bash if (m := re.fullmatch(r"python3 -I testpilot/tools/request_call\.py ([a-z-]+):\*", r))}
+        tool = {m.group(1) for r in bash if (m := re.fullmatch(r"python3 -I testpilot/tools/loadtest\.py ([a-z]+):\*", r))}
+        self.assertEqual(helper, {"list", "claim", "load-result", "complete"})
+        self.assertEqual(tool, {"plan", "run"})
+        self.assertTrue(helper <= set(request_call.ACTIONS), "every allowed action is a real action of the helper")
+        self.assertNotIn("release", helper)
+        self.assertEqual(len(bash), len(helper) + len(tool), "no other shell command is allowed")
+        for ran in set(re.findall(r"request_call\.py ([a-z-]+)", TEXT)) - {"release"}:
+            self.assertIn(ran, helper, f"the skill runs `{ran}`, so the list must allow it (or the run stops at a prompt)")
+        for ran in set(re.findall(r"loadtest\.py ([a-z]+)", TEXT)):
+            self.assertIn(ran, tool, f"the skill runs `{ran}`, so the list must allow it (or the run stops at a prompt)")
+        for ran in ("list", "claim"):
+            self.assertRegex(REQUESTS, r"request_call\.py " + ran + r"\b")
+
+    def test_nothing_allows_git_gh_inline_python_or_a_blanket_rule_and_the_secrets_are_denied(self):
+        allow, deny, _ = self.parts()
+        for r in allow:
+            self.assertNotRegex(r, r"python3 -c|python3 -[ :)]|git|gh:|\(\*\)|\(\*\*\)", r)
+        for rule in ("Read(./.env)", "Read(./.mcp.json)", "Bash(git:*)", "Bash(gh:*)"):
+            self.assertIn(rule, deny)
+
+    def test_the_section_says_that_run_is_not_asked_by_claude_code_and_what_stands_in_the_way(self):
+        _, _, text = self.parts()
+        body = " ".join(text.split())
+        self.assertIn("Claude Code does not ask before load is sent", body)
+        for ceiling in ("50 users", "120 seconds", "10 paths", "200000 requests", "GET only", "local or private"):
+            self.assertIn(ceiling, body)
+        self.assertIn("Not measured with the list in place", body)
+
+
 if __name__ == "__main__":
     unittest.main()
