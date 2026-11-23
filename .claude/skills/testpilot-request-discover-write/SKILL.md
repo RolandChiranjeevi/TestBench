@@ -103,7 +103,7 @@ shown as written), and leave ` · <name>` out when the request has none:
 
 ```
 Request 12 · Checkout: discover, reading and writing
-Target:        https://staging.example.com/   (environment: staging, production: no)
+Target:        https://staging.example.com/   (production: no)
 Mode:          reading and writing. I may click, type and submit forms on this address, with made-up data
                (for example "Test Person" and test@example.com).
                I MAY: finish a test purchase, reset the app's own state and remove what I made myself, because this is not production.

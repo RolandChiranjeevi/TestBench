@@ -161,7 +161,8 @@ function RequestCard({ r, onCancel, cancelling, waiting, onRunNext, putting }: {
 }
 
 /** The three things every request has: a name, where it runs, and a note. The name and the note are read by an agent as information, never as instructions. */
-function Fields({ name, setName, environment, setEnvironment, note, setNote }: { name: string; setName: (v: string) => void; environment: string; setEnvironment: (v: string) => void; note: string; setNote: (v: string) => void }) {
+// The environment field is left out when `setEnvironment` is not given: a discover says whether the address is production with a button instead, so it needs no free-text name for it.
+function Fields({ name, setName, environment, setEnvironment, note, setNote }: { name: string; setName: (v: string) => void; environment?: string; setEnvironment?: (v: string) => void; note: string; setNote: (v: string) => void }) {
   return (
     <>
       <div className="field">
@@ -169,10 +170,12 @@ function Fields({ name, setName, environment, setEnvironment, note, setNote }: {
         <input id="rq-name" className="input" placeholder="A short name, for example Login flow" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} />
         <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>Shown next to the request number, so that you can tell requests apart. The agent reads it as information, not as instructions.</span>
       </div>
-      <div className="field">
-        <label htmlFor="rq-env">Environment (optional)</label>
-        <input id="rq-env" className="input" placeholder="staging, prod…" value={environment} maxLength={100} onChange={(e) => setEnvironment(e.target.value)} />
-      </div>
+      {setEnvironment && (
+        <div className="field">
+          <label htmlFor="rq-env">Environment (optional)</label>
+          <input id="rq-env" className="input" placeholder="staging, prod…" value={environment ?? ""} maxLength={100} onChange={(e) => setEnvironment(e.target.value)} />
+        </div>
+      )}
       <div className="field">
         <label htmlFor="rq-note">Note (optional)</label>
         <textarea id="rq-note" className="textarea" rows={3} maxLength={2000} placeholder="What to look at, for example a page that is new" value={note} onChange={(e) => setNote(e.target.value)} />
@@ -314,7 +317,6 @@ function NextSteps({ request }: { request: AgentRequest }) {
 
 function DiscoverModal({ onClose }: { onClose: () => void }) {
   const [targetUrl, setTargetUrl] = useState("");
-  const [environment, setEnvironment] = useState("");
   const [name, setName] = useState("");
   const [note, setNote] = useState("");
   const [options, setOptions] = useState<RequestOptions>(DEFAULT_OPTIONS);
@@ -336,7 +338,7 @@ function DiscoverModal({ onClose }: { onClose: () => void }) {
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button needs="tester" variant="primary" disabled={!targetUrl.trim() || !!problem || make.isPending} onClick={() => make.mutate({ kind: "discover", targetUrl, environment, name, note, options })}>Make request</Button>
+          <Button needs="tester" variant="primary" disabled={!targetUrl.trim() || !!problem || make.isPending} onClick={() => make.mutate({ kind: "discover", targetUrl, name, note, options })}>Make request</Button>
         </>
       }
     >
@@ -350,7 +352,7 @@ function DiscoverModal({ onClose }: { onClose: () => void }) {
           <input id="rq-url" className="input" placeholder="https://staging.example.com" value={targetUrl} maxLength={500} onChange={(e) => setTargetUrl(e.target.value)} autoFocus />
           <span className="faint" style={{ fontSize: "var(--fs-sm)" }}>No password or token in the address.</span>
         </div>
-        <Fields name={name} setName={setName} environment={environment} setEnvironment={setEnvironment} note={note} setNote={setNote} />
+        <Fields name={name} setName={setName} note={note} setNote={setNote} />
         <OptionsFields options={options} setOptions={setOptions} />
         {problem && <span role="alert" style={{ color: "var(--failed-fg)" }}>{problem}</span>}
       </EditScope>

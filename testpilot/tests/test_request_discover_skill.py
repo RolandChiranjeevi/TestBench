@@ -550,5 +550,12 @@ class DepthTests(unittest.TestCase):
         self.assertIn("at most 100 plan items, 50 coverage gaps and 200 findings", flat(section("2. The one confirmation")))
 
 
+class NoEnvironmentTests(unittest.TestCase):
+    def test_the_confirmation_names_only_whether_it_is_production_because_a_discover_has_no_environment_field(self):
+        block = flat(section("2. The one confirmation"))
+        self.assertIn("Target: https://staging.example.com/ (production: no, as chosen in the request)", block)
+        self.assertNotIn("(environment: staging", block)
+
+
 if __name__ == "__main__":
     unittest.main()

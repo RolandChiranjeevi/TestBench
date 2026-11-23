@@ -103,7 +103,7 @@ shown as written), and leave ` · <name>` out when the request has none:
 
 ```
 Request 12 · Checkout: discover
-Target:        https://staging.example.com/   (environment: staging, production: no, as chosen in the request)
+Target:        https://staging.example.com/   (production: no, as chosen in the request)
 Mode:          read-only. I only navigate and take snapshots: no clicks, no typing, no login, no forms.
                (You chose "act on the target": this discover is read-only. The writing one is a separate choice.)
 Looking at:    at most 10 pages of this address (the same site with or without www., or on https), at desktop, tablet and mobile size
