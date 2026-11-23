@@ -280,6 +280,19 @@ Put this in `.claude/settings.local.json` in the agent's folder, and start a **n
 - **Not measured with the list in place.** It is written from the commands the skill runs and from the live test of 2026-11-23, where `plan`, `run` and `load-result` asked and `list`, `claim` and `complete` did not. A hook of your own that asks for facts before a file is created is not part of Claude Code's permissions, and still applies.
 - `.claude/skills/testpilot-request-loadtest/SKILL.md` is what the list follows: a test in `testpilot/tests/test_request_loadtest_skill.py` reads this block and fails if the list and the skill drift apart.
 
+## Checking the set-up: `doctor`
+
+`python3 -I testpilot/tools/doctor.py` (run from the agent folder, the one that holds `.testpilot/`) tells you whether the folder is ready for a request, before you start one. It only **reads**: it writes nothing, fetches nothing, and **never prints a token** (a token-like string in any line is shown as `tbrq_[redacted]`). Each line is `ok`, `warn` or `fail`, and the exit code is 1 if there is a `fail`.
+
+- **config:** the profile can be read and has a project id, a token variable, a permission mode and a valid address (plain `http` only to a local host, as the helper insists).
+- **token:** the variable the profile names is set, in the environment or as its own line of `.env`, and looks like a request token. The value is not shown.
+- **server:** one read-only call (the same as `request_call.py list`) shows that the address answers and that the token is accepted for the project. `--offline` skips it, and it is the only network call.
+- **permissions:** `.claude/settings.local.json` against the lists in this document. A deny rule that **every** list has but your file lacks is a `fail` (that is how a missing `git`, `find` or `cat` denial shows up); an allow rule that **no** list has is a `warn`. The absolute `Write(//…/audits/**)` path is your own and is not a difference.
+- **git:** the profile, the rules file and `origin` agree (the checks of `spec_git.py`). A git mode of `off` is fine.
+- **skills:** whether the skills, the references, the tools and this document in the folder match `origin/main` (`ok`), lack changes it has (`stale`), or were changed here (`modified`). Nothing is fetched, so `stale` means *as of your last fetch*.
+
+It does not check the browser profile (that is specific to a set-up) or what the text of a skill says. It is not allowed in the permission lists, because it is for you to run, and not for the agent.
+
 ## Who can do what
 
 | Role | Requests |
