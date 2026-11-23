@@ -241,6 +241,38 @@ A person who is an **admin** of the project asks an agent for a small, bounded l
 - **A request with a result cannot be given back**, and it can only be finished (`complete`) once the result is in.
 - **The report** is under **View the load test report** on the request: the verdict and its reason, the totals, the p95 over time with the limit drawn in, a table per path, and **Copy as Markdown** and **Download JSON**.
 
+### Running a load test without sitting by
+
+In the normal permission mode a load test asks you for each tool command: `plan`, `run` and `load-result`. To start one and come back to a result, allow them in advance. You still answer which request, whether the system is production or shared, and the one confirmation; after that the agent works alone until it is done, or stops for something that needs you.
+
+Put this in `.claude/settings.local.json` in the agent's folder, and start a **new** session there (the file is read when a session starts):
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -I testpilot/tools/request_call.py list:*)",
+      "Bash(python3 -I testpilot/tools/request_call.py claim:*)",
+      "Bash(python3 -I testpilot/tools/request_call.py load-result:*)",
+      "Bash(python3 -I testpilot/tools/request_call.py complete:*)",
+      "Bash(python3 -I testpilot/tools/loadtest.py plan:*)",
+      "Bash(python3 -I testpilot/tools/loadtest.py run:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.mcp.json)",
+      "Bash(git:*)",
+      "Bash(gh:*)"
+    ]
+  }
+}
+```
+
+- **What it allows** is exactly what `testpilot-request-loadtest` runs: the helper actions `list`, `claim`, `load-result` and `complete`, and `plan` and `run` of the load tool. The tool writes its result file itself, so no `Write` rule is needed. `release` is left out on purpose (giving a request back needs your yes), and so is an inline `python3 -c` or `python3 -`, which can run anything. `git`, `gh`, `.env` and `.mcp.json` are denied.
+- **With `run` allowed, Claude Code does not ask before load is sent.** What stands between the agent and the load is then the skill's own confirmation (your yes, in a new message) and the ceilings in the tool's code: 50 users, 120 seconds, 10 paths and 200000 requests, GET only, a local or private address only. If you want Claude Code to ask for `run` as well, leave that one line out.
+- **Not measured with the list in place.** It is written from the commands the skill runs and from the live test of 2026-11-23, where `plan`, `run` and `load-result` asked and `list`, `claim` and `complete` did not. A hook of your own that asks for facts before a file is created is not part of Claude Code's permissions, and still applies.
+- `.claude/skills/testpilot-request-loadtest/SKILL.md` is what the list follows: a test in `testpilot/tests/test_request_loadtest_skill.py` reads this block and fails if the list and the skill drift apart.
+
 ## Who can do what
 
 | Role | Requests |
