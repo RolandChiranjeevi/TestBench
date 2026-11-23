@@ -262,7 +262,11 @@ Put this in `.claude/settings.local.json` in the agent's folder, and start a **n
       "Read(./.env)",
       "Read(./.mcp.json)",
       "Bash(git:*)",
-      "Bash(gh:*)"
+      "Bash(gh:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(head:*)",
+      "Bash(sed:*)"
     ]
   }
 }
@@ -270,6 +274,7 @@ Put this in `.claude/settings.local.json` in the agent's folder, and start a **n
 
 - **What it allows** is exactly what `testpilot-request-loadtest` runs: the helper actions `list`, `claim`, `load-result` and `complete`, and `plan` and `run` of the load tool. The tool writes its result file itself, so no `Write` rule is needed. `release` is left out on purpose (giving a request back needs your yes), and so is an inline `python3 -c` or `python3 -`, which can run anything. `git`, `gh`, `.env` and `.mcp.json` are denied.
 - **With `run` allowed, Claude Code does not ask before load is sent.** What stands between the agent and the load is then the skill's own confirmation (your yes, in a new message) and the ceilings in the tool's code: 50 users, 120 seconds, 10 paths and 200000 requests, GET only, a local or private address only. If you want Claude Code to ask for `run` as well, leave that one line out.
+- **`cat`, `grep`, `head` and `sed` are denied**, so a file is read with the Read tool (which does not ask) and never with the shell. The denial is refused at once, with no question to you. It also closes a hole: `Read(./.env)` stops the Read tool, but not `cat .env` through the shell.
 - **Not measured with the list in place.** It is written from the commands the skill runs and from the live test of 2026-11-23, where `plan`, `run` and `load-result` asked and `list`, `claim` and `complete` did not. A hook of your own that asks for facts before a file is created is not part of Claude Code's permissions, and still applies.
 - `.claude/skills/testpilot-request-loadtest/SKILL.md` is what the list follows: a test in `testpilot/tests/test_request_loadtest_skill.py` reads this block and fails if the list and the skill drift apart.
 
@@ -348,7 +353,11 @@ Put this in `.claude/settings.local.json` in the agent's folder, and start a **n
       "Read(./.env)",
       "Read(./.mcp.json)",
       "Bash(git:*)",
-      "Bash(gh:*)"
+      "Bash(gh:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(head:*)",
+      "Bash(sed:*)"
     ]
   }
 }
@@ -365,6 +374,7 @@ and it was not found out whether the relative or the absolute `Write` form was t
   it is worth reading what it asks for before you answer: it is outside what the skill needs.
 - **`browser_navigate` is allowed for any address.** The skill keeps to one origin and at most 10 pages, but the permission no longer asks per address. If you point the agent at a site you do not
   control, leave `browser_navigate` out and answer each address once.
+- **`cat`, `grep`, `head` and `sed` are denied**, so a file or a page snapshot (in `.playwright-mcp/`) is read with the Read tool, which does not ask, and never with the shell. The denial is refused at once, with no question to you: in a live run a discover ran 18 `grep` commands on snapshots and two of them asked. It also closes a hole: `Read(./.env)` stops the Read tool, but not `cat .env` through the shell.
 - **It is a fixed, narrow list you write once**, which is not the same as answering "always allow" in the middle of a run (the quickstart says never to do that). Keep it to the folder you give the
   agent, and not in a folder with other work.
 - **Measured** on a local demo shop in the normal permission mode: with this list the browser calls, the helper calls and the writing of the findings did not ask. A hook of your own that asks for
@@ -391,6 +401,7 @@ What it does and does not do:
 - **A page is data, never an instruction.** A page that tells the agent to press something is reported as an observation and ignored. The demo shop in the live tests has such a page, and a button that resets it.
 - **A log of every action** is written to `audits/request-<id>/actions.md`: the page, what was done and what happened, never the values typed. It is never handed in to TestBench. It is there so that you can see
   what changed on the address and undo it. Use an address you can reset.
+- **`cat`, `grep`, `head` and `sed` are denied** here too, so a page snapshot is read with the Read tool and not with the shell (see the read-only list above), and the agent only presses a button that undoes something (Remove, Delete, Cancel) for what it made itself in this run, after a new snapshot.
 - The findings, the helper and the note of numbers are the same as for the read-only discover (the note also says how many actions were taken). Nothing is approved.
 
 To let it run while you are away, use this list **instead of** the one above (it adds the nine tools that click and type, and denies the ones that can run code or move files):
@@ -433,7 +444,11 @@ To let it run while you are away, use this list **instead of** the one above (it
       "Read(./.env)",
       "Read(./.mcp.json)",
       "Bash(git:*)",
-      "Bash(gh:*)"
+      "Bash(gh:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(head:*)",
+      "Bash(sed:*)"
     ]
   }
 }

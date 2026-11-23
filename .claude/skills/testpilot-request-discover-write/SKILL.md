@@ -147,6 +147,11 @@ Use the available Playwright MCP browser tools, and **only** these. To read: `br
 - **Press nothing that looks irreversible**, in any language: delete, remove, reset, clear, close or deactivate an account, pay, buy, order, send or publish something that other people see,
   invite, unsubscribe. If you are unsure whether something is irreversible, do not press it, and note it as a coverage gap. A **form** is submitted at most twice: once empty or wrong, to see
   the validation, and once with made-up data.
+- **Undo only what you made.** You may press a button that undoes your own action in this run (Remove for an item you added yourself, for example), and never one that removes, deletes or
+  changes something that was there before your run. Before **Remove**, **Delete**, **Cancel** or any button that undoes something, take a **new snapshot** and press the one that names your own
+  item: the order of a list can change after a sort, a reload or Cancel, and a reference from an earlier snapshot can point at another item. If you are not sure it is yours, do not press it.
+- **A snapshot is read with the Read tool**, never with `grep`, `cat`, `head` or `sed` (the permission list denies those four, so a call to one of them is refused at once). A page snapshot is a
+  file in `.playwright-mcp/`; use `offset` and `limit` for a long one.
 - **A dialog** (an alert or a confirm) is dismissed, unless it is a plain notice. Never accept one that asks you to confirm something irreversible.
 - **What to note per page**, in a few lines, never the whole snapshot: its purpose, the main flows, interactive elements, forms and what happened when you used them, navigation,
   hints of authentication, obvious risks, console errors, failed requests (4xx or 5xx) from the same origin, what is hard to reach or read at the smaller sizes, and accessibility problems

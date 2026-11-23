@@ -390,6 +390,13 @@ class PermissionsBlockTests(unittest.TestCase):
         for r in perms["allow"]:
             self.assertNotRegex(r, r"^Bash\((git|gh)\b", "the agent never runs git or gh: the spec tool makes its own git calls")
 
+    def test_the_shell_commands_that_read_a_file_are_denied_in_the_writing_list_too(self):
+        perms = self.block(self.HEADING)
+        for rule in ("Bash(cat:*)", "Bash(grep:*)", "Bash(head:*)", "Bash(sed:*)"):
+            self.assertIn(rule, perms["deny"])
+        for r in perms["allow"]:
+            self.assertNotRegex(r, r"^Bash\((cat|grep|head|sed)\b", "a file is read with the Read tool")
+
     def test_it_writes_only_under_the_findings_folder(self):
         allow = self.block(self.HEADING)["allow"]
         scoped = [r for r in allow if not r.startswith(("mcp__playwright__", "Bash("))]
@@ -446,6 +453,23 @@ class SpecFilesTests(unittest.TestCase):
             self.assertNotIn(gone, flat(TEXT))
         for must in ("Write to git in any other way than step 5b: only `testpilot/tools/spec_git.py` does", "Git is touched only by `testpilot/tools/spec_git.py` (step 5b)"):
             self.assertIn(must, flat(TEXT))
+
+
+class UndoOnlyWhatYouMadeTests(unittest.TestCase):
+    """Live run 2026-11-23: after Cancel the list went back to name order, the agent pressed the Remove of the wrong item and removed one that was in the cart before the run. It said so, put it
+    back and removed its own, but the rule belongs in the skill, not only in the log."""
+
+    def test_the_skill_allows_undoing_only_what_the_run_made_and_asks_for_a_new_snapshot_first(self):
+        body = flat(TEXT)
+        self.assertIn("**Undo only what you made.**", body)
+        self.assertIn("never one that removes, deletes or changes something that was there before your run", body)
+        self.assertIn("Before **Remove**, **Delete**, **Cancel** or any button that undoes something, take a **new snapshot** and press the one that names your own item", body)
+        self.assertIn("the order of a list can change after a sort, a reload or Cancel", body)
+        self.assertIn("If you are not sure it is yours, do not press it.", body)
+
+    def test_the_skill_reads_snapshots_with_the_read_tool_and_the_docs_say_why(self):
+        self.assertIn("**A snapshot is read with the Read tool**, never with `grep`, `cat`, `head` or `sed`", flat(TEXT))
+        self.assertIn("only presses a button that undoes something (Remove, Delete, Cancel) for what it made itself in this run, after a new snapshot", flat(DOCS))
 
 
 class LoginFirstTests(unittest.TestCase):
