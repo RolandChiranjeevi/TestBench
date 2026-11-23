@@ -103,6 +103,13 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 - **Det som gör det möjligt att visa för andra:** protokollet och rådata sparas, sajterna avidentifieras, inga riktiga uppgifter finns i loggarna, och begränsningarna skrivs ut (få sajter, få körningar, en bedömare).
 - **Var det bor:** utanför repot, i designmappen, som tidigare jämförelser. I repot hamnar bara det vi bygger.
 
+**Första jämförelsen: saucedemo, TestSprite mot vårt verktyg (beslutat 2026-11-23).** En första, snabb mätning som inte är det fulla protokollet ovan: en körning per verktyg, och bedömaren vet vilket verktyg som gav vad. Det ska stå i resultatet.
+- **Facit** är TestSprites rapport för saucedemo (13 testfall, 11 gick, 2 föll) och de två fel den fann: (1) *Item total* visas som `$59.980000000000004` med Fleece Jacket 49.99 + Bike Light 9.99 (High), (2) *Reset App State* nollställer badgen men lämnar knapparna som "Remove" (Low). Råtexten ligger orörd i `other.md` (inte committad).
+- **Fyra mått:** (1) hittar vår körning de två felen? (2) hur många testfall kommer ut med exakta värden och städsteg som går att köra om (TestSprite: 13)? (3) vad hittar vi som TestSprite inte hittade (observationer som redirect, konsolfel, headers, layout)? (4) antal falska buggar, alltså felaktigt rapporterade fel.
+- **Därutöver, utan att räknas som mått:** tid, antal stopp och frågor (vårt mål är de som godkänts i förväg), och vad verktyget visste på förhand.
+- **Vår körning:** efter #183 (skillen utforskar allt), kit på origin/main, rent projekt (säkerhetskopia av `tb-data` och en ny nyckel), `standard_user`, Act on target och alla leverabler. Samma uppgift och samma inloggning som de tidigare körningarna.
+- **Begränsningar att skriva ut:** en sajt, en körning per verktyg, en bedömare som vet vilket som är vilket, och att saucedemos fel är kända och därför kan ha påverkat TestSprite (de kan ha tränats på dem). Ett bra resultat här säger inget om en riktig sajt.
+
 **Inte lovat.** Tidsplanen styrs av beslut, design och granskning av varje del. Hur bra agenten är på riktiga sajter vet vi först efter proven.
 
 ### M: En discover levererar allt man kryssar i, som ett paket
