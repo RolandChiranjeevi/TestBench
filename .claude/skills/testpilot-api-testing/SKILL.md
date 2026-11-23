@@ -12,6 +12,8 @@ skills. The audit package it produces is the same as for a web UI, so
 
 Paths in this file are relative to this file.
 
+Read a JSON file (the schema, the manifest, an observation file) with the Read tool, and change one with the Edit tool: **never run inline Python** (`python3 -c`, `python3 -`) for that, because it is a command that can run anything and it asks every time.
+
 Before starting, read:
 - `../testpilot/SKILL.md`
 - `../../references/audit-contract.md`
