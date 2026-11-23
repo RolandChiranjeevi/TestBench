@@ -187,6 +187,16 @@ Use the available Playwright MCP browser tools, and **only** these. To read: `br
   **five different carts**: the dearest item together with each of the others, and one cart with every item. Read every amount as exact text with its decimals and compare it with the sum of the prices.
   A rounding error shows only for some combinations, so one cart that is right proves nothing. An amount with more decimals than a price has is a bug, even if only one cart shows it. A coverage gap is
   for what a hard stop kept you from, and its text says which (a secret, another origin, a card number, a CAPTCHA, a limit). "I did not get to it" is not a reason before a limit is reached.
+- **The catalogue of checks.** This is what a tester does to each kind of thing, and the **id** is what you write in the coverage record (step 4). Everything that applies to a thing in the catalogue is
+  done or is named as not done: nothing is left out silently.
+  - a **field**: `empty` (nothing entered, and one required field missing at a time), `wrong-kind` (letters in a number field, an emoji, special characters, only spaces), `too-long`, `boundary` (the smallest and
+    the largest value), `format` (an e-mail with no `@`, a date written as text), `date-range` (1900-01-01, 2999-12-31, 31 February);
+  - a **flow** (a path of several steps): `end-to-end` (to its very end), `cancel-back` (cancelled half-way, back, reload), `empty-state` (with nothing in it: an empty cart or list), `amounts` (five different carts, exact text);
+  - a **list** (things that can be sorted or filtered): `order` (every sort and filter option), `empty-state`;
+  - a **page**: `links` (every link on the same origin; other origins are only noted), `menu` (every menu entry), `size` (each screen size that was confirmed), `console` (console errors and failed requests);
+  - the **session**: `session` (a page that needs the login, opened by its address after Logout, and a wrong login).
+
+  A class that does not apply to a thing is left out (`date-range` for a field that is not a date). Every class that does apply gets a row in the coverage record.
 - **Undo only what you made.** You may press a button that undoes your own action in this run (Remove for an item you added yourself, for example), and never one that removes, deletes or
   changes something that was there before your run. Before **Remove**, **Delete**, **Cancel** or any button that undoes something, take a **new snapshot** and press the one that names your own
   item: the order of a list can change after a sort, a reload or Cancel, and a reference from an earlier snapshot can point at another item. If you are not sure it is yours, do not press it.
@@ -228,6 +238,13 @@ file, no `mkdir`, and never a file from another request), with these differences
   When you saw a step fail, the bug report says which test case would catch it, by its title.
 - What happened after an action is evidence: "submitted the contact form with made-up data; the page said …; a POST to /api/contact answered 200". Never a value you typed, never a secret.
 - Now that you may act, plan items for forms and sign-in can be `ready` when you tried the flow and saw what it does. What you did not try (a password field, a payment, a risk) is a coverage gap.
+- **The coverage record.** For each page, hand in **one observation** with severity `info`, the title `Coverage: <the path of the page>`, `source` that page, and in `evidence` one line for each thing on the page
+  and each class of the catalogue (step 3) that applies to it: `<thing> · <class> · tried | issue | not tried · actions <numbers from your log> · <the reason, if not tried>`.
+  `tried` means you did it and saw nothing wrong. `issue` means you did it and saw something wrong (name the bug report or the observation by its title). `not tried` needs a hard reason, of the kind of a coverage gap
+  (a secret, another origin, a card number, a CAPTCHA, a limit, the session had ended). **Every row that says `tried` or `issue` names the numbers of the actions in your log; a row without numbers counts as `not tried`.**
+  Never leave out a class that applies: a missing row is read as forgotten. If the lines do not fit in 4000 characters, make a second observation for that page (`Coverage: <path> (2)`).
+  The record is what the person reads to see what is done and what is left, so that nothing is done twice and nothing is trusted that was not done: it is true or it is not handed in. It is a record of what **you
+  did** and nothing says that the page is right.
 
 ## 5. Hand them in
 
