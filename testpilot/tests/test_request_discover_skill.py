@@ -315,6 +315,22 @@ class ExampleAndShellTests(unittest.TestCase):
         self.assertIn("Read, with the Read tool and not with a shell command (`cat`, `ls`)", flat(REQUESTS))
 
 
+    def test_the_table_says_automation_is_a_short_text_and_the_example_shows_it_as_a_string(self):
+        # three live runs sent `automation` as an object, TestBench answered 400, and the agent fixed the file with an inline python command that asked the user
+        import json
+        self.assertIn("`automation` (a short text of at most 200 characters", flat(TEXT))
+        self.assertIn("never an object", flat(TEXT))
+        plan = [f for block in self.examples() for f in json.loads(block)["findings"] if f["kind"] == "plan_item"]
+        self.assertTrue(plan and all(isinstance(f.get("automation"), str) for f in plan))
+
+    def test_both_the_discover_and_the_api_skill_say_never_to_read_or_change_a_file_with_inline_python(self):
+        api = (ROOT / ".claude" / "skills" / "testpilot-api-testing" / "SKILL.md").read_text()
+        self.assertIn("**never run inline Python** (`python3 -c`, `python3 -`)", flat(section("4. Write the findings")))
+        self.assertIn("with the Read tool", flat(section("4. Write the findings")))
+        self.assertIn("**never run inline Python** (`python3 -c`, `python3 -`)", flat(api))
+        self.assertIn("Read a JSON file", flat(api))
+
+
 class PermissionsDocTests(unittest.TestCase):
     """The settings block in docs/agent-requests.md lets a discover run with nobody at the keyboard, so it must allow exactly what the skill uses and nothing the skill forbids: if the two
     drift apart, either the run stops at a prompt nobody sees, or the agent is allowed more than the skill says."""

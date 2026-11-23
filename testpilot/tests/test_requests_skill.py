@@ -533,6 +533,26 @@ class CaseResultsActionTests(unittest.TestCase):
         self.assertIn("The action must be list, claim, release, result, case-results, findings, load-result or complete", p.stdout)
 
 
+class AutomationFieldTests(unittest.TestCase):
+    """`automation` of a plan item is a text of at most 200 characters for TestBench. Three live runs sent an object and learned it from a 400 only after the call, so the helper checks it first."""
+
+    def doc(self, automation):
+        return json.dumps({"findings": [{"kind": "plan_item", "ref": "a", "title": "t", "automation": automation}]})
+
+    def test_a_short_text_is_accepted(self):
+        self.assertIsInstance(request_call.read_findings(self.doc("Yes, as a saved test")), list)
+        self.assertIsInstance(request_call.read_findings(self.doc("x" * 200)), list)
+
+    def test_an_object_a_list_or_a_text_over_200_characters_is_refused_with_a_reason_that_names_the_field(self):
+        for bad in ({"suitable": True, "mode": "saved-test"}, ["yes"], "x" * 201, 5):
+            reason = request_call.read_findings(self.doc(bad))
+            self.assertIsInstance(reason, str, bad)
+            self.assertIn("automation is a short text", reason)
+
+    def test_a_plan_item_without_the_field_is_still_accepted(self):
+        self.assertIsInstance(request_call.read_findings(json.dumps({"findings": [{"kind": "plan_item", "title": "t"}]})), list)
+
+
 class FindingsActionTests(unittest.TestCase):
     """`findings`: a file of findings, sent one at a time to the findings route, with the helper's own `ref` and `planItemRef` to link a case to a plan item of the same file."""
 

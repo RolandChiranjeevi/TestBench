@@ -140,7 +140,7 @@ Only what the user confirmed in step 2. Write in English, plainly and briefly. *
 
 | Deliverable | `kind` | Fields |
 |---|---|---|
-| `plan` | `plan_item` | `title` (at most 200), `type` (for example `functional`, `accessibility`, `responsive`), `risk`, `priority` (`low` to `critical`), `readiness` (`ready` when the steps rest on what you saw, otherwise `needs-clarification`), `preconditions`, `testData` (never a real secret: write "a test account"), `steps` (strings), `acceptanceCriteria`, `automation`, and `ref`, a short name of its own in the file. Leave `requirements` out: this agent reads no requirements |
+| `plan` | `plan_item` | `title` (at most 200), `type` (for example `functional`, `accessibility`, `responsive`), `risk`, `priority` (`low` to `critical`), `readiness` (`ready` when the steps rest on what you saw, otherwise `needs-clarification`), `preconditions`, `testData` (never a real secret: write "a test account"), `steps` (strings), `acceptanceCriteria`, `automation` (a short text of at most 200 characters, for example `Yes, as a saved test`: never an object), and `ref`, a short name of its own in the file. Leave `requirements` out: this agent reads no requirements |
 | `plan` | `coverage_gap` | `description`: what was **not** verified, and why. Always include what read-only prevented: areas behind a login, forms not submitted, pages beyond the 10, sizes not looked at |
 | `cases` | `test_case` | `title`, `description`, `preconditions`, `priority`, `steps` as `{action, expected}`, and `planItemRef` (the `ref` of its plan item, which must come **earlier** in the same file). Only for a plan item that is `ready` |
 | `observations` | `observation` | `title`, `severity` (`info` to `critical`), `evidence` (what you saw and where, short), `recommendation`, `source` (the page) |
@@ -170,7 +170,7 @@ A plan item with its test cases, and the gaps, go in `findings-2.json`. The plan
   {"kind": "plan_item", "ref": "nav", "title": "Main navigation reaches every page", "type": "functional",
    "risk": "A broken link blocks every flow", "priority": "high", "readiness": "ready",
    "steps": ["Open the home page", "Follow each link in the main navigation"],
-   "acceptanceCriteria": "Every link opens a page that loads."},
+   "acceptanceCriteria": "Every link opens a page that loads.", "automation": "Yes, as a saved test"},
   {"kind": "test_case", "planItemRef": "nav", "title": "Navigation links open the right pages", "priority": "high",
    "steps": [{"action": "Open / and follow the first link in the main navigation", "expected": "The page it names opens."}]},
   {"kind": "coverage_gap", "description": "Not verified: no form was submitted, because the exploration is read-only."}
@@ -182,7 +182,7 @@ other requests**. It is another run's data, not an example, and writing from it 
 
 **Files.** Under `audits/request-<id>/`, as `findings-1.json`, `findings-2.json` and so on (the Write tool creates the folder itself, so no `mkdir` is needed), each `{"findings": [ ... ]}` with **at most 50 findings**. Put
 the observations and bug reports in the first file, and a plan item together with its test cases in one file, so that `ref` and `planItemRef` can name each other. Writing the files is covered
-by the confirmation in step 2; the helper checks each file as a whole before anything is sent.
+by the confirmation in step 2; the helper checks each file as a whole before anything is sent. Read a file with the Read tool and change it with the Edit tool: **never run inline Python** (`python3 -c`, `python3 -`) to read or change a file, because that is a command that can run anything and it asks every time.
 
 ## 5. Hand them in
 
