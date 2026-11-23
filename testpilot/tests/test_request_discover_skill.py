@@ -534,5 +534,21 @@ class PassiveApiAndSecurityTests(unittest.TestCase):
         self.assertIn("`browser_network_request` (**only** with `part: \"response-headers\"`", flat(section("3. Explore, read-only")))
 
 
+class DepthTests(unittest.TestCase):
+    def test_the_depth_sets_how_far_it_looks_and_never_a_permission_and_the_numbers_in_the_text_are_normal(self):
+        step1 = flat(section("1. Read what there is"))
+        self.assertIn("`options.depth` is `quick`, `normal` or `thorough`; a request without it counts as `normal`.", step1)
+        self.assertIn("It sets how far you look and how much you hand in, and nothing else: it never gives a permission, and this discover stays read-only at every depth.", step1)
+        self.assertIn("**The numbers written in this file (10 pages, 60 browser calls, 100 plan items, 50 coverage gaps and 200 findings) are those of `normal`**", step1)
+        for row in ("| quick | 5 | 30 | 50 | 25 | 100 |", "| normal | 10 | 60 | 100 | 50 | 200 |", "| thorough | 40 | 200 | 300 | 150 | 1000 |"):
+            with self.subTest(row=row):
+                self.assertIn(row, step1)
+
+    def test_the_normal_row_is_what_the_text_says_so_a_request_without_a_depth_changes_nothing(self):
+        self.assertIn("at most 10 pages", flat(section("2. The one confirmation")))
+        self.assertIn("At most 10 pages, at most 60 browser calls in all", flat(section("3. Explore, read-only")))
+        self.assertIn("at most 100 plan items, 50 coverage gaps and 200 findings", flat(section("2. The one confirmation")))
+
+
 if __name__ == "__main__":
     unittest.main()

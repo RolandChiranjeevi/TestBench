@@ -95,7 +95,7 @@ describe("an agent works through a request with its token alone", () => {
   });
 
   it("the options of a discover reach the agent in the list and in the claim as the person chose them, and a wrong option is refused", async () => {
-    const options = { targetMode: "observe_only", gitMode: "off", deliverables: ["cases", "bugs"], viewports: ["mobile"], checks: ["visual"], production: true };
+    const options = { targetMode: "observe_only", gitMode: "off", deliverables: ["cases", "bugs"], viewports: ["mobile"], checks: ["visual"], depth: "thorough", production: true };
     const r = await ask(a, { kind: "discover", targetUrl: "https://options.example.com", options });
     const list = (await (await agent(`Bearer ${tokenA}`, `/api/agent/projects/${a}/requests`)).json()) as { id: number; options: unknown }[];
     assert.deepEqual(list.find((x) => x.id === r.id)?.options, options);

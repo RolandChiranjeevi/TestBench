@@ -26,8 +26,8 @@ const obs = (title: string) => findingBody.parse({ kind: "observation", title })
 const refusal = (e: unknown, status: number, re: RegExp) => e instanceof AuditError && e.status === status && re.test(e.message);
 const n = (sql: string, ...args: unknown[]) => (db.prepare(sql).pluck().get(...args) as number);
 
-describe("the cap: at most 200 findings per request", () => {
-  it("lets one request make 200 findings and refuses the 201st with 409, and the count is per request, not global", () => {
+describe("the cap: at most 1000 findings per request", () => {
+  it("lets one request make 1000 findings and refuses the 1001st with 409, and the count is per request, not global", () => {
     const p = makeProject("CAP", "Cap");
     const { token, take } = asDiscover(p.id, "cap-agent");
     const first = take();
@@ -35,16 +35,16 @@ describe("the cap: at most 200 findings per request", () => {
       const made = createFinding(p.id, first, token, "127.0.0.1", obs(`finding ${i}`));
       assert.equal(made.sourceId, `$agent-${first}-${i}`);
     }
-    assert.equal(FINDING_LIMITS.perRequest, 200);
-    assert.throws(() => createFinding(p.id, first, token, "127.0.0.1", obs("one too many")), (e) => refusal(e, 409, /already has 200 findings/));
-    assert.equal(n("SELECT findings_count FROM agent_requests WHERE id = ?", first), 200);
-    assert.equal(n("SELECT COUNT(*) FROM observations WHERE origin_audit_id = ?", `$agent-${first}`), 200, "the refused one was not made");
-    assert.equal(n("SELECT COUNT(*) FROM audit_log WHERE action = 'agent_request.finding_created' AND detail LIKE ?", `%"request":${first},%`), 200, "and not logged");
+    assert.equal(FINDING_LIMITS.perRequest, 1000);
+    assert.throws(() => createFinding(p.id, first, token, "127.0.0.1", obs("one too many")), (e) => refusal(e, 409, /already has 1000 findings/));
+    assert.equal(n("SELECT findings_count FROM agent_requests WHERE id = ?", first), 1000);
+    assert.equal(n("SELECT COUNT(*) FROM observations WHERE origin_audit_id = ?", `$agent-${first}`), 1000, "the refused one was not made");
+    assert.equal(n("SELECT COUNT(*) FROM audit_log WHERE action = 'agent_request.finding_created' AND detail LIKE ?", `%"request":${first},%`), 1000, "and not logged");
 
     completeRequest(p.id, first, token, {}); // one request runs at a time in a project: the first is finished before the second is taken
     const second = take();
     assert.equal(createFinding(p.id, second, token, "127.0.0.1", obs("a fresh request has its own count")).sourceId, `$agent-${second}-1`);
-    assert.equal(n("SELECT findings_count FROM agent_requests WHERE id = ?", first), 200, "the first is still full");
+    assert.equal(n("SELECT findings_count FROM agent_requests WHERE id = ?", first), 1000, "the first is still full");
   });
 
   it("counts every kind of finding, not only one", () => {
@@ -220,15 +220,15 @@ describe("the plan of a request: plan items and coverage gaps", () => {
     assert.equal(n("SELECT COUNT(*) FROM audit_gap_revisions WHERE audit_id = ?", made.auditId), 1);
   });
 
-  it("has caps of its own (100 plan items, 50 coverage gaps), and the plan neither uses up the findings nor is stopped by them", () => {
+  it("has caps of its own (300 plan items, 150 coverage gaps), and the plan neither uses up the findings nor is stopped by them", () => {
     const p = makeProject("PL3", "Plan caps");
     const { token, take } = asDiscover(p.id, "cap-plan");
     const rid = take();
     for (let i = 1; i <= PLAN_LIMITS.planItems; i++) createFinding(p.id, rid, token, IP, item(`Item ${i}`));
-    assert.throws(() => createFinding(p.id, rid, token, IP, item("one too many")), (e) => refusal(e, 409, /already has 100 plan items/));
+    assert.throws(() => createFinding(p.id, rid, token, IP, item("one too many")), (e) => refusal(e, 409, /already has 300 plan items/));
     for (let i = 1; i <= PLAN_LIMITS.coverageGaps; i++) createFinding(p.id, rid, token, IP, gap(`Gap ${i}`));
-    assert.throws(() => createFinding(p.id, rid, token, IP, gap("one too many")), (e) => refusal(e, 409, /already has 50 coverage gaps/));
-    assert.equal(n("SELECT COUNT(*) FROM audit_plan_items WHERE audit_id = (SELECT result_audit_id FROM agent_requests WHERE id = ?)", rid), 100, "the refused one was not made");
+    assert.throws(() => createFinding(p.id, rid, token, IP, gap("one too many")), (e) => refusal(e, 409, /already has 150 coverage gaps/));
+    assert.equal(n("SELECT COUNT(*) FROM audit_plan_items WHERE audit_id = (SELECT result_audit_id FROM agent_requests WHERE id = ?)", rid), 300, "the refused one was not made");
     assert.equal(n("SELECT findings_count FROM agent_requests WHERE id = ?", rid), 0);
     assert.equal(createFinding(p.id, rid, token, IP, obs("the findings are untouched")).findingsOnRequest, 1);
 
@@ -236,7 +236,7 @@ describe("the plan of a request: plan items and coverage gaps", () => {
     const full = asDiscover(q.id, "full-agent");
     const rid2 = full.take();
     for (let i = 1; i <= FINDING_LIMITS.perRequest; i++) createFinding(q.id, rid2, full.token, IP, obs(`finding ${i}`));
-    assert.equal(planned(createFinding(q.id, rid2, full.token, IP, item("the plan is not stopped by 200 findings"))).sourceId, "P-1");
+    assert.equal(planned(createFinding(q.id, rid2, full.token, IP, item("the plan is not stopped by 1000 findings"))).sourceId, "P-1");
   });
 
   it("links a draft case to a plan item the agent made in this request: cases.plan_item_id is that item, and a case without planItem has none", () => {
