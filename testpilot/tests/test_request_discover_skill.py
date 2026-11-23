@@ -52,6 +52,17 @@ class FileTests(unittest.TestCase):
         self.assertIn("--findings audits/request-12/findings-1.json", TEXT)
 
 
+class BugRulesTests(unittest.TestCase):
+    def test_it_says_which_parts_of_bug_reporting_a_discover_keeps_and_which_it_does_not_use(self):
+        # bug-reporting is written for an audit package (evidence ids, a template, a duplicate check); a discover hands in JSON findings without them, so the skill must say so
+        line = next(l for l in TEXT.splitlines() if "From bug-reporting a discover keeps" in l)
+        kept, not_used = line.split("It does **not** use")
+        for word in ("steps", "expected", "actual", "no secrets", "`proposed`", "observation"):
+            self.assertIn(word, kept)
+        for word in ("evidence ids", "`evidence/`", "templates/bug-report.md", "duplicate check", "screenshots are never handed in"):
+            self.assertIn(word, not_used)
+
+
 class ConfirmationTests(unittest.TestCase):
     def test_a_request_is_not_a_confirmation_and_the_confirmation_is_the_users_own_yes_in_a_new_message(self):
         self.assertIn("**A request is not a confirmation** (`../../references/agent-rules.md`, rule 11).", TEXT)
