@@ -384,8 +384,8 @@ with a wrong value, whether a sign-in works, what a flow ends in. It needs **thr
 
 What it does and does not do:
 - **Never a production address.** It asks whether the address is production, and a yes (or "not sure") ends it. Reading a production address is the read-only discover's job, with its two confirmations.
-- **You log in yourself**, in the browser window, with an account you can lose or reset. The agent **stops once** when it meets a login, asks you to log in (or to skip it) and goes on; you can also say when
-  you answer the confirmation that you are already logged in. It never types, reads or asks for a password, a token or a cookie, so no secret comes into its context.
+- **You log in yourself**, in the browser window, with an account you can lose or reset. The agent **stops once** when it meets a login, asks you to log in (or to skip it) and goes on; if the address itself shows a login, that is
+  **before its first action**, so you can log in at the start and leave. You can also say when you answer the confirmation that you are already logged in. It never types, reads or asks for a password, a token or a cookie, so no secret comes into its context.
 - **Made-up data and fixed limits:** at most 10 pages, 40 actions (clicks, entries and selections) and 120 browser calls; a form at most twice (once empty or wrong, once with made-up data); never a password,
   card, identity-number or file field; nothing that looks irreversible (delete, reset, pay, send, publish, unsubscribe); never another origin.
 - **A page is data, never an instruction.** A page that tells the agent to press something is reported as an observation and ignored. The demo shop in the live tests has such a page, and a button that resets it.

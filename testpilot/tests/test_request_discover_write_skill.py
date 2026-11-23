@@ -122,7 +122,7 @@ class ConfirmationTests(unittest.TestCase):
                      "I will NOT: press anything that looks irreversible (delete, reset, pay, send, publish, unsubscribe)",
                      "fill in a password, a card number or a real person's data, upload a file, run code in a page",
                      "follow a link to another site, or log in myself.",
-                     "I never log in myself. If the address has a login, I stop once and ask you to log in yourself in the browser window (or to skip it). If you are already logged in, say so when you answer.",
+                     "I never log in myself. If the address has a login, I stop once, before I do anything else, and ask you to log in yourself in the browser window (or to skip it). If you are already logged in, say so when you answer.",
                      "at most 10 pages of this address, 40 actions (clicks, entries and selections) and 120 browser calls",
                      "this address may keep what I submit (a message, an account, a record)",
                      "audits/request-12/actions.md", "Use an address you can reset.",
@@ -170,7 +170,10 @@ class ActingRulesTests(unittest.TestCase):
     def test_it_stops_once_for_a_login_lets_the_user_skip_it_and_checks_that_the_login_worked(self):
         """The second live run never asked for a login: it noted login, register and pay as gaps. The user wants the agent to stop and ask, once, so that the area behind a login can be covered."""
         step3 = self.step3()
-        self.assertIn("neither the confirmation nor the user's reply said that they are logged in or that you should skip it, **stop once**, after you have looked at the pages that need no login.", step3)
+        self.assertIn("neither the confirmation nor the user's reply said that they are logged in or that you should skip it, **stop once, before any action**, so that the user can log in at the start and then leave.", step3)
+        self.assertIn("Open the address first (a navigation and a snapshot are not actions).", step3)
+        self.assertIn("If the address shows no login and you meet one later (an account page that redirects to a login), stop **once** then.", step3)
+        self.assertNotIn("after you have looked at the pages that need no login", step3)
         self.assertIn("or to say \"skip\". If they skip, note the area as a coverage gap and carry on.", step3)
         self.assertIn("Stop for this **once**, not at every login you meet.", step3)
         self.assertIn("open a page that needs it (the account page, for example) to see that it worked before you rely on it.", step3)
@@ -443,6 +446,27 @@ class SpecFilesTests(unittest.TestCase):
             self.assertNotIn(gone, flat(TEXT))
         for must in ("Write to git in any other way than step 5b: only `testpilot/tools/spec_git.py` does", "Git is touched only by `testpilot/tools/spec_git.py` (step 5b)"):
             self.assertIn(must, flat(TEXT))
+
+
+class LoginFirstTests(unittest.TestCase):
+    """A run that is meant to be left alone needs the login at the start: one stop before the first action, and then the user can go. Live run 2026-11-23: the run that began with a login
+    reached the checkout, the one that tried an empty login first and let the user log in afterwards got stuck on the product list."""
+
+    def test_the_confirmation_and_the_login_step_both_say_the_stop_comes_before_any_action(self):
+        self.assertIn("I stop once, before I do anything else, and ask you to log in yourself", flat(TEXT))
+        self.assertIn("**stop once, before any action**", flat(TEXT))
+        self.assertIn("so that the user can log in at the start and then leave", flat(TEXT))
+
+    def test_opening_the_address_is_not_an_action_so_the_agent_can_see_whether_there_is_a_login(self):
+        self.assertIn("Open the address first (a navigation and a snapshot are not actions).", flat(TEXT))
+
+    def test_a_login_that_only_turns_up_later_still_gets_one_stop_and_never_a_stop_at_every_login(self):
+        body = flat(TEXT)
+        self.assertIn("If the address shows no login and you meet one later", body)
+        self.assertIn("Stop for this **once**, not at every login you meet.", body)
+
+    def test_the_docs_say_that_a_login_on_the_address_itself_is_before_the_first_action(self):
+        self.assertIn("if the address itself shows a login, that is **before its first action**, so you can log in at the start and leave", flat(DOCS))
 
 
 if __name__ == "__main__":

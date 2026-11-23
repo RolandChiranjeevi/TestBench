@@ -98,8 +98,8 @@ Mode:          reading and writing. I may click, type and submit forms on this a
                I will NOT: press anything that looks irreversible (delete, reset, pay, send, publish, unsubscribe),
                fill in a password, a card number or a real person's data, upload a file, run code in a page,
                follow a link to another site, or log in myself.
-Login:         I never log in myself. If the address has a login, I stop once and ask you to log in yourself in the
-               browser window (or to skip it). If you are already logged in, say so when you answer.
+Login:         I never log in myself. If the address has a login, I stop once, before I do anything else, and ask
+               you to log in yourself in the browser window (or to skip it). If you are already logged in, say so when you answer.
 Looking at:    at most 10 pages of this address, 40 actions (clicks, entries and selections) and 120 browser calls,
                at desktop, tablet and mobile size
 What can change: this address may keep what I submit (a message, an account, a record). I write every action to
@@ -136,8 +136,9 @@ Use the available Playwright MCP browser tools, and **only** these. To read: `br
   An action is one call of `browser_click`, `browser_type`, `browser_fill_form`, `browser_select_option`, `browser_press_key` or `browser_handle_dialog`. **A call that fails or is refused still
   counts** (rule 6: rejected attempts count against the limit), so count every try and not only what worked. At most 3 attempts per call, and no retry after a refusal such as 401, 403 or 429
   (rule 6). When the limit of actions is reached, stop acting and write what you have.
-- **Login.** If you meet a login, or an area that sends you to one (an account page that redirects to a login), and neither the confirmation nor the user's reply said that they are logged in
-  or that you should skip it, **stop once**, after you have looked at the pages that need no login. Say what you found, ask the user to **log in themselves in the browser window**, with an
+- **Login.** Open the address first (a navigation and a snapshot are not actions). If it shows a login, or sends you to one, and neither the confirmation nor the user's reply said that they are
+  logged in or that you should skip it, **stop once, before any action**, so that the user can log in at the start and then leave. If the address shows no login and you meet one later (an account
+  page that redirects to a login), stop **once** then. Say what you found, ask the user to **log in themselves in the browser window**, with an
   account they can lose or reset, and to tell you to go on in a new message, or to say "skip". If they skip, note the area as a coverage gap and carry on. Stop for this **once**, not at every
   login you meet. If the user logs in, open a page that needs it (the account page, for example) to see that it worked before you rely on it. Never ask for, read, type or look for a
   password, a token or a cookie. After the login you act as that account: it may see and change what it may see and change.

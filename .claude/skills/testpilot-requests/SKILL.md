@@ -66,7 +66,7 @@ It does not:
 ## 1. Read the configuration
 
 Read, with the Read tool and not with a shell command (`cat`, `ls`): a missing `.testpilot/testbench.json` is not an error for a `discover` (see the rules below), and the helper's first
-line says `profile: none` when there is none.
+line says `profile: none` when there is none. Do not list the folder to see what is in it (`ls .testpilot`): read the files named below one by one with the Read tool, and say so if one is missing.
 
 1. `.testpilot/testbench.json`
 2. The project profile referenced by `activeProject`

@@ -533,6 +533,15 @@ class CaseResultsActionTests(unittest.TestCase):
         self.assertIn("The action must be list, claim, release, result, case-results, findings, load-result or complete", p.stdout)
 
 
+class ProfileIsReadNotListedTests(unittest.TestCase):
+    """Two live runs ran `ls .testpilot` although the skill says to read the profile with the Read tool: a shell command that was not on the allow list, so it could ask."""
+
+    def test_the_skill_says_read_the_files_by_name_and_do_not_list_the_folder(self):
+        text = " ".join(TEXT.split())
+        self.assertIn("Read, with the Read tool and not with a shell command (`cat`, `ls`)", text)
+        self.assertIn("Do not list the folder to see what is in it (`ls .testpilot`): read the files named below one by one with the Read tool, and say so if one is missing.", text)
+
+
 class AutomationFieldTests(unittest.TestCase):
     """`automation` of a plan item is a text of at most 200 characters for TestBench. Three live runs sent an object and learned it from a 400 only after the call, so the helper checks it first."""
 
