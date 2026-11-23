@@ -1213,5 +1213,27 @@ class RuleTests(unittest.TestCase):
         self.assertIn("write over a result that a person has set", TEXT)
 
 
+class OneRequestOrSeveralTests(unittest.TestCase):
+    """A live run (2026-11-23) asked the same thing twice: the choice came as "Go ahead?" with a summary, then the real confirmation. With one request waiting there is nothing to choose."""
+
+    def step3(self):
+        return " ".join(TEXT.split("## 3. Let the user choose")[1].split("## 4.")[0].split())
+
+    def test_with_one_request_there_is_no_choice_and_the_confirmation_is_the_only_stop(self):
+        step3 = self.step3()
+        self.assertIn("**If exactly one request is waiting, there is nothing to choose.**", step3)
+        self.assertIn("is the **only** stop for it, and the user's `yes` there is the decision to run it", step3)
+        self.assertIn('Do **not** ask "which one?" or "go ahead?" first', step3)
+
+    def test_with_several_the_user_chooses_and_nothing_else_is_asked_before_the_confirmation(self):
+        step3 = self.step3()
+        self.assertIn("**If several are waiting, ask which one** to work on, or none, and nothing else", step3)
+        self.assertIn('no summary of what it will do and no "go ahead?"', step3)
+        self.assertIn("Do not pick one for the user, and do not work through several.", step3)
+
+    def test_never_working_on_a_request_the_user_did_not_choose_still_holds(self):
+        self.assertIn("Work on a request the user did not choose", " ".join(TEXT.split()))
+
+
 if __name__ == "__main__":
     unittest.main()
