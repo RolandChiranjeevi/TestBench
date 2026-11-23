@@ -85,6 +85,12 @@ def read_token(var):
     return None
 
 
+def claim_folder(q):
+    """The folder this claim writes to: audits/request-<id>/<claimedAt as YYYYMMDD-HHMMSS>. TestBench makes the time, so a request number that starts again after a reset (or a second claim of the same request) never gives the same folder twice, and old files are never in the way. None if the time is not in the usual form."""
+    m = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z?", str(q.get("claimedAt") or ""))
+    return f"audits/request-{q['id']}/{m[1]}{m[2]}{m[3]}-{m[4]}{m[5]}{m[6]}" if m else None
+
+
 def read_send_file(path, rid, top):
     """The bytes of the one file this run wrote for this request: a plain .json file (not a link) inside audits/request-<rid>/ of this folder, of 1 byte up to `top`. A reason (str) if it is not."""
     root = os.path.realpath(os.path.join("audits", "request-" + rid))
@@ -252,6 +258,7 @@ def show(data, code, action, rid):
             "id": q["id"], "name": clean(q.get("name", ""), 60), "kind": q["kind"], "status": q["status"], "environment": clean(q["environment"], 100),
             "target": clean(q["targetUrl"], 500), "run": q["runId"], "tests": len(q["tests"]), "asked_by": clean(q["createdBy"], 80),
             "asked_at": q["createdAt"], "note": clean(q["note"], 500),
+            **({"folder": claim_folder(q)} if action == "claim" and claim_folder(q) else {}),
             **({"cases": q.get("caseCount"), "progress": q.get("progress")} if q["kind"] == "run" else {}),
             **({"options": options_of(q.get("options"))} if q["kind"] == "discover" and q.get("options") is not None else {}),
             **({"loadOptions": load_options_of(q.get("loadOptions"))} if q["kind"] == "loadtest" and q.get("loadOptions") is not None else {}),

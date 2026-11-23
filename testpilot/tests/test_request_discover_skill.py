@@ -49,7 +49,7 @@ class FileTests(unittest.TestCase):
             self.assertIn(action, request_call.ACTIONS)
             for flag in re.findall(r"--[a-z-]+", rest):
                 self.assertIn(flag, {"--findings", "--result-audit", "--result-run"})
-        self.assertIn("--findings audits/request-12/findings-1.json", TEXT)
+        self.assertIn("--findings audits/request-12/20261123-194213/findings-1.json", TEXT)
 
 
 class BugRulesTests(unittest.TestCase):
@@ -139,7 +139,7 @@ class ConfirmationTests(unittest.TestCase):
 
 
 class ExplorationTests(unittest.TestCase):
-    ALLOWED = ("browser_navigate", "browser_snapshot", "browser_resize", "browser_console_messages", "browser_network_requests", "browser_network_request", "browser_take_screenshot")
+    ALLOWED = ("browser_navigate", "browser_snapshot", "browser_resize", "browser_console_messages", "browser_network_requests", "browser_network_request", "browser_find", "browser_take_screenshot")
     FORBIDDEN = ("browser_click", "browser_type", "browser_fill_form", "browser_select_option", "browser_press_key", "browser_drag", "browser_hover", "browser_file_upload", "browser_handle_dialog",
                  "browser_evaluate", "browser_run_code_unsafe")
 
@@ -248,7 +248,7 @@ class SpecFilesTests(unittest.TestCase):
                 self.assertIn(must, text)
         commands = re.findall(r"python3 -I testpilot/tools/spec_git\.py (.*)", step)
         self.assertEqual(len(commands), 1)
-        self.assertRegex(commands[0], r"^write 12 --confirmed local --origin https://staging\.example\.com --specs audits/request-12/specs\.json$")
+        self.assertRegex(commands[0], r"^write 12 --confirmed local --origin https://staging\.example\.com --specs audits/request-12/20261123-194213/specs\.json$")
         for flag in re.findall(r"--[a-z]+", commands[0]):
             self.assertIn(f'add_argument("{flag}"', Path(spec_git.__file__).read_text(), "the skill uses a flag that the tool has")
 
@@ -548,6 +548,20 @@ class DepthTests(unittest.TestCase):
         self.assertIn("at most 10 pages", flat(section("2. The one confirmation")))
         self.assertIn("At most 10 pages, at most 60 browser calls in all", flat(section("3. Explore, read-only")))
         self.assertIn("at most 100 plan items, 50 coverage gaps and 200 findings", flat(section("2. The one confirmation")))
+
+
+class FolderAndFindTests(unittest.TestCase):
+    def test_everything_is_written_in_the_folder_the_claim_printed_and_nothing_is_made_up(self):
+        step1 = flat(section("1. Read what there is"))
+        self.assertIn("(`target`, `environment`, `note`, `options` and `folder`)", step1)
+        self.assertIn("**The folder of this claim** is the `folder:` that `claim` printed (for example `audits/request-12/20261123-194213`)", step1)
+        self.assertIn("every file you write for this request goes in it, and in no other folder. It is new for every claim, so an old file can never be in the way and nothing is ever overwritten.", step1)
+        self.assertIn("If `claim` printed no folder, stop and say so; never make up a folder name.", step1)
+        self.assertNotIn("Under `audits/request-<id>/`", flat(TEXT), "no fixed folder that an older run can already hold")
+
+    def test_browser_find_is_read_with_text_or_regex_only_and_never_with_a_file_name(self):
+        step3 = flat(section("3. Explore, read-only"))
+        self.assertIn("`browser_find` (**only** with `text` or `regex`, to find an element in the page snapshot: **never** with `filename`)", step3)
 
 
 class NoEnvironmentTests(unittest.TestCase):

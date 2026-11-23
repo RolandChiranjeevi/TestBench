@@ -95,7 +95,7 @@ Rules:
 
 Every call to TestBench goes through one fixed, checked-in helper, `testpilot/tools/request_call.py`. **Use it exactly as shown. Do not write your own code to call TestBench, do not copy, edit or re-create the helper, and do not open `.env` or `.mcp.json` yourself.**
 The helper is the only thing that touches the request token: it takes it from the environment variable that the profile names (`requestTokenEnvVar`), or else from that one line of `.env`, keeps it in memory, and sends it only in the
-`Authorization` header, to this project's request routes on `baseUrl`. It never prints it, writes it to a file or puts it on a command line, and it prints only the HTTP code and the data of the requests.
+`Authorization` header, to this project's request routes on `baseUrl`. It never prints it, writes it to a file or puts it on a command line, and it prints only the HTTP code and the data of the requests. **`claim` also prints `folder:`**, for example `audits/request-12/20261123-194213`: the folder of this claim, made from the time TestBench gave the claim. Everything you write for the request (the report, the case results, the findings, the log, a screenshot, the specs) goes in it, and in no other folder. It is new for every claim, so a request number that starts again after TestBench is reset can never meet an old file. If `claim` prints no folder, stop and say so.
 
 Run it from the folder that holds `.testpilot/`, one action per call (the number is the request number):
 
@@ -103,10 +103,10 @@ Run it from the folder that holds `.testpilot/`, one action per call (the number
 python3 -I testpilot/tools/request_call.py list
 python3 -I testpilot/tools/request_call.py list 12
 python3 -I testpilot/tools/request_call.py claim 12
-python3 -I testpilot/tools/request_call.py result 12 --report audits/request-12/playwright-report.json
-python3 -I testpilot/tools/request_call.py case-results 12 --case-results audits/request-12/case-results.json
-python3 -I testpilot/tools/request_call.py findings 12 --findings audits/request-12/findings.json
-python3 -I testpilot/tools/request_call.py load-result 12 --load-result audits/request-12/loadtest.json
+python3 -I testpilot/tools/request_call.py result 12 --report audits/request-12/20261123-194213/playwright-report.json
+python3 -I testpilot/tools/request_call.py case-results 12 --case-results audits/request-12/20261123-194213/case-results.json
+python3 -I testpilot/tools/request_call.py findings 12 --findings audits/request-12/20261123-194213/findings.json
+python3 -I testpilot/tools/request_call.py load-result 12 --load-result audits/request-12/20261123-194213/loadtest.json
 python3 -I testpilot/tools/request_call.py release 12 <<'NOTE_END'
 Why it is given back, in a sentence. No secrets, no raw log.
 NOTE_END
@@ -232,12 +232,12 @@ Playwright project in brackets (for example `Item added to cart [chromium]`).
 4. **Show the exact command, the environment and the count, and ask.** The agent's own folder is `AGENT` (the folder that holds `.testpilot/`, as an absolute path). Playwright writes its report and its
    artifacts there, never in `SPEC`: it empties its own output directory (`test-results/`) at the start of every run, and that must not be the user's. For example:
    ```
-   cd <SPEC> && PLAYWRIGHT_JSON_OUTPUT_NAME=<AGENT>/audits/request-12/playwright-report.json npx playwright test e2e/shop.spec.ts --project=chromium --reporter=json --output=<AGENT>/audits/request-12/artifacts --global-timeout=600000
+   cd <SPEC> && PLAYWRIGHT_JSON_OUTPUT_NAME=<AGENT>/audits/request-12/20261123-194213/playwright-report.json npx playwright test e2e/shop.spec.ts --project=chromium --reporter=json --output=<AGENT>/audits/request-12/20261123-194213/artifacts --global-timeout=600000
    ```
    Say which environment the tests point at, and ask the user to confirm that it is the one the request names: the configuration may name no environment at all (no `baseURL`), and the address may be
    written in the tests. A production environment needs the user's two separate confirmations, one that it is production and one that the tests may run against it. Run nothing until the user confirms in a
    new message.
-5. **Run it** once, as confirmed. Create `<AGENT>/audits/request-<id>/` first (`audits/` is not committed). Playwright exits with 0 when every test passed and with **1 when some tests failed: that is a normal
+5. **Run it** once, as confirmed. Create the folder of this claim first (`<AGENT>/` and the `folder:` that `claim` printed; `audits/` is not committed). Playwright exits with 0 when every test passed and with **1 when some tests failed: that is a normal
    outcome, and the report is valid.** Report an error only if the report file is missing or is not valid JSON, or if the exit code is anything else. Do not retry beyond the limits.
    The report goes to the file, so Playwright also prints its usual terminal output (the failures, readable) to stdout; read the counts from the file, not from that.
 6. **Report from the file**, not from memory: passed, failed, flaky and skipped counts from the report's `stats`, and for each failed test the first line of its error.
@@ -268,9 +268,9 @@ installing or running a command, changing anything but the application under tes
       run, and the reason is listed.
    2. **Run whole files**, never single test names: a name is never put into a shell string. Use `--project=<project>` for the Playwright projects that the `automatedTests` of the test cases end with in brackets, one flag per
       distinct project.
-   3. **Show the exact command, the environment and the count, and ask.** Playwright writes its report and its artifacts in the agent's own folder (`<AGENT>/audits/request-<id>/`), never in `SPEC`, for example:
+   3. **Show the exact command, the environment and the count, and ask.** Playwright writes its report and its artifacts in the agent's own folder (`<AGENT>/` and the `folder:` that `claim` printed), never in `SPEC`, for example:
       ```
-      cd <SPEC> && PLAYWRIGHT_JSON_OUTPUT_NAME=<AGENT>/audits/request-12/playwright-report.json npx playwright test e2e/login.spec.ts --project=chromium --reporter=json --output=<AGENT>/audits/request-12/artifacts --global-timeout=600000
+      cd <SPEC> && PLAYWRIGHT_JSON_OUTPUT_NAME=<AGENT>/audits/request-12/20261123-194213/playwright-report.json npx playwright test e2e/login.spec.ts --project=chromium --reporter=json --output=<AGENT>/audits/request-12/20261123-194213/artifacts --global-timeout=600000
       ```
       Say which environment the tests point at and ask the user to confirm that it is the one the request names. **A production environment needs the user's two separate confirmations**, one that it is production and one that the
       tests may run against it. Run nothing until the user confirms in a **new message**.
@@ -291,7 +291,7 @@ installing or running a command, changing anything but the application under tes
    - you chose not to run it (out of scope, not allowed in this mode): `skipped`, with the reason in `note`
    - optionally a result for each step (`steps`: `stepId` from the request, `status`, `actual`)
    Texts are plain facts, at most 2000 characters each, with no secrets (mask them as `[redacted]`) and no personal data from the target. **Never invent a result** (rule above).
-3. **Write the results to a file** `<AGENT>/audits/request-<id>/case-results.json` (create the folder first; `audits/` is not committed) in the names TestBench takes, which are not the MCP tool's names:
+3. **Write the results to a file** `<AGENT>/<folder>/case-results.json`, with `<folder>` the `folder:` that `claim` printed (create the folder first; `audits/` is not committed) in the names TestBench takes, which are not the MCP tool's names:
    ```
    {"results": [{"caseId": 17, "status": "failed", "note": "Saw a spinner and no form", "error": "Expected 'Signed in'", "durationMs": 4200,
                  "steps": [{"stepId": 41, "status": "passed", "actual": "A form"}, {"stepId": 42, "status": "failed", "actual": "A spinner"}]},

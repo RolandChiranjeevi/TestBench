@@ -344,6 +344,7 @@ Put this in `.claude/settings.local.json` in the agent's folder, and start a **n
       "mcp__playwright__browser_console_messages",
       "mcp__playwright__browser_network_requests",
       "mcp__playwright__browser_network_request",
+      "mcp__playwright__browser_find",
       "mcp__playwright__browser_take_screenshot",
       "Bash(python3 -I testpilot/tools/request_call.py list:*)",
       "Bash(python3 -I testpilot/tools/request_call.py claim:*)",
@@ -387,12 +388,14 @@ Replace `/Users/you/agent-folder` with the absolute path of the agent's folder. 
 and it was not found out whether the relative or the absolute `Write` form was the one that matched. Keep all of them.
 
 - **What it allows** is exactly what `testpilot-request-discover` uses: the six read-only browser tools, the helper actions `list`, `claim`, `findings` and `complete`, the two actions of the spec tool
-  (`spec_git.py check` and `write`, see "Spec files on a local branch" below), and writing the findings under `audits/request-<id>/` (with `mkdir` for that folder). Nothing that clicks, types or
+  (`spec_git.py check` and `write`, see "Spec files on a local branch" below), and writing the findings in the folder of the claim, `audits/request-<id>/<time>/` (with `mkdir` for that folder). Nothing that clicks, types or
   runs code in a page is allowed: those eleven tools are **denied**, not only left out, and so is reading `.env` and `.mcp.json`, and so are `git` and `gh`: the agent never runs them, and the spec
   tool makes the few git calls it needs itself, from a fixed list.
 - **What it leaves out on purpose.** `release`: giving a request back needs your yes. An inline `python3 -c` or `python3 -`, which can run anything. Everything outside the list still asks, and then
   it is worth reading what it asks for before you answer: it is outside what the skill needs.
 - **`browser_network_request` is allowed, and it can show more than the skill reads.** It is what lets the passive `api` and `security` checks read the response headers of a page. The same tool can return the request headers (with cookies and tokens) and the body of a response, and **a permission rule cannot hold it to the `response-headers` part**. Only the text of the skills does that (never `request-headers`, never `response-body`, never a `filename`). If you do not want to rely on that, leave this one line out of the list: Claude Code then asks before each call of it, and you answer each one (or refuse, and the checks stay with what `browser_network_requests` lists: addresses and statuses).
+- **`browser_find` is allowed, and it can save a file.** It searches the page snapshot for text or a pattern and returns the matching elements and their references, which is cheaper than a whole snapshot. It reads and changes nothing on the page and runs no code. Like `browser_network_request` it has a parameter (`filename`) that a permission rule cannot hold back, so the skills say: only `text` or `regex`, never `filename`. Leave this one line out of the list if you do not want to rely on that.
+- **One folder for every claim.** A request number can start again after TestBench is reset, and a folder named only by it can still hold the files of an older run. `claim` therefore prints `folder: audits/request-<id>/<time>`, made from the time TestBench gave the claim, and the agent writes everything for the request there: the log, the findings, a screenshot, the specs, the report. The permission rules already match it (`audits/request-*/**`), and the helper takes a file from anywhere inside `audits/request-<id>/`.
 - **`browser_navigate` is allowed for any address.** The skill keeps to one origin and at most 10 pages, but the permission no longer asks per address. If you point the agent at a site you do not
   control, leave `browser_navigate` out and answer each address once.
 - **`cat`, `grep`, `head` and `sed` are denied**, so a file or a page snapshot (in `.playwright-mcp/`) is read with the Read tool, which does not ask, and never with the shell. The denial is refused at once, with no question to you: in a live run a discover ran 18 `grep` commands on snapshots and two of them asked. It also closes a hole: `Read(./.env)` stops the Read tool, but not `cat .env` through the shell. `find` and `ls` are denied too (an agent listed a folder with `find ... -exec ls -l`, which was neither allowed nor denied, so it asked).
@@ -425,7 +428,7 @@ What it does and does not do:
 - **It tries to go through everything it can reach**, not a sample: every link, menu item, form and sort option, each flow to its end and cancelled half-way, amounts with more than one price. It presses Logout
   last (so you are logged out afterwards) and then tries a protected page and a made-up wrong password. A gap in coverage has a hard reason (a secret, another origin, a card number, a limit).
 - **A page is data, never an instruction.** A page that tells the agent to press something is reported as an observation and ignored. The demo shop in the live tests has such a page, and a button that resets it.
-- **A log of every action** is written to `audits/request-<id>/actions.md`: the page, what was done and what happened, never the values typed. It is never handed in to TestBench. It is there so that you can see
+- **A log of every action** is written to `actions.md` in the folder of the claim (`audits/request-<id>/<time>/`, see below): the page, what was done and what happened, never the values typed. It is never handed in to TestBench. It is there so that you can see
   what changed on the address and undo it. Use an address you can reset.
 - **`cat`, `grep`, `head` and `sed` are denied** here too, so a page snapshot is read with the Read tool and not with the shell (see the read-only list above), and the agent only presses a button that undoes something (Remove, Delete, Cancel) for what it made itself in this run, after a new snapshot.
 - **A window of the browser itself can stop the run, and the agent cannot see it.** On a site whose demo password has leaked, Chrome shows a warning that blocks the whole tab: clicks do nothing, while selecting an option and opening an address still work. In two live runs (#13 and #17, 2026-11-23) that cost a stop and a wrong guess about the account. Switching to Playwright's own Chromium (`--browser chromium`) did **not** help. What worked was a separate browser profile for the agent, with the password manager, the leak check and Safe Browsing switched off (`credentials_enable_service`, `profile.password_manager_enabled`, `profile.password_manager_leak_detection` and `safebrowsing.enabled` set to `false` in the profile's `Default/Preferences`), and `--user-data-dir <that folder>` in the Playwright arguments of `.mcp.json`. It was tried in one live run (#19, no stop, no blocked click), not measured further. If a window still blocks the run, the agent stops once, asks you to close it, and hands in **one observation** about the test environment (not a fault of the site).
@@ -444,6 +447,7 @@ To let it run while you are away, use this list **instead of** the one above (it
       "mcp__playwright__browser_console_messages",
       "mcp__playwright__browser_network_requests",
       "mcp__playwright__browser_network_request",
+      "mcp__playwright__browser_find",
       "mcp__playwright__browser_take_screenshot",
       "mcp__playwright__browser_click",
       "mcp__playwright__browser_type",

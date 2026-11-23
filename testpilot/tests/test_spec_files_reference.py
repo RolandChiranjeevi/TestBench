@@ -52,7 +52,7 @@ class ReferenceTests(unittest.TestCase):
 
     def test_its_command_is_the_one_the_skills_run(self):
         cmd = re.search(r"python3 -I testpilot/tools/spec_git\.py (write .*)", REF).group(1)
-        self.assertRegex(cmd, r"^write 12 --confirmed local --origin https://staging\.example\.com --specs audits/request-12/specs\.json$")
+        self.assertRegex(cmd, r"^write 12 --confirmed local --origin https://staging\.example\.com --specs audits/request-12/20261123-194213/specs\.json$")
         for name, text in SKILLS.items():
             with self.subTest(name):
                 self.assertIn("python3 -I testpilot/tools/spec_git.py check", text)

@@ -72,7 +72,7 @@ It prints the repository, `ceiling: local`, the checkout folder, the tests folde
 ## 5. A run
 
 In the dialog, ask for **Commit on a local branch** and tick **Spec files**. That is only a preselection: the agent's one confirmation has a `Git:` line, and **your yes to that message** is what lets it write.
-After the findings are handed in, the agent writes `audits/request-<n>/specs.json` and calls `spec_git.py write`. The tool cuts a temporary worktree from `origin/<base>`, writes the new files there, checks
+After the findings are handed in, the agent writes `specs.json` in the folder of that claim (`audits/request-<n>/<time>/`) and calls `spec_git.py write`. The tool cuts a temporary worktree from `origin/<base>`, writes the new files there, checks
 them, commits, and creates the branch **last**, so a refusal leaves nothing behind. The temporary worktree is removed. Your checkout is not touched.
 
 ## 6. Review the branch, then push it yourself
