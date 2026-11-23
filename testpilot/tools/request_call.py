@@ -147,6 +147,9 @@ def read_findings(body):
         if "planItemRef" in f:
             if f["kind"] != "test_case" or "planItem" in f or not isinstance(link, str) or link not in refs:
                 return f"finding {i}: planItemRef is for a test_case only, names the ref of a plan_item EARLIER in the file, and is not given together with planItem"
+        # TestBench takes `automation` as a text of at most 200 characters; three live runs sent an object and only learned it from a 400 after the first call
+        if f["kind"] == "plan_item" and "automation" in f and not (isinstance(f["automation"], str) and len(f["automation"]) <= 200):
+            return f'finding {i}: automation is a short text of at most 200 characters (for example "Yes, as a saved test"), not an object or a list'
     return items
 
 
