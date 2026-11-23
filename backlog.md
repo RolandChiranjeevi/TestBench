@@ -115,9 +115,9 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 **Gränser att veta.** En inloggning kräver användaren (webbläsarsessionen finns bara så länge fönstret lever), så en körning bakom inloggning är inte helt oövervakad förrän användaren loggat in. Utan tillåtelseblocket går noll frågor inte.
 
 **Ordning.**
-1. **A och B (liten, med test):** tillåtelseblocket (`Write(audits/**)`, `runner.py`, belastningstestets kommandon) och att JSON läses med `Read` och inte med inline-Python.
-2. **Skillarna:** ingen egen bekräftelse vid bara läsa, produktionsfrågan en gång, fynd utan fråga, stopp som avslutar. Ett steg per sort, med live-test efter varje.
-3. **API och säkerhet i discovern** enligt förslaget ovan (resultatet som observationer), i stället för audit-paketets planfas, valideringsfas och leveransfas när de startas från en request.
+1. **A och B (liten, med test).** A: ett tillåtelseblock för belastningstestet (`loadtest.py plan` och `run`, `request_call.py load-result`) i docs, med ett paritetstest. B: ett exempel på en findings-fil i discover-skillarna (med `automation` som sträng, som orsakade 400 tre gånger) och en rad om att filer läses med `Read` och aldrig med inline-Python. Inget `Write(audits/**)`: testerna kräver idag uttryckligen att agenten bara skriver under `audits/request-*`, och det behövs inte om punkt 2 görs.
+2. **API och säkerhet via fyndvägen** i stället för audit-flödet när de startas från en request: resultatet lämnas som fynd (observationer) på samma sätt som en discover, utan planfas, paket, validering och leverans. Det tar bort den största delen av kedjan i live-testet (leveransen krävde dessutom ett lösenord och en omställning i profilen), och är det som ger flest färre stopp.
+3. **Skillarna:** ingen egen bekräftelse vid bara läsa, produktionsfrågan en gång, fynd utan fråga, stopp som avslutar. Ett steg per sort, med live-test efter varje.
 4. **UI:t:** sammanfattningen som bekräftelse. UI/UX, tas efter de stora sakerna.
 
 **Mått.** Antal stopp per körning räknas i varje live-test. Målet: noll frågor vid bara läsa, en vid full.
