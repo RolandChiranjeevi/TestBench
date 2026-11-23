@@ -81,7 +81,7 @@ The answer says what was made: `{"kind", "id", "sourceId", "findingsOnRequest"}`
 Rules, all checked by TestBench:
 
 - Only the token that **took** the request, only **while it is taken**, and only for a **discover**. A rerun hands in its report through TestBench's result route and gets 409 here.
-- At most **1000 findings per request** (409 after that) and **60 findings a minute per token** (429). The plan has caps of its own and does not count as findings: **300 plan items** and **150 coverage gaps** per request. These are the highest of the three depths (quick, normal, thorough); the skills hold to the depth's own, lower numbers.
+- At most **1000 findings per request** (409 after that) and **300 findings a minute per token** (429). The plan has caps of its own and does not count as findings: **300 plan items** and **150 coverage gaps** per request. These are the highest of the three depths (quick, normal, thorough); the skills hold to the depth's own, lower numbers.
 - Test cases made by the agent are not ticked by *Select all* when you build a run: review them first.
 - Each finding is written to TestBench's audit log (`agent_request.finding_created`) with the agent's name and the token's id, never the token.
 
@@ -162,7 +162,7 @@ Errors come back as MCP tool errors with a message to act on:
 | 403 | The token belongs to another project, or may not do that. The message tells the agent not to retry, but to tell the user. |
 | 404 | No such request in this project (or `TESTBENCH_PROJECT_ID` is wrong). |
 | 409 | The request is not in the right state (someone else took it, it is already done, another token took it). For a finding also: the request is not a discover, is not taken, or already has 200 findings. For results also: agent results are switched off, a test case already has a result, or the request is not a run. For `done` on a run request: how many test cases have no result yet. |
-| 429 | Too many wrong attempts from this address, or more than 60 findings (or 60 reports of results) a minute from this token. The message tells the agent not to retry, but to stop and tell the user that it must wait. |
+| 429 | Too many wrong attempts from this address, or more than 300 findings (or 60 reports of results) a minute from this token. The message tells the agent not to retry, but to stop and tell the user that it must wait. |
 | 400 | TestBench refused the input (for example a `result_audit_id` that is not an audit of this project, or a batch with a test case that is not in the request or a case twice). |
 | 413 | A report of results is larger than 256 kB. Send fewer results, or shorter notes, in each call. |
 

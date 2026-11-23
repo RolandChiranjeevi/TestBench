@@ -201,7 +201,7 @@ export function buildServer(client: Client, projectId: number, version = "0.1.0"
         "a plan_item (one planned check) or a coverage_gap (something you did not verify, and why). A person reviews it in TestBench; nothing here approves anything. The plan is a " +
         "proposal like the rest: a person edits, approves or rejects each item, and it is never a result (a plan item does not say that anything was tested). The answer to a plan_item " +
         "carries its sourceId (P-1 ...): give it as planItem on a test_case to link the draft case to it. Hand in the plan item first. Only the token that took the request can do this, " +
-        "only while it is taken, never for a rerun, at most 1000 findings (not counting the plan), 300 plan items and 150 coverage gaps per request (the request's depth sets a lower number in the skill), and 60 calls a minute. Fields that do " +
+        "only while it is taken, never for a rerun, at most 1000 findings (not counting the plan), 300 plan items and 150 coverage gaps per request (the request's depth sets a lower number in the skill), and 300 findings a minute. Fields that do " +
         "not belong to the kind are refused.",
       inputSchema: createFindingInput,
     },

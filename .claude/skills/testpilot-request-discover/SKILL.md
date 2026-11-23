@@ -227,7 +227,7 @@ One call per file, in order (`../testpilot-requests/SKILL.md`, step 2; the print
 python3 -I testpilot/tools/request_call.py findings 12 --findings audits/request-12/20261123-194213/findings-1.json
 ```
 
-TestBench takes 60 findings a minute per token: if the files together hold more than 50, tell the user that you are waiting, and wait a minute between calls.
+TestBench takes 300 findings a minute per token: if the files together hold more than 250, tell the user that you are waiting, and wait a minute between calls.
 
 The helper checks the whole file first and sends nothing if it fails. It **stops at the first finding TestBench refuses**, prints `stopped_at`, `http` and the reason, and retries nothing.
 What was made stays made, and **a finding that was printed as made is never sent again**. If that happens:
