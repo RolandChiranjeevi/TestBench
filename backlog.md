@@ -25,6 +25,9 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 - Resultat för #19: normala stopp, inga frågor om `grep`/`cat`/`head`/`sed`, en oväntad fråga (`find`), nu nekad. Demolösenordet rapporteras inte om säkerhet inte är vald, fel från andra ursprung blir observationer.
 - En tagen request förblir tagen när sessionen stängs. Den släpps bara av agenten (`release`) eller genom att en person avbryter den. Förslag, inte beslutat: en knapp eller en tidsgräns i TestBench.
 - Inte provat: att agenten lämnar något som redan låg i varukorgen ifred.
+- **Full discover med alla checks (#1 efter rensning):** fyra stopp, men `api` och `security` kördes inte, trots att de var ikryssade. De lämnades till egna skills med egna bekräftelser, vilket motsäger "requesten är beslutet".
+- **Steg 3 nivå A (byggd, väntar på prov):** `api` och `security` körs passivt inom samma discover, under samma yes. Bara läsning av det webbläsaren redan visar: svarsrubriker för sidans huvuddokument, anrop och statuskoder. Cookies bara som namn och flaggor, aldrig värden. Inga egna anrop. **Nivå B (aktivt: egna API-anrop, ogiltiga värden) är inte beslutat** och kräver eget säkerhetsbeslut. Svag punkt: `browser_network_request` kan också ge request-rubriker (cookies, tokens) och svarskroppar, och en rättighetsregel kan inte begränsa verktyget till `response-headers`. Bara skilltexten gör det.
+- **UI-text att ändra senare:** valen för API och säkerhet i dialogen (`web/src/requestOptions.ts`) nämner fortfarande de gamla skillarna och att säkerhet inte är för produktion. Stämmer inte längre med nivå A. UI-ändring, så den väntar.
 
 **Regler för ändringar efter prov.**
 - Varje prov slutar med en kort "vad vi lärde oss"-lista som skrivs ner innan något byggs.
