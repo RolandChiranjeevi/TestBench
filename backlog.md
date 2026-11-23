@@ -4,6 +4,28 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 
 ## Nästa
 
+### Plan och slutmål 2026-11-23
+**Status: avstämd med produktägaren, ordningen är beslutad**
+
+**Slutmålet.** Skapa en request i TestBench, välj allt i UI:t och gå. Två stopp (vilken request, en bekräftelse; produktionsfrågan en gång, bara när agenten skriver eller lägger last), inloggning en gång i början, inga lösenord till agenten. Tillbaka kommer ett färdigt **förslag** som granskas en gång i TestBench, mot en riktig testsajt, och som går att jämföra med andra agentverktyg. Se `vision.md` för helheten.
+
+**Ordning.**
+1. **Förfina discover** (nu): köra om `sauce-write` live (väntat: tre stopp plus inloggning, noll `grep`-frågor, inget Remove av det som redan låg där), API och säkerhet via fyndvägen (skiss först), inloggningsprov med påhittade uppgifter (ändrar säkerhetsregeln "aldrig ett lösenordsfält", eget beslut).
+2. **Veckans jämförelse:** J-A till J-C, `testpilot doctor`, protokoll torsdag, första jämförelsen fredag (se V).
+3. **Belastningstest, små saker:** `tool_limit`, p95-varning, UI visar `Done` trots `fail`, sammanfattning som bekräftelse.
+4. **Dashboard** som slår ihop dagens med belastningstestets resultat. Sent, som alla UI-ändringar.
+5. **Knapp som startar git-runnern (A).** Beslutad men inte nu. Skiss, lagrad token och ett ja först, eftersom TestBench då startar något.
+6. **Okänt, bör utredas:** varför varukorgsklicket inte gjorde något i live-prov #13, och varför en bild utan alt-text missades i varje körning (9+).
+
+**Regler för ändringar efter prov.**
+- Varje prov slutar med en kort "vad vi lärde oss"-lista som skrivs ner innan något byggs.
+- Krockar ett resultat med ett tidigare beslut flaggas det, och inget byggs förrän det är sagt vilket som gäller.
+- Säkerhetsregler: skiss, ja, sedan bygge. Texter och docs kan göras direkt.
+- En sak i taget: färdig och mergad innan nästa börjar.
+- Planen finns här, på ett ställe.
+
+**Fryst efter steg 1:** inga nya funktioner utöver ovan innan veckans jämförelse är gjord.
+
 ### Läget 2026-11-22 (inför måndag)
 **Status: sammanfattning, inget här är beslutat utöver det som står som klart**
 
