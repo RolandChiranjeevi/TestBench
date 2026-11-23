@@ -57,15 +57,25 @@ Båda finns nu: körbara suites för stora grupper, och runs för enskilda eller
 
 ## TestPilot — AI-agenten
 
-TestPilot är AI-agenten som drivs från TestBench och arbetar enligt flödet:
+TestPilot är AI-agenten som drivs från TestBench. Allt börjar med en **request** (en beställning) som användaren skapar i TestBench, och requesten är beslutet: det som kryssas i där gäller.
 
-**discover → plan → run → report → deliver**
+**Slutmålet (omskrivet 2026-11-23).** Användaren skapar en request i TestBench, väljer allt i UI:t och går. Agenten gör arbetet i användarens egen miljö och lämnar ett färdigt resultat som **förslag**, som användaren granskar en gång i TestBench. Det fungerar mot en riktig sajt i testmiljö, och resultatet går att jämföra med andra agentverktyg.
 
-- **Discover:** utforskar en sida/app och föreslår testfall (både automatiserade och manuella för människan) inom agentens skill.
-- **Plan:** skapar en testplan med omfattning, begränsningar och stoppvillkor.
-- **Run:** kör de automatiserade testfallen.
-- **Report:** skapar observationer för avvikelser, säkerhetsproblem, tillgänglighetsproblem, och föreslår buggar vid behov.
-- **Deliver:** levererar resultatet tillbaka till TestBench.
+Requesten väljer:
+
+- **Sort:** discover (läsa), discover med skrivning ("Act on target") eller belastningstest.
+- **Delar:** visuell granskning, API-kontroller och säkerhetsgranskning (observationer, inga attacker).
+- **Läsa eller skriva:** vid läsa tittar agenten bara, utan att klicka runt eller skicka formulär. Vid skriva får den agera på en adress som inte är produktion, med påhittad data, medan användaren loggar in själv. Alla åtgärder loggas.
+
+Det agenten lämnar, alltid som förslag en människa godkänner:
+
+- **Buggrapporter** enligt mallen, **observationer** (säkerhet, visuellt), **testfall** och en **testplan**.
+- **Automatiserade testfall som `*.spec.ts`**, som agenten kan lägga i den git-repo användaren anger (läget av, lokalt eller pull request; aldrig merge, aldrig ny repo). Människan strukturerar sedan om, lägger till, tar bort och uppdaterar specarna där.
+- **Belastningstestets resultat**, som visas på dashboarden.
+
+Frågebudgeten är en del av designen: **två stopp** (vilken request, och en bekräftelse som återger valen), plus en separat produktionsfråga en gång per adress, och bara när agenten skriver eller lägger last. Inloggning görs av användaren en gång i början, och inga lösenord lämnas till agenten. Ett stopp avslutar den delen med en notering. En request körs i taget.
+
+Det äldre audit-flödet (discover → plan → run → report → deliver, med manuell körning av varje steg) är **ersatt** av request-flödet och lämnas kvar bara tills det städas bort. API- och säkerhetsdelarna flyttas in under requestens fyndväg.
 
 ## Agentflödet och MCP-bryggan
 
@@ -156,9 +166,12 @@ Automatiserade testfall ska skrivas i **Playwright-format (`*.spec.ts`)**, så a
 
 ## Nästa steg
 
-1. **AG5b: spec- och automatiserad länk** — granska och merga.
-2. **Integrationer (Azure DevOps, mobil)** — senare. (AG-A, AG-B, AG4 och AG5a är klara.)
-3. **Integrationer (Azure DevOps, mobil)** — senare.
+Ordningen (omskriven 2026-11-23, se även överst i `backlog.md`):
+
+1. **Förfina discover-flödet** (först): läsande och skrivande discover mot riktiga testsajter med färre stopp, API och säkerhet via requestens fyndväg i stället för audit-flödet, och inloggningsprov. Allt hör till veckans mål, en jämförelse med andra agentverktyg.
+2. **Dashboard** som slår ihop dagens med belastningstestets resultat och det en produktägare vill se. UI, så den kommer efter det tunga.
+3. **Knapp i TestBench som startar git-runnern** (beslutad som A, ingen start nu): TestBench anropar repots workflow (`workflow_dispatch`), och resultatet kommer tillbaka via importen som redan finns. Det ändrar "TestBench startar inget själv", så det kräver en egen skiss, en lagrad token och ett uttryckligt ja innan bygge. Schema kan i stället ligga i workflowen själv tills dess.
+4. **Integrationer (Azure DevOps, mobil)** — senare.
 
 ## Frågor att förtydliga
 
