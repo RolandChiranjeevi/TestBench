@@ -139,7 +139,7 @@ class ConfirmationTests(unittest.TestCase):
 
 
 class ExplorationTests(unittest.TestCase):
-    ALLOWED = ("browser_navigate", "browser_snapshot", "browser_resize", "browser_console_messages", "browser_network_requests", "browser_take_screenshot")
+    ALLOWED = ("browser_navigate", "browser_snapshot", "browser_resize", "browser_console_messages", "browser_network_requests", "browser_network_request", "browser_take_screenshot")
     FORBIDDEN = ("browser_click", "browser_type", "browser_fill_form", "browser_select_option", "browser_press_key", "browser_drag", "browser_hover", "browser_file_upload", "browser_handle_dialog",
                  "browser_evaluate", "browser_run_code_unsafe")
 
@@ -501,6 +501,37 @@ class ThirdPartyAndShellListingTests(unittest.TestCase):
         text = flat(TEXT)
         self.assertIn("`ls` and `find` are denied too", text)
         self.assertIn("do not list a folder with `find ... -exec ls`", text)
+
+
+
+class PassiveApiAndSecurityTests(unittest.TestCase):
+    """api and security run inside the discover, passively, so that the person's one yes covers them. The tool that reads headers can also return cookies and a body, and no permission rule can stop that."""
+
+    def bullet(self):
+        return flat(TEXT).split("**The `api` and `security` checks, passively.**")[1].split("- **Secrets.**")[0]
+
+    def test_the_two_checks_run_here_and_the_older_skills_are_not_started_from_a_request(self):
+        item4 = flat(section("1. Read what there is"))
+        self.assertIn("`api` and `security` run in this discover too, but **only passively**", item4)
+        self.assertIn("A request never starts the older skills", item4)
+        self.assertNotIn("is handed over afterwards", item4)
+
+    def test_only_the_response_headers_of_a_page_are_read_and_never_a_cookie_value_or_a_body(self):
+        b = self.bullet()
+        self.assertIn("`part: \"response-headers\"`, at most once per page", b)
+        for never in ("**Never** `part: \"request-headers\"`", "**never** `part: \"response-body\"`", "never a `filename`", "**never its value**"):
+            self.assertIn(never, b)
+        self.assertIn("send\n  **nothing** of your own".replace("\n  ", " "), b)
+
+    def test_what_it_reports_is_an_observation_with_a_prefix_and_never_a_confirmed_vulnerability(self):
+        b = self.bullet()
+        self.assertIn("title starts with `API:` or `Security:`", b)
+        self.assertIn("never as a confirmed vulnerability", b)
+        self.assertIn("You do not call an address of your own", b)
+
+    def test_the_confirmation_shows_the_checks_line_and_the_tool_is_named_with_its_one_part(self):
+        self.assertIn("Checks:        <only what the request chose>", TEXT)
+        self.assertIn("`browser_network_request` (**only** with `part: \"response-headers\"`", flat(section("3. Explore, read-only")))
 
 
 if __name__ == "__main__":

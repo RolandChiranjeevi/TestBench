@@ -328,6 +328,7 @@ Put this in `.claude/settings.local.json` in the agent's folder, and start a **n
       "mcp__playwright__browser_resize",
       "mcp__playwright__browser_console_messages",
       "mcp__playwright__browser_network_requests",
+      "mcp__playwright__browser_network_request",
       "mcp__playwright__browser_take_screenshot",
       "Bash(python3 -I testpilot/tools/request_call.py list:*)",
       "Bash(python3 -I testpilot/tools/request_call.py claim:*)",
@@ -376,6 +377,7 @@ and it was not found out whether the relative or the absolute `Write` form was t
   tool makes the few git calls it needs itself, from a fixed list.
 - **What it leaves out on purpose.** `release`: giving a request back needs your yes. An inline `python3 -c` or `python3 -`, which can run anything. Everything outside the list still asks, and then
   it is worth reading what it asks for before you answer: it is outside what the skill needs.
+- **`browser_network_request` is allowed, and it can show more than the skill reads.** It is what lets the passive `api` and `security` checks read the response headers of a page. The same tool can return the request headers (with cookies and tokens) and the body of a response, and **a permission rule cannot hold it to the `response-headers` part**. Only the text of the skills does that (never `request-headers`, never `response-body`, never a `filename`). If you do not want to rely on that, leave this one line out of the list: Claude Code then asks before each call of it, and you answer each one (or refuse, and the checks stay with what `browser_network_requests` lists: addresses and statuses).
 - **`browser_navigate` is allowed for any address.** The skill keeps to one origin and at most 10 pages, but the permission no longer asks per address. If you point the agent at a site you do not
   control, leave `browser_navigate` out and answer each address once.
 - **`cat`, `grep`, `head` and `sed` are denied**, so a file or a page snapshot (in `.playwright-mcp/`) is read with the Read tool, which does not ask, and never with the shell. The denial is refused at once, with no question to you: in a live run a discover ran 18 `grep` commands on snapshots and two of them asked. It also closes a hole: `Read(./.env)` stops the Read tool, but not `cat .env` through the shell. `find` and `ls` are denied too (an agent listed a folder with `find ... -exec ls -l`, which was neither allowed nor denied, so it asked).
@@ -421,6 +423,7 @@ To let it run while you are away, use this list **instead of** the one above (it
       "mcp__playwright__browser_resize",
       "mcp__playwright__browser_console_messages",
       "mcp__playwright__browser_network_requests",
+      "mcp__playwright__browser_network_request",
       "mcp__playwright__browser_take_screenshot",
       "mcp__playwright__browser_click",
       "mcp__playwright__browser_type",

@@ -26,7 +26,7 @@ sys.path.insert(0, str(ROOT / "testpilot" / "tools"))
 import request_call  # noqa: E402
 import spec_git  # noqa: E402
 
-READ = ("browser_navigate", "browser_snapshot", "browser_resize", "browser_console_messages", "browser_network_requests", "browser_take_screenshot")
+READ = ("browser_navigate", "browser_snapshot", "browser_resize", "browser_console_messages", "browser_network_requests", "browser_network_request", "browser_take_screenshot")
 ACT = ("browser_click", "browser_type", "browser_fill_form", "browser_select_option", "browser_press_key", "browser_hover", "browser_handle_dialog", "browser_wait_for", "browser_navigate_back")
 NEVER = ("browser_evaluate", "browser_run_code_unsafe", "browser_file_upload", "browser_drag")
 COUNTED = ("browser_click", "browser_type", "browser_fill_form", "browser_select_option", "browser_press_key", "browser_handle_dialog")
@@ -518,6 +518,19 @@ class ThirdPartyAndShellListingTests(unittest.TestCase):
         text = flat(TEXT)
         self.assertIn("`ls` and `find` are denied too", text)
         self.assertIn("do not list the folder with `find ... -exec ls`", text)
+
+
+
+class PassiveApiAndSecurityInTheWritingDiscoverTests(unittest.TestCase):
+    def test_it_runs_the_two_checks_passively_like_the_read_only_one_and_shows_the_checks_line(self):
+        text = flat(TEXT)
+        self.assertIn("`api` and `security` run here too, **passively**", text)
+        self.assertIn("A request never starts the older audit skills for them.", text)
+        self.assertIn("Checks:        <only what the request chose>", TEXT)
+        self.assertIn("Leave the `Checks:` line out when the request chose none.", text)
+
+    def test_the_header_tool_is_allowed_only_for_the_response_headers(self):
+        self.assertIn("`browser_network_request` (**only** with `part: \"response-headers\"`)", flat(TEXT))
 
 
 if __name__ == "__main__":
