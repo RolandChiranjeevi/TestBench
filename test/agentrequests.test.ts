@@ -343,19 +343,20 @@ describe("the options of a discover request", () => {
     assert.notEqual(r.options?.deliverables, DEFAULT_REQUEST_OPTIONS.deliverables, "a copy: one request's options never change the defaults");
   });
 
-  it("has a depth of quick, normal or thorough: normal when it is not given, kept as chosen, and nothing else is accepted", () => {
+  it("has a depth of quick, normal or deep: normal when it is not given, kept as chosen, and nothing else is accepted", () => {
     const p = makeProject(key());
     assert.equal(ask(p.id, {}).options?.depth, "normal", "a request without a depth, such as one made before depth existed");
-    for (const depth of ["quick", "normal", "thorough"]) assert.equal(ask(p.id, { depth }).options?.depth, depth);
-    refused(() => ask(p.id, { depth: "deep" }), 400, /depth must be one of quick, normal, thorough/);
+    for (const depth of ["quick", "normal", "deep"]) assert.equal(ask(p.id, { depth }).options?.depth, depth);
+    refused(() => ask(p.id, { depth: "extreme" }), 400, /depth must be one of quick, normal, deep/);
+    assert.equal(ask(p.id, { depth: "thorough" }).options?.depth, "deep", "the old name of deep, still read as deep");
     refused(() => ask(p.id, { depth: 3 }), 400, /depth must be one of/);
-    refused(() => ask(p.id, { depth: ["thorough"] }), 400, /depth must be one of/);
+    refused(() => ask(p.id, { depth: ["deep"] }), 400, /depth must be one of/);
   });
 
   it("does not let the depth widen what the agent may do: acting on the target still needs an admin, and a production address can still only be read, at any depth", () => {
     const p = makeProject(key());
     const tester = { ...me, mayWiden: false };
-    for (const depth of ["quick", "normal", "thorough"]) {
+    for (const depth of ["quick", "normal", "deep"]) {
       assert.equal(ask(p.id, { depth }, tester).options?.targetMode, "observe_only", "the depth alone changes no mode");
       refused(() => ask(p.id, { depth, targetMode: "full" }, tester), 403, /Only an admin/);
       refused(() => ask(p.id, { depth, production: true, targetMode: "full" }), 400, /production target can only be read/);

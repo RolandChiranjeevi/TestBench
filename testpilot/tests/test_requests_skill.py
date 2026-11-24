@@ -143,7 +143,7 @@ class PrinterTests(unittest.TestCase):
                 self.assertIsNone(stale.search(" ".join(path.read_text().split())), "an old number for the findings rate")
 
     def test_a_claim_of_a_discover_tells_the_agent_the_depth_that_was_asked_for(self):
-        for depth in ("quick", "normal", "thorough"):
+        for depth in ("quick", "normal", "deep"):
             with self.subTest(depth=depth):
                 rc, out = printed(request(1, kind="discover", status="claimed", claimedAt="2026-11-24 09:24:11", options={"targetMode": "full", "depth": depth}), action="claim", rid="1")
                 self.assertEqual(json.loads(out.splitlines()[0])["options"]["depth"], depth)

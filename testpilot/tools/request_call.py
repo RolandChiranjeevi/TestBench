@@ -39,7 +39,7 @@ FINDING_KINDS = ("test_case", "bug_report", "observation", "manual_test_suggesti
 FINDINGS_MAX = 50  # in one call: TestBench takes 300 findings a minute per token
 ALIAS = re.compile(r"[A-Za-z0-9_-]{1,40}")  # a `ref` of a plan_item
 # What a person chose when asking for a discover (server/agentrequests.ts, REQUEST_OPTIONS). Only a value from these lists is ever printed, so no free text can pass through them.
-OPTION_CHOICES = {"targetMode": ("observe_only", "full"), "gitMode": ("off", "local", "pr"), "depth": ("quick", "normal", "thorough")}
+OPTION_CHOICES = {"targetMode": ("observe_only", "full"), "gitMode": ("off", "local", "pr"), "depth": ("quick", "normal", "deep")}
 OPTION_LISTS = {"deliverables": ("plan", "cases", "observations", "bugs", "specs"), "viewports": ("desktop", "tablet", "mobile"), "checks": ("visual", "api", "security")}
 # What a person chose when asking for a load test (server/loadtest.ts, LOAD_LIMITS). Only a value from these lists, or a cleaned path, is ever printed.
 LOAD_CHOICES = {"vus": (5, 10, 25, 50), "durationSeconds": (30, 60, 120), "rampUpSeconds": (0, 10, 30), "maxErrorRatePercent": (1, 5, 10), "maxP95Ms": (1000, 2000, 5000)}

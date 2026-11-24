@@ -46,7 +46,7 @@ export const REQUEST_OPTIONS = {
   /** Extra parts besides the discover itself. The test plan and the bug proposals always follow test-planning and bug-reporting, so those are not choices. */
   checks: ["visual", "api", "security"],
   /** How much work the agent may do: its ceilings for pages, actions and calls, and for how much it hands in. It never widens what the agent may do (that is `targetMode`). The numbers are in the skills. */
-  depths: ["quick", "normal", "thorough"],
+  depths: ["quick", "normal", "deep"],
 } as const;
 export interface RequestOptions {
   /** What the agent may do to the target: only read it, or also change its state (each action still needs the person's confirmation in the session). */
@@ -57,7 +57,7 @@ export interface RequestOptions {
   viewports: (typeof REQUEST_OPTIONS.viewports)[number][];
   /** Extra parts to run: visual design review, API checks, a limited security review. Empty is allowed (none). */
   checks: (typeof REQUEST_OPTIONS.checks)[number][];
-  /** How much work: quick, normal or thorough. A request without it counts as normal. */
+  /** How much work: quick, normal or deep. A request without it counts as normal. */
   depth: (typeof REQUEST_OPTIONS.depths)[number];
   /** The person says the target is production. A hint only (the agent still asks for its two confirmations), but with it the target can only be read. */
   production: boolean;
@@ -95,7 +95,8 @@ export function cleanOptions(input: unknown): RequestOptions {
     deliverables: many(o.deliverables, "deliverables", REQUEST_OPTIONS.deliverables, DEFAULT_REQUEST_OPTIONS.deliverables),
     viewports: many(o.viewports, "viewports", REQUEST_OPTIONS.viewports, DEFAULT_REQUEST_OPTIONS.viewports),
     checks: optional(o.checks, "checks", REQUEST_OPTIONS.checks),
-    depth: one(o.depth, "depth", REQUEST_OPTIONS.depths, DEFAULT_REQUEST_OPTIONS.depth),
+    // "thorough" is the old name of "deep": requests saved before the rename still hold it, and must keep their depth, not fail or fall back to normal.
+    depth: one(o.depth === "thorough" ? "deep" : o.depth, "depth", REQUEST_OPTIONS.depths, DEFAULT_REQUEST_OPTIONS.depth),
     production: o.production === true,
   };
   if (options.production && options.targetMode !== "observe_only") throw bad("A production target can only be read: choose observe_only");
