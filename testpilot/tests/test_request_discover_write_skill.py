@@ -65,11 +65,11 @@ class FileTests(unittest.TestCase):
 
     def test_the_commands_it_tells_the_agent_to_run_are_real_actions_of_the_helper_with_real_flags(self):
         cmds = re.findall(r"python3 -I testpilot/tools/request_call\.py (\S+)((?: \S+)*)", TEXT)
-        self.assertEqual({c[0] for c in cmds}, {"findings", "complete"})
+        self.assertEqual({c[0] for c in cmds}, {"findings", "complete", "precheck"})
         for action, rest in cmds:
             self.assertIn(action, request_call.ACTIONS)
             for flag in re.findall(r"--[a-z-]+", rest):
-                self.assertIn(flag, {"--findings", "--result-audit", "--result-run"})
+                self.assertIn(flag, {"--findings", "--result-audit", "--result-run", "--coverage"})
 
     def test_it_never_reads_env_or_the_token_and_writes_no_http_code_of_its_own(self):
         self.assertIn("Type a password or any other secret, log in itself, or read `.env`, `.mcp.json` or the token. Only the helper touches the token", flat(TEXT))
@@ -263,7 +263,7 @@ class ActingRulesTests(unittest.TestCase):
         self.assertIn("so write **one observation** of severity `info` for each kind of picker you meet, saying where it is and that its rules need a person.", step3)
         self.assertIn("**Every flow is also tried with nothing in it:** press through to the end with an empty cart, an empty list or no selection (for example, check out with an empty cart and press Finish); a page that lets an empty order through is a bug.", step3)
 
-    CLASSES = ("empty", "wrong-kind", "too-long", "boundary", "format", "date-range", "end-to-end", "cancel-back", "empty-state", "amounts", "reset", "order", "links", "menu", "size", "look", "console", "session")
+    CLASSES = ("empty", "wrong-kind", "too-long", "boundary", "format", "date-range", "enter", "end-to-end", "cancel-back", "empty-state", "amounts", "reset", "order", "links", "menu", "size", "look", "console", "session")
 
     def catalogue(self):
         m = re.search(r"- \*\*The catalogue of checks\.\*\*(.*?)- \*\*Undo only what you made", self.step3(), re.S)
@@ -295,6 +295,21 @@ class ActingRulesTests(unittest.TestCase):
         self.assertIn("**a reset pressed when there is nothing to reset is `not tried`**, because it can show nothing);", cat)
         self.assertLess(cat.index("`amounts`"), cat.index("`reset`"), "reset is a class of a flow")
 
+    def test_a_form_is_also_sent_with_the_enter_key_and_that_is_a_class_of_its_own(self):
+        """Enter in the checkout form went back to the cart: found in 1 run of 4, because no class asked for it."""
+        cat = flat(self.catalogue())
+        self.assertIn("`enter` (the form filled in with values that are valid for it and sent with the Enter key in a field, not with its button: it must do what the button does, and it must not drop what was typed)", cat)
+        self.assertIn("enter", self.CLASSES)
+
+    def test_the_agent_runs_precheck_on_its_drafted_rows_before_it_presses_logout(self):
+        """Deep runs 2 and 3 logged out with whole classes of the checkout form never written down. The rows are checked while the session is still there."""
+        step3 = self.step3()
+        self.assertIn("python3 -I testpilot/tools/request_call.py precheck <id> --coverage <the folder>/coverage.md`", step3)
+        self.assertIn("a page that takes input without a row for each of `empty`, `wrong-kind`, `too-long`, `boundary`, `format` and `enter`", step3)
+        self.assertIn("**Press Logout only when it says every page has its rows.**", step3)
+        self.assertLess(step3.index("precheck <id>"), step3.index("Then press Logout,"), "the check comes before the press")
+        self.assertIn("The rows are those of `coverage.md`, which you wrote and checked before Logout", flat(TEXT))
+
     def test_the_agent_says_what_is_left_before_it_logs_out_in_a_line_the_user_can_see(self):
         """Logout came too early in three runs in a row, and the rule only made the agent report it afterwards. A line before it makes the list visible while there is still time."""
         step3 = self.step3()
@@ -325,7 +340,7 @@ class ActingRulesTests(unittest.TestCase):
 
     def test_the_coverage_record_is_one_true_observation_per_page_and_a_row_without_actions_is_not_tried(self):
         step4 = flat(section("4. Write the action log and the findings"))
-        self.assertIn("**The coverage record.** For each page, hand in **one observation** with severity `info`, the title `Coverage: <the path of the page>`, `source` that page", step4)
+        self.assertIn("**The coverage record.** The rows are those of `coverage.md`, which you wrote and checked before Logout, with what you did after it added. For each page, hand in **one observation** with severity `info`, the title `Coverage: <the path of the page>`, `source` that page", step4)
         self.assertIn("`<thing> · <class> · tried | issue | not tried · actions <numbers from your log> · <the reason, if not tried>`", step4)
         self.assertIn("**Every row that says `tried` or `issue` names the numbers of the actions in your log; a row without numbers counts as `not tried`.**", step4)
         self.assertIn("Never leave out a class that applies: a missing row is read as forgotten.", step4)
@@ -544,7 +559,7 @@ class PermissionsBlockTests(unittest.TestCase):
         allow = self.block(self.HEADING)["allow"]
         bash = [m.group(1) for r in allow if (m := re.fullmatch(r"Bash\((.*)\)", r))]
         actions = {m.group(1) for r in bash if (m := re.fullmatch(r"python3 -I testpilot/tools/request_call\.py ([a-z-]+):\*", r))}
-        self.assertEqual(actions, {"list", "claim", "findings", "complete"})
+        self.assertEqual(actions, {"list", "claim", "findings", "precheck", "complete"})
         self.assertTrue(actions <= set(request_call.ACTIONS))
         spec_actions = {m.group(1) for r in bash if (m := re.fullmatch(r"python3 -I testpilot/tools/spec_git\.py ([a-z-]+):\*", r))}
         self.assertEqual(spec_actions, set(spec_git.ACTIONS), "exactly the two actions of the spec tool, check and write")

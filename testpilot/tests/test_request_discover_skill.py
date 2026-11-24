@@ -385,7 +385,7 @@ class PermissionsDocTests(unittest.TestCase):
         allow, _, _ = self.parts()
         bash = [m.group(1) for r in allow if (m := re.fullmatch(r"Bash\((.*)\)", r))]
         actions = {m.group(1) for r in bash if (m := re.fullmatch(r"python3 -I testpilot/tools/request_call\.py ([a-z-]+):\*", r))}
-        self.assertEqual(actions, {"list", "claim", "findings", "complete"})
+        self.assertEqual(actions, {"list", "claim", "findings", "precheck", "complete"})
         self.assertTrue(actions <= set(request_call.ACTIONS), "every allowed action is a real action of the helper")
         self.assertNotIn("release", actions)
         spec_actions = {m.group(1) for r in bash if (m := re.fullmatch(r"python3 -I testpilot/tools/spec_git\.py ([a-z-]+):\*", r))}

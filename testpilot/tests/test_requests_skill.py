@@ -602,7 +602,7 @@ class CaseResultsActionTests(unittest.TestCase):
     def test_an_unknown_action_is_refused_and_says_which_ones_there_are(self):
         p = run_helper(self.work, self.stub.server_port, "results")
         self.assertNotEqual(p.returncode, 0)
-        self.assertIn("The action must be list, claim, release, result, case-results, findings, load-result or complete", p.stdout)
+        self.assertIn("The action must be list, claim, release, result, case-results, findings, load-result, precheck or complete", p.stdout)
 
 
 class ProfileIsReadNotListedTests(unittest.TestCase):

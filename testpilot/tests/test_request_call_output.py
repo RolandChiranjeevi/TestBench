@@ -162,6 +162,91 @@ def put(path, content):
     Path(path).write_text(content if isinstance(content, str) else json.dumps(content))
 
 
+DOT = "\u00b7"
+
+
+def rows(*lines):
+    return "\n".join(l.replace(" | ", f" {DOT} ") for l in lines) + "\n"
+
+
+FORM_ALL = rows(
+    "## /form.html",
+    "Name | empty | tried | actions 1 | required message seen",
+    "Name | wrong-kind | tried | actions 2, 3 | emoji accepted",
+    "Name | too-long | tried | actions 4 | 300 letters accepted",
+    "Name | boundary | tried | actions 5 | one letter accepted",
+    "Email | format | tried | actions 6 | no @ refused",
+    "Form | enter | tried | actions 7 | Enter sent it",
+    "## /about.html",
+    "Page | links | tried | actions 8 | same origin links open",
+)
+COVERAGE = f"{FOLDER}/coverage.md"
+ACTIONS_LOG = "1. /form.html: x\n2. /form.html: y\n8. /about.html: z\n"
+
+
+class PrecheckSeesWhatIsMissingBeforeLogout(unittest.TestCase):
+    def check(self, coverage, log=ACTIONS_LOG, args=None):
+        with agent_folder():
+            put(COVERAGE, coverage)
+            put(f"{FOLDER}/actions.md", log)
+            status, out, err = run_main(args or ["precheck", "12", f"--coverage={COVERAGE}"])
+        return status, out.splitlines()
+
+    def test_a_form_with_every_input_class_and_a_page_with_only_links_is_ok(self):
+        status, lines = self.check(FORM_ALL)
+        self.assertEqual(status, 0, lines)
+        self.assertRegex(lines[0], r"^precheck: 2 pages, 7 rows \(tried 7, issue 0, not tried 0\), 0 gaps$")
+
+    def test_a_form_page_without_too_long_boundary_format_and_enter_is_a_gap_that_names_them(self):
+        short = rows("## /form.html", "Name | empty | tried | actions 1 | x", "Name | wrong-kind | tried | actions 2 | x", "## /about.html", "Page | links | tried | actions 8 | x")
+        status, lines = self.check(short)
+        self.assertEqual(status, 1)
+        self.assertIn("GAP /form.html: takes input, but no row for: too-long, boundary, format, enter", lines)
+
+    def test_a_row_can_name_several_classes_at_once(self):
+        both = FORM_ALL.replace(f"Name {DOT} too-long {DOT} tried {DOT} actions 4", f"Name {DOT} too-long/boundary {DOT} tried {DOT} actions 4").replace(f"Name {DOT} boundary {DOT} tried {DOT} actions 5 {DOT} one letter accepted\n", "")
+        status, lines = self.check(both)
+        self.assertEqual(status, 0, lines)
+
+    def test_a_page_acted_on_in_the_log_with_no_rows_is_a_gap(self):
+        status, lines = self.check(FORM_ALL, log=ACTIONS_LOG + "9. /cart.html?id=4: pressed\n")
+        self.assertEqual(status, 1)
+        self.assertIn("GAP /cart.html: acted on in actions.md but no coverage rows", lines)
+
+    def test_a_row_that_says_tried_without_action_numbers_counts_as_not_tried_and_is_a_gap(self):
+        bad = FORM_ALL.replace(f"Form {DOT} enter {DOT} tried {DOT} actions 7 {DOT} Enter sent it", f"Form {DOT} enter {DOT} tried {DOT} it worked")
+        status, lines = self.check(bad)
+        self.assertEqual(status, 1)
+        self.assertRegex(lines[0], r"\(tried 6, issue 0, not tried 1\), 1 gaps$")
+        self.assertTrue(any(l.startswith("GAP /form.html | Form | enter: says tried but names no action numbers") for l in lines), lines)
+
+    def test_a_not_tried_row_with_a_reason_is_listed_as_left_and_is_not_a_gap(self):
+        left = FORM_ALL.replace(f"Form {DOT} enter {DOT} tried {DOT} actions 7 {DOT} Enter sent it", f"Form {DOT} enter {DOT} not tried {DOT} a CAPTCHA")
+        status, lines = self.check(left)
+        self.assertEqual(status, 0, lines)
+        self.assertIn("LEFT /form.html | Form | enter | a CAPTCHA", lines)
+
+    def test_a_not_tried_row_with_a_soft_reason_is_a_gap_because_that_is_how_deep_run_3_left_the_checkout_form(self):
+        soft = FORM_ALL.replace(f"Form {DOT} enter {DOT} tried {DOT} actions 7 {DOT} Enter sent it", f"Form {DOT} enter {DOT} not tried {DOT} not reached in this run")
+        status, lines = self.check(soft)
+        self.assertEqual(status, 1)
+        self.assertTrue(any(l.startswith("GAP /form.html | Form | enter: not tried, and \"not reached in this run\" is not a hard reason") for l in lines), lines)
+
+    def test_a_file_outside_the_request_folder_or_not_markdown_is_refused(self):
+        for path in ("elsewhere.md", f"{FOLDER}/coverage.txt"):
+            with self.subTest(path=path):
+                with agent_folder():
+                    put(path, FORM_ALL)
+                    status, out, err = run_main(["precheck", "12", f"--coverage={path}"])
+                self.assertEqual((status, out.strip()), (1, "the file must be a .md file inside audits/request-12/"))
+
+    def test_it_needs_no_token_and_makes_no_call(self):
+        with agent_folder():
+            put(COVERAGE, FORM_ALL)
+            status, out, err = run_main(["precheck", "12", f"--coverage={COVERAGE}"], token=None, send=AssertionError("a call was made"))
+        self.assertEqual(status, 0, out)
+
+
 class TheHelperIsTerminalSafeOnItsOwnLines(unittest.TestCase):
     def test_a_failed_call_whose_reason_comes_from_a_library_or_a_certificate_prints_ascii_only(self):
         rng = random.Random(10)
@@ -216,6 +301,9 @@ class TheContractInTheDocs(unittest.TestCase):
         go("answered-other", ["list"], send=answer(404, {"error": "not found"}))
         go("not-json", ["list"], send=answer(200, b"<html>no</html>"))
         go("findings-made", ["findings", "12", f"--findings={FOLDER}/findings-1.json"], files={f"{FOLDER}/findings-1.json": FINDINGS}, send=answer(201, {"id": 5, "sourceId": "$agent-12-1"}))
+        go("precheck-ok", ["precheck", "12", f"--coverage={COVERAGE}"], files={COVERAGE: FORM_ALL, f"{FOLDER}/actions.md": ACTIONS_LOG})
+        go("precheck-gaps", ["precheck", "12", f"--coverage={COVERAGE}"], files={COVERAGE: rows("## /form.html", "Name | empty | tried | actions 1 | x"), f"{FOLDER}/actions.md": ACTIONS_LOG})
+        go("precheck-refused", ["precheck", "12", "--coverage=elsewhere.md"], files={"elsewhere.md": FORM_ALL})
         go("findings-stopped", ["findings", "12", f"--findings={FOLDER}/findings-1.json"], files={f"{FOLDER}/findings-1.json": FINDINGS}, send=answer(409, {"error": "full"}))
         return out
 
@@ -230,6 +318,9 @@ class TheContractInTheDocs(unittest.TestCase):
         "answered-other": r"^list HTTP 404$",
         "not-json": r"^list HTTP 200$",
         "findings-made": r"^\{\"n\": 1, \"kind\": \"observation\"",
+        "precheck-ok": r"^precheck: \d+ pages, \d+ rows \(tried \d+, issue \d+, not tried \d+\), 0 gaps$",
+        "precheck-gaps": r"^precheck: \d+ pages, \d+ rows \(tried \d+, issue \d+, not tried \d+\), [1-9]\d* gaps$",
+        "precheck-refused": r"^the file must be a \.md file inside audits/request-12/$",
         "findings-stopped": r"^\{\"stopped_at\": 1, ",
     }
 
