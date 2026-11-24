@@ -295,6 +295,30 @@ Put this in `.claude/settings.local.json` in the agent's folder, and start a **n
 
 It does not check the browser profile (that is specific to a set-up) or what the text of a skill says. It is not allowed in the permission lists, because it is for you to run, and not for the agent.
 
+## What the helper prints, and its exit codes
+
+`python3 -I testpilot/tools/request_call.py <action> [<request number>] [--report|--case-results|--findings|--load-result <file>]` is the only thing that holds the token, and a skill or a script can rely on this:
+
+- **Everything it prints is printable ASCII** (and line breaks). A control character, an escape sequence, a right-to-left or invisible character or any other non-ASCII character in text that came from TestBench, a certificate or a library is written as an escape (`\x1b`, `‮`), so that nothing a server says can steer a terminal. The data of a request is printed as JSON strings, so a note stays a note.
+- **It never prints the token**, not on a line, not in an error, and not on stderr.
+- Existing lines do not change; a new line or key may be added.
+
+| Id | Situation | What it prints | Exit |
+| --- | --- | --- | --- |
+| `bad-arguments` | the action is not one of the eight, or the request number or `--result-run` is not a number | one line saying what is wrong | 1 |
+| `config-unreadable` | `.testpilot/testbench.json` or the profile it names cannot be read, or the address is not allowed (plain `http` to a non-local host) | one line | 1 |
+| `no-token-variable` | the profile names no `requestTokenEnvVar` | one line | 3 |
+| `no-token` | the variable (or its line in `.env`) is empty or does not look like a request token | one line (and one on stderr) | 1 |
+| `file-refused` | the file to send is not a plain `.json` file inside `audits/request-<id>/`, is empty or too big, or is not in the findings format | one line with the reason, nothing sent | 1 |
+| `call-failed` | the call itself failed (network, timeout) | `the call failed (network or timeout…): not retried here` | 1 |
+| `answered-200` | TestBench answered 200 | `<action> HTTP 200`, then the data lines of that action (JSON) | 0 |
+| `answered-other` | TestBench answered anything else | `<action> HTTP <code>`, then `ERROR: <json>` | 1 |
+| `not-json` | the answer was not JSON | `<action> HTTP <code>`, then `the answer was not JSON` | 1 |
+| `findings-made` | `findings`: every finding was made | one JSON line per finding, then a line with `made` | 0 |
+| `findings-stopped` | `findings`: TestBench refused one, or the call failed | one JSON line per finding made before it, then a line with `stopped_at`; nothing is retried | 1 |
+
+The table is tested against the code (`testpilot/tests/test_request_call_output.py`): each row is run, and its exit code and the shape of its first line must be what is written here.
+
 ## Who can do what
 
 | Role | Requests |
