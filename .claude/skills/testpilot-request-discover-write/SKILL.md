@@ -173,7 +173,8 @@ Use the available Playwright MCP browser tools, and **only** these. To read: `br
   deletes or changes what was there **before** your run (a "reset all data", a factory reset, a reset of someone's password), or what closes, deactivates or changes the password of the account
   the user logged in with. If you are unsure which it is, do not press it, and note it as a coverage gap that says why.
 - **Logout comes last.** Pressing Logout ends the session, and you cannot log in again, so do everything that needs the session first. **Before you press it, read your list: every item is ticked, or has a coverage
-  gap with a hard reason.** "It does not need the session" is never a reason, and neither is that the list is long. Then press Logout, open a page that needs the login by its address and see that it is
+  gap with a hard reason.** "It does not need the session" is never a reason, and neither is that the list is long. **That includes the screen sizes:** every page behind the login (the cart, the checkout, an item) is looked at in each confirmed size
+  while you are still logged in, because after Logout you cannot go back to it. Then press Logout, open a page that needs the login by its address and see that it is
   refused, and try the login with a made-up wrong password. If you did press it too early, say so in an observation of severity `info`, and put everything left on your list in coverage gaps that say why.
 - **Everything, not a sample.** The point of this run is to do in minutes what a person would need hours for. After the first look make a list of everything you can reach: every link and button,
   every menu item, every form, every sort or filter option, every state a page can be in. Work through it, tick each one off, and go on until it is all done or a limit of this step is reached.
@@ -241,7 +242,8 @@ file, no `mkdir`, and never a file from another request), with these differences
 - **The coverage record.** For each page, hand in **one observation** with severity `info`, the title `Coverage: <the path of the page>`, `source` that page, and in `evidence` one line for each thing on the page
   and each class of the catalogue (step 3) that applies to it: `<thing> · <class> · tried | issue | not tried · actions <numbers from your log> · <the reason, if not tried>`.
   `tried` means you did it and saw nothing wrong. `issue` means you did it and saw something wrong (name the bug report or the observation by its title). `not tried` needs a hard reason, of the kind of a coverage gap
-  (a secret, another origin, a card number, a CAPTCHA, a limit, the session had ended). **Every row that says `tried` or `issue` names the numbers of the actions in your log; a row without numbers counts as `not tried`.**
+  (a secret, another origin, a card number, a CAPTCHA, a limit, the session had ended). **Every row that says `tried` or `issue` names the numbers of the actions in your log; a row without numbers counts as `not tried`.** The one exception is a check that is done by reading and not by an action
+  (the console, a screenshot at another size, a page opened by its address): its row says `no action (read: <what you read>)` instead of numbers.
   Never leave out a class that applies: a missing row is read as forgotten. If the lines do not fit in 4000 characters, make a second observation for that page (`Coverage: <path> (2)`).
   The record is what the person reads to see what is done and what is left, so that nothing is done twice and nothing is trusted that was not done: it is true or it is not handed in. It is a record of what **you
   did** and nothing says that the page is right.

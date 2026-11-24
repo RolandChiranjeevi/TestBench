@@ -362,13 +362,14 @@ describe("the log, the secrets and the limits", () => {
     for (const h of rows<{ token_hash: string }>("SELECT token_hash FROM request_tokens").map((r) => r.token_hash)) assert.equal(all.includes(h), false, "a token hash is in the audit log");
   });
 
-  it("answers 429 after 60 findings a minute from one token, and does not slow another token", async () => {
+  it("answers 429 after 300 findings a minute from one token (a thorough run hands in more than 60), and does not slow another token", async () => {
     const rid = await taken(a, tokenBusy);
+    const max = 300;
     const statuses: number[] = [];
-    for (let i = 0; i < 62; i++) statuses.push((await finding(tokenBusy, a, rid, { ...obs, title: `n${i}` })).status);
-    assert.equal(statuses.filter((s) => s === 201).length, 60);
-    assert.deepEqual(statuses.slice(60), [429, 429]);
-    assert.equal(rows<{ findings_count: number }>("SELECT findings_count FROM agent_requests WHERE id = ?", rid)[0].findings_count, 60, "the refused ones were not made");
+    for (let i = 0; i < max + 2; i++) statuses.push((await finding(tokenBusy, a, rid, { ...obs, title: `n${i}` })).status);
+    assert.equal(statuses.filter((s) => s === 201).length, max);
+    assert.deepEqual(statuses.slice(max), [429, 429]);
+    assert.equal(rows<{ findings_count: number }>("SELECT findings_count FROM agent_requests WHERE id = ?", rid)[0].findings_count, max, "the refused ones were not made");
     // One request runs at a time in a project: the first is cancelled, and the other token takes the next.
     assert.equal((await person(`/api/agent-requests/${rid}/cancel`, {})).status, 200);
     const other = await taken(a, tokenA);

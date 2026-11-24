@@ -298,6 +298,14 @@ class ActingRulesTests(unittest.TestCase):
         self.assertIn("it is true or it is not handed in. It is a record of what **you did** and nothing says that the page is right.", step4)
         self.assertIn("`not tried` needs a hard reason, of the kind of a coverage gap", step4)
 
+    def test_a_check_done_by_reading_has_a_row_of_its_own_form_instead_of_action_numbers(self):
+        step4 = flat(section("4. Write the action log and the findings"))
+        self.assertIn("The one exception is a check that is done by reading and not by an action (the console, a screenshot at another size, a page opened by its address): its row says `no action (read: <what you read>)` instead of numbers.", step4)
+
+    def test_the_screen_sizes_of_every_page_behind_the_login_are_looked_at_before_logout(self):
+        step3 = self.step3()
+        self.assertIn("**That includes the screen sizes:** every page behind the login (the cart, the checkout, an item) is looked at in each confirmed size while you are still logged in, because after Logout you cannot go back to it.", step3)
+
     def test_it_logs_out_only_after_its_list_is_done_and_says_so_if_it_did_not(self):
         step3 = self.step3()
         self.assertIn("**Before you press it, read your list: every item is ticked, or has a coverage gap with a hard reason.** \"It does not need the session\" is never a reason, and neither is that the list is long.", step3)

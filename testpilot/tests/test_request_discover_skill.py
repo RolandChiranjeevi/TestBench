@@ -550,6 +550,13 @@ class DepthTests(unittest.TestCase):
         self.assertIn("at most 100 plan items, 50 coverage gaps and 200 findings", flat(section("2. The one confirmation")))
 
 
+class FindingsPerMinuteTests(unittest.TestCase):
+    def test_the_skill_says_the_rate_the_server_takes_and_when_to_wait(self):
+        step5 = flat(section("5. Hand them in"))
+        self.assertIn("TestBench takes 300 findings a minute per token: if the files together hold more than 250, tell the user that you are waiting, and wait a minute between calls.", step5)
+        self.assertNotIn("60 findings a minute", flat(TEXT))
+
+
 class FolderAndFindTests(unittest.TestCase):
     def test_everything_is_written_in_the_folder_the_claim_printed_and_nothing_is_made_up(self):
         step1 = flat(section("1. Read what there is"))
