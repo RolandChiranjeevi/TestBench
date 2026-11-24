@@ -61,8 +61,20 @@ class TheRulesAreWrittenDown(unittest.TestCase):
     def test_it_asks_one_confirmation_after_the_production_question_and_waits_for_a_yes_in_a_new_message(self):
         self.assertIn("**one** confirmation", TEXT)
         self.assertRegex(TEXT, r"production or shared systems")
-        self.assertIn("explicit \"yes\" in a **new message**", TEXT)
+        self.assertIn("explicit \"yes\" **written by the user** in a **new message**", TEXT)
         self.assertRegex(TEXT, r"If the user says yes, \*\*stop\*\*")
+
+    def test_the_production_question_is_a_message_of_its_own_in_plain_text_with_no_answer_filled_in(self):
+        step2 = " ".join(re.search(r"^## 2\. The one confirmation(.*?)^## 3\.", TEXT, re.S | re.M).group(1).split())
+        self.assertIn("**The production question is a message of its own, in plain text**: no form, no dialog and no list of answer options (so no question tool), and **no answer filled in beforehand**", step2)
+        self.assertIn("a choice that is already ticked, such as \"no, local only\", is not an answer. The user writes the answer.", step2)
+        self.assertIn("**Send nothing else in that message**, and wait for the reply: the confirmation below comes in a **second** message, after the answer.", step2)
+        self.assertIn("A reply that is not a clear answer to the question is not a \"no\": ask again.", step2)
+        self.assertLess(step2.index("The production question is a message of its own"), step2.index("Then show the confirmation"), "the question is written before the confirmation")
+
+    def test_a_click_on_an_option_that_was_ticked_beforehand_is_not_a_yes(self):
+        step2 = " ".join(re.search(r"^## 2\. The one confirmation(.*?)^## 3\.", TEXT, re.S | re.M).group(1).split())
+        self.assertIn("the user's explicit \"yes\" **written by the user** in a **new message**: a click on an option that was ticked beforehand is not a yes.", step2)
 
     def test_nothing_but_the_fixed_tool_sends_load_and_the_choices_are_a_ceiling(self):
         self.assertRegex(TEXT, r"Write its own load code, use `curl`")
