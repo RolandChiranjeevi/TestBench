@@ -4,7 +4,10 @@ The tool sends real requests, so these tests run it against a small server of th
 Run: python3 -m unittest discover -s testpilot/tests
 """
 import contextlib
+import errno
+import http.client
 import io
+import itertools
 import json
 import os
 import sys
@@ -14,6 +17,7 @@ import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "testpilot" / "tools"))
@@ -204,6 +208,47 @@ class WhenItStops(InFolder):
         self.assertEqual(set(result["paths"][0]["statuses"]), {"error"})
 
 
+class WhenTheToolItselfRunsOut(InFolder):
+    """The computer that runs the tool can run out of local ports, files or buffers. That is the tool's limit, not a fault of the site, so it must never become a `fail` for the site."""
+
+    def refusing(self, number):
+        def request(conn, *args, **kwargs):
+            raise OSError(number, os.strerror(number))
+        return mock.patch.object(http.client.HTTPConnection, "request", request)
+
+    def test_it_stops_with_a_warning_of_its_own_and_counts_nothing_against_the_site(self):
+        for number in sorted(loadtest.TOOL_ERRNOS):
+            with self.subTest(errno=errno.errorcode[number]), self.refusing(number):
+                result, _ = self.run_ok("--path", "/", "--vus", "3", "--duration", "30", "--ramp-up", "0")
+                self.assertEqual(result["outcome"], "stopped_tool_limit")
+                self.assertEqual(result["verdict"], "warning", "the site did nothing wrong, so it is never a fail")
+                self.assertLess(result["timeline"][-1]["t"], 30, "it did not run to the end")
+                self.assertEqual((result["totals"]["requests"], result["totals"]["errors"]), (0, 0), "an attempt that failed here is not a request and not an error of the site")
+                self.assertIn("the test tool ran out of local connections", result["verdictReason"])
+                self.assertIn("not at the site", result["verdictReason"])
+                self.assertLessEqual(len(result["verdictReason"]), 300)
+
+    def test_a_few_failures_among_good_requests_are_a_warning_and_no_error_of_the_site(self):
+        original, calls = http.client.HTTPConnection.request, itertools.count(1)
+
+        def sometimes(conn, *args, **kwargs):
+            if next(calls) % 50 == 0:
+                raise OSError(errno.EADDRNOTAVAIL, os.strerror(errno.EADDRNOTAVAIL))
+            return original(conn, *args, **kwargs)
+
+        with mock.patch.object(http.client.HTTPConnection, "request", sometimes):
+            result, _ = self.run_ok("--path", "/", "--vus", "3", "--duration", "3", "--ramp-up", "0")
+        self.assertEqual(result["outcome"], "completed", "a few failures do not stop it")
+        self.assertEqual(result["verdict"], "warning")
+        self.assertEqual((result["totals"]["errors"], result["totals"]["errorRate"]), (0, 0))
+        self.assertIn("attempts failed in the test tool itself", result["verdictReason"])
+
+    def test_a_refused_connection_is_still_an_error_of_the_site_and_is_not_the_tools_limit(self):
+        self.assertNotIn(errno.ECONNREFUSED, loadtest.TOOL_ERRNOS)
+        self.assertNotIn(errno.ETIMEDOUT, loadtest.TOOL_ERRNOS)
+        self.assertTrue({errno.EADDRNOTAVAIL, errno.EMFILE, errno.ENFILE, errno.ENOBUFS} <= loadtest.TOOL_ERRNOS)
+
+
 class TheNumbers(unittest.TestCase):
     def test_percentiles_are_nearest_rank(self):
         self.assertEqual(loadtest.percentile([], 95), 0)
@@ -233,6 +278,24 @@ class TheNumbers(unittest.TestCase):
         for outcome in ("completed", "stopped_p95"):
             reason = loadtest.verdict_of(outcome, t(), {"200": 100}, o)[1]
             self.assertTrue(reason and "\n" not in reason and len(reason) <= 300)
+
+    def test_a_stop_by_the_tool_is_a_warning_and_never_a_fail_even_with_no_request_at_all(self):
+        o = {"max_error_rate": 5, "max_p95_ms": 1000, "vus": 10}
+        total = {"requests": 0, "errors": 0, "errorRate": 0, "p95Ms": 0}
+        verdict, reason = loadtest.verdict_of("stopped_tool_limit", total, {}, o, 120)
+        self.assertEqual(verdict, "warning")
+        self.assertIn("120 attempts failed here, not at the site", reason)
+        self.assertTrue("\n" not in reason and len(reason) <= 300)
+
+    def test_without_a_p95_limit_a_slow_p95_is_a_warning_and_with_one_the_old_rules_hold(self):
+        none = {"max_error_rate": 5, "max_p95_ms": None, "vus": 10}
+        t = lambda **k: {"requests": 100, "errorRate": 0, "p95Ms": 100, **k}
+        v = lambda o, total: loadtest.verdict_of("completed", total, {"200": 100}, o)
+        self.assertEqual(v(none, t(p95Ms=1000))[0], "pass", "1000 ms is not over the level")
+        self.assertEqual(v(none, t(p95Ms=1001))[0], "warning")
+        self.assertIn("no p95 limit was set", v(none, t(p95Ms=1500))[1])
+        self.assertEqual(v({**none, "max_p95_ms": 5000}, t(p95Ms=1500))[0], "pass", "with a limit of 5000 ms, 1500 ms is not over 80 % of it")
+        self.assertEqual(v({**none, "max_p95_ms": 1000}, t(p95Ms=900))[0], "warning", "with a limit set, the 80 % rule is the one that holds")
 
     def test_the_ceilings_are_the_ones_the_server_checks(self):
         c = loadtest.CEILINGS

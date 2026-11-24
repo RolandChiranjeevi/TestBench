@@ -17,7 +17,7 @@ export interface LoadTotals { requests: number; errors: number; errorRate: numbe
 export interface LoadPathResult extends LoadTotals { path: string; statuses: Record<string, number> }
 export interface LoadResult {
   version: 1;
-  outcome: "completed" | "stopped_error_rate" | "stopped_p95" | "stopped_by_agent";
+  outcome: "completed" | "stopped_error_rate" | "stopped_p95" | "stopped_tool_limit" | "stopped_by_agent";
   startedAt: string; endedAt: string;
   params: { vus: number; durationSeconds: number; rampUpSeconds: number; paths: string[] };
   totals: LoadTotals; paths: LoadPathResult[];
@@ -67,7 +67,7 @@ export const VERDICT: Record<LoadResult["verdict"], { tone: "ok" | "warn" | "fai
   pass: { tone: "ok", label: "Pass" }, warning: { tone: "warn", label: "Warning" }, fail: { tone: "fail", label: "Fail" },
 };
 export const OUTCOME: Record<LoadResult["outcome"], string> = {
-  completed: "Ran to the end", stopped_error_rate: "Stopped: too many errors", stopped_p95: "Stopped: too slow (p95)", stopped_by_agent: "Stopped by the agent",
+  completed: "Ran to the end", stopped_error_rate: "Stopped: too many errors", stopped_p95: "Stopped: too slow (p95)", stopped_tool_limit: "Stopped: the test tool ran out of connections", stopped_by_agent: "Stopped by the agent",
 };
 
 /** Seconds of a test that ran, from its own timestamps (0 if they cannot be read). */
