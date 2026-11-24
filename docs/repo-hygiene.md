@@ -4,7 +4,7 @@ This repository is public, so what is committed to it is public for good, in the
 
 ## Dependabot (`.github/dependabot.yml`)
 
-Opens a pull request when a dependency has a newer version: `npm` and the GitHub Actions in `ci.yml`, every Monday, grouped (all minor and patch updates of a week in one pull request, all actions in another), at most 5 open at a time. Security updates come in their own pull requests, and the grouping does not hold them back. The Python tools in `testpilot/` use only the standard library, so there is nothing to update there. CI runs on each of these pull requests like on any other, and nothing is merged by itself.
+Opens a pull request when a dependency has a newer version: `npm` and the GitHub Actions in `ci.yml`, **once a month**, grouped (all minor and patch updates of a month in one pull request, all actions in another), at most 5 open at a time. The first run after this was added is the biggest, because it catches up with everything that had piled up (14 npm updates and 3 actions in one pull request each); a major version of a package gets a pull request of its own. **Security updates** come in their own pull requests when an advisory is published (they follow the setting *Dependabot security updates*, not this file), so a month's wait does not hold a fix back. If it is still too much, `ignore` for major updates in this file, or a lower limit, are the next steps. The Python tools in `testpilot/` use only the standard library, so there is nothing to update there. CI runs on each of these pull requests like on any other, and nothing is merged by itself.
 
 ## Code owners (`.github/CODEOWNERS`)
 

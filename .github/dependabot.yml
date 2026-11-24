@@ -1,13 +1,12 @@
 # What Dependabot keeps up to date, and how loudly. See docs/repo-hygiene.md.
-# Weekly, on Monday, and in a group per kind of update, so that a week of small updates is one pull request and not twelve. Security updates are separate and are not held back by this.
+# Once a month, and in a group per kind of update, so that a month of small updates is one pull request and not twelve. Security updates are separate: they come when an advisory is published, and this does not hold them back.
 # The Python tools in testpilot/ use only the standard library, so there is nothing to update there.
 version: 2
 updates:
   - package-ecosystem: npm
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
     open-pull-requests-limit: 5
     groups:
       minor-and-patch:
@@ -15,8 +14,7 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
     open-pull-requests-limit: 5
     groups:
       actions:
