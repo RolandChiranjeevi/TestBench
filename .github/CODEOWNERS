@@ -1,0 +1,10 @@
+# Who is asked to review a change. See docs/repo-hygiene.md.
+# There is one maintainer today, so this asks for no review that nobody else could give: it only matters when "Require review from Code Owners" is switched on for a branch.
+# The paths below are the ones that decide what an agent may do or what holds a secret; list them separately so that a second person can be added to them first.
+*                          @RolandChiranjeevi
+/.claude/skills/           @RolandChiranjeevi
+/.claude/references/       @RolandChiranjeevi
+/testpilot/tools/          @RolandChiranjeevi
+/docs/agent-requests.md    @RolandChiranjeevi
+/.github/                  @RolandChiranjeevi
+/scripts/secret-scan.mjs   @RolandChiranjeevi

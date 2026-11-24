@@ -25,6 +25,18 @@ jobs:
           python-version: "3.13"
       - run: python -m unittest discover -s testpilot/tests
 
+  # A secret that is committed to a public repository is public for good. This looks in every tracked file for our own tokens (tbrq_, tbag_), a few well known formats and the body of a private
+  # key, and fails the build when it finds one. Made-up values (tbrq_aaaa…) pass. What it looks for, and how to run it by hand: docs/repo-hygiene.md.
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node scripts/secret-scan.mjs
+
   test:
     name: Typecheck, test, build
     runs-on: ubuntu-latest
