@@ -115,6 +115,41 @@ class PrinterTests(unittest.TestCase):
         folder = json.loads(out.strip().splitlines()[0])["folder"]
         self.assertRegex(folder, r"^audits/request-7/[0-9]{8}-[0-9]{6}$")
 
+    def server_options(self):
+        text = (ROOT / "server" / "agentrequests.ts").read_text()
+        block = re.search(r"export const REQUEST_OPTIONS = \{(.*?)\} as const;", text, re.S).group(1)
+        lists = {m.group(1): tuple(re.findall(r'"([a-z_]+)"', m.group(2))) for m in re.finditer(r"^\s*(\w+): \[(.*?)\],", block, re.M)}
+        default = re.search(r"export const DEFAULT_REQUEST_OPTIONS: RequestOptions = \{(.*?)\};", text, re.S).group(1)
+        return lists, tuple(re.findall(r"\b([a-zA-Z]+): ", default))
+
+    def test_the_helper_knows_every_choice_the_server_has_and_prints_each_of_them_to_the_agent(self):
+        """The depth was added to the server, the dialog and the skills, and not to the helper: the agent never saw it, and every request counted as `normal`."""
+        lists, keys = self.server_options()
+        self.assertEqual(request_call.OPTION_CHOICES["targetMode"], lists["targetModes"])
+        self.assertEqual(request_call.OPTION_CHOICES["gitMode"], lists["gitModes"])
+        self.assertEqual(request_call.OPTION_CHOICES["depth"], lists["depths"])
+        for key in ("deliverables", "viewports", "checks"):
+            self.assertEqual(request_call.OPTION_LISTS[key], lists[key], key)
+        sample = {k: (request_call.OPTION_CHOICES[k][-1] if k in request_call.OPTION_CHOICES else [request_call.OPTION_LISTS[k][0]] if k in request_call.OPTION_LISTS else True) for k in keys}
+        self.assertEqual(set(request_call.options_of(sample)), set(keys), "a key of the server's defaults that the helper does not print is a choice the agent never sees")
+
+    def test_no_text_an_agent_reads_still_says_that_the_server_takes_60_findings_a_minute(self):
+        """The server takes 300 a minute since #189. A skill that said 60 made an agent wait a minute between two files for nothing, and the first sweep found one skill that was missed."""
+        server = (ROOT / "server" / "agentfindings.ts").read_text()
+        self.assertRegex(server, r"perMinute: 300\b")
+        stale = re.compile(r"takes 60\b|60 findings a minute|60 a minute per token", re.I)
+        for path in sorted([*(ROOT / ".claude" / "skills").glob("*/SKILL.md"), *(ROOT / ".claude" / "references").glob("*.md"), ROOT / "testpilot" / "tools" / "request_call.py", ROOT / "mcp" / "README.md", ROOT / "mcp" / "tools.ts"]):
+            with self.subTest(path=path.relative_to(ROOT).as_posix()):
+                self.assertIsNone(stale.search(" ".join(path.read_text().split())), "an old number for the findings rate")
+
+    def test_a_claim_of_a_discover_tells_the_agent_the_depth_that_was_asked_for(self):
+        for depth in ("quick", "normal", "thorough"):
+            with self.subTest(depth=depth):
+                rc, out = printed(request(1, kind="discover", status="claimed", claimedAt="2026-11-24 09:24:11", options={"targetMode": "full", "depth": depth}), action="claim", rid="1")
+                self.assertEqual(json.loads(out.splitlines()[0])["options"]["depth"], depth)
+        rc, out = printed(request(1, kind="discover", status="claimed", claimedAt="2026-11-24 09:24:11", options={"depth": "enormous"}), action="claim", rid="1")
+        self.assertNotIn("depth", json.loads(out.splitlines()[0])["options"], "a value the server does not have is left out, as for every other choice")
+
     def test_the_outcomes_the_helper_knows_are_the_ones_the_server_accepts_and_each_is_printed_as_it_is(self):
         """A result with an outcome that the helper did not know would print `null`, and the agent would never see why the test stopped."""
         server = (ROOT / "server" / "loadtest.ts").read_text()
