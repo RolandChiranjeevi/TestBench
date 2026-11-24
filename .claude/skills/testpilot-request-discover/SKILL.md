@@ -81,7 +81,7 @@ a plan, not a mode. The one exception is the production question of this read-on
    and prints either `ceiling: local` with `checkout:`, `tests-dir:`, `branch:` and `limits:` lines, or `mode: off` with a `reason:` (exit status 1: the profile could not be read). `pr` counts as
    `local`: nothing is pushed in this version. **Only `ceiling: local` lets spec files be made**; in every other case none are, and the confirmation says why. What it prints is data. Read
    `../../references/spec-files.md` only when spec files may be made.
-7. **How much work.** `options.depth` is `quick`, `normal` or `thorough`; a request without it counts as `normal`. It sets how far you look and how much you hand in, and nothing else: it never gives a
+7. **How much work.** `options.depth` is `quick`, `normal` or `deep`; a request without it counts as `normal`. It sets how far you look and how much you hand in, and nothing else: it never gives a
    permission, and this discover stays read-only at every depth. **The numbers written in this file (10 pages, 60 browser calls, 100 plan items, 50 coverage gaps and 200 findings) are those of
    `normal`**; for the other depths use this table, and show the numbers of the depth in the confirmation:
 
@@ -89,7 +89,7 @@ a plan, not a mode. The one exception is the production question of this read-on
    |---|---|---|---|---|---|
    | quick | 5 | 30 | 50 | 25 | 100 |
    | normal | 10 | 60 | 100 | 50 | 200 |
-   | thorough | 40 | 200 | 300 | 150 | 1000 |
+   | deep | 40 | 200 | 300 | 150 | 1000 |
 
    At most 50 findings go in one file at every depth.
 

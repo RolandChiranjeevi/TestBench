@@ -362,7 +362,7 @@ describe("the log, the secrets and the limits", () => {
     for (const h of rows<{ token_hash: string }>("SELECT token_hash FROM request_tokens").map((r) => r.token_hash)) assert.equal(all.includes(h), false, "a token hash is in the audit log");
   });
 
-  it("answers 429 after 300 findings a minute from one token (a thorough run hands in more than 60), and does not slow another token", async () => {
+  it("answers 429 after 300 findings a minute from one token (a deep run hands in more than 60), and does not slow another token", async () => {
     const rid = await taken(a, tokenBusy);
     const max = 300;
     const statuses: number[] = [];

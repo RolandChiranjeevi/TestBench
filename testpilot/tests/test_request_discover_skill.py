@@ -537,10 +537,10 @@ class PassiveApiAndSecurityTests(unittest.TestCase):
 class DepthTests(unittest.TestCase):
     def test_the_depth_sets_how_far_it_looks_and_never_a_permission_and_the_numbers_in_the_text_are_normal(self):
         step1 = flat(section("1. Read what there is"))
-        self.assertIn("`options.depth` is `quick`, `normal` or `thorough`; a request without it counts as `normal`.", step1)
+        self.assertIn("`options.depth` is `quick`, `normal` or `deep`; a request without it counts as `normal`.", step1)
         self.assertIn("It sets how far you look and how much you hand in, and nothing else: it never gives a permission, and this discover stays read-only at every depth.", step1)
         self.assertIn("**The numbers written in this file (10 pages, 60 browser calls, 100 plan items, 50 coverage gaps and 200 findings) are those of `normal`**", step1)
-        for row in ("| quick | 5 | 30 | 50 | 25 | 100 |", "| normal | 10 | 60 | 100 | 50 | 200 |", "| thorough | 40 | 200 | 300 | 150 | 1000 |"):
+        for row in ("| quick | 5 | 30 | 50 | 25 | 100 |", "| normal | 10 | 60 | 100 | 50 | 200 |", "| deep | 40 | 200 | 300 | 150 | 1000 |"):
             with self.subTest(row=row):
                 self.assertIn(row, step1)
 

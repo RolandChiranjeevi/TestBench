@@ -25,7 +25,7 @@ import { PRIORITIES } from "./shapes.ts";
  */
 
 // The caps are the highest of the three depths a request can ask for (REQUEST_OPTIONS.depths): the server guards against a flood, the skills hold to the depth's own, lower numbers.
-// perMinute is a guard against a flood from one token, and a thorough run (1000 findings, in files of 50) must be able to hand in a file in seconds: 300 lets six files through a minute.
+// perMinute is a guard against a flood from one token, and a deep run (1000 findings, in files of 50) must be able to hand in a file in seconds: 300 lets six files through a minute.
 export const FINDING_LIMITS = { perRequest: 1000, perMinute: 300, bodyBytes: 256 * 1024 };
 /** The plan of one request: at most this many plan items and coverage gaps, counted apart from the findings. */
 export const PLAN_LIMITS = { planItems: 300, coverageGaps: 150 };

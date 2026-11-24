@@ -33,7 +33,7 @@ export const CHECKS = [
 export const DEPTHS = [
   { value: "quick", label: "Quick", title: "A short look: few pages and few actions. For a first impression or a small change." },
   { value: "normal", label: "Normal", title: "The usual amount of work for a page or a small site." },
-  { value: "thorough", label: "Thorough", title: "As far as it can go: every page, flow and form it can reach, with a very high ceiling. It takes the longest. It never gives the agent more permissions." },
+  { value: "deep", label: "Deep", title: "As far as it can go: every page, flow and form it can reach, with a very high ceiling. It takes the longest. It never gives the agent more permissions." },
 ] as const;
 
 export type TargetMode = (typeof TARGET_MODES)[number]["value"];
@@ -46,9 +46,9 @@ export interface RequestOptions { targetMode: TargetMode; gitMode: GitMode; deli
 
 export const DEFAULT_OPTIONS: RequestOptions = { targetMode: "observe_only", gitMode: "local", deliverables: ["plan", "cases", "observations", "bugs"], viewports: ["desktop", "tablet", "mobile"], checks: [], depth: "normal", production: false };
 
-/** Choosing to act on the target moves the depth to thorough, and choosing to only read moves it back to normal, but only if the person has not picked another depth (a convenience: the depth is always theirs to change). */
+/** Choosing to act on the target moves the depth to deep, and choosing to only read moves it back to normal, but only if the person has not picked another depth (a convenience: the depth is always theirs to change). */
 export function withTargetMode(o: RequestOptions, targetMode: TargetMode): RequestOptions {
-  const depth: Depth = targetMode === "full" && o.depth === "normal" ? "thorough" : targetMode === "observe_only" && o.depth === "thorough" ? "normal" : o.depth;
+  const depth: Depth = targetMode === "full" && o.depth === "normal" ? "deep" : targetMode === "observe_only" && o.depth === "deep" ? "normal" : o.depth;
   return { ...o, targetMode, depth };
 }
 
