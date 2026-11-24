@@ -100,8 +100,15 @@ class CheckTests(unittest.TestCase):
         w = World(self)
         p = w.run("check")
         self.assertEqual(p.returncode, 0, p.out)
-        for line in ("repo: acme/shop", "ceiling: local", f"checkout: {os.path.realpath(w.repo)}", "tests-dir: e2e/tests", "branch: testpilot/discover-<request number>", "limits: 3 files, 60 lines"):
+        for line in ("repo: acme/shop", "ceiling: local", f"checkout: {os.path.realpath(w.repo)}", "tests-dir: e2e/tests", "branch: testpilot/discover-<request number>", "limits: 3 files, 60 lines", "logged-in: no"):
             self.assertIn(line, p.out)
+
+    def test_logged_in_is_read_from_the_rules_and_only_yes_or_no(self):
+        self.assertIn("logged-in: yes", World(self, rules=RULES + "logged-in: yes\n").run("check").out)
+        self.assertIn("logged-in: no", World(self, rules=RULES + "logged-in: no\n").run("check").out)
+        p = World(self, rules=RULES + "logged-in: maybe\n").run("check")
+        self.assertIn("logged-in must be yes or no", p.out)
+        self.assertIn("mode: off", p.out)
 
     def test_the_ceiling_is_the_lowest_of_the_profile_and_the_rules(self):
         for profile, rules, want in (("local", "local", "ceiling: local"), ("pr", "local", "ceiling: local"), ("local", "pr", "ceiling: local"), ("pr", "pr", "ceiling: local (pr is not built yet and counts as local)"), ("off", "pr", "mode: off"), ("local", "off", "mode: off")):
