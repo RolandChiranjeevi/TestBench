@@ -36,7 +36,7 @@ LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
 TOKEN = re.compile(r"tbrq_[A-Za-z0-9_-]{1,195}")  # a request token: its prefix and base64url, at most 200 characters (what TestBench accepts)
 SEND_MAX = {"result": 5 * 1024 * 1024, "case-results": 256 * 1024, "findings": 2 * 1024 * 1024, "load-result": 1024 * 1024}  # the most TestBench takes: the report of a re-run, the results of a run request's test cases, and a file of findings
 FINDING_KINDS = ("test_case", "bug_report", "observation", "manual_test_suggestion", "plan_item", "coverage_gap")  # the list of server/agentfindings.ts (test_requests_skill.py checks it)
-FINDINGS_MAX = 50  # in one call: TestBench takes 60 findings a minute per token
+FINDINGS_MAX = 50  # in one call: TestBench takes 300 findings a minute per token
 ALIAS = re.compile(r"[A-Za-z0-9_-]{1,40}")  # a `ref` of a plan_item
 # What a person chose when asking for a discover (server/agentrequests.ts, REQUEST_OPTIONS). Only a value from these lists is ever printed, so no free text can pass through them.
 OPTION_CHOICES = {"targetMode": ("observe_only", "full"), "gitMode": ("off", "local", "pr")}
@@ -55,8 +55,14 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 OPENER = urllib.request.build_opener(NoRedirect)
 
 
+def printable(text):
+    """The text as printable ASCII only: a control character, an escape sequence, a bidi or invisible character or any other non-ASCII character becomes an escape (\\x1b, \\u202e), so that nothing that
+    came from a server, a certificate or a library can steer a terminal. What the helper prints as JSON is already this (json.dumps escapes non-ASCII); this is for the lines that are not."""
+    return re.sub(r"[^\x20-\x7e]", lambda m: m.group().encode("unicode_escape").decode("ascii"), str(text))
+
+
 def fail(message, status=1):
-    print(message)
+    print(printable(message))
     return status
 
 
@@ -136,7 +142,7 @@ def read_findings(body):
     if not isinstance(items, list) or not items:
         return 'the file must be {"findings": [ ... ]} with at least one finding'
     if len(items) > FINDINGS_MAX:
-        return f"at most {FINDINGS_MAX} findings in one call (TestBench takes 60 a minute per token): split them over several files"
+        return f"at most {FINDINGS_MAX} findings in one call (TestBench takes 300 a minute per token): split them over several files"
     refs = set()
     for i, f in enumerate(items, 1):
         if not isinstance(f, dict) or f.get("kind") not in FINDING_KINDS:
@@ -355,7 +361,7 @@ def main(argv):
     try:
         code, data = send("GET" if a.action == "list" else "POST", url, headers, body, 120 if a.action == "result" else 30)
     except Exception as e:  # nothing here may show more than the kind of failure: no message that could carry the header
-        reason = f", {e.reason}" if isinstance(e, urllib.error.URLError) else ""
+        reason = f", {str(e.reason)[:200]}" if isinstance(e, urllib.error.URLError) else ""
         return fail(f"the call failed (network or timeout{reason}): not retried here")
     print(f"{a.action} HTTP {code}")
     return show(data, str(code), a.action, a.rid)
