@@ -11,14 +11,14 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 
 **Ordning.**
 1. **Förfina discover** (nu): köra om `sauce-write` live (väntat: tre stopp plus inloggning, noll `grep`-frågor, inget Remove av det som redan låg där), API och säkerhet via fyndvägen (skiss först), inloggningsprov med påhittade uppgifter (ändrar säkerhetsregeln "aldrig ett lösenordsfält", eget beslut).
-2. **Veckans jämförelse:** J-A till J-C, `testpilot doctor`, protokoll torsdag, första jämförelsen fredag (se V).
+2. **Veckans jämförelse:** J-A till J-C, `testpilot doctor`, protokoll torsdag, första jämförelsen fredag (se V). **Läget 2026-11-24:** J-C klar (#182), protokollet skrivet (#184) och första jämförelsen **gjord** (se nedan). Steg 1 är i praktiken klart: grundlig discover med utforska-allt-regler (#183), djupval (#185), ingen Environment-fritext i discover (#186), unik mapp per claim och regler efter körning 1 (#187), täckningsrapport (#188) och tre rättningar efter körning 3 (#189). **Återstår i steg 2: J-B, sedan J-A.** Kvar från steg 1: att agenten lämnar det som redan låg i varukorgen ifred är fortfarande inte provat.
 3. **Belastningstest, små saker:** `tool_limit`, p95-varning, UI visar `Done` trots `fail`, sammanfattning som bekräftelse.
 4. **Dashboard** som slår ihop dagens med belastningstestets resultat. Sent, som alla UI-ändringar.
 5. **Knapp som startar git-runnern (A).** Beslutad men inte nu. Skiss, lagrad token och ett ja först, eftersom TestBench då startar något.
 6. **Okänt, bör utredas:** varför en bild utan alt-text missades i varje körning (10+). (Varukorgsklicket i live-prov #13 var Chromes lösenordsruta, se nedan.)
 7. **Läsa ett git-repo och föreslå `spec.ts`** (nytt mål 2026-11-23, beslutat: **nivå 1**). Agenten läser koden i repot och föreslår testfall och `spec.ts`, **utan att köra något**. Att köra repots egna tester (nivå 2) eller starta appen (nivå 3) är inte beslutat och kräver ett eget säkerhetsbeslut. Oklart än: hur repot kommer in (en lokal sökväg du anger, eller att agenten klonar det, vilket är en utgående åtgärd), om det är en ny sorts request eller en del av discover, och hur det går ihop med att agenten inte läser människans egna specar (S2).
 
-**Jämförelse med TestSprite.** TestSprite kördes mot saucedemo 2026-11-23 som mätpunkt. Spara dess råa utdata orörd, med datum, och hur många stopp och frågor det krävde, hur lång tid det tog, kostnad och vad testverktyget fick veta på förhand. Protokollet (mått, vem som avgör vad som är ett riktigt fel, saucedemos kända fel som facit) skrivs **torsdag**, inte före.
+**Jämförelse med TestSprite.** TestSprite kördes mot saucedemo 2026-11-23 som mätpunkt. Spara dess råa utdata orörd, med datum, och hur många stopp och frågor det krävde, hur lång tid det tog, kostnad och vad testverktyget fick veta på förhand. Protokollet (mått, vem som avgör vad som är ett riktigt fel, saucedemos kända fel som facit) är skrivet under V. **Resultatet (2026-11-24):** körning 1 (före) hittade 0 av 4 kända fel, körning 3 (efter ändringarna) hittade 4 av 4 plus 2 till som väntar på granskning, 19 testfall mot TestSprites 13, och 0 till 1 falsk bugg av 6. Det är en sajt, en körning per verktyg och en bedömare som vet svaret, och körning 3 är byggd efter att vi sett facit, så det visar inte att vi är bättre i allmänhet. Hela jämförelsen, mätmetoden och begränsningarna står utanför repot i `~/Documents/TestBench-design/jamforelse-testsprite-saucedemo-2026-11-24.md`, och TestSprites råtext i `testsprite-saucedemo-2026-11-23-radata.md` i samma mapp.
 
 **Lärt av live-proven 2026-11-23 (saucedemo, skrivande discover, #13 till #19).**
 - Chromes varning om läckt lösenord blockerar fliken, och Playwright ser den inte. `--browser chromium` hjälpte inte. En egen webbläsarprofil för agenten med lösenordshanteraren, läckkontrollen och Safe Browsing avstängda fungerade i ett prov (#19). Står i `docs/agent-requests.md`.
@@ -36,7 +36,7 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 - En sak i taget: färdig och mergad innan nästa börjar.
 - Planen finns här, på ett ställe.
 
-**Fryst efter steg 1:** inga nya funktioner utöver ovan innan veckans jämförelse är gjord.
+**Fryset är hävt (2026-11-24):** veckans jämförelse är gjord. Ordningen ovan gäller, en sak i taget.
 
 ### Läget 2026-11-22 (inför måndag)
 **Status: sammanfattning, inget här är beslutat utöver det som står som klart**
