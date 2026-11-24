@@ -181,6 +181,8 @@ export interface AgentRequest {
   options: RequestOptions | null;
   /** A load test: what the person chose (a preselection and a ceiling for the result, never a permission); null for the other kinds. */
   loadOptions: LoadOptions | null;
+  /** A finished load test: how it ended (pass, warning or fail), so that the chip does not say plain "Done" for a failed test. Null until a result is handed in, and for the other kinds. */
+  loadVerdict: "pass" | "warning" | "fail" | null;
   /** The order an agent is given waiting requests in: a person can put one first (priority above 0); among equals the oldest goes first. `queuePosition` is 1 for the next one, and null for a request that is not waiting. */
   priority: number;
   queuePosition: number | null;
