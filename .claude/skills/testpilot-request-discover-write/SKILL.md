@@ -194,7 +194,8 @@ Use the available Playwright MCP browser tools, and **only** these. To read: `br
     the largest value), `format` (an e-mail with no `@`, a date written as text), `date-range` (1900-01-01, 2999-12-31, 31 February);
   - a **flow** (a path of several steps): `end-to-end` (to its very end), `cancel-back` (cancelled half-way, back, reload), `empty-state` (with nothing in it: an empty cart or list), `amounts` (five different carts, exact text);
   - a **list** (things that can be sorted or filtered): `order` (every sort and filter option), `empty-state`;
-  - a **page**: `links` (every link on the same origin; other origins are only noted), `menu` (every menu entry), `size` (each screen size that was confirmed), `console` (console errors and failed requests);
+  - a **page**: `links` (every link on the same origin; other origins are only noted), `menu` (every menu entry), `size` (each screen size that was confirmed), `look` (what the page looks like at each of those sizes: take a screenshot with `browser_take_screenshot` and **open the picture with the Read tool**, so that you see it,
+    and note each thing that is not centred or not aligned, text that is cut off, things that overlap, an icon of the wrong size; each is an **observation** of severity `info` or `low`), `console` (console errors and failed requests);
   - the **session**: `session` (a page that needs the login, opened by its address after Logout, and a wrong login).
 
   A class that does not apply to a thing is left out (`date-range` for a field that is not a date). Every class that does apply gets a row in the coverage record.
@@ -213,6 +214,9 @@ Use the available Playwright MCP browser tools, and **only** these. To read: `br
   that a snapshot shows (a control or an image with no name, an input with no label, headings out of order).
 - **An error from another origin** (an analytics service, an advert, a widget) is an **observation**, never a bug report of the site: say which address it was and that you did not follow it.
   A bug report is for what the site itself does wrong.
+- **Clumsy is not broken.** A control that is awkward but lets the person carry on is an **observation** about how it feels to use, with severity `info` or `low`, and never a bug report: a menu that stays open
+  until it is closed, a field that keeps what was typed, a button that is hard to find. Ask: **can the person go on** with a control that is in plain view (Close, Back, Cancel)? Then it is an observation. A bug
+  report is for what **stops** the person, **gives a wrong result** or **accepts what it should refuse** (a flow that cannot be finished, a wrong amount, letters in a postal code).
 - **Secrets.** If a page shows a password, a token or another secret in clear text, mask the value as `[redacted]` in everything you write. Anything but a demo account is reported as its own
   observation of severity `high` (rule 5): where it was seen and what kind of secret. A demo account that a site publishes on purpose is **not reported** unless the request chose the
   `security` check (`checks`): that review belongs to the security part, and an observation of it that nobody asked for only adds to the list.
