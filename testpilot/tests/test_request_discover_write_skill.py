@@ -263,7 +263,7 @@ class ActingRulesTests(unittest.TestCase):
         self.assertIn("so write **one observation** of severity `info` for each kind of picker you meet, saying where it is and that its rules need a person.", step3)
         self.assertIn("**Every flow is also tried with nothing in it:** press through to the end with an empty cart, an empty list or no selection (for example, check out with an empty cart and press Finish); a page that lets an empty order through is a bug.", step3)
 
-    CLASSES = ("empty", "wrong-kind", "too-long", "boundary", "format", "date-range", "end-to-end", "cancel-back", "empty-state", "amounts", "order", "links", "menu", "size", "console", "session")
+    CLASSES = ("empty", "wrong-kind", "too-long", "boundary", "format", "date-range", "end-to-end", "cancel-back", "empty-state", "amounts", "order", "links", "menu", "size", "look", "console", "session")
 
     def catalogue(self):
         m = re.search(r"- \*\*The catalogue of checks\.\*\*(.*?)- \*\*Undo only what you made", self.step3(), re.S)
@@ -287,6 +287,20 @@ class ActingRulesTests(unittest.TestCase):
         self.assertIn("`wrong-kind` (letters in a number field", cat)
         self.assertIn("`empty-state` (with nothing in it: an empty cart or list)", cat)
         self.assertIn("`amounts` (five different carts, exact text)", cat)
+
+    def test_something_clumsy_that_lets_the_person_go_on_is_an_observation_and_never_a_bug_report(self):
+        step3 = self.step3()
+        self.assertIn("- **Clumsy is not broken.** A control that is awkward but lets the person carry on is an **observation** about how it feels to use, with severity `info` or `low`, and never a bug report", step3)
+        self.assertIn("a menu that stays open until it is closed", step3)
+        self.assertIn("Ask: **can the person go on** with a control that is in plain view (Close, Back, Cancel)? Then it is an observation.", step3)
+        self.assertIn("A bug report is for what **stops** the person, **gives a wrong result** or **accepts what it should refuse**", step3)
+        self.assertIn("letters in a postal code", step3, "what the site must refuse stays a bug: the rule must not swallow the real bugs")
+
+    def test_what_the_page_looks_like_is_looked_at_with_the_picture_opened_and_each_deviation_is_an_observation(self):
+        cat = flat(self.catalogue())
+        self.assertIn("`look` (what the page looks like at each of those sizes: take a screenshot with `browser_take_screenshot` and **open the picture with the Read tool**, so that you see it,", cat)
+        self.assertIn("not centred or not aligned, text that is cut off, things that overlap, an icon of the wrong size; each is an **observation** of severity `info` or `low`)", cat)
+        self.assertLess(cat.index("`size`"), cat.index("`look`"), "a size is confirmed before it is looked at")
 
     def test_the_coverage_record_is_one_true_observation_per_page_and_a_row_without_actions_is_not_tried(self):
         step4 = flat(section("4. Write the action log and the findings"))
