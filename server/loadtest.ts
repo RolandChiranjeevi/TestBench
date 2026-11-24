@@ -83,7 +83,7 @@ export function cleanLoadOptions(input: unknown): LoadOptions {
 
 // ---------------- The result an agent hands in ----------------
 
-export const LOAD_OUTCOMES = ["completed", "stopped_error_rate", "stopped_p95", "stopped_by_agent"] as const;
+export const LOAD_OUTCOMES = ["completed", "stopped_error_rate", "stopped_p95", "stopped_tool_limit", "stopped_by_agent"] as const;
 export const LOAD_VERDICTS = ["pass", "warning", "fail"] as const;
 export interface LoadTotals { requests: number; errors: number; errorRate: number; rps: number; p50Ms: number; p95Ms: number; p99Ms: number; maxMs: number }
 export interface LoadPathResult extends LoadTotals { path: string; statuses: Record<string, number> }

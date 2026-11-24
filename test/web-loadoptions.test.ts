@@ -67,7 +67,8 @@ describe("what the form checks before it sends", () => {
 describe("the report", () => {
   it("has a word and a tone for every verdict and outcome the server accepts", () => {
     for (const v of ["pass", "warning", "fail"] as const) assert.ok(VERDICT[v].label);
-    for (const o of ["completed", "stopped_error_rate", "stopped_p95", "stopped_by_agent"] as const) assert.ok(OUTCOME[o]);
+    for (const o of ["completed", "stopped_error_rate", "stopped_p95", "stopped_tool_limit", "stopped_by_agent"] as const) assert.ok(OUTCOME[o]);
+    assert.equal(Object.keys(OUTCOME).length, 5, "a word for each outcome, and no other");
   });
 
   it("counts the seconds that ran from the timestamps, and 0 when they cannot be read", () => {

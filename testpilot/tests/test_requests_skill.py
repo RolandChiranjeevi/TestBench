@@ -115,6 +115,19 @@ class PrinterTests(unittest.TestCase):
         folder = json.loads(out.strip().splitlines()[0])["folder"]
         self.assertRegex(folder, r"^audits/request-7/[0-9]{8}-[0-9]{6}$")
 
+    def test_the_outcomes_the_helper_knows_are_the_ones_the_server_accepts_and_each_is_printed_as_it_is(self):
+        """A result with an outcome that the helper did not know would print `null`, and the agent would never see why the test stopped."""
+        server = (ROOT / "server" / "loadtest.ts").read_text()
+        listed = re.search(r"export const LOAD_OUTCOMES = \[(.*?)\] as const", server, re.S)
+        self.assertTrue(listed, "the list in server/loadtest.ts")
+        self.assertEqual(request_call.LOAD_OUTCOMES, tuple(re.findall(r'"([a-z0-9_]+)"', listed.group(1))))
+        for outcome in request_call.LOAD_OUTCOMES:
+            with self.subTest(outcome=outcome):
+                rc, out = printed({"verdict": "warning", "outcome": outcome}, "200", "load-result", "12")
+                self.assertEqual(json.loads(out.strip().splitlines()[-1]), {"verdict": "warning", "outcome": outcome})
+        rc, out = printed({"verdict": "warning", "outcome": "crashed"}, "200", "load-result", "12")
+        self.assertIsNone(json.loads(out.strip().splitlines()[-1])["outcome"])
+
     def test_complete_shows_the_result_note_not_the_request_note(self):
         rc, out = printed(request(4, status="done", note="the person's note", resultNote="2 of 2 passed", resultRunId=7, finishedAt="2026-11-16 09:00:00"), action="complete", rid="4")
         self.assertEqual(rc, 0)

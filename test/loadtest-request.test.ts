@@ -118,6 +118,19 @@ describe("the result of a load test", () => {
     assert.equal(submitLoadResult(p.id, r.id, token(), result()).verdict, "pass", "a correct result is still taken after the refused ones");
   });
 
+  it("takes the result of a test that the tool could not go on with: its own outcome, a warning, and no request at all", () => {
+    const asked = cleanLoadOptions(undefined);
+    const none = { requests: 0, errors: 0, errorRate: 0, rps: 0, p50Ms: 0, p95Ms: 0, p99Ms: 0, maxMs: 0 };
+    const stopped = result({
+      outcome: "stopped_tool_limit", verdict: "warning", totals: none, paths: [{ path: "/", ...none, statuses: {} }],
+      verdictReason: "Stopped: the test tool ran out of local connections (240 attempts failed here, not at the site). The result says nothing about the site: use fewer users or a server that keeps connections open",
+    });
+    const kept = cleanLoadResult(stopped, asked);
+    assert.equal(kept.outcome, "stopped_tool_limit");
+    assert.equal(kept.verdict, "warning");
+    assert.equal(kept.totals.requests, 0);
+  });
+
   it("is checked field by field: unknown or missing fields, impossible numbers, a bad verdict and a long reason", () => {
     const asked = cleanLoadOptions(undefined);
     assert.throws(() => cleanLoadResult({ ...result(), extra: 1 }, asked), /unknown field "extra"/);

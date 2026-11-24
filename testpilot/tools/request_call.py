@@ -44,7 +44,7 @@ OPTION_LISTS = {"deliverables": ("plan", "cases", "observations", "bugs", "specs
 # What a person chose when asking for a load test (server/loadtest.ts, LOAD_LIMITS). Only a value from these lists, or a cleaned path, is ever printed.
 LOAD_CHOICES = {"vus": (5, 10, 25, 50), "durationSeconds": (30, 60, 120), "rampUpSeconds": (0, 10, 30), "maxErrorRatePercent": (1, 5, 10), "maxP95Ms": (1000, 2000, 5000)}
 LOAD_VERDICTS = ("pass", "warning", "fail")
-LOAD_OUTCOMES = ("completed", "stopped_error_rate", "stopped_p95", "stopped_by_agent")
+LOAD_OUTCOMES = ("completed", "stopped_error_rate", "stopped_p95", "stopped_tool_limit", "stopped_by_agent")
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):

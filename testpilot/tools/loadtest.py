@@ -14,6 +14,7 @@ error). It stops by itself when the share of failed requests, or p95, goes over 
 Python standard library only. Tests: testpilot/tests/test_loadtest.py, and test/loadtest-agent-contract.test.ts (the result is accepted by the server's own check).
 """
 import argparse
+import errno
 import http.client
 import json
 import math
@@ -32,6 +33,10 @@ TIMEOUT = 10  # seconds for one request
 BUCKET = 5  # seconds in one point of the timeline
 WINDOW = 10  # seconds the stop rules look at
 MIN_SAMPLE = 20  # requests in the window before a stop rule may fire
+# What the computer running this tool runs out of when it asks for more connections than it has local ports, files or buffers for. That is the tool's limit and not a fault of the site, so such an attempt is not an
+# error of the site: it is counted on its own, and a test that mostly fails like this stops with its own outcome. A refused connection (ECONNREFUSED) is the site saying no and stays an error of the site.
+TOOL_ERRNOS = frozenset(e for e in (errno.EADDRNOTAVAIL, errno.EMFILE, errno.ENFILE, errno.ENOBUFS))
+NO_LIMIT_P95_MS = 1000  # with no p95 limit set, a p95 over this is still a warning and not a pass
 SECRET_KEY = re.compile(r"pass|token|secret|key|auth|cookie|session", re.I)
 
 
@@ -119,9 +124,12 @@ def statuses_of(counts):
     return dict(sorted(keep.items()))
 
 
-def verdict_of(outcome, total, statuses, o):
-    """('pass'|'warning'|'fail', one line of reasoning). Fixed rules over numbers: fail if it was stopped or the error rate passed the limit, warning for half the limit, 80 % of the p95 limit or any 5xx."""
+def verdict_of(outcome, total, statuses, o, tool_failed=0):
+    """('pass'|'warning'|'fail', one line of reasoning). Fixed rules over numbers: fail if it was stopped or the error rate passed the limit, warning for half the limit, 80 % of the p95 limit (or a p95 over
+    NO_LIMIT_P95_MS when no limit was set), any 5xx, or an attempt that failed in the tool itself. A test that the tool could not go on with says nothing about the site, so that is a warning and never a fail."""
     said = f"error rate {total['errorRate']} %, p95 {round(total['p95Ms'])} ms, {total['requests']} requests"
+    if outcome == "stopped_tool_limit":
+        return "warning", f"Stopped: the test tool ran out of local connections ({tool_failed} attempts failed here, not at the site). The result says nothing about the site: use fewer users or a server that keeps connections open"
     if total["requests"] == 0:
         return "fail", "No request got an answer"
     if outcome == "stopped_error_rate":
@@ -137,8 +145,12 @@ def verdict_of(outcome, total, statuses, o):
         return "warning", f"The error rate is over half of the limit of {o['max_error_rate']} % ({said})"
     if o["max_p95_ms"] and total["p95Ms"] > 0.8 * o["max_p95_ms"]:
         return "warning", f"p95 is over 80 % of the limit of {o['max_p95_ms']} ms ({said})"
+    if not o["max_p95_ms"] and total["p95Ms"] > NO_LIMIT_P95_MS:
+        return "warning", f"p95 is over {NO_LIMIT_P95_MS} ms and no p95 limit was set ({said})"
     if five:
         return "warning", f"{five} answers were 5xx ({said})"
+    if tool_failed:
+        return "warning", f"{tool_failed} attempts failed in the test tool itself (out of local connections), not at the site ({said})"
     return "pass", f"Within the limits ({said}, {o['vus']} users)"
 
 
@@ -150,6 +162,8 @@ class Run:
         self.t0 = time.monotonic()
         self.samples = []  # (seconds since start, path, milliseconds, status key, error?)
         self.window = deque()  # (monotonic time, milliseconds, error?)
+        self.tool_failed = 0  # attempts that failed in this tool (TOOL_ERRNOS): not requests, and not errors of the site
+        self.tool_window = deque()  # monotonic times of those, for the last WINDOW seconds
 
     def record(self, path, ms, key, error):
         now = time.monotonic()
@@ -159,13 +173,24 @@ class Run:
             if len(self.samples) >= CEILINGS["requests"]:
                 self.stop.set()  # the cap: an end like any other, said in the reason
 
+    def record_tool(self):
+        """An attempt that failed because this computer ran out of local connections: counted on its own, never as a request or as an error of the site."""
+        now = time.monotonic()
+        with self.lock:
+            self.tool_failed += 1
+            self.tool_window.append(now)
+
     def judge(self):
         """The stop rules, on the last WINDOW seconds. Returns an outcome to stop with, or None."""
         now = time.monotonic()
         with self.lock:
             while self.window and now - self.window[0][0] > WINDOW:
                 self.window.popleft()
-            w = list(self.window)
+            while self.tool_window and now - self.tool_window[0] > WINDOW:
+                self.tool_window.popleft()
+            w, tool = list(self.window), len(self.tool_window)
+        if tool >= MIN_SAMPLE and 2 * tool >= len(w) + tool:
+            return "stopped_tool_limit"  # first: when the tool is what fails, the share of errors of the site means nothing
         if len(w) < MIN_SAMPLE:
             return None
         if 100 * sum(1 for _, _, e in w if e) / len(w) > self.o["max_error_rate"]:
@@ -202,8 +227,11 @@ def user(run, index):
             run.record(path, (time.monotonic() - started) * 1000, "timeout", True)
             conn.close()
             conn = make()
-        except (OSError, http.client.HTTPException):
-            run.record(path, (time.monotonic() - started) * 1000, "error", True)
+        except (OSError, http.client.HTTPException) as e:
+            if isinstance(e, OSError) and e.errno in TOOL_ERRNOS:
+                run.record_tool()  # this computer is out of local connections: not the site's error
+            else:
+                run.record(path, (time.monotonic() - started) * 1000, "error", True)
             conn.close()
             conn = make()
             run.stop.wait(0.05)  # a refused connection must not become a busy loop
@@ -252,7 +280,7 @@ def run_test(o):
         timeline.append({"t": b * BUCKET, "vus": min(o["vus"], started), "requests": len(mine), "errors": sum(1 for s in mine if s[4]), "p95Ms": round(percentile([s[2] for s in mine], 95), 1)})
     total = totals_of(lat, err, seconds)
     capped = len(samples) >= CEILINGS["requests"] and run.outcome == "completed"
-    verdict, reason = verdict_of(run.outcome, total, counts, o)
+    verdict, reason = verdict_of(run.outcome, total, counts, o, run.tool_failed)
     return {
         "version": 1, "outcome": run.outcome, "startedAt": started_at, "endedAt": ended_at,
         "params": {"vus": o["vus"], "durationSeconds": o["duration"], "rampUpSeconds": int(o["ramp_up"]), "paths": list(o["paths"])},
