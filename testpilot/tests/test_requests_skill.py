@@ -133,6 +133,15 @@ class PrinterTests(unittest.TestCase):
         sample = {k: (request_call.OPTION_CHOICES[k][-1] if k in request_call.OPTION_CHOICES else [request_call.OPTION_LISTS[k][0]] if k in request_call.OPTION_LISTS else True) for k in keys}
         self.assertEqual(set(request_call.options_of(sample)), set(keys), "a key of the server's defaults that the helper does not print is a choice the agent never sees")
 
+    def test_no_text_an_agent_reads_still_says_that_the_server_takes_60_findings_a_minute(self):
+        """The server takes 300 a minute since #189. A skill that said 60 made an agent wait a minute between two files for nothing, and the first sweep found one skill that was missed."""
+        server = (ROOT / "server" / "agentfindings.ts").read_text()
+        self.assertRegex(server, r"perMinute: 300\b")
+        stale = re.compile(r"takes 60\b|60 findings a minute|60 a minute per token", re.I)
+        for path in sorted([*(ROOT / ".claude" / "skills").glob("*/SKILL.md"), *(ROOT / ".claude" / "references").glob("*.md"), ROOT / "testpilot" / "tools" / "request_call.py", ROOT / "mcp" / "README.md", ROOT / "mcp" / "tools.ts"]):
+            with self.subTest(path=path.relative_to(ROOT).as_posix()):
+                self.assertIsNone(stale.search(" ".join(path.read_text().split())), "an old number for the findings rate")
+
     def test_a_claim_of_a_discover_tells_the_agent_the_depth_that_was_asked_for(self):
         for depth in ("quick", "normal", "thorough"):
             with self.subTest(depth=depth):
