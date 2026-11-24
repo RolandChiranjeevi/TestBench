@@ -263,7 +263,7 @@ class ActingRulesTests(unittest.TestCase):
         self.assertIn("so write **one observation** of severity `info` for each kind of picker you meet, saying where it is and that its rules need a person.", step3)
         self.assertIn("**Every flow is also tried with nothing in it:** press through to the end with an empty cart, an empty list or no selection (for example, check out with an empty cart and press Finish); a page that lets an empty order through is a bug.", step3)
 
-    CLASSES = ("empty", "wrong-kind", "too-long", "boundary", "format", "date-range", "end-to-end", "cancel-back", "empty-state", "amounts", "order", "links", "menu", "size", "look", "console", "session")
+    CLASSES = ("empty", "wrong-kind", "too-long", "boundary", "format", "date-range", "end-to-end", "cancel-back", "empty-state", "amounts", "reset", "order", "links", "menu", "size", "look", "console", "session")
 
     def catalogue(self):
         m = re.search(r"- \*\*The catalogue of checks\.\*\*(.*?)- \*\*Undo only what you made", self.step3(), re.S)
@@ -287,6 +287,27 @@ class ActingRulesTests(unittest.TestCase):
         self.assertIn("`wrong-kind` (letters in a number field", cat)
         self.assertIn("`empty-state` (with nothing in it: an empty cart or list)", cat)
         self.assertIn("`amounts` (five different carts, exact text)", cat)
+
+    def test_a_reset_is_tried_with_something_to_reset_and_a_reset_of_nothing_is_not_tried(self):
+        """Run 4 pressed Reset App State with an empty cart, called it `tried`, and missed the bug that run 3 found: a reset can show nothing when there is nothing to reset."""
+        cat = flat(self.catalogue())
+        self.assertIn("`reset` (a reset, clear or undo control: **first put something there that it can reset** (items in the cart, a chosen sort, a filter, text in a form), press it, and check that every control, badge and list is back to its start;", cat)
+        self.assertIn("**a reset pressed when there is nothing to reset is `not tried`**, because it can show nothing);", cat)
+        self.assertLess(cat.index("`amounts`"), cat.index("`reset`"), "reset is a class of a flow")
+
+    def test_the_agent_says_what_is_left_before_it_logs_out_in_a_line_the_user_can_see(self):
+        """Logout came too early in three runs in a row, and the rule only made the agent report it afterwards. A line before it makes the list visible while there is still time."""
+        step3 = self.step3()
+        self.assertIn("**Say it first:** in your reply to the user, just before you press Logout, write one line, `Before Logout: left on my list: <what is left, or nothing>` (it is not a question: do not wait for an answer).", step3)
+        self.assertIn("If anything is left, do it first; if you cannot, it goes in a coverage gap with the reason.", step3)
+        self.assertLess(step3.index("**Say it first:**"), step3.index("Then press Logout,"), "the line is written before the press")
+
+    def test_what_a_field_expects_is_decided_from_what_the_agent_can_see_and_the_assumption_is_written_down(self):
+        step3 = self.step3()
+        self.assertIn("**What does a field expect?** Decide it from what you can see: its label, its role (a `spinbutton` is a number field), the test id that the browser tool prints after you act on it (`data-test=\"postalCode\"`), the text around it and ordinary sense", step3)
+        self.assertIn("a postal code is digits in some countries and has letters in others", step3)
+        self.assertIn("**Write in the bug report what you assumed and why**, and that a person decides the exact rule.", step3)
+        self.assertIn("You cannot read the HTML attributes of a field (`type`, `pattern`, `maxlength`), so never write that a field \"has no maxlength\": write what it accepted (\"250 letters were accepted\").", step3)
 
     def test_something_clumsy_that_lets_the_person_go_on_is_an_observation_and_never_a_bug_report(self):
         step3 = self.step3()
