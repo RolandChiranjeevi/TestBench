@@ -5,7 +5,7 @@ import { AuditError } from "./auditcommon.ts";
 import { audit } from "./accounts.ts";
 import { createManualRun } from "./runsuites.ts";
 import { fileMatchesSpec } from "./specs.ts";
-import { cleanLoadOptions, cleanLoadResult, isLocalHost, type LoadOptions } from "./loadtest.ts";
+import { cleanLoadOptions, cleanLoadResult, isLocalHost, LOAD_VERDICTS, type LoadOptions } from "./loadtest.ts";
 
 /**
  * Requests to a test agent. A person asks for something: look at a target (discover), run the failed automated tests of a run again (rerun), or run chosen test cases (run:
@@ -132,6 +132,8 @@ interface Row {
   priority: number;
   /** Only in a list: the number of cases of a run request, counted by the database, so that a list does not have to carry their text. */
   case_count?: number;
+  /** Only in a list: the verdict of the load result that was handed in for a load test (pass, warning or fail), read from the result itself. */
+  load_verdict?: string | null;
 }
 export interface RerunTest { id: number; framework: string; file: string; title: string; fullName: string }
 /** One test case of a run request, as it was when a person asked. Test case text only: never a spec's text, a requirement, an attachment or a screenshot. */
@@ -165,7 +167,10 @@ export function viewOf(r: Row, withCases = true) {
     }
   } catch { /* a payload that is not JSON: no tests or cases listed */ }
   return {
-    id: r.id, projectId: r.project_id, kind: r.kind, targetUrl: r.target_url, environment: r.environment, name: r.name, note: r.note, runId: r.run_id, tests, cases, caseCount, options, loadOptions, status: r.status,
+    id: r.id, projectId: r.project_id, kind: r.kind, targetUrl: r.target_url, environment: r.environment, name: r.name, note: r.note, runId: r.run_id, tests, cases, caseCount, options, loadOptions,
+    // A load test: how it ended (pass, warning or fail), so that "Done" does not look like "all well" for a test that failed. Null until a result is handed in, for the other kinds, and in a view that does not carry it.
+    loadVerdict: (r.kind === "loadtest" && (LOAD_VERDICTS as readonly string[]).includes(r.load_verdict ?? "") ? r.load_verdict : null) as (typeof LOAD_VERDICTS)[number] | null,
+    status: r.status,
     createdBy: r.created_by, createdAt: r.created_at, claimedBy: r.claimed_by, claimedAt: r.claimed_at, finishedAt: r.finished_at, resultRunId: r.result_run_id, resultNote: r.result_note, resultDeliveredAt: r.result_delivered_at,
     releaseNote: r.release_note, releasedBy: r.released_by, releasedAt: r.released_at, resultAuditId: r.result_audit_id,
     // Where a waiting request stands in the order an agent is given (1 = next), filled in for a person's list (withQueue); null for one that is not waiting.
@@ -201,7 +206,7 @@ const mustRow = (projectId: number, id: number) => {
 export function listRequests(projectId: number, status?: string, limit = 200) {
   if (status !== undefined && !(REQUEST_STATUSES as readonly string[]).includes(status)) throw bad(`status must be one of ${REQUEST_STATUSES.join(", ")}`);
   const rows = db
-    .prepare(`SELECT *, json_array_length(payload, '$.cases') AS case_count FROM agent_requests WHERE project_id = ? ${status ? "AND status = ?" : ""} ORDER BY id DESC LIMIT ?`)
+    .prepare(`SELECT *, json_array_length(payload, '$.cases') AS case_count, (SELECT json_extract(l.result, '$.verdict') FROM agent_load_results l WHERE l.request_id = agent_requests.id) AS load_verdict FROM agent_requests WHERE project_id = ? ${status ? "AND status = ?" : ""} ORDER BY id DESC LIMIT ?`)
     .all(...(status ? [projectId, status, limit] : [projectId, limit])) as Row[];
   return withDelivered(projectId, withQueue(projectId, withAudits(rows.map((r) => viewOf(r, false)))));
 }

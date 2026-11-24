@@ -8,6 +8,7 @@ import { api, timeAgo, type AgentRequest, type RunDetail } from "../api";
 import { addressIsLocal, DEFAULT_LOAD, LOAD_DURATIONS, LOAD_ERROR_RATES, LOAD_P95S, LOAD_RAMPS, LOAD_VUS, loadProblem, loadSummary, parsePaths, type LoadOptions } from "../loadOptions";
 import { CHECKS, DEFAULT_OPTIONS, DELIVERABLES, DEPTHS, GIT_MODES, optionsProblem, optionsSummary, START_COMMAND, START_SKILL, TARGET_MODES, toggled, VIEWPORTS, withProduction, withTargetMode, type RequestOptions } from "../requestOptions";
 import type { Tone } from "../statuses";
+import { statusOf } from "../requestStatus";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { EditScope, useCan } from "../components/Access";
@@ -18,12 +19,6 @@ import { ViewTabs } from "./Insights";
 // What people ask a test agent to do. Testbench starts nothing: a request waits until an agent with a request token takes it, in the person's own environment, and
 // the agent keeps its own stops (it asks before it tests, and a production target needs two confirmations). What it finds comes in through the import as proposals.
 
-const STATUS: Record<AgentRequest["status"], { tone: Tone; label: string; title: string }> = {
-  pending: { tone: "info", label: "Waiting", title: "No agent has taken it yet" },
-  claimed: { tone: "accent", label: "Taken", title: "An agent has taken it and is working on it" },
-  done: { tone: "ok", label: "Done", title: "The agent says it is finished" },
-  cancelled: { tone: "neutral", label: "Cancelled", title: "A person withdrew it" },
-};
 const KIND_LABEL = { discover: "Discover", rerun: "Re-run failed tests", run: "Run test cases", loadtest: "Load test" } as const;
 
 /** The Requests tab of Automated tests. */
@@ -83,7 +78,7 @@ export function RequestsPage() {
 
 function RequestCard({ r, onCancel, cancelling, waiting, onRunNext, putting }: { r: AgentRequest; onCancel: () => void; cancelling: boolean; waiting: number; onRunNext: () => void; putting: boolean }) {
   const { pid } = useParams();
-  const s = STATUS[r.status];
+  const s = statusOf(r);
   const open = r.status === "pending" || r.status === "claimed";
   // The place in line only says something when two or more wait. A request that is next is marked; the others can be put first.
   const place = r.queuePosition !== null && waiting >= 2 ? r.queuePosition : null;

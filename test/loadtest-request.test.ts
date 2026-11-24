@@ -97,6 +97,21 @@ describe("the result of a load test", () => {
     refused(() => submitLoadResult(p.id, r.id, token(), result()), 409, /already handed in/);
   });
 
+  it("shows in the list how a load test ended, so that Done does not hide a fail: null before a result, the verdict after, and null for every other kind", () => {
+    for (const verdict of ["pass", "warning", "fail"] as const) {
+      const { p, r } = claimed();
+      const verdictOf = () => listRequests(p.id).find((x) => x.id === r.id)?.loadVerdict;
+      assert.equal(verdictOf(), null, "nothing handed in yet");
+      submitLoadResult(p.id, r.id, token(), result({ verdict }));
+      assert.equal(verdictOf(), verdict, `a ${verdict} is what the list says`);
+      completeRequest(p.id, r.id, token(), {});
+      assert.equal(verdictOf(), verdict, "and it still does when the request is done");
+    }
+    const p = makeProject(key());
+    const discover = createRequest(p.id, { kind: "discover", targetUrl: "https://staging.example.com" }, admin);
+    assert.equal(listRequests(p.id).find((x) => x.id === discover.id)?.loadVerdict, null, "another kind has none");
+  });
+
   it("is refused for another token, for a request that is not taken, and for another kind", () => {
     const { p, r } = claimed();
     refused(() => submitLoadResult(p.id, r.id, token(2, "other"), result()), 409, /Another token/);
