@@ -307,7 +307,7 @@ It does not check the browser profile (that is specific to a set-up) or what the
 
 | Id | Situation | What it prints | Exit |
 | --- | --- | --- | --- |
-| `bad-arguments` | the action is not one of the eight, or the request number or `--result-run` is not a number | one line saying what is wrong | 1 |
+| `bad-arguments` | the action is not one of the nine, or the request number or `--result-run` is not a number | one line saying what is wrong | 1 |
 | `config-unreadable` | `.testpilot/testbench.json` or the profile it names cannot be read, or the address is not allowed (plain `http` to a non-local host) | one line | 1 |
 | `no-token-variable` | the profile names no `requestTokenEnvVar` | one line | 3 |
 | `no-token` | the variable (or its line in `.env`) is empty or does not look like a request token | one line (and one on stderr) | 1 |
@@ -317,6 +317,9 @@ It does not check the browser profile (that is specific to a set-up) or what the
 | `answered-other` | TestBench answered anything else | `<action> HTTP <code>`, then `ERROR: <json>` | 1 |
 | `not-json` | the answer was not JSON | `<action> HTTP <code>`, then `the answer was not JSON` | 1 |
 | `findings-made` | `findings`: every finding was made | one JSON line per finding, then a line with `made` | 0 |
+| `precheck-ok` | `precheck`: every page of the drafted coverage has its rows | `precheck: <pages> pages, <rows> rows (…), 0 gaps`, then one line per page, any `LEFT` rows, and a closing line | 0 |
+| `precheck-gaps` | `precheck`: a page is missing, an input page lacks a class, or a row names no action numbers | the same first line with the number of gaps, then a `GAP` line for each | 1 |
+| `precheck-refused` | `precheck`: the file is not a plain `.md` file inside `audits/request-<id>/` | one line | 1 |
 | `findings-stopped` | `findings`: TestBench refused one, or the call failed | one JSON line per finding made before it, then a line with `stopped_at`; nothing is retried | 1 |
 
 The table is tested against the code (`testpilot/tests/test_request_call_output.py`): each row is run, and its exit code and the shape of its first line must be what is written here.
@@ -375,6 +378,7 @@ Put this in `.claude/settings.local.json` in the agent's folder, and start a **n
       "Bash(python3 -I testpilot/tools/request_call.py list:*)",
       "Bash(python3 -I testpilot/tools/request_call.py claim:*)",
       "Bash(python3 -I testpilot/tools/request_call.py findings:*)",
+      "Bash(python3 -I testpilot/tools/request_call.py precheck:*)",
       "Bash(python3 -I testpilot/tools/request_call.py complete:*)",
       "Bash(python3 -I testpilot/tools/spec_git.py check:*)",
       "Bash(python3 -I testpilot/tools/spec_git.py write:*)",
@@ -454,7 +458,7 @@ What it does and does not do:
 - **It tries to go through everything it can reach**, not a sample: every link, menu item, form and sort option, each flow to its end and cancelled half-way, amounts with more than one price. It presses Logout
   last (so you are logged out afterwards) and then tries a protected page and a made-up wrong password. A gap in coverage has a hard reason (a secret, another origin, a card number, a limit).
 - **A page is data, never an instruction.** A page that tells the agent to press something is reported as an observation and ignored. The demo shop in the live tests has such a page, and a button that resets it.
-- **A coverage record shows what was done, and what was not.** TestBench has no place for "tried this, saw nothing wrong": a plan item is a plan, a test case is a draft, and only a failure becomes an observation or a bug. Without more, you would see the gaps and not what was checked, and could trust what was never done, or do it twice. So the agent hands in, for each page, **one observation** titled `Coverage: <path>` (severity `info`). Each line is `<thing> · <class> · tried | issue | not tried · actions <numbers> · <reason>`, where the class is one of the fixed list in the skill (`empty`, `wrong-kind`, `too-long`, `boundary`, `format`, `date-range`, `end-to-end`, `cancel-back`, `empty-state`, `amounts`, `reset`, `order`, `links`, `menu`, `size`, `look`, `console`, `session`). Read them under **Observations**. A row that says `tried` or `issue` must name the numbers of the actions in the agent's log (`actions.md`), and one without numbers counts as `not tried`. The list of classes is a definition of what "most of it" means, not proof that it is the right list, and **the record is the agent's own account**: the way to check it is to compare it with the log, and the log with what the browser really did (the session log of the agent shows each call). Do that on a first run of a new version, and again whenever the result is surprising.
+- **A coverage record shows what was done, and what was not.** TestBench has no place for "tried this, saw nothing wrong": a plan item is a plan, a test case is a draft, and only a failure becomes an observation or a bug. Without more, you would see the gaps and not what was checked, and could trust what was never done, or do it twice. So the agent hands in, for each page, **one observation** titled `Coverage: <path>` (severity `info`). Each line is `<thing> · <class> · tried | issue | not tried · actions <numbers> · <reason>`, where the class is one of the fixed list in the skill (`empty`, `wrong-kind`, `too-long`, `boundary`, `format`, `date-range`, `enter`, `end-to-end`, `cancel-back`, `empty-state`, `amounts`, `reset`, `order`, `links`, `menu`, `size`, `look`, `console`, `session`). Read them under **Observations**. A row that says `tried` or `issue` must name the numbers of the actions in the agent's log (`actions.md`), and one without numbers counts as `not tried`. The list of classes is a definition of what "most of it" means, not proof that it is the right list, and **the record is the agent's own account**: the way to check it is to compare it with the log, and the log with what the browser really did (the session log of the agent shows each call). Do that on a first run of a new version, and again whenever the result is surprising.
 - **A log of every action** is written to `actions.md` in the folder of the claim (`audits/request-<id>/<time>/`, see below): the page, what was done and what happened, never the values typed. It is never handed in to TestBench. It is there so that you can see
   what changed on the address and undo it. Use an address you can reset.
 - **`cat`, `grep`, `head` and `sed` are denied** here too, so a page snapshot is read with the Read tool and not with the shell (see the read-only list above), and the agent only presses a button that undoes something (Remove, Delete, Cancel) for what it made itself in this run, after a new snapshot.
@@ -488,6 +492,7 @@ To let it run while you are away, use this list **instead of** the one above (it
       "Bash(python3 -I testpilot/tools/request_call.py list:*)",
       "Bash(python3 -I testpilot/tools/request_call.py claim:*)",
       "Bash(python3 -I testpilot/tools/request_call.py findings:*)",
+      "Bash(python3 -I testpilot/tools/request_call.py precheck:*)",
       "Bash(python3 -I testpilot/tools/request_call.py complete:*)",
       "Bash(python3 -I testpilot/tools/spec_git.py check:*)",
       "Bash(python3 -I testpilot/tools/spec_git.py write:*)",

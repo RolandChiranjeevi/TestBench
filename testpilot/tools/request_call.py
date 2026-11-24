@@ -4,7 +4,7 @@
     python3 -I testpilot/tools/request_call.py <action> [<request number>] [--report FILE] [--case-results FILE] [--findings FILE] [--result-run N] [--result-audit N]
                                              [--load-result FILE]
 
-<action> is list, claim, release, result, case-results, findings, load-result or complete. For release and complete the note is read from standard input (a quoted heredoc keeps it as
+<action> is list, claim, release, result, case-results, findings, load-result, precheck or complete. `precheck <n> --coverage FILE` is offline: it reads the coverage rows drafted so far and prints what is missing. For release and complete the note is read from standard input (a quoted heredoc keeps it as
 text). Run it from the folder that holds `.testpilot/`.
 
 `findings` hands in what a discover found, one finding at a time: the file is {"findings": [...]} (at most 50), each with a `kind` (test_case, bug_report, observation,
@@ -31,7 +31,7 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
 
-ACTIONS = ("list", "claim", "release", "result", "case-results", "findings", "load-result", "complete")
+ACTIONS = ("list", "claim", "release", "result", "case-results", "findings", "load-result", "precheck", "complete")
 LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
 TOKEN = re.compile(r"tbrq_[A-Za-z0-9_-]{1,195}")  # a request token: its prefix and base64url, at most 200 characters (what TestBench accepts)
 SEND_MAX = {"result": 5 * 1024 * 1024, "case-results": 256 * 1024, "findings": 2 * 1024 * 1024, "load-result": 1024 * 1024}  # the most TestBench takes: the report of a re-run, the results of a run request's test cases, and a file of findings
@@ -291,6 +291,62 @@ def show(data, code, action, rid):
     return 0
 
 
+FIELD_CLASSES = ("empty", "wrong-kind", "too-long", "boundary", "format", "enter")  # a page with a row of any of these takes input, and needs a row for all of them
+ROW_STATUS = ("tried", "issue", "not tried")
+SOFT_REASON = re.compile(r"not reached|did not reach|didn'?t reach|did not get to|ran out|no time|skipped|left out|forgot|not got to", re.I)  # shortcut: words only, a reason can still be soft in other words; the person reads the LEFT lines
+
+
+def precheck(rid, path):
+    """Offline, before Logout: reads the coverage rows the agent has drafted (`## <page>` and then one row per line, as in step 4 of the write skill) and prints what is missing, so that it is seen while the session is still there. Exit 1 if there is a gap, 0 if not. It checks that rows exist and carry action numbers; it cannot tell whether a row is true."""
+    root = os.path.realpath(os.path.join("audits", "request-" + rid))
+    real = os.path.realpath(path) if path else ""
+    if not path or os.path.islink(path) or not os.path.isfile(real) or not real.startswith(root + os.sep) or not real.endswith(".md") or not 0 < os.path.getsize(real) <= 400000:
+        return fail("the file must be a .md file inside audits/request-" + rid + "/")
+    pages, page = {}, None
+    for line in open(real, encoding="utf-8", errors="replace").read().splitlines():
+        if line.startswith("## "):
+            page = line[3:].strip().removeprefix("Coverage:").strip()
+            pages.setdefault(page, [])
+            continue
+        parts = [s.strip() for s in line.split("·")]
+        if page is not None and len(parts) >= 3 and parts[2] in ROW_STATUS:
+            pages[page].append(parts)
+    gaps, left, counts = [], [], {s: 0 for s in ROW_STATUS}
+    try:
+        log = open(os.path.join(os.path.dirname(real), "actions.md"), encoding="utf-8", errors="replace").read()
+    except OSError:
+        log = ""
+    for p in dict.fromkeys(m.split("?")[0] for m in re.findall(r"^\s*\d+\.\s+(/[^\s:]*):", log, re.M)):
+        if p not in pages:
+            gaps.append(f"GAP {p}: acted on in actions.md but no coverage rows")
+    matrix = []
+    for p, rows in pages.items():
+        seen = {}
+        for r in rows:
+            classes, status, proof = [c for c in re.split(r"[\s,/+]+", r[1]) if c] or [""], r[2], r[3] if len(r) > 3 else ""  # a row may name several classes at once ("empty/wrong-kind")
+            if status != "not tried" and not (re.search(r"actions? \d", proof) or "no action (read:" in proof):
+                gaps.append(f"GAP {p} | {r[0][:50]} | {r[1][:30]}: says {status} but names no action numbers, so it counts as not tried")
+                status = "not tried"
+            if status == "not tried" and SOFT_REASON.search(" ".join(r[3:])):
+                gaps.append(f"GAP {p} | {r[0][:50]} | {r[1][:30]}: not tried, and \"{' '.join(r[3:])[:60]}\" is not a hard reason. Do it now, or give a hard one (a secret, another origin, a card number, a CAPTCHA, a limit of the request)")
+            counts[status] += 1
+            for cls in classes:
+                seen[cls] = seen.get(cls, 0) + 1
+            if status == "not tried":
+                left.append(f"LEFT {p} | {r[0][:50]} | {r[1][:30]} | {' '.join(r[3:])[:90]}")
+        if any(c in seen for c in FIELD_CLASSES):
+            missing = [c for c in FIELD_CLASSES if c not in seen]
+            if missing:
+                gaps.append(f"GAP {p}: takes input, but no row for: {', '.join(missing)}")
+        matrix.append(f"  {p[:40]:40} " + ", ".join(f"{c} {n}" for c, n in seen.items()))
+    lines = [f"precheck: {len(pages)} pages, {sum(counts.values())} rows (tried {counts['tried']}, issue {counts['issue']}, not tried {counts['not tried']}), {len(gaps)} gaps"]
+    lines += matrix + gaps + left
+    lines.append("precheck: " + ("every page has its rows. Each LEFT row needs a hard reason, or do it before Logout." if not gaps else "fix each GAP (do it, or write the row with its hard reason), run precheck again, and only then press Logout."))
+    for ln in lines:
+        print(printable(ln))
+    return 1 if gaps else 0
+
+
 def main(argv):
     ap = argparse.ArgumentParser(prog="request_call.py", add_help=False)
     ap.add_argument("action")
@@ -298,17 +354,20 @@ def main(argv):
     ap.add_argument("--report", default="")
     ap.add_argument("--case-results", default="")
     ap.add_argument("--findings", default="")
+    ap.add_argument("--coverage", default="")
     ap.add_argument("--load-result", default="")
     ap.add_argument("--result-run", default="")
     ap.add_argument("--result-audit", default="")
     a = ap.parse_args(argv)
     whole = lambda s: re.fullmatch(r"[0-9]*", s) is not None
     if a.action not in ACTIONS:
-        return fail("The action must be list, claim, release, result, case-results, findings, load-result or complete")
+        return fail("The action must be list, claim, release, result, case-results, findings, load-result, precheck or complete")
     if not whole(a.rid) or (a.action != "list" and not a.rid):
         return fail("The request number must be the number of a request")
     if not whole(a.result_run) or not whole(a.result_audit):
         return fail("--result-run and --result-audit must be a number")
+    if a.action == "precheck":  # offline: no profile, no token, no call
+        return precheck(a.rid, a.coverage)
 
     if os.path.exists(".testpilot/testbench.json"):  # a profile that exists is used as it is; one that cannot be read is an error, not a reason to fall back
         try:
