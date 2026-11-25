@@ -304,7 +304,7 @@ def show(data, code, action, rid):
 
 FIELD_CLASSES = ("empty", "wrong-kind", "too-long", "boundary", "format", "enter")  # a page with a row of any of these takes input, and needs a row for all of them
 ROW_STATUS = ("tried", "issue", "not tried")
-SOFT_REASON = re.compile(r"not reached|did not reach|didn'?t reach|did not get to|ran out|no time|skipped|left out|forgot|not got to", re.I)  # shortcut: words only, a reason can still be soft in other words; the person reads the LEFT lines
+SOFT_REASON = re.compile(r"not reached|did not reach|didn'?t reach|did not get to|ran out|no time|skipped|left out|forgot|not got to|not looked at|did not look at|didn'?t look at|never looked at|not checked|not examined|not covered|not tried yet", re.I)  # shortcut: words only, a reason can still be soft in other words; the person reads the LEFT lines
 
 
 def precheck(rid, path):
