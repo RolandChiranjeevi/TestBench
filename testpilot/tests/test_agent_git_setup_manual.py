@@ -61,8 +61,8 @@ class ManualTests(unittest.TestCase):
                 self.assertIn(f"`{path}`", MANUAL)
 
     def test_the_number_of_fixed_git_calls_is_right_and_each_is_named(self):
-        self.assertEqual(len(spec_git.GIT_OK), 10)
-        self.assertIn("**ten fixed git calls**", flat(MANUAL))
+        self.assertEqual(len(spec_git.GIT_OK), 13)
+        self.assertIn("**thirteen fixed git calls**", flat(MANUAL))
         for key in spec_git.GIT_OK:
             with self.subTest(key):
                 self.assertIn(f"`{' '.join(key)}`", MANUAL)

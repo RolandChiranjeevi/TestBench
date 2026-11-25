@@ -111,7 +111,7 @@ class CheckTests(unittest.TestCase):
         self.assertIn("mode: off", p.out)
 
     def test_the_ceiling_is_the_lowest_of_the_profile_and_the_rules(self):
-        for profile, rules, want in (("local", "local", "ceiling: local"), ("pr", "local", "ceiling: local"), ("local", "pr", "ceiling: local"), ("pr", "pr", "ceiling: local (pr is not built yet and counts as local)"), ("off", "pr", "mode: off"), ("local", "off", "mode: off")):
+        for profile, rules, want in (("local", "local", "ceiling: local"), ("pr", "local", "ceiling: local"), ("local", "pr", "ceiling: local"), ("pr", "pr", "ceiling: local (the pr line says whether the branch may also be pushed)"), ("off", "pr", "mode: off"), ("local", "off", "mode: off")):
             with self.subTest(profile=profile, rules=rules):
                 p = World(self, rules=RULES.replace("mode-max: local", f"mode-max: {rules}"), mode=profile).run("check")
                 self.assertEqual(p.returncode, 0, p.out)
@@ -480,14 +480,14 @@ class ContentTests(unittest.TestCase):
 
 class AllowListTests(unittest.TestCase):
     def test_only_the_listed_git_calls_can_be_made(self):
-        for args in (("push",), ("fetch",), ("pull",), ("merge", "x"), ("clone", "x"), ("init",), ("config", "x", "y"), ("checkout", "x"), ("switch", "x"), ("branch", "-D", "x"), ("reset", "--hard"), ("remote", "add", "x", "y"),
+        for args in (("fetch",), ("pull",), ("merge", "x"), ("clone", "x"), ("init",), ("config", "x", "y"), ("checkout", "x"), ("switch", "x"), ("branch", "-D", "x"), ("reset", "--hard"), ("remote", "add", "x", "y"),
                      ("remote", "set-url", "origin", "y"), ("worktree", "move", "a", "b"), ("gc",), ("tag", "x"), ("rebase", "x"), ("cherry-pick", "x"), ("stash",), ("clean", "-fd"), ("submodule", "update")):
             with self.subTest(args=args), self.assertRaises(RuntimeError):
                 spec_git.git(".", *args)
 
     def test_the_list_is_exactly_this(self):
         # a call added to the list must be added here too, so that it is seen in review
-        self.assertEqual(spec_git.GIT_OK, {("rev-parse",), ("show",), ("ls-tree",), ("remote", "get-url"), ("worktree", "add"), ("worktree", "remove"), ("worktree", "prune"), ("add",), ("commit",), ("update-ref",)})
+        self.assertEqual(spec_git.GIT_OK, {("rev-parse",), ("show",), ("ls-tree",), ("remote", "get-url"), ("worktree", "add"), ("worktree", "remove"), ("worktree", "prune"), ("add",), ("commit",), ("update-ref",), ("rev-list",), ("diff",), ("push",)})
 
 
 class TemplateTests(unittest.TestCase):
@@ -495,8 +495,11 @@ class TemplateTests(unittest.TestCase):
         text = (CONFIG / "TESTPILOT.example.md").read_text()
         rules = spec_git.parse_rules(text)
         self.assertEqual((rules["mode-max"], rules["tests-dir"], rules["allowed"]), ("local", "e2e/tests", ["e2e/"]))
-        for key in spec_git.RULE_KEYS:
+        for key in spec_git.RULE_KEYS - {"protection-confirmed"}:
             self.assertRegex(text, rf"(?m)^{key}:")  # the template cannot fall behind the tool
+        # the one rule that is the person's own word is shown but never switched on in a template that people copy
+        self.assertRegex(text, r"(?m)^# protection-confirmed: ")
+        self.assertEqual(rules["protection-confirmed"], "")
         self.assertIsNone(spec_git.check_path("e2e/tests/shop/cart.spec.ts", rules))
         self.assertIsNotNone(spec_git.check_path("e2e/support/shop/cart.spec.ts", rules))
 

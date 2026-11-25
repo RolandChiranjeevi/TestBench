@@ -120,7 +120,7 @@ class DocsTests(unittest.TestCase):
     def test_the_docs_describe_the_setup_what_happens_and_where_it_stops(self):
         text = flat(self.SECTION)
         for must in ("`gitMode`", "`repo`", "`repoPath`", "`baseBranch`", "`projectKey`", "testpilot/config/projects/shop.example.json", "testpilot/config/TESTPILOT.example.md", "`git fetch`",
-                     "never touches the branch you have checked out", "never runs them, never pushes or merges", "your yes to that message is what lets it write", "`pr` is not built yet and counts as `local`",
+                     "never touches the branch you have checked out", "never runs them, never pushes or merges", "your yes to that message is what lets it write", "but the skills do not run it yet, so for the agent it still counts as `local`",
                      "a **rule, not a lock**", "were each denied by the rule, without a question to the person", "also when `git` came after `&&` or `;`", "**Not tried:** other shapes such as",
                      "and a real `git push`", "the refusal and the one correction have **not been tried live**", "`0 spec files`", "is **your** job", "never edits it"):
             with self.subTest(must=must):
