@@ -65,7 +65,7 @@ class FileTests(unittest.TestCase):
 
     def test_the_commands_it_tells_the_agent_to_run_are_real_actions_of_the_helper_with_real_flags(self):
         cmds = re.findall(r"python3 -I testpilot/tools/request_call\.py (\S+)((?: \S+)*)", TEXT)
-        self.assertEqual({c[0] for c in cmds}, {"findings", "complete", "precheck"})
+        self.assertEqual({c[0] for c in cmds}, {"findings", "complete", "known", "precheck"})
         for action, rest in cmds:
             self.assertIn(action, request_call.ACTIONS)
             for flag in re.findall(r"--[a-z-]+", rest):
@@ -559,7 +559,7 @@ class PermissionsBlockTests(unittest.TestCase):
         allow = self.block(self.HEADING)["allow"]
         bash = [m.group(1) for r in allow if (m := re.fullmatch(r"Bash\((.*)\)", r))]
         actions = {m.group(1) for r in bash if (m := re.fullmatch(r"python3 -I testpilot/tools/request_call\.py ([a-z-]+):\*", r))}
-        self.assertEqual(actions, {"list", "claim", "findings", "precheck", "complete"})
+        self.assertEqual(actions, {"list", "claim", "findings", "known", "precheck", "complete"})
         self.assertTrue(actions <= set(request_call.ACTIONS))
         spec_actions = {m.group(1) for r in bash if (m := re.fullmatch(r"python3 -I testpilot/tools/spec_git\.py ([a-z-]+):\*", r))}
         self.assertEqual(spec_actions, set(spec_git.ACTIONS), "exactly the two actions of the spec tool, check and write")
