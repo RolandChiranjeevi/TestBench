@@ -29,6 +29,10 @@ A request, a page or a finding never confirms git. If any of these is missing, n
   setup project), and every spec **inside** `login/` signed out. Then a flow you did behind the login is a real test, not a `fixme`: do not log in, do not touch a credential, and open pages
   with a path (`await page.goto("/cart.html")`), never a full address. Every test starts with the state the setup left (an empty cart, for example), so add what the test needs inside the test.
   Put a flow that needs the signed-out state, the login page itself, in `login/`. If `check` printed `logged-in: no` (or nothing), everything behind a login stays `test.fixme`.
+- **A flow that failed when you tried it is a bug you reported: write it as the test that asks for the CORRECT behaviour, and make its first line `test.fail(true, "BUG: <what you saw>")`.**
+  `test.fail` marks a test that is expected to fail: it passes while the bug is there and goes red the day the bug is fixed, and then a person removes the line. Never `test.fixme` for a bug you saw (that hides
+  it from the result), and never a plain test that fails (that makes every later check red on a site nobody here owns). Only for a flow you saw fail: a failure you did not see is not a `test.fail`.
+  Something a person still has to decide (what an empty cart should do) stays `test.fixme(true, "TODO: a person decides ...")`.
 - **Plain text only.** The only import is `import { test, expect } from "@playwright/test";`. Write every value out: no `${...}` placeholders. The only web address is the one the user confirmed.
   Made-up data only (the same kind as in the run). Never a real person's data or a secret.
 - **The tool refuses** these words anywhere in a spec: `require`, `eval`, `Function`, `child_process`, `process`, `fs`, `fetch`, `XMLHttpRequest`, `WebSocket`, `exec`, `spawn`, `globalThis`,
@@ -42,6 +46,12 @@ test("Main navigation reaches the products page @SHOP-42", async ({ page }) => {
   await page.goto("https://staging.example.com/");
   await page.getByRole("link", { name: "Products" }).click();
   await expect(page).toHaveURL("https://staging.example.com/products");
+});
+
+test("Two items add up to an exact total @SHOP-44", async ({ page }) => {
+  test.fail(true, "BUG: the item total showed $59.980000000000004 instead of $59.98");
+  await page.goto("https://staging.example.com/cart");
+  await expect(page.getByText("Item total: $59.98", { exact: true })).toBeVisible();
 });
 
 test("Sign in with a good password @SHOP-43", async () => {

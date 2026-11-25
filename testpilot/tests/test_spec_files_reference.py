@@ -49,6 +49,16 @@ class ReferenceTests(unittest.TestCase):
             with self.subTest(must=must):
                 self.assertIn(must, flat)
 
+    def test_a_flow_seen_failing_is_a_test_fail_with_the_bug_and_never_a_fixme_or_a_plain_failing_test(self):
+        flat = " ".join(REF.split())
+        for must in ('make its first line `test.fail(true, "BUG: <what you saw>")`', "it passes while the bug is there and goes red the day the bug is fixed", "Never `test.fixme` for a bug you saw",
+                     "never a plain test that fails", "a failure you did not see is not a `test.fail`", "what an empty cart should do) stays `test.fixme"):
+            with self.subTest(must=must):
+                self.assertIn(must, flat)
+        code = REF.split("```ts")[1].split("```")[0]
+        self.assertIn('test.fail(true, "BUG:', code, "the example shows it")
+        self.assertIsNone(spec_git.check_content(code, ORIGIN), "and the tool accepts the example")
+
     def test_both_discover_skills_point_at_it(self):
         for name, text in SKILLS.items():
             with self.subTest(name):
