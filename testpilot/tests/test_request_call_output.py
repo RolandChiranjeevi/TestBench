@@ -232,6 +232,21 @@ class PrecheckSeesWhatIsMissingBeforeLogout(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertTrue(any(l.startswith("GAP /form.html | Form | enter: not tried, and \"not reached in this run\" is not a hard reason") for l in lines), lines)
 
+    def test_the_reasons_that_only_say_it_was_not_done_are_gaps_too_as_not_looked_at_was_for_three_pages_in_deep_key1(self):
+        for why in ("not looked at in another size", "did not look at it", "didn't look at it", "never looked at at tablet size", "not checked", "not examined", "not covered", "not tried yet"):
+            with self.subTest(why=why):
+                soft = FORM_ALL.replace(f"Form {DOT} enter {DOT} tried {DOT} actions 7 {DOT} Enter sent it", f"Form {DOT} enter {DOT} not tried {DOT} {why}")
+                status, lines = self.check(soft)
+                self.assertEqual(status, 1, lines)
+                self.assertTrue(any(l.startswith("GAP /form.html | Form | enter: not tried") for l in lines), lines)
+
+    def test_a_reason_that_says_why_it_could_not_be_done_is_still_not_a_gap(self):
+        for why in ("a CAPTCHA", "another origin (x.com): not followed", "no PDF renderer here", "the session had ended on its own"):
+            with self.subTest(why=why):
+                left = FORM_ALL.replace(f"Form {DOT} enter {DOT} tried {DOT} actions 7 {DOT} Enter sent it", f"Form {DOT} enter {DOT} not tried {DOT} {why}")
+                status, lines = self.check(left)
+                self.assertEqual(status, 0, lines)
+
     def test_a_file_outside_the_request_folder_or_not_markdown_is_refused(self):
         for path in ("elsewhere.md", f"{FOLDER}/coverage.txt"):
             with self.subTest(path=path):
