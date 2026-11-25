@@ -42,6 +42,8 @@ IMPORT_RX = re.compile(r"import \{[\w\s,]+\} from [\"']@playwright/test[\"'];?")
 BANNED = re.compile(r"\b(?:require|eval|Function|child_process|process|fs|fetch|XMLHttpRequest|WebSocket|exec|spawn|globalThis|evaluate|evaluateHandle|addInitScript|exposeFunction|exposeBinding|route|request)\b")
 ORIGIN_RX = re.compile(r"(?:(?:https?|ssh|git)://(?:[^@/\s]+@)?|[^@/\s]+@)github\.com(?::[0-9]+)?[:/]([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?", re.I)
 SPEC_MAX, MANIFEST_MAX = 60000, 600000
+TAG_RX = re.compile(r"@([A-Za-z][A-Za-z0-9]*-[0-9]+)\b")  # the tag a spec's title ends with: @<project key>-<case number>
+TAGGED_MAX_FILES, TAGGED_MAX_BYTES = 400, 100000
 
 
 class Stop(Exception):
@@ -227,6 +229,19 @@ def read_manifest(path, rid, rules):
     return items
 
 
+def tagged(top, sha, tests_dir):
+    """The test cases that already have a spec: {TAG: the first spec that carries it}, read from the specs under tests-dir on origin/<base> (never from the checkout or a branch). A spec that
+    is not there yet (on a branch that is not merged) is not seen: this is only what the base branch holds."""
+    names = [p for p in git(top, "ls-tree", "-r", "-z", "--name-only", sha, "--", tests_dir).stdout.split("\0") if p.endswith(".spec.ts")][:TAGGED_MAX_FILES]
+    have = {}
+    for name in sorted(names):
+        shown = git(top, "show", f"{sha}:{name}")
+        if shown.returncode == 0 and len(shown.stdout) <= TAGGED_MAX_BYTES:
+            for t in TAG_RX.findall(shown.stdout):
+                have.setdefault(t.upper(), name)
+    return have
+
+
 def cleanup(top, tmp):
     git(top, "worktree", "remove", "--force", os.path.join(tmp, "checkout"))
     shutil.rmtree(tmp, ignore_errors=True)
@@ -243,6 +258,7 @@ def write(rid, confirmed, origin, specs_file):
         raise Stop("--origin must be the confirmed address as scheme://host[:port], with no path")
     items = read_manifest(specs_file, rid, rules)
     taken = {p.lower() for p in git(top, "ls-tree", "-r", "-z", "--name-only", ctx["sha"]).stdout.split("\0") if p}
+    have = tagged(top, ctx["sha"], rules["tests-dir"])
     seen, lines = set(), 0
     for i in items:
         bad = check_path(i["path"], rules)
@@ -254,6 +270,9 @@ def write(rid, confirmed, origin, specs_file):
         bad = check_content(i["content"], origin)
         if bad:
             raise Stop(f"refused, {i['path']} {bad}")
+        for tag in sorted({t.upper() for t in TAG_RX.findall(i["content"])}):  # the same test case twice, under another file name, is what a rename would make
+            if tag in have:
+                raise Stop(f"refused, {i['path']} uses the tag @{tag}, which {have[tag]} on origin/{rules['base']} already has: a test case that has a spec gets no second one, whatever the file is called")
         lines += len(i["content"].splitlines())  # as git counts them: a file that ends with a newline has no extra, empty last line
     if lines > rules["max-lines"]:
         raise Stop(f"refused, {lines} lines is over max-lines {rules['max-lines']}")
@@ -306,6 +325,8 @@ def check(confirmed):
     print(f"tests-dir: {r['tests-dir']} (only new files, one <area>/<flow>.spec.ts each)")
     print(f"branch: {r['prefix']}discover-<request number>")
     print(f"limits: {r['max-files']} files, {r['max-lines']} lines")
+    have = sorted(tagged(ctx["top"], ctx["sha"], r["tests-dir"]), key=lambda t: (t.rsplit("-", 1)[0], int(t.rsplit("-", 1)[1])))
+    print(f"tagged: {len(have)} test cases already have a spec on origin/{r['base']}" + (": " + ", ".join(have[:300]) + (", ..." if len(have) > 300 else "") if have else ""))
     print(f"logged-in: {r['logged-in']}")
 
 

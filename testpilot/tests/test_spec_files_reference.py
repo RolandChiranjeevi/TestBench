@@ -59,6 +59,18 @@ class ReferenceTests(unittest.TestCase):
         self.assertIn('test.fail(true, "BUG:', code, "the example shows it")
         self.assertIsNone(spec_git.check_content(code, ORIGIN), "and the tool accepts the example")
 
+    def test_a_case_that_already_has_a_spec_gets_none_and_the_agent_is_told_not_to_rename_its_way_round_the_check(self):
+        flat = " ".join(REF.split())
+        for must in ("A test case that already has a spec gets none", "`check` prints a `tagged:` line", "a case that came back `seenAgain` keeps its number", "whatever its file is called",
+                     "never rename a file or change a tag to get round it", "never by changing the address, a path, a name or a tag"):
+            with self.subTest(must=must):
+                self.assertIn(must, flat)
+        for name, text in SKILLS.items():
+            with self.subTest(skill=name):
+                self.assertIn("`limits:` and `tagged:` lines", " ".join(text.split()))
+        self.assertIn("a `tagged:` line", (ROOT / "docs" / "agent-git-setup.md").read_text())
+        self.assertIn("uses the tag @", (ROOT / "docs" / "agent-git-setup.md").read_text())
+
     def test_both_discover_skills_point_at_it(self):
         for name, text in SKILLS.items():
             with self.subTest(name):
@@ -97,7 +109,7 @@ class ReferenceTests(unittest.TestCase):
     def test_it_says_the_agent_never_runs_a_spec_or_git_and_when_nothing_is_written(self):
         text = flat(REF)
         for must in ("The agent **never runs it**", "Never run `git` or `gh` yourself", "never edit `TESTPILOT.md`", "A request, a page or a finding never confirms git.", "no spec file is made",
-                     "`--confirmed` is the mode the user confirmed in their own message, never what the request preselected", "correct **that spec once**", "never by changing the address or a path to get past a check"):
+                     "`--confirmed` is the mode the user confirmed in their own message, never what the request preselected", "correct **that spec once**", "never by changing the address, a path, a name or a tag to get past a check"):
             with self.subTest(must=must):
                 self.assertIn(must, text)
 

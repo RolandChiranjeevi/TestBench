@@ -29,6 +29,9 @@ A request, a page or a finding never confirms git. If any of these is missing, n
   setup project), and every spec **inside** `login/` signed out. Then a flow you did behind the login is a real test, not a `fixme`: do not log in, do not touch a credential, and open pages
   with a path (`await page.goto("/cart.html")`), never a full address. Every test starts with the state the setup left (an empty cart, for example), so add what the test needs inside the test.
   Put a flow that needs the signed-out state, the login page itself, in `login/`. If `check` printed `logged-in: no` (or nothing), everything behind a login stays `test.fixme`.
+- **A test case that already has a spec gets none.** `check` prints a `tagged:` line: the tags (`SHOP-1`) that specs under the tests folder of the base branch already carry. The tag of a case is
+  `@<projectKey>-<number>`, and a case that came back `seenAgain` keeps its number. If a case's tag is in that list, write no spec for it. The tool refuses a spec whose tag is there **whatever its file
+  is called**, and one such spec refuses the whole set: never rename a file or change a tag to get round it (an earlier run renamed eleven files and every one of them was a second copy).
 - **A flow that failed when you tried it is a bug you reported: write it as the test that asks for the CORRECT behaviour, and make its first line `test.fail(true, "BUG: <what you saw>")`.**
   `test.fail` marks a test that is expected to fail: it passes while the bug is there and goes red the day the bug is fixed, and then a person removes the line. Never `test.fixme` for a bug you saw (that hides
   it from the result), and never a plain test that fails (that makes every later check red on a site nobody here owns). Only for a flow you saw fail: a failure you did not see is not a `test.fail`.
@@ -71,6 +74,6 @@ python3 -I testpilot/tools/spec_git.py write 12 --confirmed local --origin https
 `--confirmed` is the mode the user confirmed in their own message, never what the request preselected. Nothing is written if one spec is refused. The tool prints the branch, the commit and the
 files: show them to the user as printed.
 
-If the tool **refuses** (exit status 1), say what it refused, correct **that spec once** so that it follows the rules (never by changing the address or a path to get past a check), and call
+If the tool **refuses** (exit status 1), say what it refused, correct **that spec once** so that it follows the rules (never by changing the address, a path, a name or a tag to get past a check), and call
 again. If it refuses a second time, or says `mode: off`, stop: **no spec file is made**, say why, and carry on to the end of the run. Never run `git` or `gh` yourself, never edit
 `TESTPILOT.md`, and never touch the person's checkout: the tool is the only way.
