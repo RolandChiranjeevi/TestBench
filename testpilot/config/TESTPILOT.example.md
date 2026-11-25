@@ -7,7 +7,7 @@
 
 repo: owner/name              # the project profile, this file and the checkout's origin must name the same repository
 base: main                    # the branch the agent branches from
-mode-max: local               # the highest git mode you allow: off | local | pr (pr is not built yet and counts as local)
+mode-max: local               # the highest git mode you allow: off | local | pr (pr also pushes the branch and opens a pull request: it needs protection-confirmed below)
 branch-prefix: testpilot/     # the agent's branch is <prefix>discover-<request number>
 tests-dir: e2e/tests          # specs go to <tests-dir>/<area>/<flow>.spec.ts, as new files only
 allowed-new-paths: [e2e/]     # new files may only be made under these folders
@@ -15,3 +15,4 @@ never-touch: [e2e/support/]   # on top of the built-in list: .git, .github, TEST
 max-files: 40                 # most spec files in one branch
 max-lines: 3000               # most lines in all of them together
 logged-in: no                # yes if YOUR playwright.config.ts starts every spec outside <tests-dir>/login already signed in (a setup project, storageState); the agent then writes real tests behind the login, with no credential
+# protection-confirmed: 2026-11-25   # remove the # when YOUR base branch is protected (a pull request is required before anything reaches it): your word, with the date. Only then can `pr` push. The agent checks that the line is there, never that it is true.

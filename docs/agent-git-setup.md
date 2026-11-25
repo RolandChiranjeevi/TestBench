@@ -2,7 +2,7 @@
 
 This is for the person who owns the repository. It covers the one git mode that exists, `local`: after your yes, a discover can leave **Playwright spec files on a new local branch** of your own checkout. The
 branch is a proposal for you to review. The agent never runs the specs, never pushes or merges, never creates a remote or a repository, never edits your rules file, and never touches the branch you have checked
-out or your uncommitted changes. In this mode it has no access to GitHub at all: no token, no network.
+out or your uncommitted changes. In this mode it has no access to GitHub at all: no token, no network. (An optional second mode, `pr`, that also pushes the branch and opens a pull request is in section 9.)
 
 **Keeping the repository correctly protected is your job.** The agent assumes it is, and never checks. Protect your base branch (require a pull request before anything reaches it), and read what the agent wrote
 before you push it. If something goes wrong because a protection was missing, that is not the agent's doing.
@@ -29,13 +29,14 @@ that would cover the whole repository.
 |---|---|---|
 | `repo` | `owner/name`. The profile, this file and `origin` must name the same repository | required |
 | `base` | The branch the agent branches from | required |
-| `mode-max` | The highest git mode you allow: `off`, `local` or `pr`. `pr` does not exist yet and counts as `local` | required |
+| `mode-max` | The highest git mode you allow: `off`, `local` or `pr`. `pr` also pushes the branch and opens a pull request, and needs `protection-confirmed` below (section 9) | required |
 | `branch-prefix` | The agent's branch is `<prefix>discover-<request number>` | `testpilot/` |
 | `tests-dir` | Specs go to `<tests-dir>/<area>/<flow>.spec.ts`, as new files only | required |
 | `allowed-new-paths` | A list. New files may only be made under these folders, and `tests-dir` must lie inside one | required |
 | `never-touch` | A list of paths that are never written, on top of the built-in ones below | none |
 | `max-files` | Most spec files in one branch | `40` |
 | `max-lines` | Most lines in all of them together, counted as git counts them | `3000` |
+| `protection-confirmed` | A date like `2026-11-25`: your word that the base branch is protected (a pull request is required before anything reaches it). Only with it can mode `pr` push. The tool checks that the line is there and is a date, never that it is true | none |
 | `logged-in` | `yes` or `no`. `yes` is your word that your own `playwright.config.ts` starts every spec outside `<tests-dir>/login/` already signed in (a setup project that saves the session, `storageState`) and every spec inside `login/` signed out. The agent then writes real tests behind the login, and still never types or holds a credential. The login code lives in files you wrote, under a path in `never-touch` | `no` |
 
 **Built in, whatever the file says:** `.git`, `.github`, `TESTPILOT.md`, `package.json`, `package-lock.json`, `playwright.config.ts` and `playwright.config.js` are never written, and no path may have a part that
@@ -51,13 +52,14 @@ In `.testpilot/projects/<key>.json` of the agent's folder (a template is `testpi
 | `repo` | `owner/name` |
 | `repoPath` | The absolute path of the **top folder** of your checkout |
 | `baseBranch` | The base branch. Default `main`. `TESTPILOT.md` must say the same |
+| `pushTokenEnvVar` | Only for mode `pr`: the NAME of the environment variable that holds your GitHub token (for example `TESTPILOT_GITHUB_TOKEN`), never the token itself |
 | `projectKey` | The key of the project in Testbench. Each spec's title ends with `@<projectKey>-<number>`, which is how a result that is imported later is linked to its case |
 
 ## 3. What the agent may run
 
 Use one of the permission lists in [agent-requests.md](agent-requests.md) (they allow `spec_git.py check` and `write`, and **deny** `git` and `gh`). The agent never runs git itself. The tool,
-`testpilot/tools/spec_git.py`, makes **ten fixed git calls** (`rev-parse`, `show`, `ls-tree`, `remote get-url`, `worktree add`, `worktree remove`, `worktree prune`, `add`, `commit` and `update-ref`), with hooks
-off, no `GIT_*` variables from the environment and no network. It never fetches, pushes, merges, creates a remote or a repository, or changes your branches. What was tried live, and what was not, is under
+`testpilot/tools/spec_git.py`, makes **thirteen fixed git calls** (`rev-parse`, `show`, `ls-tree`, `remote get-url`, `worktree add`, `worktree remove`, `worktree prune`, `add`, `commit`, `update-ref`, `rev-list`, `diff` and `push`), with hooks
+off and no `GIT_*` variables from the environment. In mode `local` it uses no network: it never fetches, merges, creates a remote or a repository, or changes your branches. `push` is used only in mode `pr` (section 9). What was tried live, and what was not, is under
 "Spec files on a local branch" in [agent-requests.md](agent-requests.md).
 
 ## 4. Check it yourself before the first run
@@ -127,3 +129,28 @@ Nothing is written if even one spec is refused. The agent corrects the refused s
 | `would be written through a link` | A folder on the way is a symbolic link |
 | `the branch … already exists` | That request already has a branch: delete it, or ask again |
 | `git could not commit` | Set `user.name` and `user.email` in your checkout |
+| `git mode pr is not allowed here`, `push needs --confirmed pr` | Mode `pr` needs `pr` in the profile and in `mode-max`, a `protection-confirmed` date, a `pushTokenEnvVar`, and your own `pr` in the agent's message (section 9) |
+| `does not hold a GitHub token` | The environment variable the profile names is empty or is not a token |
+| `must be exactly one commit on top of origin/…`, `is not a new spec file in the places the rules allow` | Only the branch `write` made is pushed: one commit, new spec files only |
+| `is already on GitHub`, `GitHub did not confirm the repository` | An existing remote branch is never pushed to, and the repository GitHub answers for must be the one in your profile |
+| `was pushed, but GitHub did not open the pull request` | The branch is on GitHub but the pull request was not made: open it yourself there |
+
+## 9. Mode `pr`: push the branch and open a pull request
+
+Optional, and the only thing in this manual that makes the agent's tool use the network. Mode `local` stays as it is; this adds one step after `write`: the tool **pushes the one new branch** and **opens one
+pull request** into your base branch. It never merges, never force-pushes, never pushes the base branch or a tag, never touches an existing remote branch, and the text of the pull request (title and
+body) is the tool's own: the request number, the number of files, the paths, and "not run". It contacts **only two hosts**: `github.com` for the push and `api.github.com` for three calls about this one
+repository (confirm it, check the branch is new, open the pull request).
+
+What you set up, once (all of it yours, none of it reachable by a request):
+
+1. **Protect the base branch** on GitHub (a pull request is required before anything reaches it), and then write the date in `TESTPILOT.md`: `protection-confirmed: 2026-11-25`. Without that line `pr` counts as `local`.
+2. **Raise the ceiling:** `mode-max: pr` in `TESTPILOT.md`, and `"gitMode": "pr"` in the project profile.
+3. **Make a token of your own** (GitHub, Settings, Developer settings, Fine-grained personal access tokens): resource owner you, **only this repository**, permissions **Contents: Read and write** and **Pull requests:
+   Read and write** (Metadata read is added by GitHub), nothing else, and a short expiry. It has no right to merge or to change settings. Put it in the environment of the shell that starts the agent, or as a line `NAME=value`
+   in `.env` of the agent's folder, and put the name in the profile: `"pushTokenEnvVar": "TESTPILOT_GITHUB_TOKEN"`. The agent's own tools are told never to open that file, and the tool never prints the token or puts it on a command line.
+4. **Say yes to it in the agent's message.** The `Git:` line says whether the branch is pushed, and your yes to that message is what lets `push` run; a request never does.
+
+`check` shows `pr: yes (...)` or `pr: no (why)`. `push` refuses unless all of that is in place, and it only pushes a branch that is exactly one commit on top of `origin/<base>` as you last fetched it, with new spec
+files only. If the pull request cannot be opened after the push, it says so and the branch stays on GitHub: open the pull request there yourself. **You review the pull request and merge it yourself.**
+

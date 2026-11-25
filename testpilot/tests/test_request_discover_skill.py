@@ -389,7 +389,7 @@ class PermissionsDocTests(unittest.TestCase):
         self.assertTrue(actions <= set(request_call.ACTIONS), "every allowed action is a real action of the helper")
         self.assertNotIn("release", actions)
         spec_actions = {m.group(1) for r in bash if (m := re.fullmatch(r"python3 -I testpilot/tools/spec_git\.py ([a-z-]+):\*", r))}
-        self.assertEqual(spec_actions, set(spec_git.ACTIONS), "exactly the two actions of the spec tool, check and write")
+        self.assertEqual(spec_actions, set(spec_git.ACTIONS) - {"push"}, "exactly the two actions of the spec tool that the skills run, check and write (push is for git mode pr and is allowed by its own change)")
         known = {f"python3 -I testpilot/tools/request_call.py {a}:*" for a in actions} | {f"python3 -I testpilot/tools/spec_git.py {a}:*" for a in spec_actions}
         self.assertEqual(sorted(set(bash) - known), ["mkdir -p audits/request-*"], "no other shell command is allowed")
         for ran in set(re.findall(r"request_call\.py ([a-z-]+)", TEXT)):
