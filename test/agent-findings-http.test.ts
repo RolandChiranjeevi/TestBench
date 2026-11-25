@@ -118,6 +118,22 @@ describe("who may report a finding", () => {
     assert.equal(rows("SELECT 1 FROM observations").length, 0, "nothing was made");
   });
 
+  it("a thing found again is not made twice: `known` lists the keyed posts, the same key a second time is seenAgain, and only the token that took the request may read `known`", async () => {
+    const bug = { kind: "bug_report", title: "Item total shows a floating point error", actual: "$59.980000000000004", url: "https://shop.example.com/checkout-step-two.html", key: "checkout-step-two:float-total" };
+    const first = await taken(a, tokenA);
+    assert.equal((await finding(tokenA, a, first, bug)).status, 201);
+    await ok(await finish(tokenA, a, first, "complete"));
+    const second = await taken(a, tokenA);
+    const known = await ok<{ bug_reports: { key: string; title: string; seen: number }[] }>(await agent(`Bearer ${tokenA}`, `/api/agent/projects/${a}/requests/${second}/known`));
+    assert.deepEqual(known.bug_reports.map((x) => [x.key, x.seen]), [["checkout-step-two:float-total", 0]]);
+    const again = await ok<{ seenAgain?: boolean; id: number }>(await finding(tokenA, a, second, { ...bug, title: "Item total shows floating-point digits for some carts" }));
+    assert.equal(again.seenAgain, true);
+    assert.equal(rows("SELECT 1 FROM bug_reports WHERE fingerprint = ?", bug.key).length, 1, "one post");
+    for (const [who, res] of [["no token", await agent(undefined, `/api/agent/projects/${a}/requests/${second}/known`)], ["a read token", await agent(`Bearer ${readTokenA}`, `/api/agent/projects/${a}/requests/${second}/known`)],
+      ["another project's token", await agent(`Bearer ${tokenB}`, `/api/agent/projects/${a}/requests/${second}/known`)]] as const) assert.ok([401, 403].includes(res.status), `${who}: ${res.status}`);
+    assert.equal((await agent(`Bearer ${tokenA2}`, `/api/agent/projects/${a}/requests/${second}/known`)).status, 409, "a token that did not take the request");
+  });
+
   it("answers 403 to a valid token of another project, and leaks nothing about that project", async () => {
     const rid = await taken(a, tokenA);
     const res = await finding(tokenB, a, rid, obs);
@@ -129,7 +145,7 @@ describe("who may report a finding", () => {
 
   it("is refused for every other route there is, with and without a login: no specs, no accounts, no decisions, no requests made or cancelled", async () => {
     const tokenRoutes = new Set([
-      "POST /api/projects/:id/ci/test-results", "GET /api/agent/projects/:id/requirements", "POST /api/agent/projects/:id/requirement-proposals", "GET /api/agent/projects/:id/requests",
+      "POST /api/projects/:id/ci/test-results", "GET /api/agent/projects/:id/requirements", "POST /api/agent/projects/:id/requirement-proposals", "GET /api/agent/projects/:id/requests", "GET /api/agent/projects/:id/requests/:rid/known",
       "POST /api/agent/projects/:id/requests/:rid/claim", "POST /api/agent/projects/:id/requests/:rid/release", "POST /api/agent/projects/:id/requests/:rid/result",
       "POST /api/agent/projects/:id/requests/:rid/complete", "POST /api/agent/projects/:id/requests/:rid/findings", "POST /api/agent/projects/:id/requests/:rid/case-results",
       "POST /api/agent/projects/:id/requests/:rid/load-result",

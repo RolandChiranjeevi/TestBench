@@ -247,7 +247,10 @@ CREATE TABLE ${name} (
     d.pragma("foreign_keys = OFF");
     d.transaction(() => {
       d.exec(observationsTable("observations_new"));
-      d.exec("INSERT INTO observations_new SELECT * FROM observations");
+      d.exec(`INSERT INTO observations_new (id, project_id, number, source_id, audit_id, origin_audit_id, kind, title, severity, status, status_set_by, status_changed_at,
+          changed_since_review, metric, value, threshold, evidence, recommendation, source, content_hash, converted_bug_id, created_at, updated_at)
+        SELECT id, project_id, number, source_id, audit_id, origin_audit_id, kind, title, severity, status, status_set_by, status_changed_at,
+          changed_since_review, metric, value, threshold, evidence, recommendation, source, content_hash, converted_bug_id, created_at, updated_at FROM observations`);
       d.exec("DROP TABLE observations; ALTER TABLE observations_new RENAME TO observations;");
     })();
     d.pragma("foreign_keys = ON");
@@ -768,6 +771,35 @@ function migrateAgentFindings(d: Database.Database) {
   // in origin_audit_id). A case made before this was recorded has none and is not counted.
   if (!hasColumn("cases", "agent_request_id")) d.exec("ALTER TABLE cases ADD COLUMN agent_request_id INTEGER REFERENCES agent_requests(id) ON DELETE SET NULL");
   if (!hasColumn("agent_requests", "findings_count")) d.exec("ALTER TABLE agent_requests ADD COLUMN findings_count INTEGER NOT NULL DEFAULT 0");
+}
+
+/**
+ * Discover without duplicates. An agent gives a test case, a bug report or an observation a `key` (what the thing IS, not how it was worded). A later request that finds the same
+ * thing again does not make a second post: it leaves a sighting here, with the full text it handed in (the request that made the post leaves the first one), and the post stays as it was (a person may have worked on it). A bug report keeps
+ * its key in `fingerprint` (it was there already); cases and observations get `dedupe_key`. A sighting goes when its post goes.
+ */
+function migrateAgentSightings(d: Database.Database) {
+  const hasColumn = (table: string, col: string) => (d.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === col);
+  if (!hasColumn("cases", "dedupe_key")) d.exec("ALTER TABLE cases ADD COLUMN dedupe_key TEXT NOT NULL DEFAULT ''");
+  if (!hasColumn("observations", "dedupe_key")) d.exec("ALTER TABLE observations ADD COLUMN dedupe_key TEXT NOT NULL DEFAULT ''");
+  d.exec(`
+CREATE INDEX IF NOT EXISTS cases_dedupe_key ON cases(project_id, dedupe_key) WHERE dedupe_key != '';
+CREATE INDEX IF NOT EXISTS observations_dedupe_key ON observations(project_id, dedupe_key) WHERE dedupe_key != '';
+CREATE INDEX IF NOT EXISTS bug_reports_fingerprint ON bug_reports(project_id, fingerprint) WHERE fingerprint != '';
+CREATE TABLE IF NOT EXISTS agent_sightings (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('test_case', 'bug_report', 'observation')),
+  post_id INTEGER NOT NULL,
+  request_id INTEGER NOT NULL REFERENCES agent_requests(id) ON DELETE CASCADE,
+  key TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  seen_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS agent_sightings_post ON agent_sightings(kind, post_id);
+CREATE TRIGGER IF NOT EXISTS cases_sightings_gone AFTER DELETE ON cases BEGIN DELETE FROM agent_sightings WHERE kind = 'test_case' AND post_id = OLD.id; END;
+CREATE TRIGGER IF NOT EXISTS bug_reports_sightings_gone AFTER DELETE ON bug_reports BEGIN DELETE FROM agent_sightings WHERE kind = 'bug_report' AND post_id = OLD.id; END;
+CREATE TRIGGER IF NOT EXISTS observations_sightings_gone AFTER DELETE ON observations BEGIN DELETE FROM agent_sightings WHERE kind = 'observation' AND post_id = OLD.id; END;`);
 }
 
 /**
@@ -1429,6 +1461,7 @@ CREATE INDEX IF NOT EXISTS bug_events_bug ON bug_events(bug_report_id);`);
   migrateAgentQueue(d);
   migrateAgentResults(d);
   migrateAgentLoadtest(d);
+  migrateAgentSightings(d);
 
   // Make sure every sprint named on a run has a sprint record.
   const named = d.prepare("SELECT DISTINCT project_id, milestone FROM runs WHERE milestone != ''").all() as { project_id: number; milestone: string }[];

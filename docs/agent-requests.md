@@ -54,7 +54,7 @@ Made under **Settings → Agent → Requests to a test agent**, by an admin of t
 - It is a fourth kind of agent token, **`tbrq_`**, apart from the read token (`tbag_`), the proposal token (`tbpr_`) and the CI token (`tbci_`). Each kind is refused by its prefix, so none can stand
   in for another.
 - It is shown once and only its hash is stored. A project can have **three** active request tokens; revoking is the only way to end one. Too many wrong tokens from one address are slowed down (429).
-- It opens **eight routes of one project and nothing else**. It cannot make or cancel a request, read requirements, touch specs or accounts, or decide anything; every other route refuses it. Four of them only change the
+- It opens **nine routes of one project and nothing else**. It cannot make or cancel a request, read requirements, touch specs or accounts, or decide anything; every other route refuses it. Four of them only change the
   status of a request (and a release adds a note, and a finished discover the audit it made). One makes findings of a discover (draft or proposed, and the discover's plan; see `mcp/README.md`). One hands in the result of a load test (`load-result`, below). Two (`result` and `case-results`) write test results, and are **off until a person switches them on** (below).
 - No login cookie and no `X-Testbench` header are needed. The token is checked on every call.
 
@@ -65,6 +65,7 @@ POST /api/agent/projects/<project id>/requests/<id>/release       {"note": "why 
 POST /api/agent/projects/<project id>/requests/<id>/result        the Playwright JSON report of a re-run or of a run request (off by default, see below)
 POST /api/agent/projects/<project id>/requests/<id>/case-results  a result for each test case of a run request (off by default, see below)
 POST /api/agent/projects/<project id>/requests/<id>/findings      one finding of a discover (draft or proposed, see mcp/README.md)
+GET  /api/agent/projects/<project id>/requests/<id>/known         what earlier requests already made and keyed: key, title, how often seen again (below)
 POST /api/agent/projects/<project id>/requests/<id>/load-result   the result of a load test, once (below)
 POST /api/agent/projects/<project id>/requests/<id>/complete      {"note": "...", "resultRunId": 42, "resultAuditId": 8}  (all optional)
 Authorization: Bearer $TESTBENCH_REQUEST_TOKEN
@@ -115,7 +116,7 @@ A discover can carry `options`: what the person chose when asking. They are a **
 
 The token is a secret in a file that the agent's own session can reach (`.env`, or `.mcp.json` for the MCP server). The agent is told never to open them, and the skill's helper (`testpilot/tools/request_call.py`) is the only thing that reads the token. But that is behaviour, not a lock: the session also has file and shell tools (and, with the Playwright MCP, tools that run code in a browser), so an agent that chose to could read the token. TestBench cannot prevent that, and no setting here switches it off. It is a limit of the setup. What bounds the damage:
 
-- **The token is narrow.** Eight routes of one project and nothing else (above). The routes that write test results are off until a person switches them on, and every finding stays a proposal.
+- **The token is narrow.** Nine routes of one project and nothing else (above). The routes that write test results are off until a person switches them on, and every finding stays a proposal.
 - **Only a hash is stored**, and a revoked token is refused on the next call. Revoking is one step under **Settings → Agent → Requests to a test agent**, and the list shows when each token was last used.
 - **At most three active tokens per project**, and making and revoking one is in the audit log (`token.created`, `token.revoked`). What an agent does with a request is written there too, as `agent_request.*` entries under "agent: <token name>".
 
@@ -127,6 +128,17 @@ What to do about it:
 - In the normal (`default`) mode a prompt guards shell commands, but **not the Read tool**. Measured with Claude Code 2.1.328 (appendix D of [agent-chain-verification.md](agent-chain-verification.md)): a `sed` against `.env` asked first, while Read of `.env` and of `.mcp.json` in the working folder ran with no prompt. So answering prompts does not keep a session from reading the token; the limits above do.
 - Keep `.env` out of git (it is in `.gitignore`) and readable by you only (`chmod 600 .env`), and put in it only what the agent's folder needs: any other secret in that file is as reachable as the token.
 - If you think a token was read, revoke it, and look at when it was last used and at the audit log.
+
+### A discover that finds the same thing again
+
+A test case, a bug report or an observation can carry a `key`: lower case words joined by `:` and `-` that say what the thing IS (`cart:float-total`), not how it was worded. `GET .../known` lists the
+keyed posts of earlier requests (their key, title and how often they were seen again; a person's own posts have no key and are never listed), and only to the token that took the request.
+
+When a finding carries a key that an earlier post has, **no new post is made** if all of these hold: the key is exactly the same in the same project; for a bug report, the page (the path of its address,
+without a query or an extension) is the same and known on both sides; and the words of the title and the main text are alike enough (a Dice likeness of at least 0.3, measured on two real runs). The answer
+is then `seenAgain: true` with the id of the post (and a case's number), and TestBench keeps a **sighting**: what the agent wrote this time, in full. The post is left as it is. Anything less than a match
+makes a new post and says `possibleDuplicateOf: <id>` when the key exists. The rule is built to make a duplicate rather than to hide something, and a person can see and sort out the two. A finding
+without a key is always a post.
 
 ## One request at a time, and the order a person chooses
 
@@ -307,7 +319,7 @@ It does not check the browser profile (that is specific to a set-up) or what the
 
 | Id | Situation | What it prints | Exit |
 | --- | --- | --- | --- |
-| `bad-arguments` | the action is not one of the nine, or the request number or `--result-run` is not a number | one line saying what is wrong | 1 |
+| `bad-arguments` | the action is not one of the ten, or the request number or `--result-run` is not a number | one line saying what is wrong | 1 |
 | `config-unreadable` | `.testpilot/testbench.json` or the profile it names cannot be read, or the address is not allowed (plain `http` to a non-local host) | one line | 1 |
 | `no-token-variable` | the profile names no `requestTokenEnvVar` | one line | 3 |
 | `no-token` | the variable (or its line in `.env`) is empty or does not look like a request token | one line (and one on stderr) | 1 |
@@ -332,7 +344,7 @@ The table is tested against the code (`testpilot/tests/test_request_call_output.
 | **Tester** and above | Asks for a discover or a re-run, and cancels a request that is Waiting or Taken. |
 | **Admin** | Also asks for a load test, and makes and revokes request tokens. Both are written to the audit log (`token.created`, `token.revoked`: who, the project, and the token's name and prefix, never the token or its hash), and the token keeps who made it. |
 | **Owner** | Also switches agent results on or off (off by default). |
-| **An agent with a request token** | The eight routes above, for its own project. Nothing else. |
+| **An agent with a request token** | The nine routes above, for its own project. Nothing else. |
 
 Who asked, cancelled, took and finished a request, and who reported results, is written to the audit log (shown to the owner when accounts are on; the filter is *Agent requests*).
 

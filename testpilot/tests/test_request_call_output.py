@@ -247,6 +247,63 @@ class PrecheckSeesWhatIsMissingBeforeLogout(unittest.TestCase):
         self.assertEqual(status, 0, out)
 
 
+class KnownAndKeysInFindings(unittest.TestCase):
+    """`known` lists what earlier requests already made and keyed; a finding can carry a `key`, and the helper says when TestBench saw a thing again."""
+    KNOWN = {"test_cases": [{"id": 3, "number": 12, "key": "case:cart:empty-checkout", "title": "Checkout with an empty cart", "seen": 2}],
+             "bug_reports": [{"id": 9, "key": "cart:float-total", "title": "Item total shows a float\x1b[31m error", "seen": 0}], "observations": []}
+
+    def test_known_prints_one_cleaned_line_per_post_and_a_fixed_line_when_there_is_nothing(self):
+        with agent_folder():
+            status, out, _ = run_main(["known", "12"], send=answer(200, self.KNOWN))
+        self.assertEqual(status, 0)
+        lines = [json.loads(x) for x in out.splitlines() if x.startswith("{")]
+        self.assertEqual([x["kind"] for x in lines], ["test_case", "bug_report"])
+        self.assertEqual(lines[0]["number"], 12)
+        self.assertEqual(lines[0]["seen_again"], 2)
+        self.assertTrue(printable_only(out), out)
+        with agent_folder():
+            status, out, _ = run_main(["known", "12"], send=answer(200, {"test_cases": [], "bug_reports": [], "observations": []}))
+        self.assertIn("nothing earlier is known", out)
+
+    def test_known_needs_a_request_number_and_is_a_get(self):
+        with agent_folder():
+            self.assertEqual(run_main(["known"], send=answer(200, self.KNOWN))[0], 1)
+            calls = []
+            run_main(["known", "12"], send=lambda m, u, h, b, t: (calls.append((m, u, b)) or (200, json.dumps(self.KNOWN).encode())))
+        self.assertEqual(calls[0][0], "GET")
+        self.assertTrue(calls[0][1].endswith("/api/agent/projects/7/requests/12/known"), calls[0][1])
+        self.assertIsNone(calls[0][2])
+
+    def test_a_key_is_checked_before_anything_is_sent(self):
+        bad = [({"kind": "plan_item", "title": "x", "key": "cart:total"}, "key is for a test_case"), ({"kind": "bug_report", "title": "x", "key": "Cart Total"}, "lower case words"),
+               ({"kind": "bug_report", "title": "x", "key": "cart"}, "lower case words"), ({"kind": "observation", "title": "x", "key": 5}, "lower case words")]
+        for f, why in bad:
+            with self.subTest(f=f):
+                with agent_folder():
+                    put(f"{FOLDER}/findings-1.json", {"findings": [f]})
+                    calls = []
+                    status, out, _ = run_main(["findings", "12", f"--findings={FOLDER}/findings-1.json"], send=lambda *a, **k: calls.append(a))
+                self.assertEqual(status, 1)
+                self.assertIn(why, out)
+                self.assertEqual(calls, [], "nothing was sent")
+
+    def test_a_good_key_is_sent_and_a_sighting_or_a_possible_duplicate_is_shown(self):
+        f = {"kind": "test_case", "title": "x", "key": "case:cart:empty-checkout"}
+        with agent_folder():
+            put(f"{FOLDER}/findings-1.json", {"findings": [f, {**f, "key": "case:cart:other"}]})
+            sent = []
+            replies = iter([(201, json.dumps({"kind": "test_case", "id": 3, "number": 12, "seenAgain": True, "findingsOnRequest": 1}).encode()),
+                            (201, json.dumps({"kind": "test_case", "id": 4, "number": 13, "possibleDuplicateOf": 3, "sourceId": "$agent-12-2", "findingsOnRequest": 2}).encode())])
+            status, out, _ = run_main(["findings", "12", f"--findings={FOLDER}/findings-1.json"], send=lambda m, u, h, b, t: (sent.append(json.loads(b)) or next(replies)))
+        self.assertEqual(status, 0, out)
+        self.assertEqual(sent[0]["key"], "case:cart:empty-checkout")
+        lines = [json.loads(x) for x in out.splitlines() if x.startswith("{")]
+        self.assertTrue(lines[0]["seenAgain"])
+        self.assertEqual(lines[0]["number"], 12)
+        self.assertEqual(lines[1]["possibleDuplicateOf"], 3)
+        self.assertNotIn("seenAgain", lines[1])
+
+
 class TheHelperIsTerminalSafeOnItsOwnLines(unittest.TestCase):
     def test_a_failed_call_whose_reason_comes_from_a_library_or_a_certificate_prints_ascii_only(self):
         rng = random.Random(10)
