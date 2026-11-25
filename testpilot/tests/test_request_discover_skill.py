@@ -44,7 +44,7 @@ class FileTests(unittest.TestCase):
 
     def test_the_commands_it_tells_the_agent_to_run_are_real_actions_of_the_helper_with_real_flags(self):
         cmds = re.findall(r"python3 -I testpilot/tools/request_call\.py (\S+)((?: \S+)*)", TEXT)
-        self.assertEqual({c[0] for c in cmds}, {"findings", "complete"})
+        self.assertEqual({c[0] for c in cmds}, {"findings", "complete", "known"})
         for action, rest in cmds:
             self.assertIn(action, request_call.ACTIONS)
             for flag in re.findall(r"--[a-z-]+", rest):
@@ -385,7 +385,7 @@ class PermissionsDocTests(unittest.TestCase):
         allow, _, _ = self.parts()
         bash = [m.group(1) for r in allow if (m := re.fullmatch(r"Bash\((.*)\)", r))]
         actions = {m.group(1) for r in bash if (m := re.fullmatch(r"python3 -I testpilot/tools/request_call\.py ([a-z-]+):\*", r))}
-        self.assertEqual(actions, {"list", "claim", "findings", "precheck", "complete"})
+        self.assertEqual(actions, {"list", "claim", "findings", "known", "precheck", "complete"})
         self.assertTrue(actions <= set(request_call.ACTIONS), "every allowed action is a real action of the helper")
         self.assertNotIn("release", actions)
         spec_actions = {m.group(1) for r in bash if (m := re.fullmatch(r"python3 -I testpilot/tools/spec_git\.py ([a-z-]+):\*", r))}
