@@ -307,15 +307,26 @@ class ActingRulesTests(unittest.TestCase):
         self.assertIn("python3 -I testpilot/tools/request_call.py precheck <id> --coverage <the folder>/coverage.md`", step3)
         self.assertIn("a page that takes input without a row for each of `empty`, `wrong-kind`, `too-long`, `boundary`, `format` and `enter`", step3)
         self.assertIn("**Press Logout only when it says every page has its rows.**", step3)
-        self.assertLess(step3.index("precheck <id>"), step3.index("Then press Logout,"), "the check comes before the press")
+        self.assertLess(step3.index("precheck <id>"), step3.index("If you are still logged in, press Logout,"), "the check comes before the press")
         self.assertIn("The rows are those of `coverage.md`, which you wrote and checked before Logout", flat(TEXT))
+
+    def test_the_agent_loads_a_page_behind_the_login_before_logout_because_a_session_ended_by_itself_in_three_runs(self):
+        """Deep runs 5, 6 and 9 ended with the site's own session timeout (about 10 minutes without a page load) before Logout, while the files and the check were written. A page load shows it."""
+        step3 = flat(self.step3())
+        for must in ("**Before you press it, load one page behind the login** (the product list, for example)", "about 10 minutes after the last one",
+                     "If it shows the login page, the session has ended: say so in one line", "`not tried` with the reason `the session had ended on its own`", "never log in yourself, and carry on at step 4",
+                     "If you are still logged in, press Logout,"):
+            with self.subTest(must=must):
+                self.assertIn(must, step3)
+        self.assertLess(step3.index("precheck <id>"), step3.index("**Before you press it, load one page behind the login**"), "the page is loaded after the check, not before it")
+        self.assertLess(step3.index("**Before you press it, load one page behind the login**"), step3.index("If you are still logged in, press Logout,"))
 
     def test_the_agent_says_what_is_left_before_it_logs_out_in_a_line_the_user_can_see(self):
         """Logout came too early in three runs in a row, and the rule only made the agent report it afterwards. A line before it makes the list visible while there is still time."""
         step3 = self.step3()
         self.assertIn("**Say it first:** in your reply to the user, just before you press Logout, write one line, `Before Logout: left on my list: <what is left, or nothing>` (it is not a question: do not wait for an answer).", step3)
         self.assertIn("If anything is left, do it first; if you cannot, it goes in a coverage gap with the reason.", step3)
-        self.assertLess(step3.index("**Say it first:**"), step3.index("Then press Logout,"), "the line is written before the press")
+        self.assertLess(step3.index("**Say it first:**"), step3.index("If you are still logged in, press Logout,"), "the line is written before the press")
 
     def test_what_a_field_expects_is_decided_from_what_the_agent_can_see_and_the_assumption_is_written_down(self):
         step3 = self.step3()
