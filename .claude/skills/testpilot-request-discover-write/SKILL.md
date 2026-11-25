@@ -272,8 +272,8 @@ Exactly as `../testpilot-request-discover/SKILL.md` step 5b says, with `../../re
 at least one test case was handed in (the helper printed its `number`). One call of `testpilot/tools/spec_git.py write`, one correction of a refused spec at most, and this step never stops the request.
 
 What is different here: you did act, so a spec may also follow a flow you tried (a form that showed its validation when it was submitted empty, a link you followed), using only the
-made-up values you used and only what the page showed. **What the action log says you did not do (a login, a password, a payment) is `test.fixme`**, and no value that is a secret is ever
-written: you typed none. The log itself is not a spec and is not handed over.
+made-up values you used and only what the page showed. **What the action log says you did not do (a password, a payment) is `test.fixme`**, and no value that is a secret is ever
+written: you typed none. A flow behind the login is a real test only under the `logged-in: yes` rule in `../../references/spec-files.md`. The log itself is not a spec and is not handed over.
 
 ## 6. Finish
 

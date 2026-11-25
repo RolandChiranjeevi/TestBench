@@ -625,7 +625,7 @@ class SpecFilesTests(unittest.TestCase):
     def test_step_5b_is_the_read_only_ones_and_adds_what_acting_changes(self):
         text = flat(section("5b. Spec files"))
         for must in ("Exactly as `../testpilot-request-discover/SKILL.md` step 5b says", "../../references/spec-files.md", "One call of `testpilot/tools/spec_git.py write`", "one correction of a refused spec at most",
-                     "this step never stops the request", "What the action log says you did not do (a login, a password, a payment) is `test.fixme`", "no value that is a secret is ever written",
+                     "this step never stops the request", "What the action log says you did not do (a password, a payment) is `test.fixme`", "no value that is a secret is ever written",
                      "The log itself is not a spec and is not handed over."):
             with self.subTest(must=must):
                 self.assertIn(must, text)

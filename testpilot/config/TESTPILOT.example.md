@@ -14,3 +14,4 @@ allowed-new-paths: [e2e/]     # new files may only be made under these folders
 never-touch: [e2e/support/]   # on top of the built-in list: .git, .github, TESTPILOT.md, package.json, package-lock.json, playwright.config.ts and .js
 max-files: 40                 # most spec files in one branch
 max-lines: 3000               # most lines in all of them together
+logged-in: no                # yes if YOUR playwright.config.ts starts every spec outside <tests-dir>/login already signed in (a setup project, storageState); the agent then writes real tests behind the login, with no credential

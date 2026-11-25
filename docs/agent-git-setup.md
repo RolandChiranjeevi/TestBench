@@ -36,6 +36,7 @@ that would cover the whole repository.
 | `never-touch` | A list of paths that are never written, on top of the built-in ones below | none |
 | `max-files` | Most spec files in one branch | `40` |
 | `max-lines` | Most lines in all of them together, counted as git counts them | `3000` |
+| `logged-in` | `yes` or `no`. `yes` is your word that your own `playwright.config.ts` starts every spec outside `<tests-dir>/login/` already signed in (a setup project that saves the session, `storageState`) and every spec inside `login/` signed out. The agent then writes real tests behind the login, and still never types or holds a credential. The login code lives in files you wrote, under a path in `never-touch` | `no` |
 
 **Built in, whatever the file says:** `.git`, `.github`, `TESTPILOT.md`, `package.json`, `package-lock.json`, `playwright.config.ts` and `playwright.config.js` are never written, and no path may have a part that
 starts with a dot. Only **new** files are made: a name that already exists on the base branch is refused, also when only the letters differ in case.

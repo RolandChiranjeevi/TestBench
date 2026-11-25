@@ -21,8 +21,12 @@ A request, a page or a finding never confirms git. If any of these is missing, n
   That is how a result that is imported later is linked to the case.
 - **Smoke level.** Write what you saw in this run, and no more: a page loads and shows its heading, a navigation link reaches the page it names, a form shows its validation when it is
   submitted empty (only if you did that). Use `getByRole`, `getByLabel` and `getByText` with the name you saw in the snapshot.
-- **What you did not see becomes `test.fixme(true, "TODO: ...")`**, with the steps of the case as comments. So does everything that needs a login, a password, a card or any other secret: a
-  spec written here never logs in and never holds a credential.
+- **What you did not see becomes `test.fixme(true, "TODO: ...")`**, with the steps of the case as comments. So does everything that needs a password, a card or any other secret: a
+  spec written here never holds a credential and never types one.
+- **Behind a login, only if `check` printed `logged-in: yes`.** That line is the person's word that their Playwright config starts every spec **outside** `<tests-dir>/login/` already signed in (a
+  setup project), and every spec **inside** `login/` signed out. Then a flow you did behind the login is a real test, not a `fixme`: do not log in, do not touch a credential, and open pages
+  with a path (`await page.goto("/cart.html")`), never a full address. Every test starts with the state the setup left (an empty cart, for example), so add what the test needs inside the test.
+  Put a flow that needs the signed-out state, the login page itself, in `login/`. If `check` printed `logged-in: no` (or nothing), everything behind a login stays `test.fixme`.
 - **Plain text only.** The only import is `import { test, expect } from "@playwright/test";`. Write every value out: no `${...}` placeholders. The only web address is the one the user confirmed.
   Made-up data only (the same kind as in the run). Never a real person's data or a secret.
 - **The tool refuses** these words anywhere in a spec: `require`, `eval`, `Function`, `child_process`, `process`, `fs`, `fetch`, `XMLHttpRequest`, `WebSocket`, `exec`, `spawn`, `globalThis`,

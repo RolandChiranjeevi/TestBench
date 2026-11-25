@@ -34,7 +34,7 @@ ACTIONS = ("check", "write")
 MODES = ("off", "local", "pr")  # lowest first; pr counts as local until it is built
 TOP = 1
 RULES_FILE = "TESTPILOT.md"
-RULE_KEYS = {"repo", "base", "mode-max", "branch-prefix", "tests-dir", "allowed-new-paths", "never-touch", "max-files", "max-lines"}
+RULE_KEYS = {"repo", "base", "mode-max", "branch-prefix", "tests-dir", "allowed-new-paths", "never-touch", "max-files", "max-lines", "logged-in"}
 ALWAYS_NEVER = (".git", ".github", "TESTPILOT.md", "package.json", "package-lock.json", "playwright.config.ts", "playwright.config.js")  # in force whatever the rules file says
 GIT_OK = {("rev-parse",), ("show",), ("ls-tree",), ("remote", "get-url"), ("worktree", "add"), ("worktree", "remove"), ("worktree", "prune"), ("add",), ("commit",), ("update-ref",)}
 PATH_RX = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*")
@@ -112,12 +112,15 @@ def parse_rules(text):
         if not re.fullmatch(r"[1-9][0-9]{0,5}", v):
             raise Stop(f"{RULES_FILE}: {k} must be a whole number above 0", off=True)
         limits[k] = int(v)
+    logged_in = raw.get("logged-in", "no")
+    if logged_in not in ("yes", "no"):
+        raise Stop(f"{RULES_FILE}: logged-in must be yes or no", off=True)
     tests_dir = entry(raw["tests-dir"], "tests-dir").rstrip("/")
     allowed = [a.rstrip("/") + "/" for a in as_list(raw, "allowed-new-paths")]
     if not any((tests_dir + "/").startswith(a) for a in allowed):
         raise Stop(f"{RULES_FILE}: tests-dir must lie inside allowed-new-paths", off=True)
     never = [n.rstrip("/").lower() for n in as_list(raw, "never-touch")] + [n.lower() for n in ALWAYS_NEVER]
-    return {"repo": raw["repo"], "base": raw["base"], "mode-max": raw["mode-max"], "prefix": prefix, "tests-dir": tests_dir, "allowed": allowed, "never": never, **limits}
+    return {"repo": raw["repo"], "base": raw["base"], "mode-max": raw["mode-max"], "prefix": prefix, "tests-dir": tests_dir, "allowed": allowed, "never": never, "logged-in": logged_in, **limits}
 
 
 def origin_repo(url):
@@ -303,6 +306,7 @@ def check(confirmed):
     print(f"tests-dir: {r['tests-dir']} (only new files, one <area>/<flow>.spec.ts each)")
     print(f"branch: {r['prefix']}discover-<request number>")
     print(f"limits: {r['max-files']} files, {r['max-lines']} lines")
+    print(f"logged-in: {r['logged-in']}")
 
 
 def main(argv):

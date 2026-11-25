@@ -29,6 +29,20 @@ def flat(text):
 
 
 class ReferenceTests(unittest.TestCase):
+    def test_the_logged_in_rule_is_in_the_tool_the_reference_the_template_and_the_docs(self):
+        self.assertIn("logged-in", spec_git.RULE_KEYS)
+        flat = " ".join(REF.split())
+        for must in ("only if `check` printed `logged-in: yes`", "never a full address", "`logged-in: no` (or nothing), everything behind a login stays `test.fixme`", "do not log in, do not touch a credential"):
+            with self.subTest(must=must):
+                self.assertIn(must, flat)
+        self.assertIn("logged-in:", (CONFIG / "TESTPILOT.example.md").read_text())
+        self.assertIn("| `logged-in` |", (ROOT / "docs" / "agent-git-setup.md").read_text())
+
+    def test_a_spec_behind_the_login_with_a_path_is_accepted_and_one_with_a_full_address_is_not(self):
+        ok = 'import { test, expect } from "@playwright/test";\ntest("cart @SD-1", async ({ page }) => {\n  await page.goto("/cart.html");\n});\n'
+        self.assertIsNone(spec_git.check_content(ok, ORIGIN))
+        self.assertIsNotNone(spec_git.check_content(ok.replace('"/cart.html"', '"https://other.example.com/cart.html"'), ORIGIN))
+
     def test_both_discover_skills_point_at_it(self):
         for name, text in SKILLS.items():
             with self.subTest(name):
