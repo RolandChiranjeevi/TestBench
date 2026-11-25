@@ -301,6 +301,41 @@ class WriteTests(unittest.TestCase):
         self.assertRefused(w, [S("e2e/tests/shop/a.spec.ts"), S("e2e/tests/shop/a.spec.ts")], "already exists")
         self.assertRefused(w, [S("e2e/tests/shop/a.spec.ts"), S("e2e/tests/shop/A.spec.ts")], "already exists")
 
+    def tagged_world(self):
+        def setup(repo):
+            (repo / "e2e/tests/shop").mkdir(parents=True)
+            (repo / "e2e/tests/shop/cart.spec.ts").write_text('import { test } from "@playwright/test";\ntest("cart @SHOP-1", async () => {});\ntest("cart again @SHOP-1", async () => {});\ntest("pay @shop-12", async () => {});\n')
+            (repo / "e2e/tests/shop/notes.md").write_text("@SHOP-5 is only a note\n")  # not a spec
+            (repo / "e2e/other").mkdir(parents=True)
+            (repo / "e2e/other/x.spec.ts").write_text('test("elsewhere @SHOP-7", async () => {});\n')  # outside tests-dir
+        return World(self, setup=setup)
+
+    def test_a_test_case_that_already_has_a_spec_on_the_base_branch_gets_no_second_one_whatever_the_file_is_called(self):
+        """Deep key 4 renamed all 11 of its spec files with a suffix to get past the file name check, and every one of them carried a tag that main already had."""
+        w = self.tagged_world()
+        (w.repo / "e2e/tests/shop/cart.spec.ts").write_text("// edited and not committed: the tags are read from origin/main, not from here\n")
+        again = spec("await page.goto('https://shop.example.com/cart');").replace("@CASE-1", "@SHOP-1")
+        p = self.assertRefused(w, [S("e2e/tests/shop/cart-d10.spec.ts", again)], "uses the tag @SHOP-1, which e2e/tests/shop/cart.spec.ts on origin/main already has")
+        self.assertIn("whatever the file is called", p.out)
+        self.assertRefused(w, [S("e2e/tests/shop/pay.spec.ts", spec("await page.goto('https://shop.example.com/pay');").replace("@CASE-1", "@SHOP-12"))], "@SHOP-12")  # the case of the letters does not matter
+        self.assertRefused(w, [S("e2e/tests/shop/new.spec.ts"), S("e2e/tests/other/again.spec.ts", again)], "uses the tag @SHOP-1")  # one refused spec makes none
+
+    def test_a_new_tag_a_tag_in_a_note_a_tag_outside_tests_dir_and_a_tag_only_in_the_working_folder_do_not_block(self):
+        w = self.tagged_world()
+        (w.repo / "e2e/tests/shop/mine.spec.ts").write_text('test("not committed @SHOP-9", async () => {});\n')  # the checkout is never read, only origin/main
+        items = [S("e2e/tests/shop/a.spec.ts", spec("await page.goto('https://shop.example.com/a');").replace("@CASE-1", "@SHOP-5")),
+                 S("e2e/tests/shop/b.spec.ts", spec("await page.goto('https://shop.example.com/b');").replace("@CASE-1", "@SHOP-7")),
+                 S("e2e/tests/shop/c.spec.ts", spec("await page.goto('https://shop.example.com/c');").replace("@CASE-1", "@SHOP-9"))]
+        self.assertEqual(w.write(items).returncode, 0, w.write(items).out)
+
+    def test_check_lists_the_tags_that_already_have_a_spec_so_that_the_agent_skips_them(self):
+        p = self.tagged_world().run("check")
+        self.assertEqual(p.returncode, 0, p.out)
+        self.assertIn("tagged: 2 test cases already have a spec on origin/main: SHOP-1, SHOP-12", p.out)
+        self.assertNotIn("SHOP-5", p.out)
+        self.assertNotIn("SHOP-7", p.out)
+        self.assertIn("tagged: 0 test cases already have a spec on origin/main", World(self).run("check").out)
+
     def test_limits_on_files_and_lines(self):
         w = World(self)
         self.assertRefused(w, [S(f"e2e/tests/shop/f{i}.spec.ts") for i in range(4)], "must hold 1 to 3")

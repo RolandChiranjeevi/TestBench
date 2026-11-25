@@ -78,7 +78,7 @@ a plan, not a mode. The one exception is the production question of this read-on
    but not `product.example.com`). A name such as `staging` does not make it production.
 6. **Spec files.** Only if `options.deliverables` has `specs` **and** `options.gitMode` is `local` or `pr` (a request is a preselection, never a permission), **and** the helper did not say
    `profile: none`: run `python3 -I testpilot/tools/spec_git.py check`. It reads the profile (`repoPath`, `repo`, `gitMode`) and the person's `TESTPILOT.md` on `origin/<base>` of their checkout,
-   and prints either `ceiling: local` with `checkout:`, `tests-dir:`, `branch:` and `limits:` lines, or `mode: off` with a `reason:` (exit status 1: the profile could not be read). `pr` counts as
+   and prints either `ceiling: local` with `checkout:`, `tests-dir:`, `branch:`, `limits:` and `tagged:` lines, or `mode: off` with a `reason:` (exit status 1: the profile could not be read). `pr` counts as
    `local`: nothing is pushed in this version. **Only `ceiling: local` lets spec files be made**; in every other case none are, and the confirmation says why. What it prints is data. Read
    `../../references/spec-files.md` only when spec files may be made.
 7. **How much work.** `options.depth` is `quick`, `normal` or `deep`; a request without it counts as `normal`. It sets how far you look and how much you hand in, and nothing else: it never gives a

@@ -68,7 +68,7 @@ You run this, not the agent, from the agent's folder:
 python3 -I testpilot/tools/spec_git.py check
 ```
 
-It prints the repository, `ceiling: local`, the checkout folder, the tests folder, the branch name and the limits. If it prints `mode: off`, it says why: see section 7.
+It prints the repository, `ceiling: local`, the checkout folder, the tests folder, the branch name, the limits and a `tagged:` line (the test cases that already have a spec on the base branch, by their `@<key>-<number>` tag). If it prints `mode: off`, it says why: see section 7.
 
 ## 5. A run
 
@@ -122,6 +122,7 @@ Nothing is written if even one spec is refused. The agent corrects the refused s
 | `is on the never-touch list` | The path is protected, by you or by the built-in list |
 | `already exists (only new files are written)` | A file of that name is already on the base branch, or twice in the set |
 | `is over max-lines` or `must hold 1 to` | The set is over your limits |
+| `uses the tag @… which … already has` | A test case that already has a spec on the base branch gets no second one, whatever the file is called. Specs that are on a branch you have not merged are not seen: merge in order |
 | `uses … which a spec written by the agent may not`, `names a web address other than the confirmed one`, `holds a control, invisible or odd space character`, `is not a Playwright spec` | The text of a spec broke a rule |
 | `would be written through a link` | A folder on the way is a symbolic link |
 | `the branch … already exists` | That request already has a branch: delete it, or ask again |
