@@ -94,7 +94,7 @@ The address, the environment, the name and the note of the request, and what a p
 
    At most 50 findings go in one file at every depth. The numbers in the confirmation block of step 2 are those of `deep`.
 8. **What was made before.** Exactly as `../testpilot-request-discover/SKILL.md` step 1, item 8 says: run `python3 -I testpilot/tools/request_call.py known <request number>` once and read
-   `../../references/finding-keys.md`. Every test case, bug report and observation gets a `key`, and the coverage record of a page has the key `coverage:<page>`.
+   `../../references/finding-keys.md`. The list is not a reason to explore less, or to ask the user whether to do less: you do the whole run. Every test case, bug report and observation gets a `key`, and the coverage record of a page has the key `coverage:<page>`.
 
 ## 2. The one confirmation
 

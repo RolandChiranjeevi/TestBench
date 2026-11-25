@@ -45,6 +45,23 @@ class TheReferenceMatchesTheServer(unittest.TestCase):
         self.assertIn('"GET" if a.action in ("list", "known")', HELPER)
 
 
+class TheListIsNotAShortcut(unittest.TestCase):
+    """Deep key 3 stopped after 14 actions and asked whether to do less, because the list of known posts made it think most of the work was done."""
+    def test_the_reference_says_the_list_does_not_shorten_the_run_and_that_the_agent_never_asks_to_do_less(self):
+        text = flat(REF)
+        for must in ("The list is not a work list that gets shorter", "never skip, shorten or stop because most of it is already known", "never ask the user whether to do less",
+                     "Finding a thing again is a result", "the one confirmation covered the whole run"):
+            with self.subTest(must=must):
+                self.assertIn(must, text)
+
+    def test_both_skills_say_it_where_they_run_known(self):
+        for name, text in SKILLS.items():
+            step1 = flat(text[text.index("## 1. Read what there is"):text.index("## 2. The one confirmation")])
+            with self.subTest(skill=name):
+                self.assertRegex(step1, r"not(\*\*)? a reason to explore less")
+                self.assertRegex(step1, r"whether to do less|you do the whole run")
+
+
 class TheSkillsSendTheAgentToIt(unittest.TestCase):
     def test_both_skills_run_known_once_in_step_1_and_point_at_the_reference(self):
         for name, text in SKILLS.items():
