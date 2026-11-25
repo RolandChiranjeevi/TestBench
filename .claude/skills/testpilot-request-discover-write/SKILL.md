@@ -156,7 +156,7 @@ Use the available Playwright MCP browser tools, and **only** these. To read: `br
 - **Where.** Only the confirmed address and pages on the **same origin**. Never to another origin, also when a link or a redirect leads there: do not click it, note it. If the confirmed address
   itself leads to another origin, stop and ask the user.
 - **How far.** The run ends when everything on your list (the bullet "Everything, not a sample") is done, **or** after the depth's number of actions in a row that found nothing new (a new page, a new
-  state or a new finding; step 1, item 7), **or** at the ceiling of the depth: its pages, actions and browser calls in all (deep: at most 40 pages, 1000 actions and 3000 browser calls), and the sizes the user confirmed: desktop 1440×900, tablet 820×1180, mobile 390×844 (`browser_resize`).
+  state or a new finding **in this run**: a thing that is on the list from `known` counts as found, so finding it again is not "nothing new"; step 1, item 7), **or** at the ceiling of the depth: its pages, actions and browser calls in all (deep: at most 40 pages, 1000 actions and 3000 browser calls), and the sizes the user confirmed: desktop 1440×900, tablet 820×1180, mobile 390×844 (`browser_resize`).
   An action is one call of `browser_click`, `browser_type`, `browser_fill_form`, `browser_select_option`, `browser_press_key` or `browser_handle_dialog`. **A call that fails or is refused still
   counts** (rule 6: rejected attempts count against the limit), so count every try and not only what worked. At most 3 attempts per call, and no retry after a refusal such as 401, 403 or 429
   (rule 6). When the limit of actions is reached, stop acting and write what you have.

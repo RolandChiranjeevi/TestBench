@@ -62,6 +62,17 @@ class TheListIsNotAShortcut(unittest.TestCase):
                 self.assertRegex(step1, r"whether to do less|you do the whole run")
 
 
+class TheListDoesNotCountForTheStopRule(unittest.TestCase):
+    """Deep key 5 stopped after 58 actions in 11 minutes: the stop rule counts actions in a row that find nothing new, and with a list of what TestBench holds, finding anything known looks like nothing."""
+    def test_the_reference_and_the_write_skill_say_that_a_known_thing_found_again_is_found(self):
+        self.assertIn("an action that finds something that is on the list has found it", flat(REF))
+        self.assertIn("The list says what TestBench holds, not how far you have come", flat(REF))
+        skill = flat(SKILLS["testpilot-request-discover-write"])
+        for must in ("a new finding **in this run**", "a thing that is on the list from `known` counts as found", "finding it again is not \"nothing new\""):
+            with self.subTest(must=must):
+                self.assertIn(must, skill)
+
+
 class TheSkillsSendTheAgentToIt(unittest.TestCase):
     def test_both_skills_run_known_once_in_step_1_and_point_at_the_reference(self):
         for name, text in SKILLS.items():

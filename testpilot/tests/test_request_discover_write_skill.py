@@ -138,7 +138,7 @@ class ConfirmationTests(unittest.TestCase):
     def test_the_limits_in_the_confirmation_are_the_limits_of_step_3(self):
         step3 = flat(section("3. Explore, reading and writing"))
         self.assertIn("its pages, actions and browser calls in all (deep: at most 40 pages, 1000 actions and 3000 browser calls)", step3)
-        self.assertIn("The run ends when everything on your list (the bullet \"Everything, not a sample\") is done, **or** after the depth's number of actions in a row that found nothing new (a new page, a new state or a new finding; step 1, item 7), **or** at the ceiling of the depth", step3)
+        self.assertIn("The run ends when everything on your list (the bullet \"Everything, not a sample\") is done, **or** after the depth's number of actions in a row that found nothing new (a new page, a new state or a new finding **in this run**: a thing that is on the list from `known` counts as found, so finding it again is not \"nothing new\"; step 1, item 7), **or** at the ceiling of the depth", step3)
         self.assertIn("At most 3 attempts per call, and no retry after a refusal such as 401, 403 or 429 (rule 6).", step3)
 
 
