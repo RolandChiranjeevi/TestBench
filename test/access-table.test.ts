@@ -112,6 +112,6 @@ describe("the table is sensible", () => {
     const concrete = (r: string) => { const [m, p] = r.split(" "); return [m, p.replace(/:\w+/g, "1")] as const; };
     const recognised = routes.filter((r) => { const [m, u] = concrete(r); return isCiIngest(m, u) || isAgentRead(m, u) || isAgentPropose(m, u) || isAgentRequestRoute(m, u); });
     assert.deepEqual(recognised, list((n) => n === "token"));
-    assert.equal(recognised.length, 11);
+    assert.equal(recognised.length, 12);
   });
 });

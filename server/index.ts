@@ -56,6 +56,7 @@ import { LOAD_LIMITS } from "./loadtest.ts";
 import { authenticateRequestToken, createRequestToken, isAgentRequestRoute, listRequestTokens, revokeRequestToken } from "./requesttokens.ts";
 import type { TokenKind, TokenMaker } from "./tokens.ts";
 import { createFinding, FINDING_LIMITS, findingBody } from "./agentfindings.ts";
+import { knownPosts } from "./agentdedupe.ts";
 import { CASE_RESULT_LIMITS, caseResultsBody, reportCaseResults } from "./agentresults.ts";
 import { currentUser } from "./accountcontext.ts";
 import { checkAccessTable, trackRoutes } from "./access.ts";
@@ -2112,6 +2113,13 @@ app.post("/api/agent/projects/:id/requests/:rid/findings", { bodyLimit: FINDING_
   const body = findingBody.parse(req.body ?? {});
   reply.code(201);
   return audited(() => createFinding(id, idParam(req, "rid"), auth, req.ip, body));
+});
+// What earlier requests already made, so that a discover does not make it twice (server/agentdedupe.ts): only the posts an agent keyed (key, title, how often seen again), never a person's own.
+app.get("/api/agent/projects/:id/requests/:rid/known", (req, reply) => {
+  const id = idParam(req);
+  const auth = requestTokenAuth(req, id);
+  reply.header("Cache-Control", "no-store");
+  return audited(() => knownPosts(id, idParam(req, "rid"), auth));
 });
 // Results by test case for the run request this token took (server/agentresults.ts): a batch, all or nothing. They count at once for the status of a test case, for coverage and for
 // requirements, so a person has to have switched agent results on (off by default, the owner decides). At most CASE_RESULT_LIMITS.perMinute calls a minute per token (429); every

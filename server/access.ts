@@ -50,7 +50,7 @@ export const ACCESS: Record<string, Need> = {
   "GET /api/invitations": "custom", "POST /api/invitations": "custom", "POST /api/invitations/:id/revoke": "custom",
   // ---- machine tokens: each opens one route of one project and nothing else ----
   "POST /api/projects/:id/ci/test-results": "token", "GET /api/agent/projects/:id/requirements": "token", "POST /api/agent/projects/:id/requirement-proposals": "token",
-  "GET /api/agent/projects/:id/requests": "token", "POST /api/agent/projects/:id/requests/:rid/claim": "token", "POST /api/agent/projects/:id/requests/:rid/release": "token", "POST /api/agent/projects/:id/requests/:rid/result": "token", "POST /api/agent/projects/:id/requests/:rid/complete": "token", "POST /api/agent/projects/:id/requests/:rid/findings": "token", "POST /api/agent/projects/:id/requests/:rid/case-results": "token", "POST /api/agent/projects/:id/requests/:rid/load-result": "token",
+  "GET /api/agent/projects/:id/requests": "token", "GET /api/agent/projects/:id/requests/:rid/known": "token", "POST /api/agent/projects/:id/requests/:rid/claim": "token", "POST /api/agent/projects/:id/requests/:rid/release": "token", "POST /api/agent/projects/:id/requests/:rid/result": "token", "POST /api/agent/projects/:id/requests/:rid/complete": "token", "POST /api/agent/projects/:id/requests/:rid/findings": "token", "POST /api/agent/projects/:id/requests/:rid/case-results": "token", "POST /api/agent/projects/:id/requests/:rid/load-result": "token",
 
   // ---- a project ----
   "PATCH /api/projects/:id": a(), "POST /api/projects/:id/delete": a(), "GET /api/projects/:id/deletion-preview": a(),

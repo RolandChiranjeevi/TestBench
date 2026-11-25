@@ -5,6 +5,7 @@ import { audit } from "./accounts.ts";
 import { addGapByAgent, addPlanItemByAgent, agentPlanCounts, planItemRowId } from "./auditplan.ts";
 import { MANUAL_CATEGORIES, PLAN_READINESS } from "./importers/auditpackage.ts";
 import { PRIORITIES } from "./shapes.ts";
+import { KEY_RX, lookUp } from "./agentdedupe.ts";
 
 /**
  * Findings from a test agent (AG-B): while an agent works on a discover request it took, it can hand in what it found, one finding at a time. A finding is only ever a
@@ -34,6 +35,8 @@ export const FINDING_KINDS = ["test_case", "bug_report", "observation", "manual_
 const text = (max: number) => z.string().max(max).default("");
 const title = z.string().trim().min(1).max(300);
 const steps = z.array(z.string().max(1000)).max(50).default([]);
+// What the thing IS, so that the same thing found by a later request is not made twice (server/agentdedupe.ts). Optional: without it nothing is compared and a post is always made.
+const key = z.string().trim().regex(KEY_RX, "a key is lower case words joined by : and -, like cart:float-total").optional();
 
 /** The body of a finding. Strict: a field that is not listed (a status, a reviewer, an approval) is refused, never ignored. */
 export const findingBody = z.discriminatedUnion("kind", [
@@ -41,15 +44,15 @@ export const findingBody = z.discriminatedUnion("kind", [
     kind: z.literal("test_case"), title, description: text(5000), preconditions: text(2000), priority: z.enum(PRIORITIES).default("medium"),
     steps: z.array(z.object({ action: z.string().max(1000), expected: z.string().max(1000).default("") }).strict()).max(50).default([]),
     // The P-n of a plan item this request made: the case is linked to it. Anything else is refused.
-    planItem: z.string().trim().min(1).max(50).optional(),
+    planItem: z.string().trim().min(1).max(50).optional(), key,
   }).strict(),
   z.object({
     kind: z.literal("bug_report"), title, description: text(5000), steps, expected: text(2000), actual: text(2000), environment: text(200), url: text(2000),
-    severity: z.enum(["low", "medium", "high", "critical"]).optional(),
+    severity: z.enum(["low", "medium", "high", "critical"]).optional(), key,
   }).strict(),
   z.object({
     kind: z.literal("observation"), title, severity: z.enum(["info", "low", "medium", "high", "critical"]).default("info"),
-    evidence: text(4000), recommendation: text(4000), source: text(300),
+    evidence: text(4000), recommendation: text(4000), source: text(300), key,
   }).strict(),
   z.object({
     kind: z.literal("manual_test_suggestion"), title, description: text(5000), preconditions: text(2000), steps, expected: text(2000),
@@ -121,6 +124,18 @@ export function createFinding(projectId: number, requestId: number, token: { id:
     if (!bumped.changes) throw new AuditError(409, "The request changed while the finding was being made");
     const sourceId = `${origin}-${n}`;
 
+    // The same thing found again: no new post, a sighting with what the agent wrote this time. Anything less than a match makes a post (and says it may be a duplicate).
+    let possibleDuplicateOf: number | undefined;
+    if ((f.kind === "test_case" || f.kind === "bug_report" || f.kind === "observation") && f.key) {
+      const look = lookUp(projectId, f.kind, f.key, f.kind === "test_case" ? { title: f.title, text: f.description } : f.kind === "bug_report" ? { title: f.title, text: f.actual, url: f.url } : { title: f.title, text: f.evidence });
+      if (look.same) {
+        db.prepare("INSERT INTO agent_sightings (project_id, kind, post_id, request_id, key, payload) VALUES (?, ?, ?, ?, ?, ?)").run(projectId, f.kind, look.same.id, requestId, f.key, JSON.stringify(f));
+        audit({ userId: null, label: `agent: ${token.name}`, ip }, "agent_request.finding_seen_again", { projectId, detail: { request: requestId, finding_kind: f.kind, id: look.same.id, n, credential_id: token.id } });
+        return { kind: f.kind, id: look.same.id, ...(look.same.number === undefined ? {} : { number: look.same.number }), seenAgain: true, findingsOnRequest: n };
+      }
+      possibleDuplicateOf = look.similarKey?.id;
+    }
+
     let made: { id: number; number?: number; planItem?: string };
     if (f.kind === "test_case") {
       // A link to a plan item must name one this request made: nothing else is looked up, so a case cannot be pointed at another request's plan or a person's own item.
@@ -132,26 +147,26 @@ export function createFinding(projectId: number, requestId: number, token: { id:
       }
       const num = (db.prepare("UPDATE projects SET next_case_number = next_case_number + 1 WHERE id = ? RETURNING next_case_number - 1 AS n").get(projectId) as { n: number }).n;
       const pos = (db.prepare("SELECT COALESCE(MAX(position), -1) + 1 AS p FROM cases WHERE project_id = ?").get(projectId) as { p: number }).p;
-      const id = (db.prepare(`INSERT INTO cases (project_id, suite_id, number, title, description, preconditions, priority, status, tags, position, created_by_agent_token_id, plan_item_id, agent_request_id)
-          VALUES (?, NULL, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?) RETURNING id`)
-        .get(projectId, num, f.title, f.description, f.preconditions, f.priority, JSON.stringify(["agent-proposed"]), pos, token.id, planRow, requestId) as { id: number }).id;
+      const id = (db.prepare(`INSERT INTO cases (project_id, suite_id, number, title, description, preconditions, priority, status, tags, position, created_by_agent_token_id, plan_item_id, agent_request_id, dedupe_key)
+          VALUES (?, NULL, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?) RETURNING id`)
+        .get(projectId, num, f.title, f.description, f.preconditions, f.priority, JSON.stringify(["agent-proposed"]), pos, token.id, planRow, requestId, f.key ?? "") as { id: number }).id;
       f.steps.forEach((s, i) => db.prepare("INSERT INTO case_steps (case_id, position, action, expected) VALUES (?, ?, ?, ?)").run(id, i, s.action, s.expected));
       made = { id, number: num, ...(f.planItem === undefined ? {} : { planItem: f.planItem }) };
     } else if (f.kind === "bug_report") {
-      const id = (db.prepare(`INSERT INTO bug_reports (project_id, audit_id, origin_audit_id, origin, source_id, title, description, steps, expected, actual, environment, url, agent_severity, source)
-          VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'agent_audit') RETURNING id`)
-        .get(projectId, origin, JSON.stringify({ agentRequest: requestId, n }), sourceId, f.title, f.description, JSON.stringify(f.steps), f.expected, f.actual, f.environment, f.url, f.severity ?? null) as { id: number }).id;
+      const id = (db.prepare(`INSERT INTO bug_reports (project_id, audit_id, origin_audit_id, origin, source_id, title, description, steps, expected, actual, environment, url, agent_severity, source, fingerprint)
+          VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'agent_audit', ?) RETURNING id`)
+        .get(projectId, origin, JSON.stringify({ agentRequest: requestId, n }), sourceId, f.title, f.description, JSON.stringify(f.steps), f.expected, f.actual, f.environment, f.url, f.severity ?? null, f.key ?? "") as { id: number }).id;
       const payload = {
         title: f.title, description: f.description, steps: f.steps, expected: f.expected, actual: f.actual, environment: f.environment, url: f.url, toolImpact: null, agentSeverity: f.severity ?? null,
-        confidence: null, foundAt: null, agentReview: null, fingerprint: "", recurrenceOf: "", refs: { requirements: [], cases: [], tests: [] }, evidence: [],
+        confidence: null, foundAt: null, agentReview: null, fingerprint: f.key ?? "", recurrenceOf: "", refs: { requirements: [], cases: [], tests: [] }, evidence: [],
       };
       db.prepare("INSERT INTO bug_revisions (bug_report_id, rev, payload, content_hash) VALUES (?, 1, ?, ?)").run(id, JSON.stringify(payload), hashOf(payload));
       made = { id };
     } else if (f.kind === "observation") {
-      const { kind: _kind, ...content } = f;
-      const id = (db.prepare(`INSERT INTO observations (project_id, number, source_id, audit_id, origin_audit_id, kind, title, severity, status, evidence, recommendation, source, content_hash)
-          VALUES (?, (SELECT COALESCE(MAX(number), 0) + 1 FROM observations WHERE project_id = ?), ?, NULL, ?, 'exploratory', ?, ?, 'observed', ?, ?, ?, ?) RETURNING id`)
-        .get(projectId, projectId, sourceId, origin, f.title, f.severity, f.evidence, f.recommendation, f.source, hashOf(content)) as { id: number }).id;
+      const { kind: _kind, key: _key, ...content } = f;
+      const id = (db.prepare(`INSERT INTO observations (project_id, number, source_id, audit_id, origin_audit_id, kind, title, severity, status, evidence, recommendation, source, content_hash, dedupe_key)
+          VALUES (?, (SELECT COALESCE(MAX(number), 0) + 1 FROM observations WHERE project_id = ?), ?, NULL, ?, 'exploratory', ?, ?, 'observed', ?, ?, ?, ?, ?) RETURNING id`)
+        .get(projectId, projectId, sourceId, origin, f.title, f.severity, f.evidence, f.recommendation, f.source, hashOf(content), f.key ?? "") as { id: number }).id;
       made = { id };
     } else {
       const id = (db.prepare(`INSERT INTO manual_tests (project_id, audit_id, origin_audit_id, origin, source_id, title, description, preconditions, steps, expected, category, wcag, viewports, agent_priority)
@@ -162,7 +177,11 @@ export function createFinding(projectId: number, requestId: number, token: { id:
       made = { id };
     }
 
+    if ((f.kind === "test_case" || f.kind === "bug_report" || f.kind === "observation") && f.key) {
+      db.prepare("INSERT INTO agent_sightings (project_id, kind, post_id, request_id, key, payload) VALUES (?, ?, ?, ?, ?, ?)").run(projectId, f.kind, made.id, requestId, f.key, JSON.stringify(f));
+    }
+
     audit({ userId: null, label: `agent: ${token.name}`, ip }, "agent_request.finding_created", { projectId, detail: { request: requestId, kind: r.kind, finding_kind: f.kind, id: made.id, n, credential_id: token.id } });
-    return { kind: f.kind, ...made, sourceId, findingsOnRequest: n };
+    return { kind: f.kind, ...made, sourceId, findingsOnRequest: n, ...(possibleDuplicateOf === undefined ? {} : { possibleDuplicateOf }) };
   })();
 }

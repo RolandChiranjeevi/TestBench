@@ -4,7 +4,7 @@
     python3 -I testpilot/tools/request_call.py <action> [<request number>] [--report FILE] [--case-results FILE] [--findings FILE] [--result-run N] [--result-audit N]
                                              [--load-result FILE]
 
-<action> is list, claim, release, result, case-results, findings, load-result, precheck or complete. `precheck <n> --coverage FILE` is offline: it reads the coverage rows drafted so far and prints what is missing. For release and complete the note is read from standard input (a quoted heredoc keeps it as
+<action> is list, claim, release, result, case-results, findings, load-result, known, precheck or complete. `known <n>` lists what earlier requests already made and keyed (so the same thing is not made twice). `precheck <n> --coverage FILE` is offline: it reads the coverage rows drafted so far and prints what is missing. For release and complete the note is read from standard input (a quoted heredoc keeps it as
 text). Run it from the folder that holds `.testpilot/`.
 
 `findings` hands in what a discover found, one finding at a time: the file is {"findings": [...]} (at most 50), each with a `kind` (test_case, bug_report, observation,
@@ -31,11 +31,12 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
 
-ACTIONS = ("list", "claim", "release", "result", "case-results", "findings", "load-result", "precheck", "complete")
+ACTIONS = ("list", "claim", "release", "result", "case-results", "findings", "load-result", "known", "precheck", "complete")
 LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
 TOKEN = re.compile(r"tbrq_[A-Za-z0-9_-]{1,195}")  # a request token: its prefix and base64url, at most 200 characters (what TestBench accepts)
 SEND_MAX = {"result": 5 * 1024 * 1024, "case-results": 256 * 1024, "findings": 2 * 1024 * 1024, "load-result": 1024 * 1024}  # the most TestBench takes: the report of a re-run, the results of a run request's test cases, and a file of findings
 FINDING_KINDS = ("test_case", "bug_report", "observation", "manual_test_suggestion", "plan_item", "coverage_gap")  # the list of server/agentfindings.ts (test_requests_skill.py checks it)
+KEY = re.compile(r"[a-z0-9][a-z0-9._-]{0,60}(:[a-z0-9][a-z0-9._-]{0,60}){1,2}")  # the same shape as KEY_RX in server/agentdedupe.ts
 FINDINGS_MAX = 50  # in one call: TestBench takes 300 findings a minute per token
 ALIAS = re.compile(r"[A-Za-z0-9_-]{1,40}")  # a `ref` of a plan_item
 # What a person chose when asking for a discover (server/agentrequests.ts, REQUEST_OPTIONS). Only a value from these lists is ever printed, so no free text can pass through them.
@@ -159,6 +160,8 @@ def read_findings(body):
         if "planItemRef" in f:
             if f["kind"] != "test_case" or "planItem" in f or not isinstance(link, str) or link not in refs:
                 return f"finding {i}: planItemRef is for a test_case only, names the ref of a plan_item EARLIER in the file, and is not given together with planItem"
+        if "key" in f and (f["kind"] not in ("test_case", "bug_report", "observation") or not isinstance(f["key"], str) or not KEY.fullmatch(f["key"])):
+            return f"finding {i}: key is for a test_case, bug_report or observation only, and is lower case words joined by : and -, like cart:float-total"
         # TestBench takes `automation` as a text of at most 200 characters; three live runs sent an object and only learned it from a 400 after the first call
         if f["kind"] == "plan_item" and "automation" in f and not (isinstance(f["automation"], str) and len(f["automation"]) <= 200):
             return f'finding {i}: automation is a short text of at most 200 characters (for example "Yes, as a saved test"), not an object or a list'
@@ -195,7 +198,8 @@ def send_findings(base, pid, rid, headers, items):
         if "ref" in f:
             planned[f["ref"]] = clean(r.get("sourceId", ""), 60)
         print(json.dumps({"n": i, "kind": f["kind"], "id": whole(r.get("id")), "sourceId": clean(r.get("sourceId", ""), 60), **({"planItem": clean(r["planItem"], 50)} if r.get("planItem") else {}),
-                          **({"number": whole(r["number"])} if f["kind"] == "test_case" and whole(r.get("number")) is not None else {})}))  # a case's number is the one a spec's title ends with, as @<project key>-<number>
+                          **({"number": whole(r["number"])} if f["kind"] == "test_case" and whole(r.get("number")) is not None else {}),
+                          **({"seenAgain": True} if r.get("seenAgain") is True else {}), **({"possibleDuplicateOf": whole(r["possibleDuplicateOf"])} if whole(r.get("possibleDuplicateOf")) is not None else {})}))  # a case's number is the one a spec's title ends with, as @<project key>-<number>
     print(json.dumps({"made": len(items), "of": len(items), "by_kind": by_kind, "audit": whole(last.get("auditId")),
                       "plan_items_on_request": whole(last.get("planItemsOnRequest")), "coverage_gaps_on_request": whole(last.get("coverageGapsOnRequest"))}))
     return 0
@@ -238,6 +242,13 @@ def show(data, code, action, rid):
         return 0
     if action == "load-result":
         print(json.dumps({"verdict": r.get("verdict") if r.get("verdict") in LOAD_VERDICTS else None, "outcome": r.get("outcome") if r.get("outcome") in LOAD_OUTCOMES else None}))
+        return 0
+    if action == "known":
+        for kind in ("test_cases", "bug_reports", "observations"):
+            for q in (r.get(kind) or [])[:300] if isinstance(r, dict) else []:  # a title was written by an agent or edited by a person: data, cleaned and cut
+                print(json.dumps({"kind": kind[:-1], "key": clean(q.get("key", ""), 120), "id": q.get("id"), **({"number": q["number"]} if "number" in q else {}), "title": clean(q.get("title", ""), 200), "seen_again": q.get("seen")}))
+        if isinstance(r, dict) and not any(r.get(k) for k in ("test_cases", "bug_reports", "observations")):
+            print("nothing earlier is known: this is the first request, or none of its posts has a key")
         return 0
     if action == "case-results":
         c, p = r.get("counts") or {}, r.get("progress") or {}  # only these numbers are printed, nothing else from the answer
@@ -361,7 +372,7 @@ def main(argv):
     a = ap.parse_args(argv)
     whole = lambda s: re.fullmatch(r"[0-9]*", s) is not None
     if a.action not in ACTIONS:
-        return fail("The action must be list, claim, release, result, case-results, findings, load-result, precheck or complete")
+        return fail("The action must be list, claim, release, result, case-results, findings, load-result, known, precheck or complete")
     if not whole(a.rid) or (a.action != "list" and not a.rid):
         return fail("The request number must be the number of a request")
     if not whole(a.result_run) or not whole(a.result_audit):
@@ -418,7 +429,7 @@ def main(argv):
         return send_findings(base, pid, a.rid, headers, items)
     url = f"{base}/api/agent/projects/{pid}/requests" + ("" if a.action == "list" else f"/{a.rid}/{a.action}")
     try:
-        code, data = send("GET" if a.action == "list" else "POST", url, headers, body, 120 if a.action == "result" else 30)
+        code, data = send("GET" if a.action in ("list", "known") else "POST", url, headers, body, 120 if a.action == "result" else 30)
     except Exception as e:  # nothing here may show more than the kind of failure: no message that could carry the header
         reason = f", {str(e.reason)[:200]}" if isinstance(e, urllib.error.URLError) else ""
         return fail(f"the call failed (network or timeout{reason}): not retried here")
