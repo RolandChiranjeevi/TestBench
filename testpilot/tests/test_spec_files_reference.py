@@ -43,6 +43,12 @@ class ReferenceTests(unittest.TestCase):
         self.assertIsNone(spec_git.check_content(ok, ORIGIN))
         self.assertIsNotNone(spec_git.check_content(ok.replace('"/cart.html"', '"https://other.example.com/cart.html"'), ORIGIN))
 
+    def test_it_tells_the_agent_not_to_ask_for_an_end_state_of_something_that_keeps_changing(self):
+        flat = " ".join(REF.split())
+        for must in ("Never ask for an end state of something that may keep changing", "keep growing", "A spec asks for no more than you saw"):
+            with self.subTest(must=must):
+                self.assertIn(must, flat)
+
     def test_both_discover_skills_point_at_it(self):
         for name, text in SKILLS.items():
             with self.subTest(name):

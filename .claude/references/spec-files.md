@@ -21,6 +21,8 @@ A request, a page or a finding never confirms git. If any of these is missing, n
   That is how a result that is imported later is linked to the case.
 - **Smoke level.** Write what you saw in this run, and no more: a page loads and shows its heading, a navigation link reaches the page it names, a form shows its validation when it is
   submitted empty (only if you did that). Use `getByRole`, `getByLabel` and `getByText` with the name you saw in the snapshot.
+- **Never ask for an end state of something that may keep changing.** If the log or the coverage says a list may keep growing, reload, update by itself or load more on scroll, do not write "nothing is left to
+  load" or "no `Loading` entry remains". Test what is certain (the page shows its six products), or make it `test.fixme(true, "TODO: ...")` and say what a person has to decide. A spec asks for no more than you saw.
 - **What you did not see becomes `test.fixme(true, "TODO: ...")`**, with the steps of the case as comments. So does everything that needs a password, a card or any other secret: a
   spec written here never holds a credential and never types one.
 - **Behind a login, only if `check` printed `logged-in: yes`.** That line is the person's word that their Playwright config starts every spec **outside** `<tests-dir>/login/` already signed in (a
