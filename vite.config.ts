@@ -10,7 +10,7 @@ export default defineConfig({
     host: true,
     port: 5173,
     allowedHosts: [
-      "100.101.102.103", // byt till din riktiga Tailscale-IP
+      "100.80.213.53", // byt till din riktiga Tailscale-IP
       "localhost"
     ],
     proxy: {
