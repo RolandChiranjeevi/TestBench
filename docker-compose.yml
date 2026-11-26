@@ -9,7 +9,7 @@ services:
     build: .
     image: testbench:latest
     ports:
-      - "127.0.0.1:4100:4100"
+      - "4100:4100"
     environment:
       # Values come from a git-ignored .env file next to this one (copy .env.example). Never put secrets in this file.
       TESTBENCH_ALLOW_NO_AUTH: "${TESTBENCH_ALLOW_NO_AUTH:-1}"   # safe only while the port above is published on 127.0.0.1
