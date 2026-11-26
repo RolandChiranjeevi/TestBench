@@ -7,8 +7,18 @@ export default defineConfig({
   root: "web",
   plugins: [react()],
   server: {
+    host: true,
     port: 5173,
-    proxy: { "/api": api, "/uploads": api, "/trace-viewer": api, "/login": api },
+    allowedHosts: [
+      "100.101.102.103", // byt till din riktiga Tailscale-IP
+      "localhost"
+    ],
+    proxy: {
+      "/api": api,
+      "/uploads": api,
+      "/trace-viewer": api,
+      "/login": api
+    },
   },
   build: { outDir: "../dist", emptyOutDir: true },
 });
