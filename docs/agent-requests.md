@@ -110,7 +110,7 @@ A discover can carry `options`: what the person chose when asking. They are a **
 - The audit log entry `agent_request.created` of a discover records `targetMode`, `gitMode` and `production`.
 - **In the dialog**, *Request discover* has the same choices: what the agent may do to the address (only read, or act on it), what it may do in git, what to deliver and which screen sizes. *This address is production* takes acting on it away. *Act on the target* and *Push and open a pull request* are off for anyone who is not an admin of the project, with the reason as the tooltip. The request card shows the choices on one line.
 - **After the request is made**, the dialog says what to do next, since Testbench starts nothing: the line that starts Claude Code, the first message to give it (both with a Copy button), what the agent will ask you, and a pointer to [the first-time set-up](agent-quickstart.md).
-- The options are stored and handed to the agent (in the list, in the claim and by the MCP tool). The discover skills read them as a preselection for their one confirmation. `pr` is not built yet and counts as `local`; the spec files that `specs` asks for are described under "Spec files on a local branch" below.
+- The options are stored and handed to the agent (in the list, in the claim and by the MCP tool). The discover skills read them as a preselection for their one confirmation. `pr` counts as `local` unless every lock of section 9 of `docs/agent-git-setup.md` is in place; the spec files that `specs` asks for are described under "Spec files on a local branch" below.
 
 ### What a session that uses the token can reach
 
@@ -395,6 +395,7 @@ Put this in `.claude/settings.local.json` in the agent's folder, and start a **n
       "Bash(python3 -I testpilot/tools/request_call.py complete:*)",
       "Bash(python3 -I testpilot/tools/spec_git.py check:*)",
       "Bash(python3 -I testpilot/tools/spec_git.py write:*)",
+      "Bash(python3 -I testpilot/tools/spec_git.py push:*)",
       "Edit(audits/request-*/**)",
       "Write(audits/request-*/**)",
       "Write(//Users/you/agent-folder/audits/**)",
@@ -510,6 +511,7 @@ To let it run while you are away, use this list **instead of** the one above (it
       "Bash(python3 -I testpilot/tools/request_call.py complete:*)",
       "Bash(python3 -I testpilot/tools/spec_git.py check:*)",
       "Bash(python3 -I testpilot/tools/spec_git.py write:*)",
+      "Bash(python3 -I testpilot/tools/spec_git.py push:*)",
       "Edit(audits/request-*/**)",
       "Write(audits/request-*/**)",
       "Write(//Users/you/agent-folder/audits/**)",
@@ -547,7 +549,7 @@ To let it run while you are away, use this list **instead of** the one above (it
 When a request asks for **Spec files** (and a git mode above `off`), both discovers can also write **Playwright specs** for the test cases they hand in: one file per flow, as **new files on a new local
 branch of your own checkout**, committed once on top of `origin/<base>`. They are a proposal for you to review. The agent never runs them, never pushes or merges, never creates a remote or a repository,
 and never touches the branch you have checked out or your uncommitted changes. The request only *asks*: the agent shows a `Git:` line in its one confirmation, and your yes to that message is what lets it
-write. The mode that counts is the lowest of three things: the profile's `gitMode`, `mode-max` in your rules file, and what you confirm. `pr` is in the tool (`spec_git.py push`: it pushes the branch and opens a pull request, only with a protection-confirmed date and a token of your own; see section 9 of [agent-git-setup.md](agent-git-setup.md)), but the skills do not run it yet, so for the agent it still counts as `local`.
+write. The mode that counts is the lowest of three things: the profile's `gitMode`, `mode-max` in your rules file, and what you confirm. `pr` is in the tool (`spec_git.py push`: it pushes the branch and opens a pull request, only with a protection-confirmed date and a token of your own; see section 9 of [agent-git-setup.md](agent-git-setup.md)), and both discovers run it after `write` when `check` says `pr: yes` and your yes covered a `Git:` line that says the branch is pushed. Without that, `pr` counts as `local`.
 
 **You set it up, the agent never does:**
 1. In the project profile (`.testpilot/projects/<key>.json`): `gitMode` (`off` unless you change it), `repo` (`owner/name`), `repoPath` (the absolute path of your checkout), `baseBranch` (default

@@ -158,8 +158,8 @@ skills or test scripts.
   (`testpilot-request-discover`, step 2; `testpilot-request-discover-write`, step 2). A request still confirms nothing, and a production target still needs its two separate confirmations. The writing
   version never acts on a production target at all.
 - A request's `gitMode` and `specs` are a preselection too. Writing spec files to git (a new local branch, through `testpilot/tools/spec_git.py` only) needs the user's yes to the `Git:` line of
-  that one confirmation, and stays under the lowest of the profile's `gitMode` and the person's own `TESTPILOT.md`. The agent never runs `git` or `gh` itself, never pushes, merges or creates a
-  remote or a repository, and never edits `TESTPILOT.md`.
+  that one confirmation, and stays under the lowest of the profile's `gitMode` and the person's own `TESTPILOT.md`. The agent never runs `git` or `gh` itself, never merges or creates a
+  remote or a repository, and never edits `TESTPILOT.md`. It pushes only through `spec_git.py push`, in mode `pr`, after the user's yes to a `Git:` line that says so.
 
 ## Priority when rules conflict
 

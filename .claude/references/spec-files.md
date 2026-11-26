@@ -1,7 +1,7 @@
 # Spec files: how the agent writes them
 
 Read by `testpilot-request-discover` and `testpilot-request-discover-write`, in their step "Spec files". A spec file is a Playwright test that a person can review and run later. The agent
-**never runs it**, and the only way it reaches git is `testpilot/tools/spec_git.py`, which writes a new file on a new **local** branch of the person's own checkout, and nothing else.
+**never runs it**, and the only way it reaches git is `testpilot/tools/spec_git.py`, which writes a new file on a new **local** branch of the person's own checkout and, only in git mode `pr` (its `push` action), pushes that one branch and opens one pull request. Nothing else.
 
 ## When
 

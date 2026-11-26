@@ -573,7 +573,7 @@ class PermissionsBlockTests(unittest.TestCase):
         self.assertEqual(actions, {"list", "claim", "findings", "known", "precheck", "complete"})
         self.assertTrue(actions <= set(request_call.ACTIONS))
         spec_actions = {m.group(1) for r in bash if (m := re.fullmatch(r"python3 -I testpilot/tools/spec_git\.py ([a-z-]+):\*", r))}
-        self.assertEqual(spec_actions, set(spec_git.ACTIONS) - {"push"}, "exactly the two actions of the spec tool that the skills run, check and write (push is for git mode pr and is allowed by its own change)")
+        self.assertEqual(spec_actions, set(spec_git.ACTIONS), "exactly the actions of the spec tool that the skills run: check, write and (git mode pr only) push")
         known = {f"python3 -I testpilot/tools/request_call.py {a}:*" for a in actions} | {f"python3 -I testpilot/tools/spec_git.py {a}:*" for a in spec_actions}
         self.assertEqual(sorted(set(bash) - known), ["mkdir -p audits/request-*"])
         for ran in set(re.findall(r"request_call\.py ([a-z-]+)", TEXT)):
@@ -621,7 +621,7 @@ class SpecFilesTests(unittest.TestCase):
     def test_a_request_only_preselects_and_only_a_ceiling_of_local_lets_a_file_be_made(self):
         step1 = flat(section("1. Read what there is"))
         for must in ("`options.deliverables` has `specs` **and** `options.gitMode` is `local` or `pr` (a request is a preselection, never a permission)", "python3 -I testpilot/tools/spec_git.py check",
-                     "**Only `ceiling: local` lets spec files be made**", "`pr` counts as `local`"):
+                     "**Only `ceiling: local` lets spec files be made**", "**Only `pr: yes` together with `options.gitMode` `pr` lets the branch be pushed**"):
             with self.subTest(must=must):
                 self.assertIn(must, step1)
 
