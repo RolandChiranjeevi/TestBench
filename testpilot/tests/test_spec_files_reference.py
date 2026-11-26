@@ -120,7 +120,7 @@ class DocsTests(unittest.TestCase):
     def test_the_docs_describe_the_setup_what_happens_and_where_it_stops(self):
         text = flat(self.SECTION)
         for must in ("`gitMode`", "`repo`", "`repoPath`", "`baseBranch`", "`projectKey`", "testpilot/config/projects/shop.example.json", "testpilot/config/TESTPILOT.example.md", "`git fetch`",
-                     "never touches the branch you have checked out", "never runs them, never pushes or merges", "your yes to that message is what lets it write", "but the skills do not run it yet, so for the agent it still counts as `local`",
+                     "never touches the branch you have checked out", "never runs them, never pushes or merges", "your yes to that message is what lets it write", "both discovers run it after `write` when `check` says `pr: yes`",
                      "a **rule, not a lock**", "were each denied by the rule, without a question to the person", "also when `git` came after `&&` or `;`", "**Not tried:** other shapes such as",
                      "and a real `git push`", "the refusal and the one correction have **not been tried live**", "`0 spec files`", "is **your** job", "never edits it"):
             with self.subTest(must=must):
@@ -154,7 +154,7 @@ class DocsTests(unittest.TestCase):
         self.assertIn("`testpilot/tools/spec_git.py`, after your yes to a `Git:` line in the confirmation: new files only, never run, nothing pushed or merged", flat(README))
         self.assertIn("`gitMode` | Optional, `off` (default), `local` or `pr`", README)
         rules = flat(RULES)
-        for must in ("A request's `gitMode` and `specs` are a preselection too.", "the user's yes to the `Git:` line of that one confirmation", "The agent never runs `git` or `gh` itself, never pushes, merges or creates a remote or a repository, and never edits `TESTPILOT.md`."):
+        for must in ("A request's `gitMode` and `specs` are a preselection too.", "the user's yes to the `Git:` line of that one confirmation", "The agent never runs `git` or `gh` itself, never merges or creates a remote or a repository, and never edits `TESTPILOT.md`."):
             with self.subTest(must=must):
                 self.assertIn(must, rules)
         self.assertIn("a new local branch is written only after the user's yes to it", flat(REQUESTS))

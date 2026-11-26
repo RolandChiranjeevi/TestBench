@@ -227,7 +227,7 @@ class SpecFilesTests(unittest.TestCase):
     def test_a_request_only_preselects_and_only_a_ceiling_of_local_lets_a_file_be_made(self):
         step1 = flat(section("1. Read what there is"))
         for must in ("`options.deliverables` has `specs` **and** `options.gitMode` is `local` or `pr` (a request is a preselection, never a permission)", "did not say `profile: none`",
-                     "python3 -I testpilot/tools/spec_git.py check", "**Only `ceiling: local` lets spec files be made**", "`pr` counts as `local`"):
+                     "python3 -I testpilot/tools/spec_git.py check", "**Only `ceiling: local` lets spec files be made**", "**Only `pr: yes` together with `options.gitMode` `pr` lets the branch be pushed**"):
             with self.subTest(must=must):
                 self.assertIn(must, step1)
 
@@ -247,10 +247,18 @@ class SpecFilesTests(unittest.TestCase):
             with self.subTest(must=must):
                 self.assertIn(must, text)
         commands = re.findall(r"python3 -I testpilot/tools/spec_git\.py (.*)", step)
-        self.assertEqual(len(commands), 1)
+        self.assertEqual(len(commands), 2)
+        self.assertRegex(commands[1], r"^push 12 --confirmed pr`")
         self.assertRegex(commands[0], r"^write 12 --confirmed local --origin https://staging\.example\.com --specs audits/request-12/20261123-194213/specs\.json$")
-        for flag in re.findall(r"--[a-z]+", commands[0]):
+        for flag in re.findall(r"--[a-z]+", " ".join(commands)):
             self.assertIn(f'add_argument("{flag}"', Path(spec_git.__file__).read_text(), "the skill uses a flag that the tool has")
+
+    def test_the_push_runs_only_in_mode_pr_after_a_confirmed_git_line_and_never_retries(self):
+        step = flat(section("5b. Spec files"))
+        for must in ("Only when `check` printed `pr: yes`", "the request chose `pr`", "the `Git:` line of the user's yes said the branch is pushed", "`write` made the branch", "**once**",
+                     "nothing is retried", "the request is not stopped", "Never merge"):
+            with self.subTest(must=must):
+                self.assertIn(must, step)
 
     def test_the_report_says_where_the_branch_is_and_that_nothing_was_pushed_or_run(self):
         finish = flat(section("6. Finish"))
@@ -389,7 +397,7 @@ class PermissionsDocTests(unittest.TestCase):
         self.assertTrue(actions <= set(request_call.ACTIONS), "every allowed action is a real action of the helper")
         self.assertNotIn("release", actions)
         spec_actions = {m.group(1) for r in bash if (m := re.fullmatch(r"python3 -I testpilot/tools/spec_git\.py ([a-z-]+):\*", r))}
-        self.assertEqual(spec_actions, set(spec_git.ACTIONS) - {"push"}, "exactly the two actions of the spec tool that the skills run, check and write (push is for git mode pr and is allowed by its own change)")
+        self.assertEqual(spec_actions, set(spec_git.ACTIONS), "exactly the actions of the spec tool that the skills run: check, write and (git mode pr only) push")
         known = {f"python3 -I testpilot/tools/request_call.py {a}:*" for a in actions} | {f"python3 -I testpilot/tools/spec_git.py {a}:*" for a in spec_actions}
         self.assertEqual(sorted(set(bash) - known), ["mkdir -p audits/request-*"], "no other shell command is allowed")
         for ran in set(re.findall(r"request_call\.py ([a-z-]+)", TEXT)):
