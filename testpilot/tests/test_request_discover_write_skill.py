@@ -564,7 +564,9 @@ class PermissionsBlockTests(unittest.TestCase):
         read_only = self.block("### Running a discover without sitting by")
         browser = lambda rules: {r for r in rules if r.startswith("mcp__playwright__")}
         rest = lambda rules: {r for r in rules if not r.startswith("mcp__playwright__")}
-        self.assertEqual({r.split("__", 2)[2] for r in browser(write["allow"]) - browser(read_only["allow"])}, set(ACT))
+        # the read-only list already has the three that fill in a field without sending it, so the writing list adds the other six acting tools
+        self.assertEqual({r.split("__", 2)[2] for r in browser(write["allow"]) - browser(read_only["allow"])}, set(ACT) - {"browser_type", "browser_fill_form", "browser_handle_dialog"})
+        self.assertTrue({"browser_type", "browser_fill_form", "browser_handle_dialog"} <= {r.split("__", 2)[2] for r in browser(write["allow"])})
         self.assertEqual(rest(write["allow"]), rest(read_only["allow"]), "the helper, the folders and mkdir are the same as in the read-only list")
 
     def test_it_allows_exactly_the_helper_actions_the_skill_runs_and_never_release_or_inline_python(self):

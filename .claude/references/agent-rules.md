@@ -71,6 +71,7 @@ skills or test scripts.
 - `observe_only`: read only. No state-changing action in the target, whatever
   the scope says. A scope that allows state changes contradicts the profile:
   stop and ask; the profile wins.
+  Typing a made-up value into a form field to see how it is checked is reading, as long as the form is never sent (`testpilot-request-discover`, step 3, "Form fields").
 - `full`: state-changing checks may be proposed and run, each within the
   explicit limits of the confirmed scope. Setting `full` requires the user's
   explicit confirmation in a message of their own; it is recorded by `init`,
