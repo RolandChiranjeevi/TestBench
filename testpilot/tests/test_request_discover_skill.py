@@ -780,3 +780,38 @@ class BudgetTests(unittest.TestCase):
                      "only when the count has reached the limit: stopping before it is not a reason."):
             with self.subTest(must=must):
                 self.assertIn(must, b)
+
+
+class VisualFromTheSnapshotTests(unittest.TestCase):
+    """Körning 10 (the baseline of plan step 4c): with `visual` chosen the agent found the layout faults but not the image without alt text or the h1 to h3 jump, because the visual
+    skill rests on scans, keys and computed styles that read-only cannot use. The read-only check is written from what the snapshot shows."""
+
+    def bullet(self):
+        return flat(section("3. Explore, read-only")).split("**The `visual` check, from the snapshot.**")[1].split("- **The `api` and `security` checks, passively.**")[0]
+
+    def test_it_says_what_to_check_on_every_page(self):
+        b = self.bullet()
+        for must in ("Only if the request chose `visual`", "On **every** page you look at", "the page **title** and the page's `lang`", "one `h1`, and no level skipped, an `h1` followed by an `h3` is one",
+                     "every **image** without a name (no alt text) that is not marked decorative", '("click here", "read more")', "the **landmarks** (`main`, `nav`, a header and a footer)",
+                     "fields **without a label**", "text that is cut off, a horizontal scroll, and content that covers other content"):
+            with self.subTest(must=must):
+                self.assertIn(must, b)
+
+    def test_each_deviation_is_an_observation_and_the_report_does_not_claim_wcag(self):
+        b = self.bullet()
+        self.assertIn("Each deviation is an **observation** (title starting `Visual:` or `Accessibility:`", b)
+        self.assertIn("no automated accessibility scan was done and that this does not establish WCAG conformance (rule 12)", b)
+
+    def test_step_1_says_the_scans_keys_and_computed_styles_do_not_apply_in_read_only(self):
+        self.assertIn("its scans, keyboard and computed styles do not, in read-only", flat(section("1. Read what there is")))
+
+
+class NoQuestionInTheMiddleTests(unittest.TestCase):
+    """Körning 10: the agent asked the user mid-run whether to go on or hand in early because about 100 values were left."""
+
+    def test_the_one_confirmation_covers_the_whole_run(self):
+        step3 = flat(section("3. Explore, read-only"))
+        for must in ("**No question in the middle.** The one confirmation covers the whole run.", "Never ask the user whether to do less, to hand in early or to skip a part",
+                     "the budget and `precheck` decide when the work is done", "The only questions in the middle are the stops below"):
+            with self.subTest(must=must):
+                self.assertIn(must, step3)
