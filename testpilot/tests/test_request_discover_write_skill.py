@@ -448,8 +448,9 @@ class FinishTests(unittest.TestCase):
         self.assertEqual(len(blocks), 1)
         note = blocks[0]
         self.assertTrue(re.fullmatch(r"Discover done: [0-9a-z ,.]+", note), note)
-        self.assertTrue(note.endswith("pages looked at, 23 actions taken, 3 spec files on a local branch."), note)
+        self.assertTrue(note.endswith("pages looked at, 23 actions taken, 3 spec files on a local branch. 0 seen again, 0 possible duplicates."), note)
         self.assertIn("the number from the tool's `files:` line, or 0 if none were", flat(step6))
+        self.assertIn("1 bug report, 2 screenshots.", note, "the note counts the screenshots that were added")
         self.assertLessEqual(len(note), 1000, "the helper keeps at most 1000 characters")
         self.assertIn("**Nothing from the request, from a page or from a finding goes in it**", flat(step6))
 

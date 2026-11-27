@@ -282,11 +282,11 @@ written: you typed none. A flow behind the login is a real test only under the `
 
 Only when **every** finding was handed in. Mark the request done with a note made only of the counts that the helper printed, the number of pages you looked at, the number of actions you took
 (also the calls that failed), and the words below. If the `Git:` line was confirmed, the note also says how many spec files were made on the local branch (the number from the tool's `files:`
-line, or 0 if none were), and `pushed` or `not pushed`. The pull request address is not in it. **Nothing from the request, from a page or from a finding goes in it**:
+line, or 0 if none were), and `pushed` or `not pushed`. The pull request address is not in it. The note also says how many screenshots were added (the `added` pictures of step 5), and how many findings were seen again and how many were possible duplicates (step 5), as in the example. **Nothing from the request, from a page or from a finding goes in it**:
 
 ```bash
 python3 -I testpilot/tools/request_call.py complete 12 <<'NOTE_END'
-Discover done: 4 plan items, 1 coverage gap, 5 test cases, 2 observations, 1 bug report. 10 pages looked at, 23 actions taken, 3 spec files on a local branch.
+Discover done: 4 plan items, 1 coverage gap, 5 test cases, 2 observations, 1 bug report, 2 screenshots. 10 pages looked at, 23 actions taken, 3 spec files on a local branch. 0 seen again, 0 possible duplicates.
 NOTE_END
 ```
 
