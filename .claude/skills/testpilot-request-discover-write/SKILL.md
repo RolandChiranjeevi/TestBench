@@ -149,7 +149,7 @@ yes, ask nothing more unless a login or a stop condition in step 3 comes up. If 
 ## 3. Explore, reading and writing
 
 Use the available Playwright MCP browser tools, and **only** these. To read: `browser_navigate`, `browser_snapshot`, `browser_resize`, `browser_console_messages`, `browser_network_requests`, `browser_network_request` (**only** with `part: "response-headers"`), `browser_find` (**only** with `text` or `regex`, to find an element in the page snapshot: **never** with `filename`) and
-`browser_take_screenshot` (the picture is never handed in to TestBench, and the tool may keep a file of it in this folder, which is not committed or sent). To act: `browser_click`, `browser_type`,
+`browser_take_screenshot` (to look at a page, and the two pictures of every bug report, as `../testpilot-request-discover/SKILL.md` step 3, "Screenshots of a bug", says; a picture is handed in to TestBench only that way). To act: `browser_click`, `browser_type`,
 `browser_fill_form`, `browser_select_option`, `browser_press_key`, `browser_hover`, `browser_handle_dialog`, `browser_wait_for` and `browser_navigate_back`. **Never** `browser_evaluate`,
 `browser_run_code_unsafe`, `browser_file_upload` or `browser_drag`, or any other tool that runs code, reads or sends a file, or moves data. The first two can read files and run code
 (`../../../docs/agent-chain-verification.md`). If a tool you need is missing, say so and stop (`../../references/agent-rules.md`, rule 10).
@@ -296,7 +296,7 @@ Then tell the user what was handed in, and where to review it: the plan under **
 reports under **Bug reports**. Say plainly what this run **did**: it acted, `<n>` actions on the address, listed in `actions.md` in the folder of this claim (say its path); that the address may have kept what was
 submitted, and that the user should look at the log and undo it where that is needed. If spec files were made, say where they are: the local branch the tool printed, in the user's checkout, one
 commit on top of `origin/<base>`; they were not run and nothing was pushed, so the user looks at them with the command the tool printed and pushes the branch themselves if they want it. If `push` ran, say instead what it printed: the branch pushed and the pull request address, not merged, for the user to review and merge. If spec
-files were asked for and not made, say why. Say what it did **not** do: no screenshot was handed in, no spec file was run, at most the depth's number of pages were looked at. End with what was **not** verified and why, as rule 12 says, and say that a failure that did not repeat was made an observation (rule 13). **Nothing is approved.**
+files were asked for and not made, say why. Say what it did **not** do: only the two screenshots of each bug report were handed in (say how many were added), no spec file was run, at most the depth's number of pages were looked at. End with what was **not** verified and why, as rule 12 says, and say that a failure that did not repeat was made an observation (rule 13). **Nothing is approved.**
 
 ## 7. If it stops
 

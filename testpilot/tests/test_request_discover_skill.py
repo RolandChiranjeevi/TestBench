@@ -60,7 +60,7 @@ class BugRulesTests(unittest.TestCase):
         kept, not_used = line.split("It does **not** use")
         for word in ("steps", "expected", "actual", "no secrets", "`proposed`", "observation"):
             self.assertIn(word, kept)
-        for word in ("evidence ids", "`evidence/`", "templates/bug-report.md", "duplicate check", "screenshots are not handed in yet"):
+        for word in ("evidence ids", "`evidence/`", "templates/bug-report.md", "duplicate check", "Its screenshots are the two of step 3"):
             self.assertIn(word, not_used)
 
 
@@ -625,3 +625,31 @@ class BugTemplateTests(unittest.TestCase):
             at = [b["description"].find(h) for h in self.HEADINGS]
             self.assertNotIn(-1, at, b["description"])
             self.assertEqual(at, sorted(at))
+
+
+class BugScreenshotTests(unittest.TestCase):
+    """Step 3c: every bug report has two pictures (before, and when the bug shows) at every depth, taken into the folder of the claim; never of a page that shows a secret."""
+
+    def test_step_3_says_every_bug_has_two_pictures_in_the_claim_folder_and_names_the_one_exception(self):
+        b = flat(section("3. Explore, read-only")).split("**Screenshots of a bug.**")[1].split("- **A snapshot is read")[0]
+        for must in ("**Every** bug report has two pictures, at every depth", "**before** the step that fails", "**when the bug shows**", "`browser_take_screenshot` and a `filename` in the folder of this claim",
+                     '"screenshots": {"before":', "take **no** picture of it (a picture cannot be masked)", "No screenshot: the page showed a secret"):
+            with self.subTest(must=must):
+                self.assertIn(must, b)
+
+    def test_the_example_bug_names_both_pictures_in_the_folder_of_its_claim(self):
+        bugs = [f for block in ExampleAndShellTests.examples(self) for f in json.loads(block)["findings"] if f["kind"] == "bug_report"]
+        for b in bugs:
+            self.assertEqual(set(b["screenshots"]), {"before", "bug"})
+            for path in b["screenshots"].values():
+                self.assertTrue(path.startswith("audits/request-12/20261123-194213/"), path)
+        self.assertIsInstance(request_call.read_findings(ExampleAndShellTests.examples(self)[0]), list, "the helper takes the example as it is")
+
+    def test_the_template_the_rules_and_the_writing_discover_say_it_too(self):
+        template = (ROOT / ".claude" / "skills" / "bug-reporting" / "templates" / "discover-bug.md").read_text()
+        self.assertIn("**Screenshots** are required", template)
+        self.assertIn("Never take a screenshot of a page that shows a password, a token, a cookie, a key or another person's data", RULES)
+        write = flat((ROOT / ".claude" / "skills" / "testpilot-request-discover-write" / "SKILL.md").read_text())
+        self.assertIn('"Screenshots of a bug", says; a picture is handed in to TestBench only that way', write)
+        self.assertNotIn("the picture is never handed in to TestBench", write)
+        self.assertNotIn("the picture is never handed in to TestBench", flat(TEXT))

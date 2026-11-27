@@ -85,6 +85,7 @@ skills or test scripts.
 - Passwords, tokens, API keys, cookies and session values never appear in
   chat, logs, reports, evidence, configuration or workflow steps. Configuration
   holds only the name of the environment variable.
+- Never take a screenshot of a page that shows a password, a token, a cookie, a key or another person's data: a picture cannot be masked. Leave the picture out and say why.
 - If the agent meets a secret in clear text (in a page, a response, a log, a
   file, a repository), it masks the value in everything it writes
   (`[redacted]`), does not copy it anywhere, and reports the finding separately

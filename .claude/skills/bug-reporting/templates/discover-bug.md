@@ -24,7 +24,7 @@ Requirement: <the requirement it breaks, or "none known">
 Where: <browser>, <size: desktop 1440x900 / tablet 820x1180 / mobile 390x844>
 Preconditions: <logged in or not, which role, which data>
 Reproduced: <yes, N of N attempts>
-Evidence: <what you saw: the snapshot, the console error, the failed request (method, path, status)>
+Evidence: <what you saw: the snapshot, the console error, the failed request (method, path, status)>; two screenshots (before, and when the bug shows)
 Severity reason: <one sentence: why this severity>
 Not checked: <what you did not verify, for example server-side validation or other browsers>
 Related: <the test case it belongs to, or similar findings, or "none">
@@ -38,6 +38,7 @@ Found by: TestPilot, request <number>
 
 - **Reproduced** is required. A failure that did not happen again is an observation, not a bug (`../../../references/agent-rules.md`, rule 13).
 - **Not checked** is required, also when it is short (rule 12).
+- **Screenshots** are required: `screenshots` names the `before` and the `bug` picture, as step 3 of `testpilot-request-discover` says. The one exception is a page that shows a secret: then no picture, and `Evidence:` says `No screenshot: the page showed a secret`.
 - **Requirement:** the agent cannot read the project's requirements, so write `none known` unless the request or the page names one.
 - **Severity:** `critical` blocks a main flow or loses data; `high` breaks a flow with no way round; `medium` breaks something with a way round; `low` is a small fault.
 - **Confidence** is for the person who sorts the findings: `high` when you saw it each time and the page, the console or a request shows it; `medium` when you saw it but the cause is unclear; `low`
