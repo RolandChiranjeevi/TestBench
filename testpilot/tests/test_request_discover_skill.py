@@ -669,7 +669,7 @@ class FormFieldTests(unittest.TestCase):
 
     def test_every_field_and_every_input_class_at_every_depth(self):
         b = self.bullet()
-        for must in ("try **every** field that is not a password field", "**empty**", "**wrong kind**", "**too long**", "**boundary**", "**format**", "**emoji**",
+        for must in ("try **every** field, password and card fields too", "**empty**", "**wrong kind**", "**too long**", "**boundary**", "**format**", "**emoji**",
                      "fine in a comment or a message", "never which fields: every field is tried at every depth"):
             with self.subTest(must=must):
                 self.assertIn(must, b)
@@ -677,8 +677,8 @@ class FormFieldTests(unittest.TestCase):
     def test_the_four_locks(self):
         b = self.bullet()
         for must in ("Never Enter, never `submit: true`, never a click on a button, never a file. A form is never sent.",
-                     "If anything but a GET has gone out from this page since it loaded, stop on this page", "the form sent data without being submitted",
-                     "answer leave (`browser_handle_dialog`); any other dialog is a stop", "Only made-up values: never a real person's data, never a password"):
+                     "If anything but a GET has gone out from this page since it loaded, stop typing in **that field**", "the form sent data without being submitted",
+                     "answer leave (`browser_handle_dialog`); any other dialog is a stop", "Only made-up values: never a real person's data, never a real password"):
             with self.subTest(must=must):
                 self.assertIn(must, b)
 
@@ -732,3 +732,32 @@ class FieldCoverageTests(unittest.TestCase):
                      "hand in only when it prints no `GAP`", '"No time" or "skipped" is not a reason.'):
             with self.subTest(must=must):
                 self.assertIn(must, b)
+
+
+class LockTwoPerFieldTests(unittest.TestCase):
+    """After körning 7: a field that sends data gets no more values, and the other fields of the page are still tried (the user chose B). Password and card fields are tried too, with
+    made-up values that are never sent."""
+
+    def bullet(self):
+        return flat(section("3. Explore, read-only")).split("**Form fields: fill in, never send.**")[1].split("- **An error from another origin**")[0]
+
+    def test_a_field_that_sends_gets_no_more_values_and_the_others_are_still_tried(self):
+        b = self.bullet()
+        for must in ("give that field no more values (its other rows are `not tried · lock 2: the field sent data`)", "go on with the other fields of the page, still reading the requests after each value",
+                     "A field that sends too gets the same.", "If a value makes the page **leave** (a new address, a page that reloads) or anything but a short save goes out, stop on this page and leave it."):
+            with self.subTest(must=must):
+                self.assertIn(must, b)
+        lock2 = b.split("2. After **each value**")[1].split("If a value makes the page **leave**")[0]
+        self.assertNotIn("leave", lock2.lower(), "lock 2 no longer leaves the page for an autosave: only a page that leaves by itself, or more than a short save, is a stop")
+
+    def test_password_and_card_fields_get_made_up_values_never_a_real_one_or_the_page_s_own(self):
+        b = self.bullet()
+        for must in ("never a real password, never the password or a key the page itself shows (it is a secret: rule 5)", "a minimum length, a strength meter, that the characters are hidden",
+                     "a made-up test number such as `4111 1111 1111 1111`, never a real card", "Neither is ever sent: a real login belongs to the discover that acts on the target."):
+            with self.subTest(must=must):
+                self.assertIn(must, b)
+
+    def test_a_password_or_a_card_is_no_longer_a_reason_to_skip_a_field(self):
+        b = self.bullet()
+        self.assertNotIn("a card number you will not type", b)
+        self.assertNotIn("not tried · a password field", b)
