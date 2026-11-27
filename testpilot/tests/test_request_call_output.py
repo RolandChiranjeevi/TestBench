@@ -431,3 +431,70 @@ class TheContractInTheDocs(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x01" * 32
+
+
+def put_bytes(path, data):
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_bytes(data)
+
+
+class ScreenshotsOfABug(unittest.TestCase):
+    """Plan step 3b: a bug_report may name a `before` and a `bug` picture in the folder of the claim. The helper reads them all before anything is sent, sends the bug, and then each
+    picture to the bug TestBench made. A bug that was seen again gets none. A refused picture leaves the bug made, and the line says so."""
+
+    BUG = {"kind": "bug_report", "title": "Cart: total wrong", "actual": "0", "url": "http://localhost/cart", "screenshots": {"before": f"{FOLDER}/b1-before.png", "bug": f"{FOLDER}/b1-bug.png"}}
+
+    def run_with(self, finding, answers, pictures=(("b1-before.png", PNG), ("b1-bug.png", PNG))):
+        calls = []
+
+        def send(method, url, headers, body, timeout):
+            calls.append((url, headers.get("Content-Type", ""), body))
+            return answers(url)
+        with agent_folder():
+            for name, data in pictures:
+                put_bytes(f"{FOLDER}/{name}", data)
+            put(f"{FOLDER}/findings-1.json", {"findings": [finding]})
+            status, out, _ = run_main(["findings", "12", f"--findings={FOLDER}/findings-1.json"], send=send)
+        return status, out.splitlines(), calls
+
+    def test_the_bug_is_sent_without_the_screenshots_field_and_each_picture_goes_to_the_bug_it_became(self):
+        made = lambda url: (201, json.dumps({"id": 44, "sourceId": "$agent-12-1"} if url.endswith("/findings") else {"id": 1}).encode())
+        status, lines, calls = self.run_with(self.BUG, made)
+        self.assertEqual(status, 0, lines)
+        self.assertNotIn(b"screenshots", calls[0][2], "the field is the helper's own")
+        self.assertEqual([c[0].split("/requests/")[1] for c in calls], ["12/findings", "12/bugs/44/screenshots", "12/bugs/44/screenshots"])
+        self.assertTrue(calls[1][1].startswith("multipart/form-data; boundary="))
+        self.assertIn(b'name="label"\r\n\r\nbefore', calls[1][2])
+        self.assertIn(PNG, calls[1][2])
+        self.assertEqual(json.loads(lines[0])["screenshots"], {"before": "added", "bug": "added"})
+
+    def test_a_bug_seen_again_gets_no_picture(self):
+        seen = lambda url: (201, json.dumps({"id": 9, "seenAgain": True}).encode())
+        status, lines, calls = self.run_with(self.BUG, seen)
+        self.assertEqual(status, 0, lines)
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(json.loads(lines[0])["screenshots"]["before"].startswith("not sent"))
+
+    def test_a_refused_picture_leaves_the_bug_and_says_so(self):
+        def answers(url):
+            if url.endswith("/findings"):
+                return 201, json.dumps({"id": 44}).encode()
+            return 400, json.dumps({"error": "The screenshot must be a png"}).encode()
+        status, lines, _ = self.run_with(self.BUG, answers)
+        self.assertEqual(status, 0, lines)
+        self.assertTrue(json.loads(lines[0])["screenshots"]["bug"].startswith("not added (HTTP 400"))
+
+    def test_a_wrong_picture_stops_the_call_before_anything_is_sent(self):
+        never = lambda url: self.fail("nothing may be sent")
+        for name, case in (("a real picture outside the folder of the request", dict(self.BUG, screenshots={"before": "audits/elsewhere.png"})),
+                           ("not a picture", None),
+                           ("a label that is not before or bug", dict(self.BUG, screenshots={"after": f"{FOLDER}/b1-before.png"})),
+                           ("on an observation", {"kind": "observation", "title": "x", "severity": "info", "screenshots": {"before": f"{FOLDER}/b1-before.png"}})):
+            with self.subTest(case=name):
+                pictures = (("b1-before.png", b"<html>"), ("b1-bug.png", PNG)) if case is None else (("b1-before.png", PNG), ("b1-bug.png", PNG), ("../../elsewhere.png", PNG))
+                status, lines, calls = self.run_with(case or self.BUG, never, pictures)
+                self.assertNotEqual(status, 0)
+                self.assertEqual(calls, [])

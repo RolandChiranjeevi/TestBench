@@ -54,9 +54,13 @@ Made under **Settings → Agent → Requests to a test agent**, by an admin of t
 - It is a fourth kind of agent token, **`tbrq_`**, apart from the read token (`tbag_`), the proposal token (`tbpr_`) and the CI token (`tbci_`). Each kind is refused by its prefix, so none can stand
   in for another.
 - It is shown once and only its hash is stored. A project can have **three** active request tokens; revoking is the only way to end one. Too many wrong tokens from one address are slowed down (429).
-- It opens **nine routes of one project and nothing else**. It cannot make or cancel a request, read requirements, touch specs or accounts, or decide anything; every other route refuses it. Four of them only change the
-  status of a request (and a release adds a note, and a finished discover the audit it made). One makes findings of a discover (draft or proposed, and the discover's plan; see `mcp/README.md`). One hands in the result of a load test (`load-result`, below). Two (`result` and `case-results`) write test results, and are **off until a person switches them on** (below).
+- It opens **ten routes of one project and nothing else**. It cannot make or cancel a request, read requirements, touch specs or accounts, or decide anything; every other route refuses it. Four of them only change the
+  status of a request (and a release adds a note, and a finished discover the audit it made). One makes findings of a discover (draft or proposed, and the discover's plan; see `mcp/README.md`). One adds a screenshot to a bug report that discover made (below). One hands in the result of a load test (`load-result`, below). Two (`result` and `case-results`) write test results, and are **off until a person switches them on** (below).
 - No login cookie and no `X-Testbench` header are needed. The token is checked on every call.
+- **Screenshots of a bug.** A bug report that a discover makes may get two pictures: one taken before the step that fails (`before`) and one when the bug shows (`bug`). Only the token that took the
+  request, while it is taken, and only for a bug report that request made itself, so a bug that was seen again keeps the pictures it has. Each picture is checked by its first bytes (png, jpg, webp or
+  gif, at most 5 MB), stored as an attachment of the bug report and never analysed. At most one of each per bug, 200 per request and 120 calls a minute per token. The agent names them in the finding
+  (`"screenshots": {"before": "<file>", "bug": "<file>"}`, files in the folder of the claim) and the helper sends them after the bug; a refused picture leaves the bug report made.
 
 ```
 GET  /api/agent/projects/<project id>/requests                    the waiting requests: the one a person put first, then the oldest
@@ -67,6 +71,7 @@ POST /api/agent/projects/<project id>/requests/<id>/case-results  a result for e
 POST /api/agent/projects/<project id>/requests/<id>/findings      one finding of a discover (draft or proposed, see mcp/README.md)
 GET  /api/agent/projects/<project id>/requests/<id>/known         what earlier requests already made and keyed: key, title, how often seen again (below)
 POST /api/agent/projects/<project id>/requests/<id>/load-result   the result of a load test, once (below)
+POST /api/agent/projects/<project id>/requests/<id>/bugs/<bug id>/screenshots   one picture of a bug this discover made, label before or bug (below)
 POST /api/agent/projects/<project id>/requests/<id>/complete      {"note": "...", "resultRunId": 42, "resultAuditId": 8}  (all optional)
 Authorization: Bearer $TESTBENCH_REQUEST_TOKEN
 ```
@@ -344,7 +349,7 @@ The table is tested against the code (`testpilot/tests/test_request_call_output.
 | **Tester** and above | Asks for a discover or a re-run, and cancels a request that is Waiting or Taken. |
 | **Admin** | Also asks for a load test, and makes and revokes request tokens. Both are written to the audit log (`token.created`, `token.revoked`: who, the project, and the token's name and prefix, never the token or its hash), and the token keeps who made it. |
 | **Owner** | Also switches agent results on or off (off by default). |
-| **An agent with a request token** | The nine routes above, for its own project. Nothing else. |
+| **An agent with a request token** | The ten routes above, for its own project. Nothing else. |
 
 Who asked, cancelled, took and finished a request, and who reported results, is written to the audit log (shown to the owner when accounts are on; the filter is *Agent requests*).
 
