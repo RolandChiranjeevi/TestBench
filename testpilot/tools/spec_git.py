@@ -145,6 +145,7 @@ def origin_repo(url):
 
 
 CONFIG = ".testpilot"  # the folder of testbench.json, set by main()
+PROJECT = ""  # the profile named with --project (the `project` of the request's list row); empty: the activeProject
 
 
 def lowest(*modes):
@@ -168,7 +169,7 @@ def inspect():
     """Every practical check, in order. Returns what `check` and `write` need, or raises Stop(off=True) with the reason the git mode is off."""
     try:
         g = json.load(open(os.path.join(CONFIG, "testbench.json")))
-        p = json.load(open(os.path.join(CONFIG, "projects", f"{g['activeProject']}.json")))
+        p = json.load(open(os.path.join(CONFIG, "projects", f"{PROJECT or g['activeProject']}.json")))
         mode, repo, path, base = p.get("gitMode", "off"), p.get("repo"), p.get("repoPath"), p.get("baseBranch", "main")
         token_var = p.get("pushTokenEnvVar", "")
     except (OSError, ValueError, KeyError, AttributeError, TypeError) as e:
@@ -471,9 +472,14 @@ def main(argv):
     ap.add_argument("--confirmed", default="")
     ap.add_argument("--origin", default="")
     ap.add_argument("--specs", default="")
+    ap.add_argument("--project", default="")
     a = ap.parse_args(argv)
-    global CONFIG
+    global CONFIG, PROJECT
     CONFIG = find_config()
+    if a.project and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", a.project):
+        print("--project is the name of a profile in projects/ (the `project` of the request's list row)")
+        return 1
+    PROJECT = a.project
     if a.action not in ACTIONS or (a.action in ("write", "push") and not re.fullmatch(r"[0-9]{1,9}", a.rid)):
         print("Usage: spec_git.py check [--confirmed MODE] | spec_git.py write <request number> --confirmed MODE --origin ADDRESS --specs FILE | spec_git.py push <request number> --confirmed pr")
         return 1

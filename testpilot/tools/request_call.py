@@ -59,6 +59,7 @@ OPENER = urllib.request.build_opener(NoRedirect)
 
 
 CONFIG = None  # the folder of testbench.json, set by main()
+PROFILE_KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")  # a profile's file name without .json: nothing that could leave projects/
 
 
 def printable(text):
@@ -289,7 +290,7 @@ def load_options_of(o):
     return out
 
 
-def show(data, code, action, rid):
+def show(data, code, action, rid, tag=None):
     """Prints the answer: the data of the requests as JSON strings, so that text in a note stays text, and nothing else from it. Returns the exit status."""
     try:
         r = json.loads(data)
@@ -335,6 +336,7 @@ def show(data, code, action, rid):
                               **({"warning": clean(q["warning"], 600)} if q.get("warning") else {})}))
             continue
         print(json.dumps({
+            **((tag or {}) if action in ("list", "claim") else {}),
             "id": q["id"], "name": clean(q.get("name", ""), 60), "kind": q["kind"], "status": q["status"], "environment": clean(q["environment"], 100),
             "target": clean(q["targetUrl"], 500), "run": q["runId"], "tests": len(q["tests"]), "asked_by": clean(q["createdBy"], 80),
             "asked_at": q["createdAt"], "note": clean(q["note"], 500),
@@ -459,6 +461,7 @@ def main(argv):
     ap.add_argument("--load-result", default="")
     ap.add_argument("--result-run", default="")
     ap.add_argument("--result-audit", default="")
+    ap.add_argument("--project", default="")
     a = ap.parse_args(argv)
     whole = lambda s: re.fullmatch(r"[0-9]*", s) is not None
     if a.action not in ACTIONS:
@@ -474,13 +477,35 @@ def main(argv):
             return fail("--values is the number of values per class that the depth asks for (1, 2 or 3)")
         return precheck(a.rid, a.coverage, a.read, int(a.values))
 
+    if a.project and (not CONFIG or not PROFILE_KEY.fullmatch(a.project)):
+        return fail("--project is the name of a profile in projects/ (the `project` of a list row), and needs a TestPilot configuration")
+    if CONFIG and a.action == "list" and not a.project and not a.rid:  # every profile, each with its own token (never one token for all projects)
+        try:
+            keys = sorted(f[:-5] for f in os.listdir(os.path.join(CONFIG, "projects")) if f.endswith(".json") and PROFILE_KEY.fullmatch(f[:-5]))
+        except OSError:
+            keys = []
+        if not keys:  # the one call then says what is wrong with the configuration
+            return call(a, None)
+        status = 0
+        for key in keys:
+            if len(keys) > 1:  # with one profile the answer looks as it always has
+                print(f"project: {key}")
+            status = max(status, call(a, key))
+        return status
+    return call(a, a.project)
+
+
+def call(a, key):
+    """One action against one project: the profile `key` (None: the activeProject of testbench.json, or the environment when there is no configuration). Returns the exit status."""
+    whole = lambda s: re.fullmatch(r"[0-9]*", s) is not None
     if CONFIG:  # a profile that exists is used as it is; one that cannot be read is an error, not a reason to fall back
         try:
             g = json.load(open(os.path.join(CONFIG, "testbench.json")))
-            p = json.load(open(os.path.join(CONFIG, "projects", f"{g['activeProject']}.json")))
+            p = json.load(open(os.path.join(CONFIG, "projects", f"{key or g['activeProject']}.json")))
             base, pid, var = g["baseUrl"].rstrip("/"), str(p["projectId"]), p.get("requestTokenEnvVar")
         except (OSError, ValueError, KeyError, AttributeError) as e:
-            return fail(f"The TestPilot configuration could not be read ({type(e).__name__}): {os.path.join(CONFIG, 'testbench.json')} and the profile it names")
+            return fail(f"The TestPilot configuration could not be read ({type(e).__name__}): {os.path.join(CONFIG, 'testbench.json')} and the profile " + (f"projects/{key}.json" if key else "it names"))
+        tag = {"project": key or g["activeProject"], "projectName": str(p.get("name") or "")[:80]}  # every row says which profile it came from, so a request is never taken with the wrong token
         if not var:
             return fail("requestTokenEnvVar is not set in the project profile", 3)
     else:
@@ -488,6 +513,7 @@ def main(argv):
         if not base or not pid:
             return fail("There is no .testpilot/testbench.json here or in ~/.testpilot/, and TESTBENCH_URL and TESTBENCH_PROJECT_ID are not both set (in the environment or as their own lines of .env): the helper does not know which TestBench to call")
         print("profile: none; TESTBENCH_URL, TESTBENCH_PROJECT_ID and TESTBENCH_TOKEN stand in for it")
+        tag = {}
     if not whole(pid) or not pid:
         return fail("projectId in the project profile must be a number")
     u = urlsplit(base)
@@ -534,7 +560,7 @@ def main(argv):
         reason = f", {str(e.reason)[:200]}" if isinstance(e, urllib.error.URLError) else ""
         return fail(f"the call failed (network or timeout{reason}): not retried here")
     print(f"{a.action} HTTP {code}")
-    return show(data, str(code), a.action, a.rid)
+    return show(data, str(code), a.action, a.rid, tag)
 
 
 if __name__ == "__main__":
