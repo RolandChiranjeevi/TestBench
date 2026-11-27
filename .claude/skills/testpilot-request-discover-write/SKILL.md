@@ -19,6 +19,7 @@ Paths in this file are relative to this file. Before starting, read:
 - `../../references/agent-rules.md` (in particular rules 1, 4, 5, 6, 10, 11, 12 and 13)
 - `../testpilot-requests/SKILL.md`, steps 2 and 8 (the helper, the token, giving a request back)
 - `../bug-reporting/SKILL.md` and `../test-planning/SKILL.md` (**always**, whatever the request's options say: the plan follows the test-planning rules and every bug proposal follows the bug-reporting rules; they are not choices)
+  - Every bug report is written as `../bug-reporting/templates/discover-bug.md` says, as in `../testpilot-request-discover/SKILL.md` step 4.
 
 ## Responsibilities
 
