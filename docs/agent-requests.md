@@ -393,7 +393,6 @@ Put this in `.claude/settings.local.json` in the agent's folder, and start a **n
       "mcp__playwright__browser_find",
       "mcp__playwright__browser_take_screenshot",
       "mcp__playwright__browser_type",
-      "mcp__playwright__browser_fill_form",
       "mcp__playwright__browser_handle_dialog",
       "Bash(python3 -I testpilot/tools/request_call.py list:*)",
       "Bash(python3 -I testpilot/tools/request_call.py claim:*)",
@@ -411,6 +410,7 @@ Put this in `.claude/settings.local.json` in the agent's folder, and start a **n
     ],
     "deny": [
       "mcp__playwright__browser_click",
+      "mcp__playwright__browser_fill_form",
       "mcp__playwright__browser_select_option",
       "mcp__playwright__browser_press_key",
       "mcp__playwright__browser_drag",
@@ -436,9 +436,9 @@ Put this in `.claude/settings.local.json` in the agent's folder, and start a **n
 Replace `/Users/you/agent-folder` with the absolute path of the agent's folder. The write rule is given in several forms because in testing an `Edit` rule alone did not cover the Write tool,
 and it was not found out whether the relative or the absolute `Write` form was the one that matched. Keep all of them.
 
-- **What it allows** is exactly what `testpilot-request-discover` uses: the read-only browser tools, the three that fill in a form field without sending it (`browser_type`, `browser_fill_form`, and `browser_handle_dialog` for a "leave this page?" question), the helper actions `list`, `claim`, `findings` and `complete`, the two actions of the spec tool
+- **What it allows** is exactly what `testpilot-request-discover` uses: the read-only browser tools, the two that fill in a form field without sending it (`browser_type`, one field at a time, and `browser_handle_dialog` for a "leave this page?" question), the helper actions `list`, `claim`, `findings` and `complete`, the two actions of the spec tool
   (`spec_git.py check` and `write`, see "Spec files on a local branch" below), and writing the findings in the folder of the claim, `audits/request-<id>/<time>/` (with `mkdir` for that folder). Nothing that clicks, presses a key, sends a form or
-  runs code in a page is allowed: those eight tools are **denied**, not only left out, and so is reading `.env` and `.mcp.json`, and so are `git` and `gh`: the agent never runs them, and the spec
+  runs code in a page is allowed: those nine tools are **denied**, not only left out, and so is reading `.env` and `.mcp.json`, and so are `git` and `gh`: the agent never runs them, and the spec
   tool makes the few git calls it needs itself, from a fixed list.
 - **What it leaves out on purpose.** `release`: giving a request back needs your yes. An inline `python3 -c` or `python3 -`, which can run anything. Everything outside the list still asks, and then
   it is worth reading what it asks for before you answer: it is outside what the skill needs.

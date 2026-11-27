@@ -498,3 +498,56 @@ class ScreenshotsOfABug(unittest.TestCase):
                 status, lines, calls = self.run_with(case or self.BUG, never, pictures)
                 self.assertNotEqual(status, 0)
                 self.assertEqual(calls, [])
+
+
+
+READ_ROWS = rows(
+    "## /contact.html",
+    "Name | empty | tried | values 2 | no message",
+    "Name | wrong-kind/too-long/boundary/format | tried | values 2 | accepted everything",
+    "Name | emoji | issue | values 2 | emoji accepted in a name",
+    "Message | all | not tried | left the page after lock 2: the form sent data without being submitted",
+    "## /login.html",
+    "Password | all | not tried | a password field",
+)
+
+
+class PrecheckOfTheReadOnlyDiscover(unittest.TestCase):
+    """Körning 5: `--read` checks the rows of the read-only discover: its own six classes (emoji, no Enter), "values N" as the proof, and every class for every field."""
+
+    def check(self, coverage, values="2"):
+        with agent_folder():
+            put(COVERAGE, coverage)
+            status, out, err = run_main(["precheck", "12", f"--coverage={COVERAGE}", "--read", f"--values={values}"])
+        return status, out.splitlines()
+
+    def test_every_class_for_every_field_with_enough_values_is_ok_and_a_field_never_typed_in_is_left_with_its_reason(self):
+        status, lines = self.check(READ_ROWS)
+        self.assertEqual(status, 0, lines)
+        self.assertFalse([l for l in lines if l.startswith("GAP")], lines)
+        self.assertEqual(sorted(l.split(" | ")[1] for l in lines if l.startswith("LEFT")), ["Message", "Password"])
+        self.assertTrue(lines[-1].endswith("before you hand in the findings."), lines[-1])
+
+    def test_a_field_without_a_class_is_a_gap_that_names_the_field_and_the_class(self):
+        status, lines = self.check(READ_ROWS + rows("## /register.html", "Email | empty | tried | values 2 | nothing"))
+        self.assertEqual(status, 1)
+        self.assertIn("GAP /register.html | Email: no row for: wrong-kind, too-long, boundary, format, emoji", lines)
+        self.assertTrue(lines[-1].endswith("and only then hand in the findings."), lines[-1])
+
+    def test_fewer_values_than_the_depth_asks_is_a_gap_and_a_row_without_values_counts_as_not_tried(self):
+        status, lines = self.check(READ_ROWS.replace(f"emoji {DOT} issue {DOT} values 2", f"emoji {DOT} issue {DOT} values 1"))
+        self.assertEqual(status, 1)
+        self.assertTrue(any("emoji: 1 value(s), and this depth asks for 2" in l for l in lines), lines)
+        status, lines = self.check(READ_ROWS.replace(f"emoji {DOT} issue {DOT} values 2 {DOT}", f"emoji {DOT} issue {DOT} looked {DOT}"))
+        self.assertTrue(any("but not how many values were tried" in l for l in lines), lines)
+
+    def test_enter_is_not_a_class_of_the_read_only_discover_and_a_soft_reason_is_a_gap(self):
+        status, lines = self.check(READ_ROWS)
+        self.assertFalse(any("enter" in l for l in lines if l.startswith("GAP")))
+        status, lines = self.check(READ_ROWS + rows("## /index.html", "Search | all | not tried | no time"))
+        self.assertEqual(status, 1)
+        self.assertTrue(any(l.startswith("GAP /index.html | Search") and "is not a hard reason" in l for l in lines), lines)
+
+    def test_values_must_be_a_small_number(self):
+        status, lines = self.check(READ_ROWS, values="x")
+        self.assertNotEqual(status, 0)

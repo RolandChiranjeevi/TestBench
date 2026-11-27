@@ -136,8 +136,8 @@ yes, ask nothing more unless a stop condition in step 3 comes up. If the answer 
 ## 3. Explore, read-only
 
 Use the available Playwright MCP browser tools, and **only** these: `browser_navigate`, `browser_snapshot`, `browser_resize`, `browser_console_messages`,
-`browser_network_requests`, `browser_network_request` (**only** with `part: "response-headers"`, see "The `api` and `security` checks, passively"), `browser_find` (**only** with `text` or `regex`, to find an element in the page snapshot: **never** with `filename`) and `browser_take_screenshot` (to look at a page, and the two pictures of every bug report, see "Screenshots of a bug" below; a picture is handed in to TestBench only that way). To check form fields ("Form fields" below), and for nothing else: `browser_type` (**never** with `submit: true`), `browser_fill_form`, and `browser_handle_dialog` (**only** to answer a
-"leave this page?" dialog with leave). **Never** `browser_click`,
+`browser_network_requests`, `browser_network_request` (**only** with `part: "response-headers"`, see "The `api` and `security` checks, passively"), `browser_find` (**only** with `text` or `regex`, to find an element in the page snapshot: **never** with `filename`) and `browser_take_screenshot` (to look at a page, and the two pictures of every bug report, see "Screenshots of a bug" below; a picture is handed in to TestBench only that way). To check form fields ("Form fields" below), and for nothing else: `browser_type` (**never** with `submit: true`, one field at a time), and `browser_handle_dialog` (**only** to answer a
+"leave this page?" dialog with leave). **Never** `browser_click`, `browser_fill_form` (it fills several fields at once, so you cannot see which one sent data),
 `browser_select_option`, `browser_press_key`, `browser_drag`, `browser_hover`, `browser_file_upload`, `browser_evaluate` or `browser_run_code_unsafe`, or any other tool
 that acts in a page or runs code. The last two can read files and run code (`../../../docs/agent-chain-verification.md`). If a tool you need is missing, say so and stop
 (`../../references/agent-rules.md`, rule 10).
@@ -151,17 +151,22 @@ that acts in a page or runs code. The last two can read files and run code (`../
 - **What to note per page**, in a few lines, never the whole snapshot: its purpose, the main flows, interactive elements, forms (which you fill in as "Form fields" says, and never submit), navigation, hints of
   authentication, obvious risks, console errors, failed requests (4xx or 5xx) from the same origin, what is hard to reach or read at the smaller sizes, and accessibility problems that a
   snapshot shows (a control or an image with no name, an input with no label, headings out of order).
-- **Form fields: fill in, never send.** On every page with a form, try **every** field that is not a password field: type a made-up value with `browser_type` (or several with
-  `browser_fill_form`), read what the page shows, and clear it again. For each field try these input classes: **empty** (a required field), **wrong kind** (letters in a phone number or an amount, digits
+- **Form fields: fill in, never send.** On every page with a form, try **every** field that is not a password field, **one field at a time**: type a made-up value with `browser_type`, read what the page shows, and clear it again. For each field try these input classes: **empty** (a required field), **wrong kind** (letters in a phone number or an amount, digits
   in a name), **too long** (well past what the field looks meant for), **boundary** (one character, and the longest the page says it takes), **format** (an e-mail without `@`, a date that does not
   exist), and **emoji** (wrong in a name, a phone number or an e-mail; fine in a comment or a message: say which you assumed). The depth sets how many values you try per class and how far you go
   (step 1, item 7: `Values per class`), never which fields: every field is tried at every depth. **The locks, every time:**
   1. Never Enter, never `submit: true`, never a click on a button, never a file. A form is never sent.
-  2. After filling a field, read the list of requests (`browser_network_requests`). If anything but a GET has gone out from this page since it loaded, stop on this page: write an
+  2. After **each** field, read the list of requests (`browser_network_requests`), before you type in the next one. If anything but a GET has gone out from this page since it loaded, stop on this page: write an
      observation (severity `medium`, title starting `Form:`, "the form sent data without being submitted", with the method and the path, never a value), and leave the page.
   3. Leave the page by navigating away; nothing is saved. If the page asks whether to leave, answer leave (`browser_handle_dialog`); any other dialog is a stop (the stop conditions below).
   4. Only made-up values: never a real person's data, never a password, never a secret, never anything from `.env`.
   What the page does with each value (a message, a field that refuses the character, nothing at all) goes in an observation or, when it is clearly wrong and repeats (rule 13), a bug report.
+  **Keep count as you go, and check it before you hand anything in.** Write `coverage.md` in the folder of this claim: a line `## <the path of the page>` for each page with a form, then one row
+  per field and class, `<field> · <class> · tried | issue | not tried · values <n> · <what the page did>` (for example `Phone · emoji · issue · values 2 · accepted in a phone number`). A field you
+  never type in gets one row with the class `all` and its reason (`Password · all · not tried · a password field`; `Message · all · not tried · left the page after lock 2`). Before step 5, run
+  `python3 -I testpilot/tools/request_call.py precheck <request number> --coverage <folder>/coverage.md --read --values <the depth's values per class>` (1, 2 or 3). It prints a `GAP` for every field that
+  lacks a class or has too few values: do those (or write the row with a hard reason: a password field, a card number you will not type, the page left after lock 2), run it again, and hand in
+  only when it prints no `GAP`. "No time" or "skipped" is not a reason.
   You cannot see the field's own rules (`maxlength`, `pattern`) and the messages a form only shows when it is sent, so `Not checked` says so (rule 12). A field you did not try goes in a coverage
   gap, with the reason.
 - **An error from another origin** (an analytics service, an advert, a widget) is an **observation**, never a bug report of the site: say which address it was and that you did not follow it.
