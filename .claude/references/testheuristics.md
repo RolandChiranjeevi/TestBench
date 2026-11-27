@@ -243,6 +243,23 @@ Two users (or the same user logged in twice) performing simultaneous create, upd
 
 ---
 
+## Oracles: HICCUPS and FEW HICCUPS
+
+An oracle is a principle for recognising a problem. Use these as questions while exploring, not as a checklist to finish. They are not requirements.
+
+| Oracle | Ask |
+|---|---|
+| **H**istory | Does it behave as it did before? |
+| **I**mage | Does it match the product's look and quality bar? |
+| **C**omparable | How do similar products handle this? |
+| **C**laims | Does it match what the page, the tooltip or the spec says? |
+| **U**ser expectations | Would a real user be confused or annoyed? |
+| **P**roduct | Is it consistent with other parts of the same product (for example the style of error messages)? |
+| **S**tandards | Does it follow standards (WCAG, protocols, privacy rules)? |
+| **F**amiliarity | Would a first-time user understand it without help? |
+| **E**xplainability | Can you explain the behaviour to someone else? If not, it may be a bug. |
+| **W**orld | Does it work in the real world (locales, time zones, slow networks, small screens)? |
+
 ## Quality Characteristics Checklist
 
 When testing a feature, consider each of these dimensions. Not all are relevant every time, but scanning the list prevents blind spots.

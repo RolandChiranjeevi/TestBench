@@ -14,7 +14,7 @@ Input: the number of a discover request that `/testpilot-requests` has **taken**
 
 Paths in this file are relative to this file. Before starting, read:
 - `../testpilot/SKILL.md` (the boundaries: the agent proposes, people decide)
-- `../../references/agent-rules.md` (in particular rules 3, 4, 5, 6 and 11)
+- `../../references/agent-rules.md` (in particular rules 3, 4, 5, 6, 11, 12 and 13)
 - `../testpilot-requests/SKILL.md`, steps 2 and 8 (the helper, the token, giving a request back)
 - `../bug-reporting/SKILL.md` and `../test-planning/SKILL.md` (**always**, whatever the request's options say: the plan follows the test-planning rules and every bug proposal follows the bug-reporting rules; they are not choices)
   - From bug-reporting a discover keeps: short `steps`, `expected` and `actual`, no secrets, status `proposed`, and a bug only for something you saw fail; a deviation that needs a requirement or design reference to count is an observation. It does **not** use evidence ids, the `evidence/` folder, `templates/bug-report.md` or the duplicate check: the fields in step 4 are the whole format, and screenshots are never handed in.
@@ -278,7 +278,7 @@ Then tell the user what was handed in, and where to review it: the plan and its 
 which plan item it was planned in), the observations under **Observations**, and the bug reports under **Bug reports**. If spec files were made, say where they are: the local branch the
 tool printed, in the user's checkout, one commit on top of `origin/<base>`; they were not run and nothing was pushed, so the user looks at them with the command the tool printed and pushes the
 branch themselves if they want it. If `push` ran, say instead what it printed: the branch pushed and the pull request address, not merged, for the user to review and merge. If spec files were asked for and not made, say why. Say plainly what this run did **not** do: it only read; nothing was clicked, typed or logged in; no
-screenshot was handed in; no spec file was run; at most 10 pages were looked at. **Nothing is approved.**
+screenshot was handed in; no spec file was run; at most 10 pages were looked at. End with what was **not** verified and why, as rule 12 says, and say that a failure that did not repeat was made an observation (rule 13). **Nothing is approved.**
 
 ## 7. If it stops
 

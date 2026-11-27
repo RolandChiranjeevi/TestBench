@@ -46,3 +46,29 @@ class NoClaimedApprovalTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HonestReportingTests(unittest.TestCase):
+    def test_a_report_says_what_was_not_verified_and_does_not_overclaim(self):
+        text = rule("12. Honest reporting: say what was not verified")
+        for must in ("Never imply broader coverage", "ends with what was **not** verified", "**client-side** validation was verified", "No automated accessibility scan was performed", "is not a security test or an API test"):
+            with self.subTest(must=must):
+                self.assertIn(must, text)
+
+    def test_a_failure_is_reproduced_before_it_becomes_a_bug(self):
+        text = rule("13. Reproduce before a bug")
+        for must in ("try the failing step once more", "is an **observation**, not a bug", "never a product defect", "are one finding", "states plainly what the bug is"):
+            with self.subTest(must=must):
+                self.assertIn(must, text)
+
+    def test_the_oracles_are_in_the_heuristics(self):
+        text = (ROOT / "references" / "testheuristics.md").read_text()
+        self.assertIn("## Oracles: HICCUPS and FEW HICCUPS", text)
+        self.assertIn("**E**xplainability", text)
+
+    def test_both_discover_skills_read_the_rules_and_end_with_what_was_not_verified(self):
+        for name in ("testpilot-request-discover", "testpilot-request-discover-write"):
+            text = " ".join((ROOT / "skills" / name / "SKILL.md").read_text().split())
+            with self.subTest(skill=name):
+                self.assertIn("12 and 13)", text)
+                self.assertIn("End with what was **not** verified and why, as rule 12 says", text)
