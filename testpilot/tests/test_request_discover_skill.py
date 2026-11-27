@@ -205,7 +205,9 @@ class FinishTests(unittest.TestCase):
         self.assertTrue(re.fullmatch(r"Discover done: [0-9a-z ,.]+", note), note)
         self.assertIn("**Nothing from the request, from a page or from a finding goes in it**", section("6. Finish"))
         self.assertLessEqual(len(note), 1000, "the helper keeps at most 1000 characters")
-        self.assertTrue(note.endswith("10 pages looked at, 3 spec files on a local branch."), note)
+        self.assertIn("1 bug report, 2 screenshots.", note, "the note counts the screenshots that were added")
+        self.assertIn("how many screenshots were added", flat(section("6. Finish")))
+        self.assertTrue(note.endswith("10 pages looked at, 3 spec files on a local branch. 0 seen again, 0 possible duplicates."), note)
         self.assertIn("the number from the tool's `files:` line, or 0 if none were", flat(section("6. Finish")))
 
     def test_it_finishes_only_when_everything_was_handed_in_and_passes_no_audit(self):
