@@ -506,9 +506,10 @@ READ_ROWS = rows(
     "Name | empty | tried | values 2 | no message",
     "Name | wrong-kind/too-long/boundary/format | tried | values 2 | accepted everything",
     "Name | emoji | issue | values 2 | emoji accepted in a name",
-    "Message | all | not tried | left the page after lock 2: the form sent data without being submitted",
+    "Phone | empty | issue | values 1 | lock 2: the field sent data on its first value",
+    "Phone | wrong-kind/too-long/boundary/format/emoji | not tried | lock 2: the field sent data",
     "## /login.html",
-    "Password | all | not tried | a password field",
+    "Upload | all | not tried | a file field",
 )
 
 
@@ -525,7 +526,7 @@ class PrecheckOfTheReadOnlyDiscover(unittest.TestCase):
         status, lines = self.check(READ_ROWS)
         self.assertEqual(status, 0, lines)
         self.assertFalse([l for l in lines if l.startswith("GAP")], lines)
-        self.assertEqual(sorted(l.split(" | ")[1] for l in lines if l.startswith("LEFT")), ["Message", "Password"])
+        self.assertEqual(sorted(l.split(" | ")[1] for l in lines if l.startswith("LEFT")), ["Phone", "Upload"])
         self.assertTrue(lines[-1].endswith("before you hand in the findings."), lines[-1])
 
     def test_a_field_without_a_class_is_a_gap_that_names_the_field_and_the_class(self):
@@ -557,3 +558,8 @@ class PrecheckOfTheReadOnlyDiscover(unittest.TestCase):
         # körning 6: the agent wrote "wrong kind" and "too long" and had to rename 14 rows to get past precheck
         status, lines = self.check(READ_ROWS.replace("wrong-kind/too-long", "wrong kind/too long"))
         self.assertEqual(status, 0, lines)
+
+    def test_a_class_with_one_value_is_a_gap_unless_lock_2_stopped_the_field(self):
+        status, lines = self.check(READ_ROWS.replace(f"values 1 {DOT} lock 2: the field sent data on its first value", f"values 1 {DOT} it showed no message"))
+        self.assertEqual(status, 1)
+        self.assertTrue(any("Phone | empty: 1 value(s), and this depth asks for 2" in l for l in lines), lines)

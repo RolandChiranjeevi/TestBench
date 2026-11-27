@@ -392,7 +392,7 @@ def precheck(rid, path, read=False, values=0):
                 if not n:
                     gaps.append(f"GAP {p} | {r[0][:50]} | {r[1][:30]}: says {status} but not how many values were tried (\"values 2\"), so it counts as not tried")
                     status = "not tried"
-                elif int(n.group(1)) < values:
+                elif int(n.group(1)) < values and "lock 2" not in " ".join(r[3:]):  # a field that sent data on its first value gets no more (lock 2)
                     gaps.append(f"GAP {p} | {r[0][:50]} | {r[1][:30]}: {n.group(1)} value(s), and this depth asks for {values}")
             elif not read and status != "not tried" and not (re.search(r"actions? \d", proof) or "no action (read:" in proof):
                 gaps.append(f"GAP {p} | {r[0][:50]} | {r[1][:30]}: says {status} but names no action numbers, so it counts as not tried")
