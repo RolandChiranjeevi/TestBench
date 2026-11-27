@@ -141,7 +141,7 @@ def agent_folder(profile=True, var=VAR):
 def run_main(args, *, send=None, token=TOKEN):
     """Runs the helper in the current folder with the call to TestBench replaced by `send` (a function, or an exception to raise). Returns (exit status, stdout, stderr)."""
     out, err = io.StringIO(), io.StringIO()
-    env = {"PATH": os.environ.get("PATH", "")}
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": os.path.join(os.getcwd(), "_home")}  # never the developer's own ~/.testpilot/
     if token is not None:
         env[VAR] = token
     with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(request_call, "send", side_effect=send), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):

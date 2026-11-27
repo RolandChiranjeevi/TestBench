@@ -13,6 +13,7 @@ import os
 import sys
 import tempfile
 import threading
+from unittest import mock
 import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -67,6 +68,9 @@ class InFolder(unittest.TestCase):
     def setUp(self):
         self.old, self.tmp = os.getcwd(), tempfile.TemporaryDirectory()
         os.chdir(self.tmp.name)
+        home = mock.patch.dict(os.environ, {"HOME": os.path.join(self.tmp.name, "_home")})  # never the developer's own ~/.testpilot/
+        home.start()
+        self.addCleanup(home.stop)
         self.target = Target()
 
     def tearDown(self):
@@ -86,6 +90,20 @@ class InFolder(unittest.TestCase):
         with open(f"audits/request-{request}/loadtest.json") as f:
             return json.load(f), json.loads(out)
 
+
+
+class InTheHomeFolder(InFolder):
+    """Plan 10b, P1: with no `.testpilot/` here and one in `~/.testpilot/`, the result goes to `~/.testpilot/audits/`, and the plan names the whole path."""
+
+    def test_the_result_is_written_in_the_home_folder_and_the_plan_names_its_whole_path(self):
+        tp = os.path.realpath(os.path.join(self.tmp.name, "_home", ".testpilot"))
+        os.makedirs(tp)
+        Path(tp, "testbench.json").write_text("{}")
+        here = os.getcwd()
+        code, out = self.tool("plan", "--request", "7", "--base-url", self.target.url, "--path", "/")
+        os.chdir(here)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(os.path.realpath(json.loads(out)["plan"]["writes"]), os.path.join(tp, "audits", "request-7", "loadtest.json"))
 
 class Ceilings(unittest.TestCase):
     base = {"request": "7", "base_url": "http://localhost:3000", "paths": ["/"], "vus": 10, "duration": 60, "ramp_up": 10, "max_error_rate": 5, "max_p95_ms": None}

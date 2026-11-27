@@ -79,7 +79,7 @@ class World:
         f.write_text(json.dumps({k: v for k, v in p.items() if v is not None}))
 
     def run(self, *args, env=None):
-        p = subprocess.run([sys.executable, "-I", str(TOOL), *args], cwd=self.agent, capture_output=True, text=True, env={**os.environ, "TMPDIR": str(self.tmpdir), **(env or {})})
+        p = subprocess.run([sys.executable, "-I", str(TOOL), *args], cwd=self.agent, capture_output=True, text=True, env={**os.environ, "TMPDIR": str(self.tmpdir), "HOME": str(self.tmpdir / "_home"), **(env or {})})  # never the developer's own ~/.testpilot/
         p.out = p.stdout + p.stderr
         return p
 
@@ -207,6 +207,20 @@ class CheckTests(unittest.TestCase):
         p = w.run("check")
         self.assertEqual(p.returncode, 1, p.out)
         self.assertIn("could not be read", p.out)
+
+    def test_with_no_profile_here_the_one_in_the_home_folder_is_read(self):
+        """Plan 10b, P1: claude started in any folder, the configuration in ~/.testpilot/."""
+        w = World(self, mode="off")
+        home = w.tmpdir / "_home"
+        home.mkdir(parents=True)
+        (w.agent / ".testpilot").rename(home / ".testpilot")
+        p = w.run("check")
+        self.assertEqual(p.returncode, 0, p.out)
+        self.assertIn("the profile's gitMode is off", p.out)
+        (home / ".testpilot" / "testbench.json").write_text("{not json")
+        p = w.run("check")
+        self.assertEqual(p.returncode, 1, p.out)
+        self.assertIn(str(home / ".testpilot" / "testbench.json"), p.out)
 
 
 class WriteTests(unittest.TestCase):
