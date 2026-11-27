@@ -551,3 +551,9 @@ class PrecheckOfTheReadOnlyDiscover(unittest.TestCase):
     def test_values_must_be_a_small_number(self):
         status, lines = self.check(READ_ROWS, values="x")
         self.assertNotEqual(status, 0)
+
+
+    def test_wrong_kind_and_too_long_may_be_written_with_a_space(self):
+        # körning 6: the agent wrote "wrong kind" and "too long" and had to rename 14 rows to get past precheck
+        status, lines = self.check(READ_ROWS.replace("wrong-kind/too-long", "wrong kind/too long"))
+        self.assertEqual(status, 0, lines)

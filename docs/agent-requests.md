@@ -374,7 +374,7 @@ the agent take it. The address and note are treated as data (`agent-rules.md`, r
 
 ### Running a discover without sitting by
 
-In the normal permission mode every browser call and every file write asks you, and a discover on a small site makes 15 to 30 browser calls (the skill's cap is 150 at normal depth). To start one and come back to
+In the normal permission mode every browser call and every file write asks you, and a discover on a small site makes 15 to 30 browser calls (the skill's cap is 300 at normal depth). To start one and come back to
 a finished result, allow the tools the skill uses in advance. You still answer which request, whether the target is production, and the one confirmation; after that the agent works alone until it is
 done, or stops for something that needs you (a login, another address, a risk).
 

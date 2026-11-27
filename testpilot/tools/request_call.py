@@ -383,6 +383,7 @@ def precheck(rid, path, read=False, values=0):
     for p, rows in pages.items():
         seen, by_field = {}, {}
         for r in rows:
+            r[1] = re.sub(r"\b(wrong|too)[\s_]+(kind|long)\b", r"\1-\2", r[1], flags=re.I).lower()  # "wrong kind" and "too long" are the same classes (körning 6 had to rename 14 rows)
             classes, status, proof = [c for c in re.split(r"[\s,/+]+", r[1]) if c] or [""], r[2], r[3] if len(r) > 3 else ""  # a row may name several classes at once ("empty/wrong-kind")
             if read and "all" in classes:  # "Password · all · not tried · a password field": one row for a field that is never typed in
                 classes = list(READ_FIELD_CLASSES)
