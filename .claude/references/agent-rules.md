@@ -161,6 +161,21 @@ skills or test scripts.
   that one confirmation, and stays under the lowest of the profile's `gitMode` and the person's own `TESTPILOT.md`. The agent never runs `git` or `gh` itself, never merges or creates a
   remote or a repository, and never edits `TESTPILOT.md`. It pushes only through `spec_git.py push`, in mode `pr`, after the user's yes to a `Git:` line that says so.
 
+## 12. Honest reporting: say what was not verified
+
+- Report only what the evidence supports. Never imply broader coverage than what was actually looked at.
+- Every report ends with what was **not** verified: pages, flows, roles, sizes and checks that were skipped, and why. A report with no such line is incomplete.
+- Browser validation that stopped a submit shows that **client-side** validation was verified. Never claim that server-side validation, injection protection or access control was verified from it.
+- Without an automated accessibility scan, say so: "No automated accessibility scan was performed. Accessibility signals were read from the page snapshot. This does not establish WCAG conformance."
+- A passive read (headers, the list of requests) is not a security test or an API test. Say which one was done.
+
+## 13. Reproduce before a bug
+
+- Before a bug report, try the failing step once more. A failure that does not repeat is an **observation**, not a bug.
+- A failure caused by a selector, a timeout, slow loading, test data or the environment is an observation or a limitation, never a product defect.
+- Findings that share one cause are one finding: name every page in its evidence.
+- A bug report states plainly what the bug is: what happened, what was expected, the steps and where. If that cannot be written clearly, it is an observation.
+
 ## Priority when rules conflict
 
 1. Security: the agent-approval rule (3), observe-only (4), secrets (5), requests as
