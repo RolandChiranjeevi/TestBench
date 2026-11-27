@@ -37,6 +37,8 @@ TOKEN = re.compile(r"tbrq_[A-Za-z0-9_-]{1,195}")  # a request token: its prefix 
 SEND_MAX = {"result": 5 * 1024 * 1024, "case-results": 256 * 1024, "findings": 2 * 1024 * 1024, "load-result": 1024 * 1024}  # the most TestBench takes: the report of a re-run, the results of a run request's test cases, and a file of findings
 FINDING_KINDS = ("test_case", "bug_report", "observation", "manual_test_suggestion", "plan_item", "coverage_gap")  # the list of server/agentfindings.ts (test_requests_skill.py checks it)
 KEY = re.compile(r"[a-z0-9][a-z0-9._-]{0,60}(:[a-z0-9][a-z0-9._-]{0,60}){1,2}")  # the same shape as KEY_RX in server/agentdedupe.ts
+PICTURE_LABELS = ("before", "bug")  # one picture taken before the step that fails, one when the bug shows (TestBench takes at most these two per bug report)
+PICTURE_MAX = 5 * 1024 * 1024  # the most TestBench takes for one picture
 FINDINGS_MAX = 50  # in one call: TestBench takes 300 findings a minute per token
 ALIAS = re.compile(r"[A-Za-z0-9_-]{1,40}")  # a `ref` of a plan_item
 # What a person chose when asking for a discover (server/agentrequests.ts, REQUEST_OPTIONS). Only a value from these lists is ever printed, so no free text can pass through them.
@@ -113,6 +115,33 @@ def read_send_file(path, rid, top):
         return f.read()
 
 
+def read_picture(path, rid):
+    """The bytes of one screenshot this run took for this request: a plain png, jpg, webp or gif file (by its first bytes, not by its name) inside audits/request-<rid>/ of this folder, of
+    1 byte up to PICTURE_MAX. A reason (str) if it is not. TestBench checks the bytes again."""
+    root = os.path.realpath(os.path.join("audits", "request-" + rid))
+    real = os.path.realpath(path) if path else ""
+    if not path or os.path.islink(path) or not os.path.isfile(real):
+        return "the file is not a plain file"
+    if not real.startswith(root + os.sep):
+        return "the file must be inside audits/request-" + rid + "/"
+    n = os.path.getsize(real)
+    if n == 0 or n > PICTURE_MAX:
+        return "the picture must be between 1 byte and 5 MB"
+    with open(real, "rb") as f:
+        data = f.read()
+    if not (data[:8] == b"\x89PNG\r\n\x1a\n" or data[:3] == b"\xff\xd8\xff" or data[:6] in (b"GIF87a", b"GIF89a") or (data[:4] == b"RIFF" and data[8:12] == b"WEBP")):
+        return "the file is not a png, jpg, webp or gif picture"
+    return data
+
+
+def picture_form(label, data):
+    """A multipart body with the label and the picture, as TestBench's screenshot route takes it. Returns (content type, body)."""
+    boundary = "testpilot-" + os.urandom(12).hex()
+    head = (f'--{boundary}\r\nContent-Disposition: form-data; name="label"\r\n\r\n{label}\r\n'
+            f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{label}"\r\nContent-Type: application/octet-stream\r\n\r\n').encode()
+    return f"multipart/form-data; boundary={boundary}", head + data + f"\r\n--{boundary}--\r\n".encode()
+
+
 def send(method, url, headers, body, timeout):
     """One call: no redirect, no retry, and (where the system has SIGALRM) cut off after `timeout` seconds in all, as `curl --max-time` was. Returns (HTTP code, answer bytes)."""
     def timed_out(*_):
@@ -162,6 +191,9 @@ def read_findings(body):
                 return f"finding {i}: planItemRef is for a test_case only, names the ref of a plan_item EARLIER in the file, and is not given together with planItem"
         if "key" in f and (f["kind"] not in ("test_case", "bug_report", "observation") or not isinstance(f["key"], str) or not KEY.fullmatch(f["key"])):
             return f"finding {i}: key is for a test_case, bug_report or observation only, and is lower case words joined by : and -, like cart:float-total"
+        if "screenshots" in f and (f["kind"] != "bug_report" or not isinstance(f["screenshots"], dict) or not f["screenshots"] or not set(f["screenshots"]) <= set(PICTURE_LABELS)
+                                   or not all(isinstance(v, str) for v in f["screenshots"].values())):
+            return f'finding {i}: screenshots is for a bug_report only, like {{"before": "bug-1-before.png", "bug": "bug-1-bug.png"}} (the files are in the folder of this claim)'
         # TestBench takes `automation` as a text of at most 200 characters; three live runs sent an object and only learned it from a 400 after the first call
         if f["kind"] == "plan_item" and "automation" in f and not (isinstance(f["automation"], str) and len(f["automation"]) <= 200):
             return f'finding {i}: automation is a short text of at most 200 characters (for example "Yes, as a saved test"), not an object or a list'
@@ -176,7 +208,7 @@ def send_findings(base, pid, rid, headers, items):
     whole = lambda v: v if isinstance(v, int) and not isinstance(v, bool) else None
     planned, by_kind, last = {}, {}, {}
     for i, f in enumerate(items, 1):
-        body = {k: v for k, v in f.items() if k not in ("ref", "planItemRef")}
+        body = {k: v for k, v in f.items() if k not in ("ref", "planItemRef", "screenshots", "_pictures")}
         if "planItemRef" in f:
             body["planItem"] = planned[f["planItemRef"]]
         try:
@@ -197,7 +229,23 @@ def send_findings(base, pid, rid, headers, items):
         by_kind[f["kind"]] = by_kind.get(f["kind"], 0) + 1
         if "ref" in f:
             planned[f["ref"]] = clean(r.get("sourceId", ""), 60)
-        print(json.dumps({"n": i, "kind": f["kind"], "id": whole(r.get("id")), "sourceId": clean(r.get("sourceId", ""), 60), **({"planItem": clean(r["planItem"], 50)} if r.get("planItem") else {}),
+        shots = {}
+        if f.get("_pictures"):
+            if r.get("seenAgain") is True:
+                shots = {label: "not sent: the bug was seen again and keeps the pictures it has" for label in f["_pictures"]}
+            elif whole(r.get("id")) is not None:
+                for label, data in f["_pictures"].items():
+                    ctype, form = picture_form(label, data)
+                    try:
+                        scode, sdata = send("POST", f"{url[:-len('/findings')]}/bugs/{whole(r['id'])}/screenshots", {**headers, "Content-Type": ctype}, form, 60)
+                    except Exception:  # nothing here may show more than the kind of failure
+                        scode, sdata = 0, b""
+                    try:
+                        said = json.loads(sdata).get("error", "") if scode != 201 else ""
+                    except Exception:
+                        said = ""
+                    shots[label] = "added" if scode == 201 else f"not added (HTTP {scode}{': ' + clean(said, 200) if said else ''}): the bug report stays, without this picture"
+        print(json.dumps({"n": i, "kind": f["kind"], "id": whole(r.get("id")), **({"screenshots": shots} if shots else {}), "sourceId": clean(r.get("sourceId", ""), 60), **({"planItem": clean(r["planItem"], 50)} if r.get("planItem") else {}),
                           **({"number": whole(r["number"])} if f["kind"] == "test_case" and whole(r.get("number")) is not None else {}),
                           **({"seenAgain": True} if r.get("seenAgain") is True else {}), **({"possibleDuplicateOf": whole(r["possibleDuplicateOf"])} if whole(r.get("possibleDuplicateOf")) is not None else {})}))  # a case's number is the one a spec's title ends with, as @<project key>-<number>
     print(json.dumps({"made": len(items), "of": len(items), "by_kind": by_kind, "audit": whole(last.get("auditId")),
@@ -411,6 +459,12 @@ def main(argv):
             items, body = read_findings(body), None
             if isinstance(items, str):
                 return fail(items)
+            for i, f in enumerate(items, 1):  # every picture is read before anything is sent, so a wrong path stops the call with nothing made
+                for label, path in (f.get("screenshots") or {}).items():
+                    data = read_picture(path, a.rid)
+                    if isinstance(data, str):
+                        return fail(f"finding {i}: screenshot {label}: {data}")
+                    f.setdefault("_pictures", {})[label] = data
     elif a.action in ("release", "complete"):
         note = "" if sys.stdin.isatty() else sys.stdin.read(20000)
         payload = {"note": note.strip()[:1000]}

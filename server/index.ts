@@ -56,6 +56,7 @@ import { LOAD_LIMITS } from "./loadtest.ts";
 import { authenticateRequestToken, createRequestToken, isAgentRequestRoute, listRequestTokens, revokeRequestToken } from "./requesttokens.ts";
 import type { TokenKind, TokenMaker } from "./tokens.ts";
 import { createFinding, FINDING_LIMITS, findingBody } from "./agentfindings.ts";
+import { addBugScreenshot, SCREENSHOT_LABELS, SCREENSHOT_LIMITS, type ScreenshotLabel } from "./agentscreenshots.ts";
 import { knownPosts } from "./agentdedupe.ts";
 import { CASE_RESULT_LIMITS, caseResultsBody, reportCaseResults } from "./agentresults.ts";
 import { currentUser } from "./accountcontext.ts";
@@ -2113,6 +2114,38 @@ app.post("/api/agent/projects/:id/requests/:rid/findings", { bodyLimit: FINDING_
   const body = findingBody.parse(req.body ?? {});
   reply.code(201);
   return audited(() => createFinding(id, idParam(req, "rid"), auth, req.ip, body));
+});
+// A screenshot of a bug report this discover request made (server/agentscreenshots.ts): one picture per call, labelled `before` or `bug`, checked by its first bytes like a person's
+// (png, jpg, webp or gif, at most 5 MB), stored as an attachment of the bug and never analysed. At most SCREENSHOT_LIMITS.perMinute calls a minute per token; every attempt counts.
+const screenshotLimiter = makeLimiter({ max: SCREENSHOT_LIMITS.perMinute, windowMs: 60_000 });
+app.post("/api/agent/projects/:id/requests/:rid/bugs/:bid/screenshots", async (req, reply) => {
+  const id = idParam(req);
+  const auth = requestTokenAuth(req, id);
+  const key = `t${auth.id}`;
+  if (screenshotLimiter.blockedFor(key) > 0) throw new HttpError(429, `Too many screenshots from this token (at most ${SCREENSHOT_LIMITS.perMinute} a minute). Wait a minute and try again`);
+  screenshotLimiter.fail(key); // counts this attempt
+  reply.header("Cache-Control", "no-store");
+  let label = "";
+  let buf: Buffer | null = null;
+  let truncated = false;
+  for await (const part of req.parts({ limits: { fileSize: MAX_SCREENSHOT_BYTES + 1, files: 1, fields: 2, fieldSize: 20 } })) {
+    if (part.type === "file") {
+      if (buf) throw new HttpError(400, "Hand in one screenshot per call");
+      buf = await part.toBuffer();
+      truncated = part.file.truncated;
+    } else if (part.fieldname === "label") label = String(part.value);
+  }
+  if (!Object.hasOwn(SCREENSHOT_LABELS, label)) throw new HttpError(400, "label must be before or bug");
+  const shot = audited(() => checkScreenshot(buf, truncated));
+  const stored = `agent-${randomUUID()}.${shot.ext}`;
+  await writeFile(join(UPLOAD_DIR, stored), buf as Buffer);
+  try {
+    reply.code(201);
+    return audited(() => addBugScreenshot(id, idParam(req, "rid"), idParam(req, "bid"), auth, req.ip, label as ScreenshotLabel, { ...shot, storedName: stored }));
+  } catch (e) {
+    await unlink(join(UPLOAD_DIR, stored)).catch(() => {});
+    throw e;
+  }
 });
 // What earlier requests already made, so that a discover does not make it twice (server/agentdedupe.ts): only the posts an agent keyed (key, title, how often seen again), never a person's own.
 app.get("/api/agent/projects/:id/requests/:rid/known", (req, reply) => {

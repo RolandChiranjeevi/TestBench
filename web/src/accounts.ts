@@ -68,7 +68,7 @@ export interface AuditEntry {
 
 /** Every action the server writes to the audit log (test/web-accounts.test.ts checks this list against the server's source, so a new action cannot be left without words). */
 export const AUDIT_ACTIONS = [
-  "agent_request.cancelled", "agent_request.claimed", "agent_request.completed", "agent_request.created", "agent_request.finding_created", "agent_request.finding_seen_again", "agent_request.load_result_delivered", "agent_request.put_first", "agent_request.released", "agent_request.result_delivered", "agent_request.results_reported", "spec.created", "spec.deleted", "spec.edited", "spec.renamed", "account.created", "account.disabled", "account.enabled", "account.setup", "invitation.created", "invitation.revoked", "invitation.used", "login.failed", "login.succeeded",
+  "agent_request.cancelled", "agent_request.claimed", "agent_request.completed", "agent_request.created", "agent_request.finding_created", "agent_request.finding_seen_again", "agent_request.load_result_delivered", "agent_request.put_first", "agent_request.released", "agent_request.result_delivered", "agent_request.results_reported", "agent_request.screenshot_added", "spec.created", "spec.deleted", "spec.edited", "spec.renamed", "account.created", "account.disabled", "account.enabled", "account.setup", "invitation.created", "invitation.revoked", "invitation.used", "login.failed", "login.succeeded",
   "member.added", "member.removed", "member.role_changed", "members.migrated", "password.changed", "password.reset", "password.reset_link_created", "profile.changed", "requirements.bulk_approved", "sessions.revoked_others",
   "settings.agent_proposals_changed", "settings.agent_results_changed",
   "token.created", "token.revoked",
@@ -155,6 +155,7 @@ export function describeAudit(e: Pick<AuditEntry, "action" | "actor" | "targetUs
     }
     case "agent_request.completed": return `${who} finished a request in ${project}`;
     case "agent_request.finding_created": return `${who} reported ${({ test_case: "a test case (a draft)", bug_report: "a bug report (a proposal)", observation: "an observation", manual_test_suggestion: "a manual test suggestion (a proposal)", plan_item: "a plan item (a proposal)", coverage_gap: "a coverage gap (a proposal)" } as Record<string, string>)[String(d.finding_kind)] ?? "a finding"} for a discover request in ${project}`;
+    case "agent_request.screenshot_added": return `${who} added a screenshot to a bug report of a discover request in ${project}`;
     case "agent_request.finding_seen_again": return `${who} saw ${({ test_case: "a test case", bug_report: "a bug report", observation: "an observation" } as Record<string, string>)[String(d.finding_kind)] ?? "a finding"} again in a discover request in ${project}, and made no new post`;
     case "spec.created": return `${who} added the spec ${specName(d.fileName)} in ${project}`;
     case "spec.edited": return `${who} changed the ${Array.isArray(d.changed) && d.changed.length ? d.changed.join(", ") : "text"} of the spec ${specName(d.fileName)} in ${project}`;
