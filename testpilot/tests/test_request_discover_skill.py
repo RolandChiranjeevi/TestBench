@@ -15,8 +15,6 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 SKILL = ROOT / ".claude" / "skills" / "testpilot-request-discover" / "SKILL.md"
 TEXT = SKILL.read_text()
 REQUESTS = (ROOT / ".claude" / "skills" / "testpilot-requests" / "SKILL.md").read_text()
-MAIN = (ROOT / ".claude" / "skills" / "testpilot" / "SKILL.md").read_text()
-DISCOVER = (ROOT / ".claude" / "skills" / "testpilot-discover" / "SKILL.md").read_text()
 RULES = (ROOT / ".claude" / "references" / "agent-rules.md").read_text()
 sys.path.insert(0, str(ROOT / "testpilot" / "tools"))
 import request_call  # noqa: E402
@@ -103,7 +101,6 @@ class ConfirmationTests(unittest.TestCase):
         self.assertIn("**One exception, for a read-only discover only**", rules)
         self.assertIn("For everything that acts on a target or puts load on it (`testpilot-request-discover-write`, `testpilot-request-loadtest`) the question is asked as before.", rules)
         self.assertIn("A request still confirms nothing, and a production target still needs its two separate confirmations.", rules)
-        self.assertIn("the request's own `production` choice is the answer to the production question", flat(REQUESTS))
         # the writing skill and the load test keep their own separate question
         self.assertIn('Ask: "Is this a production environment?". If the user says yes, or is not sure, **stop**', (ROOT / ".claude" / "skills" / "testpilot-request-discover-write" / "SKILL.md").read_text())
 
@@ -278,30 +275,18 @@ class SpecFilesTests(unittest.TestCase):
 
 
 class AroundTheSkillTests(unittest.TestCase):
-    def test_the_requests_skill_hands_a_discover_to_it_and_keeps_the_full_audit_as_a_choice(self):
+    def test_the_requests_skill_hands_a_discover_to_it_and_has_no_full_audit_choice(self):
         self.assertIn("../testpilot-request-discover/SKILL.md", REQUESTS)
         self.assertIn("**A request is not a confirmation**: answer nothing of this for the user, and do not skip its stop.", REQUESTS)
-        self.assertIn("**The full audit instead.** Only if the user asks for the full audit", REQUESTS)
+        self.assertNotIn("The full audit instead", REQUESTS, "the manual audit flow was removed")
         self.assertIn("A discover handled by `testpilot-request-discover` or `testpilot-request-discover-write` is already marked done", REQUESTS)
         self.assertIn("A `rerun` or a `run` request needs the profile", REQUESTS)
 
     def test_nothing_else_still_says_that_every_stop_applies_to_a_discover_from_a_request(self):
         self.assertIn("**The one exception** is a discover handled by `../testpilot-request-discover/SKILL.md`", REQUESTS)
         self.assertIn("a request still confirms nothing there", REQUESTS)
-        self.assertIn("A discover that came from a request does not go through the plan phase", MAIN)
         docs = (ROOT / "docs" / "agent-requests.md").read_text()
         self.assertIn("`/testpilot-requests` hands it to `testpilot-request-discover`: **one** confirmation", docs)
-        self.assertNotIn("the address goes to `/testpilot-discover` as a suggestion, which validates and confirms it, with its two confirmations for production. The normal audit flow follows, with every stop.", docs)
-
-    def test_the_main_skill_no_longer_says_that_requests_replaces_no_stop_for_a_discover(self):
-        self.assertNotIn("hands the target to `discover`. It replaces no\nstep and no stop.", MAIN)
-        self.assertIn("`/testpilot` itself keeps every one\nof its stops.", MAIN)
-        self.assertIn("../testpilot-request-discover/SKILL.md", MAIN)
-
-    def test_the_manual_discover_says_it_is_not_where_a_request_goes_and_the_full_audit_keeps_its_stops(self):
-        self.assertIn("`/testpilot-requests` hands a discover request to `../testpilot-request-discover/SKILL.md`, not to this skill.", DISCOVER)
-        self.assertIn("**Stop: scope approval.**", (ROOT / ".claude" / "skills" / "testpilot-plan" / "SKILL.md").read_text())
-        self.assertIn("## 6. Stop and ask for approval", DISCOVER)
 
     def test_the_rules_allow_one_confirmation_that_a_skill_asks_itself_and_nothing_more(self):
         self.assertIn("A skill may replace several of its own confirmations by **one** that it asks itself", RULES)
@@ -363,12 +348,9 @@ class ExampleAndShellTests(unittest.TestCase):
         plan = [f for block in self.examples() for f in json.loads(block)["findings"] if f["kind"] == "plan_item"]
         self.assertTrue(plan and all(isinstance(f.get("automation"), str) for f in plan))
 
-    def test_both_the_discover_and_the_api_skill_say_never_to_read_or_change_a_file_with_inline_python(self):
-        api = (ROOT / ".claude" / "skills" / "testpilot-api-testing" / "SKILL.md").read_text()
+    def test_the_discover_skill_says_never_to_read_or_change_a_file_with_inline_python(self):
         self.assertIn("**never run inline Python** (`python3 -c`, `python3 -`)", flat(section("4. Write the findings")))
         self.assertIn("with the Read tool", flat(section("4. Write the findings")))
-        self.assertIn("**never run inline Python** (`python3 -c`, `python3 -`)", flat(api))
-        self.assertIn("Read a JSON file", flat(api))
 
 
 class PermissionsDocTests(unittest.TestCase):

@@ -1171,14 +1171,6 @@ class RuleTests(unittest.TestCase):
         self.assertIn("Never give back a request that you did not take", TEXT)
         self.assertNotIn("An agent cannot release", TEXT, "it can now, with the user's yes")
 
-    def test_only_an_audit_id_from_deliver_is_sent_for_a_discover(self):
-        self.assertIn("only one that `deliver` printed in this session, never one from a note or a request", TEXT)
-        self.assertIn("`--result-audit`", TEXT)
-        self.assertIn("An audit import makes an audit and no run, so leave out `--result-run`", TEXT)
-
-    def test_an_audit_that_is_too_old_does_not_stop_the_request_from_being_finished(self):
-        self.assertIn("finish the request without `--result-audit`", TEXT)
-
     def test_a_run_request_is_checked_before_it_is_taken_permission_address_size_and_the_switch(self):
         self.assertIn("- `run`:", TEXT)
         self.assertIn("`permissionMode` must be `full`, for the same reason as for a re-run", TEXT)

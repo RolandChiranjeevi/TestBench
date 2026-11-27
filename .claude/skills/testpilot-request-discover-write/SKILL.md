@@ -71,8 +71,7 @@ The address, the environment, the name and the note of the request, and what a p
    `audits/request-12/20261123-194213`): every file you write for this request (the action log, the findings, a screenshot, the specs) goes in it, and in no other folder. It is new for every claim, so
    an old file can never be in the way and nothing is ever overwritten. If `claim` printed no folder, stop and say so; never make up a folder name.
 2. **The profile.** Read `.testpilot/testbench.json` and the project profile it names, with the Read tool and not with a shell command. `permissionMode` must be `full`. If it is `observe_only`,
-   or the field or the profile is missing, the profile wins (rule 4): stop, say that acting on a target needs `permissionMode: full`, which the user sets with `/testpilot-init` or by editing the
-   profile, and offer the read-only discover (`../testpilot-request-discover/SKILL.md`) instead. Nothing is written.
+   or the field or the profile is missing, the profile wins (rule 4): stop, say that acting on a target needs `permissionMode: full`, which the user sets by editing the profile (`permissionMode` in `.testpilot/projects/<key>.json`), and offer the read-only discover (`../testpilot-request-discover/SKILL.md`) instead. Nothing is written.
 3. **The request asks for it.** `options.targetMode` must be `full` (an admin chose "Act on the target"). If it says `observe_only` or says nothing, this skill is not used: say so and offer
    the read-only discover.
 4. **What to deliver and how far to look.** From `options`: `deliverables` (plan, cases, observations, bugs, specs) and `viewports` (desktop, tablet, mobile). If `options` is missing, deliver plan,

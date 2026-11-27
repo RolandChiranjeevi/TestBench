@@ -92,11 +92,6 @@ class TheRulesAreWrittenDown(unittest.TestCase):
     def test_a_result_that_was_handed_in_is_finished_and_not_given_back(self):
         self.assertIn("A request whose result was handed in cannot be given back", TEXT)
 
-    def test_the_manual_load_test_is_unchanged_and_not_used(self):
-        self.assertIn("`/testpilot-loadtest` is the other way", TEXT)
-        self.assertNotIn("../testpilot-loadtest/SKILL.md", TEXT)
-
-
 class AroundTheSkill(unittest.TestCase):
     def test_the_requests_skill_checks_the_address_and_hands_a_loadtest_over_to_it(self):
         self.assertIn("../testpilot-request-loadtest/SKILL.md", REQUESTS)

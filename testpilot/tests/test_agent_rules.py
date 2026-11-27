@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent / ".claude"
 RULES = (ROOT / "references" / "agent-rules.md").read_text()
-REPORT_SKILL = (ROOT / "skills" / "testpilot-report" / "SKILL.md").read_text()
+REPORT_SKILL = (ROOT / "skills" / "testpilot-request-discover" / "SKILL.md").read_text()
 
 
 def rule(title):

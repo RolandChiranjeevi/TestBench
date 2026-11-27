@@ -1,12 +1,12 @@
 ---
 name: testpilot-request-loadtest
-description: Work on a load test request from TestBench with ONE confirmation: run a small, bounded load test (GET requests only) against a local or private address with the fixed tool testpilot/tools/loadtest.py, hand in the result, and mark the request done. Use only when /testpilot-requests hands over a loadtest request. Never for a production address, a shared system or a manual load test (that is /testpilot-loadtest).
+description: Work on a load test request from TestBench with ONE confirmation: run a small, bounded load test (GET requests only) against a local or private address with the fixed tool testpilot/tools/loadtest.py, hand in the result, and mark the request done. Use only when /testpilot-requests hands over a loadtest request. Never for a production address or a shared system.
 ---
 
 # TestPilot: request load test
 
 A person who is an admin of the project asked for a load test in TestBench (Automated tests, Requests). This skill does it, with **one** confirmation, and hands in a result that a person
-reads as a report in TestBench. `/testpilot-loadtest` is the other way: a manual load test with its own stops. It is unchanged and is not used here.
+reads as a report in TestBench.
 
 Input: the number of a loadtest request that `/testpilot-requests` has **taken** (claimed).
 
