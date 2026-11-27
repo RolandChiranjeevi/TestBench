@@ -45,11 +45,11 @@ class FileTests(unittest.TestCase):
 
     def test_the_commands_it_tells_the_agent_to_run_are_real_actions_of_the_helper_with_real_flags(self):
         cmds = re.findall(r"python3 -I testpilot/tools/request_call\.py (\S+)((?: \S+)*)", TEXT)
-        self.assertEqual({c[0] for c in cmds}, {"findings", "complete", "known"})
+        self.assertEqual({c[0] for c in cmds}, {"findings", "complete", "known", "precheck"})
         for action, rest in cmds:
             self.assertIn(action, request_call.ACTIONS)
             for flag in re.findall(r"--[a-z-]+", rest):
-                self.assertIn(flag, {"--findings", "--result-audit", "--result-run"})
+                self.assertIn(flag, {"--findings", "--result-audit", "--result-run", "--coverage", "--read", "--values"})
         self.assertIn("--findings audits/request-12/20261123-194213/findings-1.json", TEXT)
 
 
@@ -140,10 +140,11 @@ class ConfirmationTests(unittest.TestCase):
 
 
 class ExplorationTests(unittest.TestCase):
-    # browser_type, browser_fill_form and browser_handle_dialog (a "leave this page?" question) fill in a form field and never send it (step 3, "Form fields", plan step 4)
+    # browser_type (one field at a time) and browser_handle_dialog (a "leave this page?" question) fill in a form field and never send it (step 3, "Form fields", plan step 4).
+    # browser_fill_form is forbidden: it fills several fields at once, so the network check after each field cannot tell which one sent data (körning 5)
     ALLOWED = ("browser_navigate", "browser_snapshot", "browser_resize", "browser_console_messages", "browser_network_requests", "browser_network_request", "browser_find", "browser_take_screenshot",
-               "browser_type", "browser_fill_form", "browser_handle_dialog")
-    FORBIDDEN = ("browser_click", "browser_select_option", "browser_press_key", "browser_drag", "browser_hover", "browser_file_upload", "browser_evaluate", "browser_run_code_unsafe")
+               "browser_type", "browser_handle_dialog")
+    FORBIDDEN = ("browser_click", "browser_fill_form", "browser_select_option", "browser_press_key", "browser_drag", "browser_hover", "browser_file_upload", "browser_evaluate", "browser_run_code_unsafe")
 
     def test_the_tools_it_allows_are_the_read_only_ones_and_the_forbidden_ones_are_named(self):
         step3 = section("3. Explore, read-only")
@@ -688,8 +689,29 @@ class FormFieldTests(unittest.TestCase):
 
     def test_the_tools_say_type_never_submits_and_the_dialog_is_only_leave(self):
         tools = flat(section("3. Explore, read-only")).split("**Never**")[0]
-        self.assertIn("`browser_type` (**never** with `submit: true`)", tools)
+        self.assertIn("`browser_type` (**never** with `submit: true`, one field at a time)", tools)
         self.assertIn('`browser_handle_dialog` (**only** to answer a "leave this page?" dialog with leave)', tools)
 
     def test_rule_4_says_filling_in_is_reading_only_while_nothing_is_sent(self):
         self.assertIn("Typing a made-up value into a form field to see how it is checked is reading, as long as the form is never sent", flat(RULES))
+
+
+class FieldCoverageTests(unittest.TestCase):
+    """Körning 5: the agent tried about ten values where the skill asked for about a hundred, and filled three fields in one call. One field at a time, a row per field and class, and a
+    precheck that prints every gap before anything is handed in."""
+
+    def bullet(self):
+        return flat(section("3. Explore, read-only")).split("**Form fields: fill in, never send.**")[1].split("- **An error from another origin**")[0]
+
+    def test_one_field_at_a_time_and_the_network_is_read_after_each(self):
+        b = self.bullet()
+        self.assertIn("**one field at a time**", b)
+        self.assertIn("After **each** field, read the list of requests (`browser_network_requests`), before you type in the next one.", b)
+
+    def test_a_row_per_field_and_class_and_precheck_before_hand_in(self):
+        b = self.bullet()
+        for must in ("Write `coverage.md` in the folder of this claim", "one row per field and class", "`<field> · <class> · tried | issue | not tried · values <n> · <what the page did>`",
+                     "the class `all` and its reason", "precheck <request number> --coverage <folder>/coverage.md --read --values <the depth's values per class>",
+                     "hand in only when it prints no `GAP`", '"No time" or "skipped" is not a reason.'):
+            with self.subTest(must=must):
+                self.assertIn(must, b)

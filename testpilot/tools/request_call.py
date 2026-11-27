@@ -350,12 +350,13 @@ def show(data, code, action, rid):
     return 0
 
 
-FIELD_CLASSES = ("empty", "wrong-kind", "too-long", "boundary", "format", "enter")  # a page with a row of any of these takes input, and needs a row for all of them
+FIELD_CLASSES = ("empty", "wrong-kind", "too-long", "boundary", "format", "enter")
+READ_FIELD_CLASSES = ("empty", "wrong-kind", "too-long", "boundary", "format", "emoji")  # the read-only discover never presses Enter, and tries emoji instead (step 3, "Form fields")  # a page with a row of any of these takes input, and needs a row for all of them
 ROW_STATUS = ("tried", "issue", "not tried")
 SOFT_REASON = re.compile(r"not reached|did not reach|didn'?t reach|did not get to|ran out|no time|skipped|left out|forgot|not got to|not looked at|did not look at|didn'?t look at|never looked at|not checked|not examined|not covered|not tried yet", re.I)  # shortcut: words only, a reason can still be soft in other words; the person reads the LEFT lines
 
 
-def precheck(rid, path):
+def precheck(rid, path, read=False, values=0):
     """Offline, before Logout: reads the coverage rows the agent has drafted (`## <page>` and then one row per line, as in step 4 of the write skill) and prints what is missing, so that it is seen while the session is still there. Exit 1 if there is a gap, 0 if not. It checks that rows exist and carry action numbers; it cannot tell whether a row is true."""
     root = os.path.realpath(os.path.join("audits", "request-" + rid))
     real = os.path.realpath(path) if path else ""
@@ -380,10 +381,19 @@ def precheck(rid, path):
             gaps.append(f"GAP {p}: acted on in actions.md but no coverage rows")
     matrix = []
     for p, rows in pages.items():
-        seen = {}
+        seen, by_field = {}, {}
         for r in rows:
             classes, status, proof = [c for c in re.split(r"[\s,/+]+", r[1]) if c] or [""], r[2], r[3] if len(r) > 3 else ""  # a row may name several classes at once ("empty/wrong-kind")
-            if status != "not tried" and not (re.search(r"actions? \d", proof) or "no action (read:" in proof):
+            if read and "all" in classes:  # "Password · all · not tried · a password field": one row for a field that is never typed in
+                classes = list(READ_FIELD_CLASSES)
+            if read and status != "not tried":
+                n = re.search(r"values? (\d+)", proof)
+                if not n:
+                    gaps.append(f"GAP {p} | {r[0][:50]} | {r[1][:30]}: says {status} but not how many values were tried (\"values 2\"), so it counts as not tried")
+                    status = "not tried"
+                elif int(n.group(1)) < values:
+                    gaps.append(f"GAP {p} | {r[0][:50]} | {r[1][:30]}: {n.group(1)} value(s), and this depth asks for {values}")
+            elif not read and status != "not tried" and not (re.search(r"actions? \d", proof) or "no action (read:" in proof):
                 gaps.append(f"GAP {p} | {r[0][:50]} | {r[1][:30]}: says {status} but names no action numbers, so it counts as not tried")
                 status = "not tried"
             if status == "not tried" and SOFT_REASON.search(" ".join(r[3:])):
@@ -391,16 +401,23 @@ def precheck(rid, path):
             counts[status] += 1
             for cls in classes:
                 seen[cls] = seen.get(cls, 0) + 1
+                by_field.setdefault(r[0], set()).add(cls)
             if status == "not tried":
                 left.append(f"LEFT {p} | {r[0][:50]} | {r[1][:30]} | {' '.join(r[3:])[:90]}")
-        if any(c in seen for c in FIELD_CLASSES):
+        if read:  # every field of the page, every class (a field that is only listed, with no class, still needs them all)
+            for field, have in by_field.items():
+                missing = [c for c in READ_FIELD_CLASSES if c not in have]
+                if missing:
+                    gaps.append(f"GAP {p} | {field[:50]}: no row for: {', '.join(missing)}")
+        elif any(c in seen for c in FIELD_CLASSES):
             missing = [c for c in FIELD_CLASSES if c not in seen]
             if missing:
                 gaps.append(f"GAP {p}: takes input, but no row for: {', '.join(missing)}")
         matrix.append(f"  {p[:40]:40} " + ", ".join(f"{c} {n}" for c, n in seen.items()))
     lines = [f"precheck: {len(pages)} pages, {sum(counts.values())} rows (tried {counts['tried']}, issue {counts['issue']}, not tried {counts['not tried']}), {len(gaps)} gaps"]
     lines += matrix + gaps + left
-    lines.append("precheck: " + ("every page has its rows. Each LEFT row needs a hard reason, or do it before Logout." if not gaps else "fix each GAP (do it, or write the row with its hard reason), run precheck again, and only then press Logout."))
+    done = "hand in the findings" if read else "press Logout"
+    lines.append("precheck: " + ("every page has its rows. Each LEFT row needs a hard reason, or do it before you " + done + "." if not gaps else "fix each GAP (do it, or write the row with its hard reason), run precheck again, and only then " + done + "."))
     for ln in lines:
         print(printable(ln))
     return 1 if gaps else 0
@@ -414,6 +431,8 @@ def main(argv):
     ap.add_argument("--case-results", default="")
     ap.add_argument("--findings", default="")
     ap.add_argument("--coverage", default="")
+    ap.add_argument("--read", action="store_true")  # precheck of the read-only discover: its own input classes, "values N" as the proof, every field
+    ap.add_argument("--values", default="0")
     ap.add_argument("--load-result", default="")
     ap.add_argument("--result-run", default="")
     ap.add_argument("--result-audit", default="")
@@ -426,7 +445,9 @@ def main(argv):
     if not whole(a.result_run) or not whole(a.result_audit):
         return fail("--result-run and --result-audit must be a number")
     if a.action == "precheck":  # offline: no profile, no token, no call
-        return precheck(a.rid, a.coverage)
+        if not re.fullmatch(r"[0-9]{1,2}", a.values):
+            return fail("--values is the number of values per class that the depth asks for (1, 2 or 3)")
+        return precheck(a.rid, a.coverage, a.read, int(a.values))
 
     if os.path.exists(".testpilot/testbench.json"):  # a profile that exists is used as it is; one that cannot be read is an error, not a reason to fall back
         try:
