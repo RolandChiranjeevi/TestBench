@@ -410,6 +410,7 @@ def run_helper(work, port, action, rid="12", report="", note=None, result_audit=
     env = {k: v for k, v in os.environ.items() if k != "TB_REQ_TOK" and not k.startswith("TESTBENCH_")}  # nothing of the developer's own environment reaches the helper
     if token is not None:
         env["TB_REQ_TOK"] = token
+    env["HOME"] = str(work / "_home")  # never the developer's own ~/.testpilot/
     env.update(env_extra or {})
     return subprocess.run([sys.executable, "-I", str(HELPER), *args], cwd=work, env=env, input=note or "", capture_output=True, text=True, timeout=60)
 
@@ -1306,6 +1307,75 @@ class OneRequestOrSeveralTests(unittest.TestCase):
     def test_never_working_on_a_request_the_user_did_not_choose_still_holds(self):
         self.assertIn("Work on a request the user did not choose", " ".join(TEXT.split()))
 
+
+
+class ConfigurationInTheHomeFolder(unittest.TestCase):
+    """Plan 10b, P1: with no `.testpilot/` in the folder claude was started in, the helper uses `~/.testpilot/`: its profile, its `.env` and its `audits/`."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.work, self.home = Path(self.tmp.name).resolve() / "anywhere", Path(self.tmp.name).resolve() / "home"
+        self.work.mkdir()
+        self.tp = self.home / ".testpilot"
+        (self.tp / "projects").mkdir(parents=True)
+        self.stub = Stub(200, [])
+        self.addCleanup(self.stub.shutdown)
+        (self.tp / "testbench.json").write_text(json.dumps({"baseUrl": f"http://127.0.0.1:{self.stub.server_port}", "activeProject": "hx"}))
+        (self.tp / "projects" / "hx.json").write_text(json.dumps({"projectId": 2, "requestTokenEnvVar": "TB_REQ_TOK"}))
+
+    def run_it(self, action="list", rid="", **kw):
+        return run_helper(self.work, self.stub.server_port, action, rid, profile=False, env_extra={"HOME": str(self.home)}, **kw)
+
+    def test_the_profile_of_the_home_folder_is_used_when_the_folder_has_none(self):
+        p = self.run_it("list")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.stub.seen[0]["path"], "/api/agent/projects/2/requests")
+        self.assertNotIn("profile: none", p.stdout)
+
+    def test_the_folder_s_own_profile_wins_over_the_home_folder(self):
+        p = run_helper(self.work, self.stub.server_port, "list", "", env_extra={"HOME": str(self.home)})
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.stub.seen[0]["path"], "/api/agent/projects/7/requests")
+
+    def test_a_claim_prints_the_whole_path_of_its_folder_inside_the_home_folder(self):
+        self.stub.body = request(1, kind="discover", status="claimed", claimedAt="2026-11-23 19:42:13")
+        p = self.run_it("claim", "1")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        line = next(l for l in p.stdout.splitlines() if l.startswith("{"))
+        self.assertEqual(json.loads(line)["folder"], str(self.tp / "audits" / "request-1" / "20261123-194213"))
+
+    def test_the_files_of_a_claim_are_read_from_the_audits_of_the_home_folder_by_whole_or_relative_path(self):
+        folder = self.tp / "audits" / "request-12" / "20261123-194213"
+        folder.mkdir(parents=True)
+        (folder / "report.json").write_text(json.dumps({"stats": {}}))
+        for path in (str(folder / "report.json"), "audits/request-12/20261123-194213/report.json"):
+            p = self.run_it("result", "12", report=path)
+            self.assertNotIn("inside audits/request-12", p.stdout, path)
+            self.assertEqual(self.stub.seen[-1]["path"], "/api/agent/projects/2/requests/12/result", path)
+
+    def test_a_file_outside_the_home_folder_s_audits_is_refused(self):
+        stray = self.work / "audits" / "request-12" / "report.json"
+        stray.parent.mkdir(parents=True)
+        stray.write_text(json.dumps({"stats": {}}))
+        p = self.run_it("result", "12", report=str(stray))
+        self.assertIn("inside audits/request-12", p.stdout)
+        self.assertEqual(self.stub.seen, [])
+
+    def test_the_token_line_of_the_home_folder_s_env_is_used_and_not_the_one_of_the_folder(self):
+        (self.tp / ".env").write_text("TB_REQ_TOK=tbrq_fromhomeenvfile\n")
+        (self.work / ".env").write_text("TB_REQ_TOK=tbrq_fromworkenvfile\n")
+        p = self.run_it("list", token=None)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.stub.seen[0]["auth"], "Bearer tbrq_fromhomeenvfile")
+
+    def test_a_broken_home_profile_is_an_error_that_names_it_and_not_a_fallback(self):
+        (self.tp / "testbench.json").write_text("{not json")
+        p = self.run_it("list")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("could not be read", p.stdout)
+        self.assertIn(str(self.tp / "testbench.json"), p.stdout)
+        self.assertEqual(self.stub.seen, [])
 
 if __name__ == "__main__":
     unittest.main()

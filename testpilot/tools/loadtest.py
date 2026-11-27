@@ -289,6 +289,19 @@ def run_test(o):
     }
 
 
+def go_home():
+    """Where the configuration is: `.testpilot/` of this folder (an agent folder, as before), or else `~/.testpilot/`, so that claude can be started in any folder (plan 10b). For `~/.testpilot/` the
+    tool moves into it, so that `audits/` is that of `~/.testpilot/`. Returns True if it moved. The same as in
+    request_call.py: `python3 -I` does not let one tool import another."""
+    if os.path.exists(".testpilot/testbench.json"):
+        return False
+    home = os.path.join(os.path.expanduser("~"), ".testpilot")
+    if os.path.exists(os.path.join(home, "testbench.json")):
+        os.chdir(home)
+        return True
+    return False
+
+
 def out_path(path, request):
     """The file this run may write: a plain .json file name inside audits/request-N/ of this folder, never a link. A reason (str) if it is not."""
     root = os.path.realpath(os.path.join("audits", "request-" + str(request)))
@@ -315,6 +328,7 @@ def main(argv):
     ap.add_argument("--max-p95-ms", type=int, default=None)
     ap.add_argument("--out", default="")
     a = ap.parse_args(argv)
+    home = go_home()
     o = options_of(a)
     problem = validate(o)
     out = a.out or os.path.join("audits", f"request-{a.request}", "loadtest.json")
@@ -323,7 +337,7 @@ def main(argv):
         print("REFUSED:", problem)
         return 2
     plan = {"address": o["base_url"], "paths": o["paths"], "users": o["vus"], "seconds": o["duration"], "rampUpSeconds": o["ramp_up"], "stopAtErrorPercent": o["max_error_rate"],
-            "stopAtP95Ms": o["max_p95_ms"], "method": "GET", "ceilings": CEILINGS, "writes": out}
+            "stopAtP95Ms": o["max_p95_ms"], "method": "GET", "ceilings": CEILINGS, "writes": os.path.abspath(out) if home else out}  # from ~/.testpilot/ the agent needs the whole path
     if a.action == "plan":
         print(json.dumps({"plan": plan}))
         return 0

@@ -5,7 +5,7 @@
                                              [--load-result FILE]
 
 <action> is list, claim, release, result, case-results, findings, load-result, known, precheck or complete. `known <n>` lists what earlier requests already made and keyed (so the same thing is not made twice). `precheck <n> --coverage FILE` is offline: it reads the coverage rows drafted so far and prints what is missing. For release and complete the note is read from standard input (a quoted heredoc keeps it as
-text). Run it from the folder that holds `.testpilot/`.
+text). Run it from the folder that holds `.testpilot/`, or from any folder when the configuration is in `~/.testpilot/` (then `audits/` and `.env` are those of `~/.testpilot/`).
 
 `findings` hands in what a discover found, one finding at a time: the file is {"findings": [...]} (at most 50), each with a `kind` (test_case, bug_report, observation,
 manual_test_suggestion, plan_item or coverage_gap). A plan_item may carry `ref` (a name of its own in the file) and a test_case `planItemRef` (the `ref` of an earlier plan_item):
@@ -58,6 +58,9 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 OPENER = urllib.request.build_opener(NoRedirect)
 
 
+CONFIG = None  # the folder of testbench.json, set by main()
+
+
 def printable(text):
     """The text as printable ASCII only: a control character, an escape sequence, a bidi or invisible character or any other non-ASCII character becomes an escape (\\x1b, \\u202e), so that nothing that
     came from a server, a certificate or a library can steer a terminal. What the helper prints as JSON is already this (json.dumps escapes non-ASCII); this is for the lines that are not."""
@@ -67,6 +70,18 @@ def printable(text):
 def fail(message, status=1):
     print(printable(message))
     return status
+
+
+def find_config():
+    """Where the configuration is: `.testpilot/` of this folder (an agent folder, as before), or else `~/.testpilot/`, so that claude can be started in any folder (plan 10b). For `~/.testpilot/` the
+    helper moves into it, so that `audits/` and `.env` are those of `~/.testpilot/`, and relative paths too. Returns the folder of testbench.json, or None if there is neither."""
+    if os.path.exists(".testpilot/testbench.json"):
+        return ".testpilot"
+    home = os.path.join(os.path.expanduser("~"), ".testpilot")
+    if os.path.exists(os.path.join(home, "testbench.json")):
+        os.chdir(home)
+        return home
+    return None
 
 
 def env_value(var):
@@ -323,7 +338,7 @@ def show(data, code, action, rid):
             "id": q["id"], "name": clean(q.get("name", ""), 60), "kind": q["kind"], "status": q["status"], "environment": clean(q["environment"], 100),
             "target": clean(q["targetUrl"], 500), "run": q["runId"], "tests": len(q["tests"]), "asked_by": clean(q["createdBy"], 80),
             "asked_at": q["createdAt"], "note": clean(q["note"], 500),
-            **({"folder": claim_folder(q)} if action == "claim" and claim_folder(q) else {}),
+            **({"folder": os.path.abspath(claim_folder(q)) if CONFIG not in (None, ".testpilot") else claim_folder(q)} if action == "claim" and claim_folder(q) else {}),  # from ~/.testpilot/ the agent's own Write needs the whole path
             **({"cases": q.get("caseCount"), "progress": q.get("progress")} if q["kind"] == "run" else {}),
             **({"options": options_of(q.get("options"))} if q["kind"] == "discover" and q.get("options") is not None else {}),
             **({"loadOptions": load_options_of(q.get("loadOptions"))} if q["kind"] == "loadtest" and q.get("loadOptions") is not None else {}),
@@ -452,24 +467,26 @@ def main(argv):
         return fail("The request number must be the number of a request")
     if not whole(a.result_run) or not whole(a.result_audit):
         return fail("--result-run and --result-audit must be a number")
+    global CONFIG
+    CONFIG = find_config()  # before precheck too: it reads audits/ of the same folder
     if a.action == "precheck":  # offline: no profile, no token, no call
         if not re.fullmatch(r"[0-9]{1,2}", a.values):
             return fail("--values is the number of values per class that the depth asks for (1, 2 or 3)")
         return precheck(a.rid, a.coverage, a.read, int(a.values))
 
-    if os.path.exists(".testpilot/testbench.json"):  # a profile that exists is used as it is; one that cannot be read is an error, not a reason to fall back
+    if CONFIG:  # a profile that exists is used as it is; one that cannot be read is an error, not a reason to fall back
         try:
-            g = json.load(open(".testpilot/testbench.json"))
-            p = json.load(open(f".testpilot/projects/{g['activeProject']}.json"))
+            g = json.load(open(os.path.join(CONFIG, "testbench.json")))
+            p = json.load(open(os.path.join(CONFIG, "projects", f"{g['activeProject']}.json")))
             base, pid, var = g["baseUrl"].rstrip("/"), str(p["projectId"]), p.get("requestTokenEnvVar")
         except (OSError, ValueError, KeyError, AttributeError) as e:
-            return fail(f"The TestPilot configuration could not be read ({type(e).__name__}): .testpilot/testbench.json and the profile it names")
+            return fail(f"The TestPilot configuration could not be read ({type(e).__name__}): {os.path.join(CONFIG, 'testbench.json')} and the profile it names")
         if not var:
             return fail("requestTokenEnvVar is not set in the project profile", 3)
     else:
         base, pid, var = (env_value("TESTBENCH_URL") or "").rstrip("/"), env_value("TESTBENCH_PROJECT_ID") or "", "TESTBENCH_TOKEN"
         if not base or not pid:
-            return fail("There is no .testpilot/testbench.json, and TESTBENCH_URL and TESTBENCH_PROJECT_ID are not both set (in the environment or as their own lines of .env): the helper does not know which TestBench to call")
+            return fail("There is no .testpilot/testbench.json here or in ~/.testpilot/, and TESTBENCH_URL and TESTBENCH_PROJECT_ID are not both set (in the environment or as their own lines of .env): the helper does not know which TestBench to call")
         print("profile: none; TESTBENCH_URL, TESTBENCH_PROJECT_ID and TESTBENCH_TOKEN stand in for it")
     if not whole(pid) or not pid:
         return fail("projectId in the project profile must be a number")

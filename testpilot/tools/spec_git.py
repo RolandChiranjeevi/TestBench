@@ -5,7 +5,7 @@
     python3 -I testpilot/tools/spec_git.py write <request number> --confirmed off|local|pr --origin https://the.confirmed.target --specs audits/request-<n>/specs.json
     python3 -I testpilot/tools/spec_git.py push <request number> --confirmed pr
 
-Run it from the folder that holds `.testpilot/`. The agent never runs `git` itself: this tool makes the few git calls it needs, from a fixed list (GIT_OK), with hooks off and no `GIT_*`
+Run it from the folder that holds `.testpilot/`, or from any folder when the configuration is in `~/.testpilot/` (`repoPath` is then best given as an absolute path). The agent never runs `git` itself: this tool makes the few git calls it needs, from a fixed list (GIT_OK), with hooks off and no `GIT_*`
 variables from the environment. `check` and `write` use no network, never fetch, push, merge, create a remote or a repository, or touch the branch the person has checked out.
 
 `push` (git mode `pr`) is the only call that uses the network, and it is narrow: it pushes the ONE new branch `write` made, as a new branch and nothing else, to the one repository the profile and the
@@ -144,19 +144,35 @@ def origin_repo(url):
     return f"{m[1]}/{m[2]}" if m else None  # the address itself is never shown: it may hold a token
 
 
+CONFIG = ".testpilot"  # the folder of testbench.json, set by main()
+
+
 def lowest(*modes):
     return MODES[min(min(MODES.index(m) for m in modes), TOP)]
+
+
+def find_config():
+    """Where the configuration is: `.testpilot/` of this folder (an agent folder, as before), or else `~/.testpilot/`, so that claude can be started in any folder (plan 10b). For `~/.testpilot/` the
+    tool moves into it, so that `audits/` is that of `~/.testpilot/`. Returns the folder of testbench.json (`.testpilot` if there is neither, so the message names the usual place). The same as in
+    request_call.py: `python3 -I` does not let one tool import another."""
+    if os.path.exists(".testpilot/testbench.json"):
+        return ".testpilot"
+    home = os.path.join(os.path.expanduser("~"), ".testpilot")
+    if os.path.exists(os.path.join(home, "testbench.json")):
+        os.chdir(home)
+        return home
+    return ".testpilot"
 
 
 def inspect():
     """Every practical check, in order. Returns what `check` and `write` need, or raises Stop(off=True) with the reason the git mode is off."""
     try:
-        g = json.load(open(".testpilot/testbench.json"))
-        p = json.load(open(f".testpilot/projects/{g['activeProject']}.json"))
+        g = json.load(open(os.path.join(CONFIG, "testbench.json")))
+        p = json.load(open(os.path.join(CONFIG, "projects", f"{g['activeProject']}.json")))
         mode, repo, path, base = p.get("gitMode", "off"), p.get("repo"), p.get("repoPath"), p.get("baseBranch", "main")
         token_var = p.get("pushTokenEnvVar", "")
     except (OSError, ValueError, KeyError, AttributeError, TypeError) as e:
-        raise Stop(f"The TestPilot configuration could not be read ({type(e).__name__}): .testpilot/testbench.json and the profile it names")
+        raise Stop(f"The TestPilot configuration could not be read ({type(e).__name__}): {os.path.join(CONFIG, 'testbench.json')} and the profile it names")
     if mode not in MODES:
         raise Stop("gitMode in the project profile must be off, local or pr")
     if mode == "off":
@@ -456,6 +472,8 @@ def main(argv):
     ap.add_argument("--origin", default="")
     ap.add_argument("--specs", default="")
     a = ap.parse_args(argv)
+    global CONFIG
+    CONFIG = find_config()
     if a.action not in ACTIONS or (a.action in ("write", "push") and not re.fullmatch(r"[0-9]{1,9}", a.rid)):
         print("Usage: spec_git.py check [--confirmed MODE] | spec_git.py write <request number> --confirmed MODE --origin ADDRESS --specs FILE | spec_git.py push <request number> --confirmed pr")
         return 1
