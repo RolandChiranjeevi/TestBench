@@ -5,6 +5,7 @@ that the commands it tells the agent to run are real actions of the helper, that
 it has the agent write can hold nothing but numbers and fixed words. A live run with a person is what shows how an agent follows it.
 Run: python3 -m unittest discover -s testpilot/tests
 """
+import json
 import re
 import sys
 import unittest
@@ -59,7 +60,7 @@ class BugRulesTests(unittest.TestCase):
         kept, not_used = line.split("It does **not** use")
         for word in ("steps", "expected", "actual", "no secrets", "`proposed`", "observation"):
             self.assertIn(word, kept)
-        for word in ("evidence ids", "`evidence/`", "templates/bug-report.md", "duplicate check", "screenshots are never handed in"):
+        for word in ("evidence ids", "`evidence/`", "templates/bug-report.md", "duplicate check", "screenshots are not handed in yet"):
             self.assertIn(word, not_used)
 
 
@@ -588,3 +589,39 @@ class NoEnvironmentTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BugTemplateTests(unittest.TestCase):
+    """Step 3a: every bug report of a discover follows one template, so that a developer can see what the bug is and a person can sort it."""
+
+    TEMPLATE = (ROOT / ".claude" / "skills" / "bug-reporting" / "templates" / "discover-bug.md").read_text()
+    HEADINGS = ["Summary:", "Requirement:", "Where:", "Preconditions:", "Reproduced:", "Evidence:", "Severity reason:", "Not checked:", "Related:",
+                "--- Agent note (for triage, not for the developer)", "Confidence:", "Found by: TestPilot, request"]
+
+    def test_the_template_has_every_heading_in_order(self):
+        block = self.TEMPLATE.split("```")[1]
+        at = [block.find(h) for h in self.HEADINGS]
+        self.assertNotIn(-1, at)
+        self.assertEqual(at, sorted(at))
+
+    def test_reproduced_and_not_checked_are_required_and_the_rules_are_named(self):
+        for must in ("**Reproduced** is required", "rule 13", "**Not checked** is required", "rule 12", "`none known`", "Never a password, a token, a cookie or a real person's data"):
+            with self.subTest(must=must):
+                self.assertIn(must, self.TEMPLATE)
+
+    def test_the_paths_in_the_template_exist(self):
+        base = ROOT / ".claude" / "skills" / "bug-reporting" / "templates"
+        for rel in re.findall(r"`(\.\./[^`]+\.md)`", self.TEMPLATE):
+            self.assertTrue((base / rel).resolve().exists(), rel)
+
+    def test_both_discover_skills_point_to_it(self):
+        self.assertIn("../bug-reporting/templates/discover-bug.md", TEXT)
+        self.assertIn("../bug-reporting/templates/discover-bug.md", (ROOT / ".claude" / "skills" / "testpilot-request-discover-write" / "SKILL.md").read_text())
+
+    def test_the_example_bug_follows_the_template(self):
+        bugs = [f for block in ExampleAndShellTests.examples(self) for f in json.loads(block)["findings"] if f["kind"] == "bug_report"]
+        self.assertTrue(bugs)
+        for b in bugs:
+            at = [b["description"].find(h) for h in self.HEADINGS]
+            self.assertNotIn(-1, at, b["description"])
+            self.assertEqual(at, sorted(at))

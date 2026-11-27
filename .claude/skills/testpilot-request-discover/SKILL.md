@@ -17,7 +17,7 @@ Paths in this file are relative to this file. Before starting, read:
 - `../../references/agent-rules.md` (in particular rules 3, 4, 5, 6, 11, 12 and 13)
 - `../testpilot-requests/SKILL.md`, steps 2 and 8 (the helper, the token, giving a request back)
 - `../bug-reporting/SKILL.md` and `../test-planning/SKILL.md` (**always**, whatever the request's options say: the plan follows the test-planning rules and every bug proposal follows the bug-reporting rules; they are not choices)
-  - From bug-reporting a discover keeps: short `steps`, `expected` and `actual`, no secrets, status `proposed`, and a bug only for something you saw fail; a deviation that needs a requirement or design reference to count is an observation. It does **not** use evidence ids, the `evidence/` folder, `templates/bug-report.md` or the duplicate check: the fields in step 4 are the whole format, and screenshots are never handed in.
+  - From bug-reporting a discover keeps: short `steps`, `expected` and `actual`, no secrets, status `proposed`, and a bug only for something you saw fail; a deviation that needs a requirement or design reference to count is an observation. Every bug report follows `../bug-reporting/templates/discover-bug.md` (the fields, and the headings of its `description`). It does **not** use evidence ids, the `evidence/` folder, `templates/bug-report.md` or the duplicate check, and screenshots are not handed in yet.
 
 ## Responsibilities
 
@@ -182,7 +182,7 @@ Only what the user confirmed in step 2. Write in English, plainly and briefly. *
 | `plan` | `coverage_gap` | `description`: what was **not** verified, and why. Always include what read-only prevented: areas behind a login, forms not submitted, pages beyond the 10, sizes not looked at |
 | `cases` | `test_case` | `title`, `key` (the same thing again gets the same key: `../../references/finding-keys.md`), `description`, `preconditions`, `priority`, `steps` as `{action, expected}`, and `planItemRef` (the `ref` of its plan item, which must come **earlier** in the same file). Only for a plan item that is `ready` |
 | `observations` | `observation` | `title`, `key` (the same thing again gets the same key: `../../references/finding-keys.md`), `severity` (`info` to `critical`), `evidence` (what you saw and where, short), `recommendation`, `source` (the page) |
-| `bugs` | `bug_report` | only when something is clearly wrong and you have the evidence (a console error, a failed request, what the snapshot shows): `title`, `key` (the same thing again gets the same key: `../../references/finding-keys.md`), `description`, `steps` (strings), `expected`, `actual`, `environment`, `url`, `severity` (`low` to `critical`) |
+| `bugs` | `bug_report` | only when something is clearly wrong, you have the evidence (a console error, a failed request, what the snapshot shows) and it happened again (rule 13), written as `../bug-reporting/templates/discover-bug.md` says: `title`, `key` (the same thing again gets the same key: `../../references/finding-keys.md`), `description`, `steps` (strings), `expected`, `actual`, `environment`, `url`, `severity` (`low` to `critical`) |
 
 One observation or bug per problem, not one per page: name the pages in its evidence. Manual test suggestions are not made here.
 
@@ -195,7 +195,7 @@ Observations and bug reports go in `findings-1.json`:
    "evidence": "At 390 px wide the banner hides the footer links until it is closed. Seen in the snapshot of /.",
    "recommendation": "Leave room for the footer while the banner is shown.", "source": "/"},
   {"kind": "bug_report", "title": "A price differs between the list and the product page", "key": "products:price-differs-from-item-page", "severity": "medium",
-   "description": "The product list shows 12.00 for one item and its own page shows 14.00.",
+   "description": "Summary: The list and the product page show different prices for the same item.\nRequirement: none known\nWhere: Chromium, desktop 1440x900\nPreconditions: not logged in\nReproduced: yes, 2 of 2 attempts\nEvidence: the snapshot of /products shows 12.00, the snapshot of the item page shows 14.00\nSeverity reason: a customer may pay another price than the one shown\nNot checked: the price in the cart, other items\nRelated: none\n\n--- Agent note (for triage, not for the developer)\nConfidence: high, both pages showed it each time\nFound by: TestPilot, request 12",
    "steps": ["Open /products", "Open the first item"], "expected": "The same price on both pages.",
    "actual": "12.00 on the list, 14.00 on the page.", "environment": "staging", "url": "https://staging.example.com/products"}
 ]}
