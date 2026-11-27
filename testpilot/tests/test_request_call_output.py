@@ -563,3 +563,14 @@ class PrecheckOfTheReadOnlyDiscover(unittest.TestCase):
         status, lines = self.check(READ_ROWS.replace(f"values 1 {DOT} lock 2: the field sent data on its first value", f"values 1 {DOT} it showed no message"))
         self.assertEqual(status, 1)
         self.assertTrue(any("Phone | empty: 1 value(s), and this depth asks for 2" in l for l in lines), lines)
+
+    def test_the_limit_is_a_reason_only_with_a_count_that_reached_it(self):
+        # körning 8: "browser call limit of 300 reached" after 222 calls
+        extra = rows("## /contact.html", "Message | all | not tried | browser call limit of 300 reached")
+        status, lines = self.check(READ_ROWS + extra)
+        self.assertEqual(status, 1)
+        self.assertTrue(any("gives the browser call limit as the reason but not the count" in l for l in lines), lines)
+        status, lines = self.check(READ_ROWS + rows("## /contact.html", "Message | all | not tried | browser call limit: 222 of 300"))
+        self.assertTrue(any("222 of 300 browser calls is not the limit: go on" in l for l in lines), lines)
+        status, lines = self.check(READ_ROWS + rows("## /contact.html", "Message | all | not tried | browser call limit: 400 of 400"))
+        self.assertEqual(status, 0, lines)

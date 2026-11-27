@@ -397,6 +397,13 @@ def precheck(rid, path, read=False, values=0):
             elif not read and status != "not tried" and not (re.search(r"actions? \d", proof) or "no action (read:" in proof):
                 gaps.append(f"GAP {p} | {r[0][:50]} | {r[1][:30]}: says {status} but names no action numbers, so it counts as not tried")
                 status = "not tried"
+            why = " ".join(r[3:])
+            if read and status == "not tried" and re.search(r"\blimit\b|budget", why, re.I):  # körning 8: "limit of 300 reached" after 222 calls
+                m = re.search(r"limit: (\d+) of (\d+)", why)
+                if not m:
+                    gaps.append(f"GAP {p} | {r[0][:50]} | {r[1][:30]}: gives the browser call limit as the reason but not the count (\"browser call limit: 400 of 400\")")
+                elif int(m.group(1)) < int(m.group(2)):
+                    gaps.append(f"GAP {p} | {r[0][:50]} | {r[1][:30]}: {m.group(1)} of {m.group(2)} browser calls is not the limit: go on")
             if status == "not tried" and SOFT_REASON.search(" ".join(r[3:])):
                 gaps.append(f"GAP {p} | {r[0][:50]} | {r[1][:30]}: not tried, and \"{' '.join(r[3:])[:60]}\" is not a hard reason. Do it now, or give a hard one (a secret, another origin, a card number, a CAPTCHA, a limit of the request)")
             counts[status] += 1
