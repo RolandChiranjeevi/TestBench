@@ -8,8 +8,6 @@ description: Work on a discover request from TestBench with ONE confirmation: ex
 A person asked for a discover in TestBench (Automated tests, Requests). This skill does it: it explores the target **read-only**, and hands in what it finds as **proposals**: a test plan,
 draft test cases, observations and bug reports. It asks the user **one** confirmation, and nothing more until the work is done.
 
-`/testpilot-discover` is the other way to discover: a manual audit with all its stops, its evidence and an audit package. It is unchanged and is not used here.
-
 Input: the number of a discover request that `/testpilot-requests` has **taken** (claimed).
 
 Paths in this file are relative to this file. Before starting, read:

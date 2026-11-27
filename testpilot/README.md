@@ -4,26 +4,18 @@ How a TestPilot audit reaches TestBench, and what to know before you run it.
 
 ## 1. Overview
 
-```text
-init → discover → plan → run → report → validate → transform → deliver
-```
+Work for the agent comes from TestBench as **requests** (Automated tests, Requests). You start it with `/testpilot-requests`; it takes the request you choose and hands it to one skill:
 
-| Stage | Where it lives | What it does |
+| Request | Skill | What it does |
 |---|---|---|
-| init | `.claude/skills/testpilot-init/SKILL.md` | Select or create a TestBench project, determine requirements source, save project profile. Stops for confirmation. |
-| discover | `.claude/skills/testpilot-discover/SKILL.md` | Select or create a target environment, inspect a target and propose a scope. Stops for approval. |
-| plan | `.claude/skills/testpilot-plan/SKILL.md` | Inputs, requirements, scope, test plan and coverage gaps. Two approvals: scope first, then the test plan. |
-| run | `.claude/skills/testpilot-run/SKILL.md` | Playwright checks, visual design review and evidence. Needs the approved scope and test plan first. |
-| report | `.claude/skills/testpilot-report/SKILL.md` | Analysis, bug and manual-test proposals, and the audit package. Needs a finished run first. |
-| validate | audit flow, step 9 in `testpilot/SKILL.md` | Contract validation. `deliver` needs `validation.result == "pass"`. |
-| transform | `testpilot/tools/build_testbench_package.py` | Turns the audit package into a TestBench import zip. |
-| deliver | `.claude/skills/testpilot-deliver/SKILL.md` | Builds the zip, dry-run, asks you, then imports. |
-| requests | `.claude/skills/testpilot-requests/SKILL.md` | Optional, before `discover`. Fetches what people asked the agent for in TestBench, takes the one you choose, hands it to `discover` or re-runs its failed Playwright tests after you confirm the command, and marks it done. See section 10. |
+| any | `.claude/skills/testpilot-requests/SKILL.md` | Fetches what people asked the agent for, takes the one you choose, and marks it done. Also runs a `rerun` or a `run` request itself. |
+| discover | `.claude/skills/testpilot-request-discover/SKILL.md` | One confirmation, a read-only exploration, a test plan, draft test cases, observations and bug proposals, and optional spec files. |
+| discover (act on the target) | `.claude/skills/testpilot-request-discover-write/SKILL.md` | The same, but it may click and fill in forms with made-up data on an address that is not production. |
+| loadtest | `.claude/skills/testpilot-request-loadtest/SKILL.md` | One confirmation and a small, bounded load test with the fixed tool `testpilot/tools/loadtest.py`. |
 
-`init`, `discover`, `plan`, `run`, `report`, `deliver` and `requests` are separate skills.
-The rest (validate) runs as a step of the audit flow in
-`.claude/skills/testpilot/SKILL.md`. The audit contract is
-`.claude/references/audit-contract.md`.
+They read `.claude/skills/testpilot/SKILL.md` (the boundaries and stop conditions) and `.claude/references/agent-rules.md`. Helpers they call: `bug-reporting`, `test-planning`, `visual-design-review` and `functional-test-runner`. `testpilot-security-review` is a separate skill that a request never starts.
+
+The manual audit skills (`init`, `discover`, `plan`, `run`, `report`, `deliver`, `loadtest` and `api-testing`) were removed. The tools that built and imported an audit package (`testpilot/tools/`, the contract in `.claude/references/audit-contract.md`) are still here, and the sections below that describe them are kept for those tools; no skill runs them now.
 
 Everything TestPilot sends is `proposed`. Humans review in TestBench.
 
@@ -111,24 +103,6 @@ Rules:
   rules are in `.claude/references/agent-rules.md`.
 - Do not store token values, passwords, cookies or target URLs in the TestBench project profile. An API target profile (`.testpilot/targets/<name>.json`) may hold a non-production base URL, never a secret.
 
-### API target profiles
-
-`.testpilot/targets/<name>.json` describes an API target for `/testpilot-api-testing`
-(template: `.claude/skills/testpilot-api-testing/templates/target-profile.json`).
-
-| Field | Use |
-|---|---|
-| `baseUrl` | Non-production base URL; every request must be under it |
-| `environment`, `production` | `production: true` needs two confirmations recorded by `discover` before the runner accepts it |
-| `permissionMode` | `observe_only` or `full`; effective mode is `full` only when the project profile says `full` too |
-| `auth` | `type` (`none`, `bearer`, `cookie`, `header`, `basic`), `tokenEnvVar`, an optional `login` request, `expiredTokenEnvVar`, `secondAccount.body`: environment variable **names** only, as `${env:NAME}` |
-| `schema` | `{ "type": "openapi" \| "graphql", "file": "..." }` for contract checks |
-| `limits` | `timeoutSeconds` (max 30), `maxAttempts` (max 3), `maxRequestsPerRun`, `rateLimitProbeMax` |
-
-The runner refuses a profile that holds a literal secret. Run a plan with
-`python3 testpilot/tools/apitest/runner.py <audit-id> --config-dir .testpilot --audits-dir audits [--dry-run]`; tests with
-`python3 -m unittest discover -s testpilot/tests` (in-process mock server, no network).
-
 ## 3. Environment variables
 
 `.env` (never committed):
@@ -201,41 +175,10 @@ The endpoint is `POST {baseUrl}/api/projects/{projectId}/audit-import`. Add
 ## 8. Quick start
 
 ```text
-/testpilot-init
-/testpilot-discover <target-url>
-/testpilot-plan
-/testpilot-run
-/testpilot-report
-/testpilot-deliver <audit-id>
+/testpilot-requests
 ```
 
-`init`:
-
-1. Read `.testpilot/testbench.json`.
-2. List or create a TestBench project.
-3. Determine requirements source.
-4. Confirm before creating anything.
-5. Save project profile and update `activeProject`.
-
-`deliver <audit-id>`:
-
-1. Read `.testpilot/testbench.json` and the active project profile.
-2. Stop if `deliveryEnabled` is not `true` in the profile.
-3. Check `audits/<audit-id>/manifest.json`. Stop unless `validation.result` is `pass`.
-4. Build the zip: `python3 testpilot/tools/build_testbench_package.py audits/<audit-id> <projectKey>`.
-   Output: `<audit-id>-testbench.zip`.
-5. Log in, upload with `?dryRun=1`.
-6. Show counts (new/unchanged/updated/pending), evidence ok/problems, unresolved
-   references, warnings, and each item. Stop on any HTTP error or `evidence.problems > 0`.
-7. Ask you for confirmation. Nothing is imported before you say yes.
-8. Upload for real, then write `manifest.delivery`
-   (`status`, `delivered_at`, `method`, `target`, `request_reference`,
-   `response_reference`, `error`, `response_summary`).
-9. Report the result and the TestBench `auditId`.
-
-Fields mapped by the transform for each bug: `bug_proposal_id` → `sourceId`,
-`severity.level` → `agentSeverity` (lower case), `steps_to_reproduce` → `steps`,
-`expected_result` → `expected`, `actual_result` → `actual`. `confidence` is not sent.
+Set up the agent folder as described in `docs/agent-quickstart.md` (token, `.testpilot/testbench.json` and a project profile). The profile's `permissionMode` is `observe_only` unless you edit it to `full`.
 
 ## 9. Known limitations and TODO
 

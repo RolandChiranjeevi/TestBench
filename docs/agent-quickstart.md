@@ -61,7 +61,7 @@ The first server reads its variables from `.env` itself, so the file holds no to
 }
 ```
 
-`permissionMode` decides what the agent may do to the target: `observe_only` (read only, the default) or `full` (state-changing checks, which needs your explicit confirmation in a message of its own). `/testpilot-init` can write the profile; `requestTokenEnvVar` is added by hand ([testpilot/README.md](../testpilot/README.md), section 10).
+`permissionMode` decides what the agent may do to the target: `observe_only` (read only, the default) or `full` (state-changing checks, which needs your explicit confirmation in a message of its own). You edit the profile by hand (`testpilot/config/projects/shop.example.json` is a template), and so is `requestTokenEnvVar` ([testpilot/README.md](../testpilot/README.md), section 10).
 
 ## 5. Ask, and start the agent
 
