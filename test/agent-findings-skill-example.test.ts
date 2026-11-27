@@ -16,9 +16,10 @@ describe("the example findings files in the request-discover skill", () => {
     assert.deepEqual([...new Set(findings.map((f) => f.kind))].sort(), ["bug_report", "coverage_gap", "observation", "plan_item", "test_case"]);
   });
 
-  it("pass the strict schema of the server, with `ref` and `planItemRef` taken out as the helper does", () => {
+  it("pass the strict schema of the server, with `ref`, `planItemRef` and `screenshots` taken out as the helper does", () => {
     for (const f of findings) {
-      const { ref: _ref, planItemRef, ...rest } = f;
+      // `screenshots` names the files the helper sends to the bug afterwards (server/agentscreenshots.ts); it is never part of the finding itself.
+      const { ref: _ref, planItemRef, screenshots: _screenshots, ...rest } = f;
       // The helper replaces planItemRef by the P-number TestBench gave the plan item; any P-number stands in for it here.
       findingBody.parse(planItemRef === undefined ? rest : { ...rest, planItem: "P-1" });
     }
@@ -26,5 +27,8 @@ describe("the example findings files in the request-discover skill", () => {
 
   it("are refused by the schema as soon as one field in them is not one of the server's (so this test can fail)", () => {
     assert.throws(() => findingBody.parse({ ...findings[0], status: "approved" }));
+    const bug = findings.find((f) => f.kind === "bug_report")!;
+    assert.ok(bug.screenshots, "the example bug names its two pictures");
+    assert.throws(() => findingBody.parse(bug), "the server refuses `screenshots` in a finding: only the helper reads it");
   });
 });
