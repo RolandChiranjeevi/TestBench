@@ -208,6 +208,16 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(p.returncode, 1, p.out)
         self.assertIn("could not be read", p.out)
 
+    def test_project_picks_the_profile_and_a_name_that_could_leave_the_folder_is_refused(self):
+        """Plan 10b, P2: every project has its own profile, and its own repo."""
+        w = World(self, mode="off")
+        (w.agent / ".testpilot" / "projects" / "other.json").write_text(json.dumps({"projectId": "2", "gitMode": "everything", "repo": "acme/other", "repoPath": str(w.repo)}))
+        self.assertIn("the profile's gitMode is off", w.run("check").out)
+        self.assertIn("must be off, local or pr", w.run("check", "--project", "other").out)
+        p = w.run("check", "--project", "../shop")
+        self.assertEqual(p.returncode, 1, p.out)
+        self.assertIn("--project is the name of a profile", p.out)
+
     def test_with_no_profile_here_the_one_in_the_home_folder_is_read(self):
         """Plan 10b, P1: claude started in any folder, the configuration in ~/.testpilot/."""
         w = World(self, mode="off")

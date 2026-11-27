@@ -68,8 +68,8 @@ It does not:
 Read, with the Read tool and not with a shell command (`cat`, `ls`): a missing `.testpilot/testbench.json` is not an error for a `discover` (see the rules below), and the helper's first
 line says `profile: none` when there is none. Do not list the folder to see what is in it (`ls .testpilot`): read the files named below one by one with the Read tool, and say so if one is missing.
 
-1. `.testpilot/testbench.json`
-2. The project profile referenced by `activeProject`
+1. `.testpilot/testbench.json` (or, when this folder has none, `~/.testpilot/testbench.json`)
+2. The project profile referenced by `activeProject`. Once a request is picked, the profile it came from: `projects/<project>.json`, with `<project>` the `project` of its list row.
 
 Use from the global configuration:
 
@@ -115,6 +115,7 @@ What was done, and the counts. No secrets, no raw log.
 NOTE_END
 ```
 
+- **Several projects.** `list` with no number goes through every profile in `projects/`, each with its own token, and every row says which profile it came from (`project`, and `projectName`). With more than one profile, each profile's answer starts with a line `project: <name>`; a profile that fails says why there and the others are still listed. **From `list 12` on, add `--project <project>` of that row to every call for the request** (`list`, `claim`, `result`, `case-results`, `findings`, `load-result`, `known`, `release`, `complete`, and `spec_git.py`), for example `request_call.py claim 12 --project helix`. Without it the `activeProject` is used, and a request of another project is then not found.
 - `list` shows the waiting requests. `list 12` shows only that request and lists its tests (`file`, `title`, `fullName`; at most 100) or, for a `run` request, its test cases with their steps (at most 100). `claim` shows them too. `complete` shows the final state and the result note.
 - The note of `release` and `complete` is the text on standard input (at most 1000 characters are kept). Write it in a **quoted** heredoc as above (`<<'NOTE_END'`), so that it stays text.
 - `complete` also takes `--result-run <n>`, the number of a run the USER imported by hand (leave it out after `result`, and for a run request: TestBench already linked the run), and, for a discover only, `--result-audit <n>`, the `auditId` that `deliver` printed in this session.

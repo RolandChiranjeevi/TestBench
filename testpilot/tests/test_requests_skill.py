@@ -396,7 +396,7 @@ class Stub(HTTPServer):
 TOKEN = "tbrq_secretsecretsecret"
 
 
-def run_helper(work, port, action, rid="12", report="", note=None, result_audit=None, case_results="", load_result="", result_run=None, token=TOKEN, base=None, profile_var="TB_REQ_TOK", findings="", profile=True, env_extra=None):
+def run_helper(work, port, action, rid="12", report="", note=None, result_audit=None, case_results="", load_result="", result_run=None, token=TOKEN, base=None, profile_var="TB_REQ_TOK", findings="", profile=True, env_extra=None, extra=()):
     """The helper, run in the agent's folder `work`, against a stub on `port` (or at `base`), with `token` in the environment variable the profile names (none if None).
     Each value is one argument, as the shell would hand it over: no shell is involved."""
     if profile:
@@ -407,6 +407,7 @@ def run_helper(work, port, action, rid="12", report="", note=None, result_audit=
     for flag, value in (("--report", report), ("--case-results", case_results), ("--findings", findings), ("--load-result", load_result), ("--result-audit", result_audit), ("--result-run", result_run)):
         if value:
             args.append(f"{flag}={value}")
+    args += list(extra)
     env = {k: v for k, v in os.environ.items() if k != "TB_REQ_TOK" and not k.startswith("TESTBENCH_")}  # nothing of the developer's own environment reaches the helper
     if token is not None:
         env["TB_REQ_TOK"] = token
@@ -1376,6 +1377,75 @@ class ConfigurationInTheHomeFolder(unittest.TestCase):
         self.assertIn("could not be read", p.stdout)
         self.assertIn(str(self.tp / "testbench.json"), p.stdout)
         self.assertEqual(self.stub.seen, [])
+
+
+class SeveralProjects(unittest.TestCase):
+    """Plan 10b, P2: one profile per project, each with its own token; `list` goes through all of them and every row names its profile, and `--project` picks the one to work in."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.work = Path(self.tmp.name).resolve()
+        self.stub = Stub(200, [request(5, kind="discover")])
+        self.addCleanup(self.stub.shutdown)
+        tp = self.work / ".testpilot"
+        (tp / "projects").mkdir(parents=True)
+        (tp / "testbench.json").write_text(json.dumps({"baseUrl": f"http://127.0.0.1:{self.stub.server_port}", "activeProject": "alpha"}))
+        (tp / "projects" / "alpha.json").write_text(json.dumps({"projectId": 2, "name": "Alpha UAT", "requestTokenEnvVar": "TOK_A"}))
+        (tp / "projects" / "beta.json").write_text(json.dumps({"projectId": 3, "name": "Beta", "requestTokenEnvVar": "TOK_B"}))
+        self.tokens = {"TOK_A": "tbrq_alphaalphaalpha", "TOK_B": "tbrq_betabetabetabeta"}
+
+    def run_it(self, action="list", rid="", extra=(), tokens=None):
+        return run_helper(self.work, self.stub.server_port, action, rid, profile=False, token=None, env_extra=self.tokens if tokens is None else tokens, extra=extra)
+
+    def rows(self, p):
+        return [json.loads(l) for l in p.stdout.splitlines() if l.startswith("{")]
+
+    def test_list_asks_every_project_with_its_own_token_and_every_row_names_its_profile(self):
+        p = self.run_it()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual([(s["path"], s["auth"]) for s in self.stub.seen], [("/api/agent/projects/2/requests", "Bearer tbrq_alphaalphaalpha"), ("/api/agent/projects/3/requests", "Bearer tbrq_betabetabetabeta")])
+        self.assertEqual([(r["project"], r["projectName"]) for r in self.rows(p)], [("alpha", "Alpha UAT"), ("beta", "Beta")])
+        self.assertEqual([l for l in p.stdout.splitlines() if l.startswith("project: ")], ["project: alpha", "project: beta"])
+        self.assertNotIn("alphaalpha", p.stdout + p.stderr)
+
+    def test_a_project_without_its_token_says_so_and_the_others_are_still_listed(self):
+        p = self.run_it(tokens={"TOK_B": self.tokens["TOK_B"]})
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("no usable request token", p.stdout)
+        self.assertEqual([s["path"] for s in self.stub.seen], ["/api/agent/projects/3/requests"])
+        self.assertEqual([r["project"] for r in self.rows(p)], ["beta"])
+
+    def test_project_picks_the_profile_and_its_token_for_a_claim(self):
+        self.stub.body = request(5, kind="discover", status="claimed")
+        p = self.run_it("claim", "5", extra=("--project", "beta"))
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual([(s["method"], s["path"], s["auth"]) for s in self.stub.seen], [("POST", "/api/agent/projects/3/requests/5/claim", "Bearer tbrq_betabetabetabeta")])
+        self.assertEqual(self.rows(p)[0]["project"], "beta")
+
+    def test_without_project_a_numbered_call_goes_to_the_active_project_only(self):
+        self.run_it("list", "5")
+        self.run_it("claim", "5")
+        self.assertEqual([s["path"] for s in self.stub.seen], ["/api/agent/projects/2/requests", "/api/agent/projects/2/requests/5/claim"])
+
+    def test_a_project_name_that_could_leave_the_profiles_folder_or_does_not_exist_makes_no_call(self):
+        for name in ("../alpha", "a/b", ".hidden", "", "x" * 65):
+            if not name:
+                continue
+            p = self.run_it("claim", "5", extra=("--project", name))
+            self.assertEqual(p.returncode, 1, name)
+            self.assertIn("--project is the name of a profile", p.stdout, name)
+        p = self.run_it("claim", "5", extra=("--project", "gamma"))
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("projects/gamma.json", p.stdout)
+        self.assertEqual(self.stub.seen, [])
+
+    def test_with_one_profile_the_answer_has_no_project_line_but_the_rows_still_name_it(self):
+        (self.work / ".testpilot" / "projects" / "beta.json").unlink()
+        p = self.run_it()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(p.stdout.splitlines()[0], "list HTTP 200")
+        self.assertEqual(self.rows(p)[0]["project"], "alpha")
 
 if __name__ == "__main__":
     unittest.main()

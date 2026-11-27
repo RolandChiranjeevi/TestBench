@@ -305,6 +305,8 @@ Put this in `.claude/settings.local.json` in the agent's folder, and start a **n
 
 **Configuration in `~/.testpilot/` (any folder).** When the folder claude runs in has no `.testpilot/testbench.json`, `request_call.py`, `spec_git.py` and `loadtest.py` use `~/.testpilot/` instead: `~/.testpilot/testbench.json`, `~/.testpilot/projects/<key>.json`, the token line in `~/.testpilot/.env` and the findings in `~/.testpilot/audits/`. Then `claim` prints `folder:` as a whole path. A `.testpilot/` in the folder always wins, so an agent folder works as before. `doctor.py` still checks only the folder it runs in.
 
+**Several projects.** Put one profile per project in `projects/`, each with its own `requestTokenEnvVar` (never one token for all projects). `request_call.py list` then lists the waiting requests of every profile, each row with `project` (the profile's file name) and `projectName`, and every later call for that request takes `--project <project>` (`spec_git.py` too). Without `--project` the `activeProject` is used, as before.
+
 `python3 -I testpilot/tools/doctor.py` (run from the agent folder, the one that holds `.testpilot/`) tells you whether the folder is ready for a request, before you start one. It only **reads**: it writes nothing, fetches nothing, and **never prints a token** (a token-like string in any line is shown as `tbrq_[redacted]`). Each line is `ok`, `warn` or `fail`, and the exit code is 1 if there is a `fail`.
 
 - **config:** the profile can be read and has a project id, a token variable, a permission mode and a valid address (plain `http` only to a local host, as the helper insists).
