@@ -84,7 +84,7 @@ describe("picking in the dialog", () => {
 
 describe("what the request card says", () => {
   it("puts the choices on one line", () => {
-    assert.equal(optionsSummary(DEFAULT_OPTIONS), "Only read · Commit on a local branch · test plan, test cases, observations, bug proposals · desktop, tablet, mobile · depth: normal");
+    assert.equal(optionsSummary(DEFAULT_OPTIONS), "Only read · Commit on a local branch · test plan, test cases, observations, bug proposals · desktop, tablet, mobile · checks: visual review, accessibility, api checks, security review, privacy and consent · depth: normal");
     assert.equal(
       optionsSummary({ targetMode: "full", gitMode: "pr", deliverables: ["specs"], viewports: ["mobile"], checks: [], depth: "deep", production: false }),
       "Act on the target · Push and open a pull request · spec files · mobile · depth: deep",

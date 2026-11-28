@@ -31,7 +31,7 @@ COUNTED = ("browser_click", "browser_type", "browser_fill_form", "browser_select
 
 
 DISCOVER = ROOT / ".claude" / "skills" / "testpilot-request-discover"
-CHECKS = {"read": ("forms.md", "visual-a11y.md", "api-security.md"), "write": ("visual-a11y.md", "api-security.md")}  # the check files each mode follows (SKILL.md, "The checks")
+CHECKS = {"read": ("core.md", "forms.md", "page-html.md", "visual.md", "accessibility.md", "api.md", "security.md", "privacy.md", "scope.md"), "write": ("core.md", "page-html.md", "visual.md", "accessibility.md", "api.md", "security.md", "privacy.md", "scope.md")}  # the check files each mode follows (SKILL.md, "The checks")
 
 
 def whole(mode):
@@ -732,7 +732,7 @@ class PassiveApiAndSecurityInTheWritingDiscoverTests(unittest.TestCase):
         self.assertIn("Leave the `Checks:` line out when the request chose none.", text)
 
     def test_the_header_tool_is_allowed_only_for_the_response_headers(self):
-        self.assertIn("`browser_network_request` (**only** with `part: \"response-headers\"`)", flat(TEXT))
+        self.assertIn("`browser_network_request` (**only** with `part: \"response-headers\"`, or `part: \"response-body\"` for the page's own HTML before the login, as `checks/page-html.md` allows)", flat(TEXT))
 
 
 if __name__ == "__main__":

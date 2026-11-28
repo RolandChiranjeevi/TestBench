@@ -615,12 +615,12 @@ class PrecheckOfTheScope(unittest.TestCase):
         self.assertIn("GAP Scope: no `## Scope` section with a row per check id (checks/scope.md)", lines)
 
     def test_a_status_that_does_not_fit_the_mode_or_the_request_is_a_gap(self):
-        for cid, status, want in (("forms.sent", "done", "not in this mode"), ("limits.email", "done", "not possible"), ("api.calls", "done", "not chosen"), ("visual.a11y-scan", "not chosen", "not possible")):
+        for cid, status, want in (("forms.sent", "done", "not in this mode"), ("limits.email", "done", "not possible"), ("api.calls", "done", "not chosen"), ("a11y.scan", "not chosen", "not possible")):
             with self.subTest(cid=cid):
                 lines = self.check(scope_rows(override={cid: (status, "looked")}))[1]
                 self.assertIn(f"GAP Scope | {cid}: says {status}, but it is {want} here", lines)
-        lines = self.check(scope_rows(override={"visual.headings": ("not chosen", "the request did not")}))[1]
-        self.assertTrue(any(l.startswith("GAP Scope | visual.headings: says not chosen, but this mode can do it and the request chose visual") for l in lines), lines)
+        lines = self.check(scope_rows(override={"visual.layout": ("not chosen", "the request did not")}))[1]
+        self.assertTrue(any(l.startswith("GAP Scope | visual.layout: says not chosen, but this mode can do it and the request chose visual") for l in lines), lines)
 
     def test_the_mode_decides_and_none_means_nothing_was_chosen(self):
         self.assertEqual(self.check(scope_rows(read=False), read=False)[0], 0, "write mode: forms.sent is done there")
@@ -648,7 +648,7 @@ class PrecheckOfTheScope(unittest.TestCase):
             put(COVERAGE, scope_rows())
             status, out, _ = run_main(["precheck", "12", f"--coverage={COVERAGE}", "--checks=visual,everything"])
             self.assertEqual(status, 1)
-            self.assertTrue(out.startswith("--checks is the request's checks joined by commas (api, security, visual), or none"), out)
+            self.assertTrue(out.startswith("--checks is the request's checks joined by commas (accessibility, api, privacy, security, visual), or none"), out)
             status, out, _ = run_main(["precheck", "12", f"--coverage={COVERAGE}", "--read", "--values=2"])
         self.assertEqual(status, 0, out)
         self.assertNotIn("Scope", out)

@@ -339,7 +339,7 @@ describe("the options of a discover request", () => {
   it("without options a discover gets the defaults: read only, a local branch, a plan, cases, observations and bugs, all three viewports", () => {
     const p = makeProject(key());
     const r = ask(p.id);
-    assert.deepEqual(r.options, { targetMode: "observe_only", gitMode: "local", deliverables: ["plan", "cases", "observations", "bugs"], viewports: ["desktop", "tablet", "mobile"], checks: [], depth: "normal", production: false });
+    assert.deepEqual(r.options, { targetMode: "observe_only", gitMode: "local", deliverables: ["plan", "cases", "observations", "bugs"], viewports: ["desktop", "tablet", "mobile"], checks: ["visual", "accessibility", "api", "security", "privacy"], depth: "normal", production: false });
     assert.notEqual(r.options?.deliverables, DEFAULT_REQUEST_OPTIONS.deliverables, "a copy: one request's options never change the defaults");
   });
 
@@ -395,7 +395,8 @@ describe("the options of a discover request", () => {
   it("a production target can only be read: production with full is refused, production with observe_only is kept, and git is a separate choice", () => {
     const p = makeProject(key());
     refused(() => ask(p.id, { production: true, targetMode: "full" }), 400, /production target can only be read/);
-    refused(() => ask(p.id, { production: true, checks: ["security"] }), 400, /only visual is allowed/);
+    refused(() => ask(p.id, { production: true, checks: ["security"] }), 400, /only visual, accessibility and privacy are allowed/);
+    assert.deepEqual(ask(p.id, { production: true, checks: ["privacy", "accessibility"] }).options?.checks, ["accessibility", "privacy"]);
     assert.deepEqual(ask(p.id, { production: true, checks: ["visual"] }).options?.checks, ["visual"]);
     refused(() => ask(p.id, { checks: ["nope"] }), 400, /checks must be a list/);
     assert.equal(ask(p.id, { production: true }).options?.production, true);

@@ -6,7 +6,7 @@ import { needsText } from "../access";
 import { auditPath, byQueue, deliveredSummary, PROGRESS_TITLE, progressLabel } from "../agentruns";
 import { api, timeAgo, type AgentRequest, type RunDetail } from "../api";
 import { addressIsLocal, DEFAULT_LOAD, LOAD_DURATIONS, LOAD_ERROR_RATES, LOAD_P95S, LOAD_RAMPS, LOAD_VUS, loadProblem, loadSummary, parsePaths, type LoadOptions } from "../loadOptions";
-import { CHECKS, DEFAULT_OPTIONS, DELIVERABLES, DEPTHS, GIT_MODES, optionsProblem, optionsSummary, START_COMMAND, START_SKILL, TARGET_MODES, toggled, VIEWPORTS, withProduction, withTargetMode, type RequestOptions } from "../requestOptions";
+import { CHECKS, PRODUCTION_CHECKS, DEFAULT_OPTIONS, DELIVERABLES, DEPTHS, GIT_MODES, optionsProblem, optionsSummary, START_COMMAND, START_SKILL, TARGET_MODES, toggled, VIEWPORTS, withProduction, withTargetMode, type RequestOptions } from "../requestOptions";
 import type { Tone } from "../statuses";
 import { statusOf } from "../requestStatus";
 import { Badge } from "../components/Badge";
@@ -263,7 +263,7 @@ function OptionsFields({ options, setOptions }: { options: RequestOptions; setOp
         <legend style={LEGEND}>Which extra checks? The test plan and bug proposals always follow our rules for them.</legend>
         <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
           {CHECKS.map((c) => {
-            const blocked = options.production && c.value !== "visual";
+            const blocked = options.production && !PRODUCTION_CHECKS.includes(c.value);
             return (
               <label key={c.value} className="row" style={{ gap: 6 }} title={blocked ? "A production address can only be read" : c.title}>
                 <input type="checkbox" className="checkbox" checked={options.checks.includes(c.value)} disabled={blocked} onChange={() => setOptions({ ...options, checks: toggled(CHECKS, options.checks, c.value) })} /> {c.label}

@@ -25,9 +25,11 @@ export const VIEWPORTS = [
 ] as const;
 
 export const CHECKS = [
-  { value: "visual", label: "Visual review", title: "A design review at the chosen screen sizes (visual-design-review). Reads only." },
-  { value: "api", label: "API checks", title: "Checks of the API against its contract, if there is one (testpilot-api-testing)." },
-  { value: "security", label: "Security review", title: "A limited, non-destructive security review (testpilot-security-review). Not a penetration test. Not for a production address." },
+  { value: "visual", label: "Visual review", title: "The layout at the chosen screen sizes: cut-off text, horizontal scroll, overlapping content, landscape, images without a size. Reads only." },
+  { value: "accessibility", label: "Accessibility", title: "What the page snapshot and HTML show: headings, alt text, labels, landmarks, link text, small targets. Not an automated scan, and not WCAG conformance. Reads only." },
+  { value: "api", label: "API checks", title: "The calls the pages make: which fail, which hosts they go to, and their headers. Never what the answers contain. Not for a production address." },
+  { value: "security", label: "Security review", title: "Headers, cookie flags, scripts and keys in the page, and a few probes with a purpose (an error page, /admin, /.git/HEAD). Not a penetration test. Not for a production address." },
+  { value: "privacy", label: "Privacy and consent", title: "The consent banner, and tracking calls and cookies before any choice. Never establishes that the site meets the law. Reads only." },
 ] as const;
 
 export const DEPTHS = [
@@ -44,7 +46,10 @@ export type Check = (typeof CHECKS)[number]["value"];
 export type Depth = (typeof DEPTHS)[number]["value"];
 export interface RequestOptions { targetMode: TargetMode; gitMode: GitMode; deliverables: Deliverable[]; viewports: Viewport[]; checks: Check[]; depth: Depth; production: boolean }
 
-export const DEFAULT_OPTIONS: RequestOptions = { targetMode: "observe_only", gitMode: "local", deliverables: ["plan", "cases", "observations", "bugs"], viewports: ["desktop", "tablet", "mobile"], checks: [], depth: "normal", production: false };
+/** The checks allowed on a production address: they only read what the pages show (the server checks the same list). */
+export const PRODUCTION_CHECKS: readonly string[] = ["visual", "accessibility", "privacy"];
+
+export const DEFAULT_OPTIONS: RequestOptions = { targetMode: "observe_only", gitMode: "local", deliverables: ["plan", "cases", "observations", "bugs"], viewports: ["desktop", "tablet", "mobile"], checks: ["visual", "accessibility", "api", "security", "privacy"], depth: "normal", production: false };
 
 /** Choosing to act on the target moves the depth to deep, and choosing to only read moves it back to normal, but only if the person has not picked another depth (a convenience: the depth is always theirs to change). */
 export function withTargetMode(o: RequestOptions, targetMode: TargetMode): RequestOptions {
@@ -65,7 +70,7 @@ export function toggled<T extends string>(all: readonly { value: T }[], list: re
 
 /** A production address can only be read: saying it is production takes the choice to act on it away. */
 export const withProduction = (o: RequestOptions, production: boolean): RequestOptions =>
-  production ? { ...o, production, targetMode: "observe_only", checks: o.checks.filter((c) => c === "visual") } : { ...o, production };
+  production ? { ...o, production, targetMode: "observe_only", checks: o.checks.filter((c) => PRODUCTION_CHECKS.includes(c)) } : { ...o, production };
 
 /** What stops the request from being made, or null. The server checks the same things. */
 export function optionsProblem(o: RequestOptions): string | null {

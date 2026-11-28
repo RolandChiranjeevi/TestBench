@@ -25,9 +25,14 @@ The core (the pages, and every form field) always runs. The request's `checks`, 
 
 | Check | File | read | write |
 |---|---|---|---|
+| the core | `checks/core.md` | always | always |
 | form fields | `checks/forms.md` | always | its own field classes, `modes/write.md` step 3 |
-| `visual` | `checks/visual-a11y.md` | if chosen | if chosen |
-| `api`, `security` | `checks/api-security.md` | if chosen, passively | if chosen, passively |
+| the page's HTML | `checks/page-html.md` | when a check needs an attribute | only before the login |
+| `visual` | `checks/visual.md` | if chosen | if chosen |
+| `accessibility` | `checks/accessibility.md` | if chosen | if chosen |
+| `api` | `checks/api.md` | if chosen, passively | if chosen, passively |
+| `security` | `checks/security.md` | if chosen, passively and with its probes | if chosen, passively and with its probes |
+| `privacy` | `checks/privacy.md` | if chosen, before anything is pressed | if chosen, before the banner is pressed |
 | the scope | `checks/scope.md` | always, step 4 | always, step 4 |
 
 A check that was not chosen is not run, and the report says so (rule 12): `checks/scope.md` gives every check id a row, also the ones not chosen and the ones a browser can never do.
