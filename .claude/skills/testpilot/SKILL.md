@@ -5,7 +5,7 @@ description: The boundaries and stop conditions that every TestPilot request ski
 
 # Skill: TestPilot (boundaries)
 
-The skills that work on requests from TestBench (`../testpilot-requests/SKILL.md`, `../testpilot-request-discover/SKILL.md`, `../testpilot-request-discover-write/SKILL.md`, `../testpilot-request-loadtest/SKILL.md`) read this file for the boundaries and the stop conditions below. It starts nothing itself.
+The skills that work on requests from TestBench (`../testpilot-requests/SKILL.md`, `../testpilot-request-discover/SKILL.md` (both modes), `../testpilot-request-loadtest/SKILL.md`) read this file for the boundaries and the stop conditions below. It starts nothing itself.
 
 Paths in this file are relative to this `SKILL.md`.
 

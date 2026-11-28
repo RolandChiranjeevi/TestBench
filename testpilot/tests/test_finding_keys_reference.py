@@ -17,7 +17,8 @@ REF = (ROOT / ".claude" / "references" / "finding-keys.md").read_text()
 DEDUPE_TS = (ROOT / "server" / "agentdedupe.ts").read_text()
 HELPER = (ROOT / "testpilot" / "tools" / "request_call.py").read_text()
 DOCS = (ROOT / "docs" / "agent-requests.md").read_text()
-SKILLS = {n: (ROOT / ".claude" / "skills" / n / "SKILL.md").read_text() for n in ("testpilot-request-discover", "testpilot-request-discover-write")}
+D = ROOT / ".claude" / "skills" / "testpilot-request-discover"
+SKILLS = {n: (D / "modes" / f"{m}.md").read_text() + "\n".join(p.read_text() for p in sorted((D / "checks").glob("*.md"))) for n, m in (("testpilot-request-discover", "read"), ("testpilot-request-discover-write", "write"))}  # the names are the two modes
 flat = lambda t: " ".join(t.split())
 
 

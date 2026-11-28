@@ -1,6 +1,6 @@
 # Finding keys: so that the same thing is not made twice
 
-Read by `testpilot-request-discover` and `testpilot-request-discover-write`, in step 1 (item 8, `known`) and step 4 (the table of findings). A person runs a discover on the same site many times.
+Read by `testpilot-request-discover` (both modes), in step 1 (item 8, `known`) and step 4 (the table of findings). A person runs a discover on the same site many times.
 Without this, every run makes the same test cases, observations and bug reports again. With it, TestBench recognises a thing it already has and keeps a note that it was seen again.
 
 ## Before you explore: ask what is already known
