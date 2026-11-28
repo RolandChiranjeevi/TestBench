@@ -170,6 +170,8 @@ that acts in a page or runs code. The last two can read files and run code (`../
 
 ## 4. Write the findings
 
+**The scope.** Follow `checks/scope.md`: a `## Scope` section in `coverage.md` with one row per check id, also those not chosen, checked by `precheck` with `--checks`, and handed in with the other findings in step 5.
+
 Only what the user confirmed in step 2. Write in English, plainly and briefly. **Ground every finding in something you saw** (rule 1); never invent a page, a field or a result. Use
 `../../references/testheuristics.md` for the plan. Never put a secret, a real person's data or a raw page dump in a finding.
 
@@ -275,7 +277,7 @@ No `--result-audit` and no `--result-run`: TestBench has already linked the audi
 Then tell the user what was handed in, and where to review it: the plan and its coverage gaps under **Test plan**, the draft test cases under **Test cases** (marked as the agent's, each saying
 which plan item it was planned in), the observations under **Observations**, and the bug reports under **Bug reports**. If spec files were made, say where they are: the local branch the
 tool printed, in the user's checkout, one commit on top of `origin/<base>`; they were not run and nothing was pushed, so the user looks at them with the command the tool printed and pushes the
-branch themselves if they want it. If `push` ran, say instead what it printed: the branch pushed and the pull request address, not merged, for the user to review and merge. If spec files were asked for and not made, say why. Say plainly what this run did **not** do: it only read; form fields were filled in to see their rules and never sent; nothing was clicked or logged in; only the two screenshots of each bug report were handed in (say how many were added); no spec file was run; at most 10 pages were looked at. End with what was **not** verified and why, as rule 12 says, and say that a failure that did not repeat was made an observation (rule 13). **Nothing is approved.**
+branch themselves if they want it. If `push` ran, say instead what it printed: the branch pushed and the pull request address, not merged, for the user to review and merge. If spec files were asked for and not made, say why. Say plainly what this run did **not** do: it only read; form fields were filled in to see their rules and never sent; nothing was clicked or logged in; only the two screenshots of each bug report were handed in (say how many were added); no spec file was run; at most 10 pages were looked at. End with the scope, as `checks/scope.md` says, and with what was **not** verified and why, as rule 12 says, and say that a failure that did not repeat was made an observation (rule 13). **Nothing is approved.**
 
 ## 7. If it stops
 

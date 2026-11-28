@@ -71,4 +71,4 @@ class HonestReportingTests(unittest.TestCase):
             text = " ".join((ROOT / "skills" / "testpilot-request-discover" / "modes" / f"{name}.md").read_text().split())
             with self.subTest(skill=name):
                 self.assertIn("12 and 13)", text)
-                self.assertIn("End with what was **not** verified and why, as rule 12 says", text)
+                self.assertIn("and with what was **not** verified and why, as rule 12 says", text)

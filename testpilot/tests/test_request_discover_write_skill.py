@@ -81,7 +81,7 @@ class FileTests(unittest.TestCase):
         for action, rest in cmds:
             self.assertIn(action, request_call.ACTIONS)
             for flag in re.findall(r"--[a-z-]+", rest):
-                self.assertIn(flag, {"--findings", "--result-audit", "--result-run", "--coverage"})
+                self.assertIn(flag, {"--findings", "--result-audit", "--result-run", "--coverage", "--checks"})
 
     def test_it_never_reads_env_or_the_token_and_writes_no_http_code_of_its_own(self):
         self.assertIn("Type a password or any other secret, log in itself, or read `.env`, `.mcp.json` or the token. Only the helper touches the token", flat(TEXT))
@@ -316,7 +316,7 @@ class ActingRulesTests(unittest.TestCase):
     def test_the_agent_runs_precheck_on_its_drafted_rows_before_it_presses_logout(self):
         """Deep runs 2 and 3 logged out with whole classes of the checkout form never written down. The rows are checked while the session is still there."""
         step3 = self.step3()
-        self.assertIn("python3 -I testpilot/tools/request_call.py precheck <id> --coverage <the folder>/coverage.md`", step3)
+        self.assertIn("python3 -I testpilot/tools/request_call.py precheck <id> --coverage <the folder>/coverage.md --checks <the request's checks joined by commas, or none>`", step3)
         self.assertIn("a page that takes input without a row for each of `empty`, `wrong-kind`, `too-long`, `boundary`, `format` and `enter`", step3)
         self.assertIn("**Press Logout only when it says every page has its rows.**", step3)
         self.assertLess(step3.index("precheck <id>"), step3.index("If you are still logged in, press Logout,"), "the check comes before the press")

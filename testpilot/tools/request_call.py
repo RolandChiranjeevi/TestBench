@@ -4,7 +4,7 @@
     python3 -I testpilot/tools/request_call.py <action> [<request number>] [--report FILE] [--case-results FILE] [--findings FILE] [--result-run N] [--result-audit N]
                                              [--load-result FILE]
 
-<action> is list, claim, release, result, case-results, findings, load-result, known, precheck or complete. `known <n>` lists what earlier requests already made and keyed (so the same thing is not made twice). `precheck <n> --coverage FILE` is offline: it reads the coverage rows drafted so far and prints what is missing. For release and complete the note is read from standard input (a quoted heredoc keeps it as
+<action> is list, claim, release, result, case-results, findings, load-result, known, precheck or complete. `known <n>` lists what earlier requests already made and keyed (so the same thing is not made twice). `precheck <n> --coverage FILE` is offline: it reads the coverage rows drafted so far and prints what is missing; with `--checks` (the request's checks, or none) it also checks the `## Scope` rows against the discover's checks/scope.md. For release and complete the note is read from standard input (a quoted heredoc keeps it as
 text). Run it from the folder that holds `.testpilot/`, or from any folder when the configuration is in `~/.testpilot/` (then `audits/` and `.env` are those of `~/.testpilot/`).
 
 `findings` hands in what a discover found, one finding at a time: the file is {"findings": [...]} (at most 50), each with a `kind` (test_case, bug_report, observation,
@@ -373,20 +373,66 @@ ROW_STATUS = ("tried", "issue", "not tried")
 SOFT_REASON = re.compile(r"not reached|did not reach|didn'?t reach|did not get to|ran out|no time|skipped|left out|forgot|not got to|not looked at|did not look at|didn'?t look at|never looked at|not checked|not examined|not covered|not tried yet", re.I)  # shortcut: words only, a reason can still be soft in other words; the person reads the LEFT lines
 
 
-def precheck(rid, path, read=False, values=0):
+SCOPE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".claude", "skills", "testpilot-request-discover", "checks", "scope.md")
+SCOPE_STATUS = ("done", "issue", "not run", "blocked", "not chosen", "not in this mode", "not possible")
+
+
+def scope_table():
+    """The check ids of checks/scope.md: {id: (check, read, write)}, each cell yes, no or never. The skill's own table is the one list, so a new check needs no change here."""
+    table = {}
+    for line in open(SCOPE_FILE, encoding="utf-8").read().splitlines():
+        c = [x.strip() for x in line.strip().strip("|").split("|")]
+        if len(c) == 5 and re.fullmatch(r"[a-z]+\.[a-z0-9-]+", c[0]) and c[2] in ("yes", "no", "never") and c[3] in ("yes", "no", "never"):
+            table[c[0]] = (c[1], c[2], c[3])
+    return table
+
+
+def scope_gaps(rows, table, chosen, read):
+    """What is wrong with the `## Scope` rows: an id without a row, a status that does not fit the table for this mode and the request's checks, a row without its text, or a soft reason."""
+    gaps = []
+    for cid, (check, r, w) in table.items():
+        if cid not in rows:
+            gaps.append(f"GAP Scope | {cid}: no row (every id of checks/scope.md gets one)")
+            continue
+        status, why = rows[cid]
+        cell = r if read else w
+        want = "not possible" if cell == "never" else "not in this mode" if cell == "no" else "not chosen" if check not in ("core", "limits") and check not in chosen else None
+        if want and status != want:
+            gaps.append(f"GAP Scope | {cid}: says {status}, but it is {want} here")
+        elif not want and status not in ("done", "issue", "not run", "blocked"):
+            gaps.append(f"GAP Scope | {cid}: says {status}, but this mode can do it and the request chose {check}: done, issue, not run or blocked")
+        if not why:
+            gaps.append(f"GAP Scope | {cid}: says {status} but not what was looked at, or why not")
+        elif status in ("not run", "blocked") and SOFT_REASON.search(why):
+            gaps.append(f"GAP Scope | {cid}: {status}, and \"{why[:60]}\" is not a hard reason. Do it now, or give a hard one")
+        elif status == "not run" and re.search(r"\blimit\b|budget", why, re.I):
+            m = re.search(r"limit: (\d+) of (\d+)", why)
+            if not m or int(m.group(1)) < int(m.group(2)):
+                gaps.append(f"GAP Scope | {cid}: a limit is a reason only with its count, once it is reached (\"browser call limit: 400 of 400\")")
+    for cid in rows:
+        if cid not in table:
+            gaps.append(f"GAP Scope | {cid[:50]}: not an id of checks/scope.md")
+    return gaps
+
+
+def precheck(rid, path, read=False, values=0, checks=None):
     """Offline, before Logout: reads the coverage rows the agent has drafted (`## <page>` and then one row per line, as in step 4 of the write skill) and prints what is missing, so that it is seen while the session is still there. Exit 1 if there is a gap, 0 if not. It checks that rows exist and carry action numbers; it cannot tell whether a row is true."""
     root = os.path.realpath(os.path.join("audits", "request-" + rid))
     real = os.path.realpath(path) if path else ""
     if not path or os.path.islink(path) or not os.path.isfile(real) or not real.startswith(root + os.sep) or not real.endswith(".md") or not 0 < os.path.getsize(real) <= 400000:
         return fail("the file must be a .md file inside audits/request-" + rid + "/")
-    pages, page = {}, None
+    pages, page, scope, in_scope = {}, None, {}, False
     for line in open(real, encoding="utf-8", errors="replace").read().splitlines():
         if line.startswith("## "):
-            page = line[3:].strip().removeprefix("Coverage:").strip()
-            pages.setdefault(page, [])
+            in_scope = line[3:].strip() == "Scope"  # the scope rows (checks/scope.md), not a page
+            page = None if in_scope else line[3:].strip().removeprefix("Coverage:").strip()
+            if page is not None:
+                pages.setdefault(page, [])
             continue
         parts = [s.strip() for s in line.split("·")]
-        if page is not None and len(parts) >= 3 and parts[2] in ROW_STATUS:
+        if in_scope and len(parts) >= 2 and re.fullmatch(r"[a-z]+\.[a-z0-9-]+", parts[0]):
+            scope[parts[0]] = (parts[1], " · ".join(parts[2:]).strip())
+        elif page is not None and len(parts) >= 3 and parts[2] in ROW_STATUS:
             pages[page].append(parts)
     gaps, left, counts = [], [], {s: 0 for s in ROW_STATUS}
     try:
@@ -439,6 +485,17 @@ def precheck(rid, path, read=False, values=0):
             if missing:
                 gaps.append(f"GAP {p}: takes input, but no row for: {', '.join(missing)}")
         matrix.append(f"  {p[:40]:40} " + ", ".join(f"{c} {n}" for c, n in seen.items()))
+    if checks is not None:  # the scope of the run: every check id, also those not chosen (checks/scope.md)
+        table = scope_table()
+        if not scope:
+            gaps.append("GAP Scope: no `## Scope` section with a row per check id (checks/scope.md)")
+        else:
+            gaps += scope_gaps(scope, table, checks, read)
+        for cid, (status, why) in scope.items():
+            if status in ("not run", "blocked"):
+                left.append(f"LEFT Scope | {cid} | {status} | {why[:90]}")
+        tally = {st: sum(1 for v in scope.values() if v[0] == st) for st in SCOPE_STATUS}
+        matrix.append("  Scope: " + ", ".join(f"{st} {n}" for st, n in tally.items() if n) + f" ({len(scope)} of {len(table)} ids)")
     lines = [f"precheck: {len(pages)} pages, {sum(counts.values())} rows (tried {counts['tried']}, issue {counts['issue']}, not tried {counts['not tried']}), {len(gaps)} gaps"]
     lines += matrix + gaps + left
     done = "hand in the findings" if read else "press Logout"
@@ -458,6 +515,7 @@ def main(argv):
     ap.add_argument("--coverage", default="")
     ap.add_argument("--read", action="store_true")  # precheck of the read-only discover: its own input classes, "values N" as the proof, every field
     ap.add_argument("--values", default="0")
+    ap.add_argument("--checks", default="")  # precheck: the request's checks (visual,api,security) or none; then the `## Scope` rows are checked too
     ap.add_argument("--load-result", default="")
     ap.add_argument("--result-run", default="")
     ap.add_argument("--result-audit", default="")
@@ -475,7 +533,13 @@ def main(argv):
     if a.action == "precheck":  # offline: no profile, no token, no call
         if not re.fullmatch(r"[0-9]{1,2}", a.values):
             return fail("--values is the number of values per class that the depth asks for (1, 2 or 3)")
-        return precheck(a.rid, a.coverage, a.read, int(a.values))
+        checks = None
+        if a.checks:
+            checks = [] if a.checks == "none" else [c for c in a.checks.split(",") if c]
+            known = {v[0] for v in scope_table().values()} - {"core", "limits"}
+            if any(c not in known for c in checks):
+                return fail("--checks is the request's checks joined by commas (" + ", ".join(sorted(known)) + "), or none")
+        return precheck(a.rid, a.coverage, a.read, int(a.values), checks)
 
     if a.project and (not CONFIG or not PROFILE_KEY.fullmatch(a.project)):
         return fail("--project is the name of a profile in projects/ (the `project` of a list row), and needs a TestPilot configuration")

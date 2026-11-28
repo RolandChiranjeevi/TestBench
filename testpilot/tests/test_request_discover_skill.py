@@ -21,7 +21,7 @@ import spec_git  # noqa: E402
 
 
 DISCOVER = ROOT / ".claude" / "skills" / "testpilot-request-discover"
-CHECKS = {"read": ("forms.md", "visual-a11y.md", "api-security.md"), "write": ("visual-a11y.md", "api-security.md")}  # the check files each mode follows (SKILL.md, "The checks")
+CHECKS = {"read": ("forms.md", "visual-a11y.md", "api-security.md", "scope.md"), "write": ("visual-a11y.md", "api-security.md", "scope.md")}  # the check files each mode follows (SKILL.md, "The checks")
 
 
 def whole(mode):
@@ -65,14 +65,63 @@ class OrchestratorTests(unittest.TestCase):
     def test_every_check_file_is_in_the_table_and_the_mode_file_sends_the_agent_to_it(self):
         files = sorted(p.name for p in (DISCOVER / "checks").glob("*.md"))
         self.assertEqual(files, sorted(set(CHECKS["read"]) | set(CHECKS["write"])))
-        read_step3 = flat(section("3. Explore, read-only"))
+        read_mode = flat((DISCOVER / "modes" / "read.md").read_text())
         for name in files:
             with self.subTest(check=name):
                 self.assertIn(f"`checks/{name}`", self.ORCH, "listed in the orchestrator's table")
-                self.assertIn(f"follow `checks/{name}`", read_step3, "the read mode file sends the agent to it")
+                self.assertRegex(read_mode, rf"[Ff]ollow `checks/{re.escape(name)}`", "the read mode file sends the agent to it")
 
     def test_a_check_that_was_not_chosen_is_said_in_the_report(self):
-        self.assertIn("A check that was not chosen is not run, and the report says so (rule 12).", flat(self.ORCH))
+        self.assertIn("A check that was not chosen is not run, and the report says so (rule 12): `checks/scope.md` gives every check id a row", flat(self.ORCH))
+
+
+class ScopeTests(unittest.TestCase):
+    """Step 5, S3: every run says what became of every check, also those not chosen and those a browser can never do."""
+
+    SCOPE = property(lambda self: flat((DISCOVER / "checks" / "scope.md").read_text()))
+
+    def test_both_modes_write_the_scope_in_step_4_and_end_the_report_with_it(self):
+        for mode, step4 in (("read", "4. Write the findings"), ("write", "4. Write the action log and the findings")):
+            text = (DISCOVER / "modes" / f"{mode}.md").read_text()
+            with self.subTest(mode=mode):
+                part = flat(re.search(r"^## " + re.escape(step4) + r".*?\n(.*?)(?=^## |\Z)", text, re.S | re.M).group(1))
+                self.assertIn("**The scope.** Follow `checks/scope.md`", part)
+                self.assertIn("End with the scope, as `checks/scope.md` says", flat(text))
+
+    def test_every_precheck_call_passes_the_request_s_checks(self):
+        for f in ("checks/forms.md", "modes/write.md"):
+            calls = re.findall(r"request_call\.py precheck [^`]*", (DISCOVER / f).read_text())
+            with self.subTest(file=f):
+                self.assertTrue(calls)
+                self.assertTrue(all("--checks <the request's checks joined by commas, or none>" in c for c in calls), calls)
+
+    def test_the_seven_statuses_and_inconclusive_is_never_done(self):
+        for st in ("`done`", "`issue`", "`not run`", "`blocked`", "`not chosen`", "`not in this mode`", "`not possible`"):
+            with self.subTest(status=st):
+                self.assertIn(st, self.SCOPE)
+        self.assertIn("A result you could not read is `blocked`, never `done`.", self.SCOPE)
+        self.assertIn("\"No time\", \"skipped\" or \"not needed\" is not a reason.", self.SCOPE)
+
+    def test_the_table_covers_every_check_the_request_can_choose_and_what_a_browser_cannot_do(self):
+        table = request_call.scope_table()
+        checks = {v[0] for v in table.values()}
+        options = re.search(r"checks: \[([^\]]*)\]", (ROOT / "server" / "agentrequests.ts").read_text()).group(1)
+        self.assertEqual(checks - {"core", "limits"}, set(re.findall(r'"(\w+)"', options)), "every check a person can tick in TestBench has its ids")
+        for cid in ("limits.email", "limits.other-browsers", "limits.screen-reader", "limits.field-inp", "limits.load", "limits.legal"):
+            with self.subTest(cid=cid):
+                self.assertEqual(table[cid][1:], ("never", "never"))
+        self.assertEqual(table["forms.sent"][1:], ("no", "yes"), "read mode never sends a form")
+
+    def test_it_is_handed_in_as_coverage_gaps_and_one_scope_observation_with_a_key(self):
+        self.assertIn("one `coverage_gap` for each row that is `not run`, `blocked` or `not in this mode`", self.SCOPE)
+        self.assertIn("title `Scope: <the host of the address>`, key `scope:<host>`", self.SCOPE)
+        self.assertRegex("scope:127.0.0.1-4310", r"^[a-z0-9][a-z0-9._-]{0,60}(:[a-z0-9][a-z0-9._-]{0,60}){1,2}$", "the example key passes TestBench's key rule (server/agentdedupe.ts)")
+        self.assertIn("`scope:<host>`", (ROOT / ".claude" / "references" / "finding-keys.md").read_text())
+
+    def test_rule_12_names_the_scope_and_what_a_browser_cannot_do(self):
+        rule = flat(RULES)
+        self.assertIn("A discover also ends with its **scope**", rule)
+        self.assertIn("the e-mail the site sends (no inbox), Firefox and Safari (Chromium only), a screen reader, field INP, behaviour under load, and legal compliance", rule)
 
 
 class FileTests(unittest.TestCase):
@@ -94,7 +143,7 @@ class FileTests(unittest.TestCase):
         for action, rest in cmds:
             self.assertIn(action, request_call.ACTIONS)
             for flag in re.findall(r"--[a-z-]+", rest):
-                self.assertIn(flag, {"--findings", "--result-audit", "--result-run", "--coverage", "--read", "--values"})
+                self.assertIn(flag, {"--findings", "--result-audit", "--result-run", "--coverage", "--read", "--values", "--checks"})
         self.assertIn("--findings audits/request-12/20261123-194213/findings-1.json", TEXT)
 
 

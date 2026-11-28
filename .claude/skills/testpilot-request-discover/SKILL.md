@@ -28,8 +28,9 @@ The core (the pages, and every form field) always runs. The request's `checks`, 
 | form fields | `checks/forms.md` | always | its own field classes, `modes/write.md` step 3 |
 | `visual` | `checks/visual-a11y.md` | if chosen | if chosen |
 | `api`, `security` | `checks/api-security.md` | if chosen, passively | if chosen, passively |
+| the scope | `checks/scope.md` | always, step 4 | always, step 4 |
 
-A check that was not chosen is not run, and the report says so (rule 12).
+A check that was not chosen is not run, and the report says so (rule 12): `checks/scope.md` gives every check id a row, also the ones not chosen and the ones a browser can never do.
 
 ## Paths
 

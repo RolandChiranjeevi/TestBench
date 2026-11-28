@@ -170,6 +170,7 @@ skills or test scripts.
 - Browser validation that stopped a submit shows that **client-side** validation was verified. Never claim that server-side validation, injection protection or access control was verified from it.
 - Without an automated accessibility scan, say so: "No automated accessibility scan was performed. Accessibility signals were read from the page snapshot. This does not establish WCAG conformance."
 - A passive read (headers, the list of requests) is not a security test or an API test. Say which one was done.
+- A discover also ends with its **scope** (`testpilot-request-discover/checks/scope.md`): every check id with `done`, `issue`, `not run`, `blocked`, `not chosen`, `not in this mode` or `not possible`. It always names what a browser cannot do: the e-mail the site sends (no inbox), Firefox and Safari (Chromium only), a screen reader, field INP, behaviour under load, and legal compliance.
 
 ## 13. Reproduce before a bug
 
