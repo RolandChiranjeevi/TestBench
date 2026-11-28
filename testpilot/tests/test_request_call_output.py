@@ -574,3 +574,81 @@ class PrecheckOfTheReadOnlyDiscover(unittest.TestCase):
         self.assertTrue(any("222 of 300 browser calls is not the limit: go on" in l for l in lines), lines)
         status, lines = self.check(READ_ROWS + rows("## /contact.html", "Message | all | not tried | browser call limit: 400 of 400"))
         self.assertEqual(status, 0, lines)
+
+
+def scope_rows(read=True, chosen=("visual",), override=None, drop=(), extra=()):
+    """A `## Scope` section that fits checks/scope.md for this mode and these checks, with rows changed, left out or added."""
+    out = ["## Scope"]
+    for cid, (check, r, w) in request_call.scope_table().items():
+        if cid in drop:
+            continue
+        cell = r if read else w
+        status = "not possible" if cell == "never" else "not in this mode" if cell == "no" else "not chosen" if check not in ("core", "limits") and check not in chosen else "done"
+        status, why = (override or {}).get(cid, (status, "looked at 5 pages" if status == "done" else "as the table says"))
+        out.append(f"{cid} | {status} | {why}")
+    return rows(*out, *extra)
+
+
+class PrecheckOfTheScope(unittest.TestCase):
+    """Step 5, S3: every check id of checks/scope.md gets a row, with a status that fits the mode and the request's checks, so the report always says what was not looked at."""
+
+    def check(self, coverage, checks="visual", read=True):
+        with agent_folder():
+            put(COVERAGE, coverage)
+            args = ["precheck", "12", f"--coverage={COVERAGE}", f"--checks={checks}"] + (["--read", "--values=2"] if read else [])
+            status, out, err = run_main(args)
+        return status, out.splitlines()
+
+    def gaps(self, lines):
+        return [l for l in lines if l.startswith("GAP")]
+
+    def test_a_row_for_every_id_that_fits_the_table_is_ok_and_the_scope_is_not_a_page(self):
+        status, lines = self.check(scope_rows())
+        self.assertEqual((status, self.gaps(lines)), (0, []), lines)
+        self.assertTrue(lines[0].startswith("precheck: 0 pages"), lines[0])
+        self.assertTrue(any(l.startswith("  Scope: done") and f"({len(request_call.scope_table())} of" in l for l in lines), lines)
+
+    def test_an_id_without_a_row_or_no_scope_section_is_a_gap(self):
+        self.assertIn("GAP Scope | security.headers: no row (every id of checks/scope.md gets one)", self.check(scope_rows(drop=("security.headers",)))[1])
+        status, lines = self.check(rows("## /contact.html", "Name | all | not tried | a file field"))
+        self.assertEqual(status, 1)
+        self.assertIn("GAP Scope: no `## Scope` section with a row per check id (checks/scope.md)", lines)
+
+    def test_a_status_that_does_not_fit_the_mode_or_the_request_is_a_gap(self):
+        for cid, status, want in (("forms.sent", "done", "not in this mode"), ("limits.email", "done", "not possible"), ("api.calls", "done", "not chosen"), ("visual.a11y-scan", "not chosen", "not possible")):
+            with self.subTest(cid=cid):
+                lines = self.check(scope_rows(override={cid: (status, "looked")}))[1]
+                self.assertIn(f"GAP Scope | {cid}: says {status}, but it is {want} here", lines)
+        lines = self.check(scope_rows(override={"visual.headings": ("not chosen", "the request did not")}))[1]
+        self.assertTrue(any(l.startswith("GAP Scope | visual.headings: says not chosen, but this mode can do it and the request chose visual") for l in lines), lines)
+
+    def test_the_mode_decides_and_none_means_nothing_was_chosen(self):
+        self.assertEqual(self.check(scope_rows(read=False), read=False)[0], 0, "write mode: forms.sent is done there")
+        self.assertIn("GAP Scope | forms.sent: says not in this mode, but this mode can do it and the request chose core: done, issue, not run or blocked",
+                      self.check(scope_rows(read=True), read=False)[1])
+        self.assertEqual(self.check(scope_rows(chosen=()), checks="none")[0], 0)
+
+    def test_not_run_needs_a_hard_reason_and_a_limit_needs_its_count(self):
+        soft = self.check(scope_rows(override={"visual.layout": ("not run", "no time left")}))[1]
+        self.assertTrue(any(l.startswith('GAP Scope | visual.layout: not run, and "no time left" is not a hard reason') for l in soft), soft)
+        early = self.check(scope_rows(override={"visual.layout": ("not run", "browser call limit: 300 of 400")}))[1]
+        self.assertTrue(any("a limit is a reason only with its count" in l for l in early), early)
+        status, lines = self.check(scope_rows(override={"visual.layout": ("not run", "browser call limit: 400 of 400")}))
+        self.assertEqual((status, self.gaps(lines)), (0, []), lines)
+        self.assertIn("LEFT Scope | visual.layout | not run | browser call limit: 400 of 400", lines)
+
+    def test_a_row_without_its_text_or_an_unknown_id_is_a_gap(self):
+        lines = self.check(scope_rows(override={"core.pages": ("done", "")}))[1]
+        self.assertIn("GAP Scope | core.pages: says done but not what was looked at, or why not", lines)
+        lines = self.check(scope_rows(extra=("visual.colours | done | looked",)))[1]
+        self.assertIn("GAP Scope | visual.colours: not an id of checks/scope.md", lines)
+
+    def test_checks_must_be_names_of_the_table_and_without_it_the_scope_is_not_checked(self):
+        with agent_folder():
+            put(COVERAGE, scope_rows())
+            status, out, _ = run_main(["precheck", "12", f"--coverage={COVERAGE}", "--checks=visual,everything"])
+            self.assertEqual(status, 1)
+            self.assertTrue(out.startswith("--checks is the request's checks joined by commas (api, security, visual), or none"), out)
+            status, out, _ = run_main(["precheck", "12", f"--coverage={COVERAGE}", "--read", "--values=2"])
+        self.assertEqual(status, 0, out)
+        self.assertNotIn("Scope", out)

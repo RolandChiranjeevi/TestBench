@@ -30,7 +30,7 @@ Followed from `modes/read.md`, step 3, on every page with a form. Paths are rela
   **Keep count as you go, and check it before you hand anything in.** Write `coverage.md` in the folder of this claim: a line `## <the path of the page>` for each page with a form, then one row
   per field and class, `<field> · <class> · tried | issue | not tried · values <n> · <what the page did>` (for example `Phone · emoji · issue · values 2 · accepted in a phone number`). A field you
   never type in gets one row with the class `all` and its reason (`Upload · all · not tried · a file field`; `Phone · too-long · not tried · lock 2: the field sent data`). Before step 5, run
-  `python3 -I testpilot/tools/request_call.py precheck <request number> --coverage <folder>/coverage.md --read --values <the depth's values per class>` (1, 2 or 3). It prints a `GAP` for every field that
+  `python3 -I testpilot/tools/request_call.py precheck <request number> --coverage <folder>/coverage.md --read --values <the depth's values per class> --checks <the request's checks joined by commas, or none>` (1, 2 or 3 values; the checks as in `checks/scope.md`). It prints a `GAP` for every field that
   lacks a class or has too few values: do those (or write the row with a hard reason: a file field, a field that sent data (lock 2), a page that left by itself), run it again, and hand in
   only when it prints no `GAP`. "No time" or "skipped" is not a reason.
   You cannot see the field's own rules (`maxlength`, `pattern`) and the messages a form only shows when it is sent, so `Not checked` says so (rule 12). A field you did not try goes in a coverage

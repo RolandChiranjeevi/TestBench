@@ -29,6 +29,7 @@ A `key` says what the thing IS, not how you word it. Lower case letters, digits,
 | `bug_report` | `<page>:<what is wrong>` | `checkout-step-two:float-total`, `inventory-item:unknown-id-adds-to-cart` |
 | `observation` | `<page>:<what you noticed>` | `lazy-load:keeps-growing`, `login:demo-password-shown` |
 | `observation`, the coverage record of a page | `coverage:<page>` (and `coverage:<page>:2` for a second observation of the same page) | `coverage:cart` |
+| `observation`, the scope of a run (`testpilot-request-discover/checks/scope.md`) | `scope:<host>` (the host in lower case, a `:` as `-`; `scope:<host>:2` for a second one) | `scope:127.0.0.1-4310` |
 | `test_case` | `case:<page>:<flow>` | `case:checkout-step-one:empty-fields`, `case:cart:remove-item` |
 
 `<page>` is the path of the address without a query or an extension, in lower case with `-` instead of any other character: `/checkout-step-two.html` is `checkout-step-two`, `/inventory-item.html?id=2`
