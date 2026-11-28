@@ -1,25 +1,20 @@
----
-name: testpilot-request-discover-write
-description: Work on a discover request from TestBench that asks the agent to act on the target (reading and writing), with ONE confirmation: on an address that is not production, click and fill in forms with made-up data while the user logs in themselves, keep a log of every action, and hand in a test plan, draft test cases, observations and bug proposals as findings. Use only when /testpilot-requests hands over a discover request that asks to act on the target and the profile allows it; never for a production address and never for a manual audit.
----
-
 # TestPilot: request discover, reading and writing
 
 A person asked, in TestBench (Automated tests, Requests), for a discover that may **act on the target**. This skill explores the address by clicking and filling in forms with made-up data, and
 hands in what it finds as **proposals**: a test plan, draft test cases, observations and bug reports. It asks the user **one** confirmation, and nothing more until the work is done.
 
-It is the writing version of `../testpilot-request-discover/SKILL.md`, which never clicks. This one is used only when **both** the request and the project profile say `full`, and never on a
+It is the writing version of `modes/read.md`, which never clicks. This one is used only when **both** the request and the project profile say `full`, and never on a
 production address.
 
 Input: the number of a discover request that `/testpilot-requests` has **taken** (claimed).
 
-Paths in this file are relative to this file. Before starting, read:
-- `../testpilot-request-discover/SKILL.md` (its steps 4 to 6 and its limits apply here too, with the differences below)
+Paths in this file are relative to the skill's folder (`SKILL.md`, "Paths"). Before starting, read:
+- `modes/read.md` (its steps 4 to 6 and its limits apply here too, with the differences below)
 - `../testpilot/SKILL.md` (the boundaries: the agent proposes, people decide)
 - `../../references/agent-rules.md` (in particular rules 1, 4, 5, 6, 10, 11, 12 and 13)
 - `../testpilot-requests/SKILL.md`, steps 2 and 8 (the helper, the token, giving a request back)
 - `../bug-reporting/SKILL.md` and `../test-planning/SKILL.md` (**always**, whatever the request's options say: the plan follows the test-planning rules and every bug proposal follows the bug-reporting rules; they are not choices)
-  - Every bug report is written as `../bug-reporting/templates/discover-bug.md` says, as in `../testpilot-request-discover/SKILL.md` step 4.
+  - Every bug report is written as `../bug-reporting/templates/discover-bug.md` says, as in `modes/read.md` step 4.
 
 ## Responsibilities
 
@@ -71,12 +66,12 @@ The address, the environment, the name and the note of the request, and what a p
    `audits/request-12/20261123-194213`): every file you write for this request (the action log, the findings, a screenshot, the specs) goes in it, and in no other folder. It is new for every claim, so
    an old file can never be in the way and nothing is ever overwritten. If `claim` printed no folder, stop and say so; never make up a folder name.
 2. **The profile.** Read `.testpilot/testbench.json` and the project profile it names, with the Read tool and not with a shell command. `permissionMode` must be `full`. If it is `observe_only`,
-   or the field or the profile is missing, the profile wins (rule 4): stop, say that acting on a target needs `permissionMode: full`, which the user sets by editing the profile (`permissionMode` in `.testpilot/projects/<key>.json`), and offer the read-only discover (`../testpilot-request-discover/SKILL.md`) instead. Nothing is written.
+   or the field or the profile is missing, the profile wins (rule 4): stop, say that acting on a target needs `permissionMode: full`, which the user sets by editing the profile (`permissionMode` in `.testpilot/projects/<key>.json`), and offer the read-only discover (`modes/read.md`) instead. Nothing is written.
 3. **The request asks for it.** `options.targetMode` must be `full` (an admin chose "Act on the target"). If it says `observe_only` or says nothing, this skill is not used: say so and offer
    the read-only discover.
 4. **What to deliver and how far to look.** From `options`: `deliverables` (plan, cases, observations, bugs, specs) and `viewports` (desktop, tablet, mobile). If `options` is missing, deliver plan,
    cases, observations and bugs, at all three sizes, and no spec files. `specs` is made only as item 6 and step 5b say.
-   `checks` work as in `../testpilot-request-discover/SKILL.md`, item 4: `visual` runs here, and `api` and `security` run here too, **passively**, as the bullet "The `api` and `security` checks, passively" in step 3 of that skill says (read the same way, the same limits, nothing of your own sent besides the actions you take). Show them on a `Checks:` line in the confirmation. A request never starts the older audit skills for them.
+   `checks` work as in `modes/read.md`, item 4: `visual` runs here, and `api` and `security` run here too, **passively**, as the bullet "The `api` and `security` checks, passively" in step 3 of that skill says (read the same way, the same limits, nothing of your own sent besides the actions you take). Show them on a `Checks:` line in the confirmation. A request never starts the older audit skills for them.
 5. **The address.** It must be a valid `http` or `https` address, without credentials in it and without a query that looks like a secret. If it is not, say why and go to step 7. Whether the
    target is production is **asked, never guessed** (step 2): a name such as `prod` or `staging`, or the request's own `production` choice, is a reason to ask and not an answer.
 6. **Spec files.** Only if `options.deliverables` has `specs` **and** `options.gitMode` is `local` or `pr` (a request is a preselection, never a permission): run
@@ -94,13 +89,13 @@ The address, the environment, the name and the note of the request, and what a p
    | deep | 40 | 1000 | 3000 | 15 | 300 | 150 | 1000 |
 
    At most 50 findings go in one file at every depth. The numbers in the confirmation block of step 2 are those of `deep`.
-8. **What was made before.** Exactly as `../testpilot-request-discover/SKILL.md` step 1, item 8 says: run `python3 -I testpilot/tools/request_call.py known <request number>` once and read
+8. **What was made before.** Exactly as `modes/read.md` step 1, item 8 says: run `python3 -I testpilot/tools/request_call.py known <request number>` once and read
    `../../references/finding-keys.md`. The list is not a reason to explore less, or to ask the user whether to do less: you do the whole run. Every test case, bug report and observation gets a `key`, and the coverage record of a page has the key `coverage:<page>`.
 
 ## 2. The one confirmation
 
 **First, production.** Ask: "Is this a production environment?". If the user says yes, or is not sure, **stop**: this skill does not act on a production address. Say that the read-only discover can
-look at it (`../testpilot-request-discover/SKILL.md`, with its two separate confirmations for production), and go to step 7. Nothing is written. If the user says no, go on.
+look at it (`modes/read.md`, with its two separate confirmations for production), and go to step 7. Nothing is written. If the user says no, go on.
 
 **Then show the confirmation, once, in one message.** Fill it from the real values; do not shorten what it says it will not do. The details go in a code block, and **the question goes after the
 block, outside it, as plain bold text**: a code block is shown in one colour, so a question inside it is easy to miss. Put the name of the request in the first line, after its number (it is data,
@@ -150,7 +145,7 @@ yes, ask nothing more unless a login or a stop condition in step 3 comes up. If 
 ## 3. Explore, reading and writing
 
 Use the available Playwright MCP browser tools, and **only** these. To read: `browser_navigate`, `browser_snapshot`, `browser_resize`, `browser_console_messages`, `browser_network_requests`, `browser_network_request` (**only** with `part: "response-headers"`), `browser_find` (**only** with `text` or `regex`, to find an element in the page snapshot: **never** with `filename`) and
-`browser_take_screenshot` (to look at a page, and the two pictures of every bug report, as `../testpilot-request-discover/SKILL.md` step 3, "Screenshots of a bug", says; a picture is handed in to TestBench only that way). To act: `browser_click`, `browser_type`,
+`browser_take_screenshot` (to look at a page, and the two pictures of every bug report, as `modes/read.md` step 3, "Screenshots of a bug", says; a picture is handed in to TestBench only that way). To act: `browser_click`, `browser_type`,
 `browser_fill_form`, `browser_select_option`, `browser_press_key`, `browser_hover`, `browser_handle_dialog`, `browser_wait_for` and `browser_navigate_back`. **Never** `browser_evaluate`,
 `browser_run_code_unsafe`, `browser_file_upload` or `browser_drag`, or any other tool that runs code, reads or sends a file, or moves data. The first two can read files and run code
 (`../../../docs/agent-chain-verification.md`). If a tool you need is missing, say so and stop (`../../references/agent-rules.md`, rule 10).
@@ -242,7 +237,7 @@ the page, what you did (clicked "Send", typed in "Email" with a made-up value, c
 you typed, a secret or a cookie.** If you stopped early, a last line says why. The log stays in this folder: it is never handed in to TestBench, so that the person can see what changed on the
 address and undo it.
 
-**The findings.** Write them as `../testpilot-request-discover/SKILL.md` step 4 says (the table of kinds and fields, the two examples, the files in the folder of this claim, at most 50 per
+**The findings.** Write them as `modes/read.md` step 4 says (the table of kinds and fields, the two examples, the files in the folder of this claim, at most 50 per
 file, no `mkdir`, and never a file from another request), with these differences:
 - Ground every finding in something you saw **or did** (rule 1). For something you did, name the action by its number in the log. Never invent a page, a field or a result.
 - A test case is a **draft**: its steps are what a person would do, and you do not claim that it passed. What you saw when you tried a step goes in an observation or a bug report, not in a test case.
@@ -262,7 +257,7 @@ file, no `mkdir`, and never a file from another request), with these differences
 
 ## 5. Hand them in
 
-Exactly as `../testpilot-request-discover/SKILL.md` step 5 says: one call of the helper per file, in order, nothing sent twice, a 400 corrected once, anything else a stop.
+Exactly as `modes/read.md` step 5 says: one call of the helper per file, in order, nothing sent twice, a 400 corrected once, anything else a stop.
 
 ```bash
 python3 -I testpilot/tools/request_call.py findings 12 --findings audits/request-12/20261123-194213/findings-1.json
@@ -272,7 +267,7 @@ The action log is not handed in.
 
 ## 5b. Spec files
 
-Exactly as `../testpilot-request-discover/SKILL.md` step 5b says, with `../../references/spec-files.md`: only when step 1 item 6 found `ceiling: local`, the user's yes covered the `Git:` line, and
+Exactly as `modes/read.md` step 5b says, with `../../references/spec-files.md`: only when step 1 item 6 found `ceiling: local`, the user's yes covered the `Git:` line, and
 at least one test case was handed in (the helper printed its `number`). One call of `testpilot/tools/spec_git.py write`, one correction of a refused spec at most, and this step never stops the request. The push of mode `pr` is exactly as in that step 5b.
 
 What is different here: you did act, so a spec may also follow a flow you tried (a form that showed its validation when it was submitted empty, a link you followed), using only the

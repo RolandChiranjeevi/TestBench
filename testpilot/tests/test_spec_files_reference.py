@@ -19,7 +19,8 @@ DOCS = (ROOT / "docs" / "agent-requests.md").read_text()
 README = (ROOT / "testpilot" / "README.md").read_text()
 RULES = (ROOT / ".claude" / "references" / "agent-rules.md").read_text()
 REQUESTS = (ROOT / ".claude" / "skills" / "testpilot-requests" / "SKILL.md").read_text()
-SKILLS = {n: (ROOT / ".claude" / "skills" / n / "SKILL.md").read_text() for n in ("testpilot-request-discover", "testpilot-request-discover-write")}
+D = ROOT / ".claude" / "skills" / "testpilot-request-discover"
+SKILLS = {n: (D / "modes" / f"{m}.md").read_text() + "\n".join(p.read_text() for p in sorted((D / "checks").glob("*.md"))) for n, m in (("testpilot-request-discover", "read"), ("testpilot-request-discover-write", "write"))}  # the names are the two modes
 CONFIG = ROOT / "testpilot" / "config"
 ORIGIN = "https://staging.example.com"
 

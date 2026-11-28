@@ -1,4 +1,4 @@
-"""The rules in the text of the /testpilot-request-discover-write skill that a mistake would break.
+"""The rules in the text of the write mode of the /testpilot-request-discover skill that a mistake would break.
 
 This skill lets an agent click and fill in forms on a web address, so what keeps that safe is written down and tested here: that it never acts on a production address, that it needs both the
 request and the profile to say `full`, that the user logs in themselves, which tools it may and may not use, what it will not press, how far it goes, that every action is logged, and that the
@@ -12,9 +12,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-SKILL = ROOT / ".claude" / "skills" / "testpilot-request-discover-write" / "SKILL.md"
-TEXT = SKILL.read_text()
-READONLY = (ROOT / ".claude" / "skills" / "testpilot-request-discover" / "SKILL.md").read_text()
+SKILL = ROOT / ".claude" / "skills" / "testpilot-request-discover" / "SKILL.md"
 REQUESTS = (ROOT / ".claude" / "skills" / "testpilot-requests" / "SKILL.md").read_text()
 MAIN = (ROOT / ".claude" / "skills" / "testpilot" / "SKILL.md").read_text()
 RULES = (ROOT / ".claude" / "references" / "agent-rules.md").read_text()
@@ -32,6 +30,19 @@ NEVER = ("browser_evaluate", "browser_run_code_unsafe", "browser_file_upload", "
 COUNTED = ("browser_click", "browser_type", "browser_fill_form", "browser_select_option", "browser_press_key", "browser_handle_dialog")
 
 
+DISCOVER = ROOT / ".claude" / "skills" / "testpilot-request-discover"
+CHECKS = {"read": ("forms.md", "visual-a11y.md", "api-security.md"), "write": ("visual-a11y.md", "api-security.md")}  # the check files each mode follows (SKILL.md, "The checks")
+
+
+def whole(mode):
+    """What the agent reads for a discover in this mode: the orchestrator, its mode file and the check files (step 3 of the mode file says when each is followed)."""
+    return "\n".join([(DISCOVER / "SKILL.md").read_text(), (DISCOVER / "modes" / f"{mode}.md").read_text(), *[(DISCOVER / "checks" / c).read_text() for c in CHECKS[mode]]])
+
+
+TEXT = whole("write")
+READONLY = whole("read")
+
+
 def flat(text):
     """The text with every run of white space as one space, so a sentence that the file wraps over two lines can still be found."""
     return " ".join(text.split())
@@ -39,7 +50,7 @@ def flat(text):
 
 def section(title):
     """The text of one `## ` section of the skill."""
-    m = re.search(r"^## " + re.escape(title) + r".*?\n(.*?)(?=^## |\Z)", TEXT, re.S | re.M)
+    m = re.search(r"^## " + re.escape(title) + r".*?\n(.*?)(?=^#{1,2} |\Z)", TEXT, re.S | re.M)
     assert m, title
     return m.group(1)
 
@@ -53,8 +64,9 @@ def tool_parts():
 class FileTests(unittest.TestCase):
     def test_it_is_a_skill_with_the_name_and_a_description_that_says_never_production_and_never_a_manual_audit(self):
         head = TEXT.split("---")[1]
-        self.assertIn("name: testpilot-request-discover-write", head)
-        self.assertIn("never for a production address and never for a manual audit.", flat(head))
+        self.assertIn("name: testpilot-request-discover\n", head)
+        self.assertIn("It never acts on a production address.", flat(head))
+        self.assertIn("user-invocable: false", head, "only /testpilot-requests is typed; the discover is handed over")
 
     def test_every_file_it_points_at_exists(self):
         refs = set(re.findall(r"`(\.\./[\w./-]+?\.md)`", TEXT)) | set(re.findall(r"\((\.\./[\w./-]+?\.md)\)", TEXT))
@@ -431,11 +443,11 @@ class LogAndFindingsTests(unittest.TestCase):
 
     def test_the_findings_follow_the_read_only_skill_and_a_test_case_is_a_draft(self):
         step4 = flat(section("4. Write the action log and the findings"))
-        self.assertIn("Write them as `../testpilot-request-discover/SKILL.md` step 4 says", step4)
+        self.assertIn("Write them as `modes/read.md` step 4 says", step4)
         self.assertIn("no `mkdir`, and never a file from another request", step4)
         self.assertIn("A test case is a **draft**", step4)
         self.assertIn("Ground every finding in something you saw **or did**", step4)
-        self.assertIn("Exactly as `../testpilot-request-discover/SKILL.md` step 5 says", flat(section("5. Hand them in")))
+        self.assertIn("Exactly as `modes/read.md` step 5 says", flat(section("5. Hand them in")))
 
     def test_a_finding_never_holds_a_secret_or_a_value_that_was_typed(self):
         self.assertIn("Never a value you typed, never a secret.", flat(section("4. Write the action log and the findings")))
@@ -479,7 +491,7 @@ class WiringTests(unittest.TestCase):
         """The first live test asked a third question, 'writing or read-only?', after a numbered list; the user answered '2' and got the read-only discover although the request and the profile both
         said full. The request and the profile are the two keys, and the user's yes to the confirmation (whose first line says 'reading and writing') is the consent: no extra question."""
         text = flat(REQUESTS)
-        self.assertIn("../testpilot-request-discover-write/SKILL.md", text)
+        self.assertIn("`../testpilot-request-discover/SKILL.md` in mode `write` instead", text)
         self.assertIn("If the request asks to **act on the target** (`targetMode: full`) and the profile says `permissionMode: full`, it goes to", text)
         self.assertIn("unless the user says \"read-only\" when choosing it", text)
         self.assertIn("**If the request asks to act on the target and the profile allows it (step 4), and the user did not say read-only**", text)
@@ -503,20 +515,20 @@ class WiringTests(unittest.TestCase):
         docs = flat(DOCS)
         self.assertIn("It is used on its own when the request and the profile both say `full`; say read-only when you choose the request to use the read-only discover instead.", docs)
         self.assertIn("The agent **stops once** when it meets a login, asks you to log in (or to skip it) and goes on", docs)
-        self.assertIn("`testpilot-request-discover-write` is used instead (the user says read-only when choosing the request to use the read-only one)", docs)
+        self.assertIn("its write mode is used instead (the user says read-only when choosing the request to use the read-only one)", docs)
         self.assertNotIn("You choose the writing version in `/testpilot-requests`", docs)
         self.assertIn("(say read-only when you choose the request to use the read-only one)", flat(README))
 
     def test_the_read_only_skill_says_the_writing_one_is_a_separate_choice_and_stays_read_only(self):
         text = flat(READONLY)
-        self.assertIn("the writing one (`../testpilot-request-discover-write/SKILL.md`) is a separate choice that also needs the profile to say `full`", text)
+        self.assertIn("the writing one (`modes/write.md`) is a separate choice that also needs the profile to say `full`", text)
         self.assertIn("explores `observe_only` whatever the request's `targetMode` or the profile's `permissionMode` says", text)
         self.assertNotIn("that is not used in this version", text)
 
     def test_the_rules_and_the_main_skill_know_about_it(self):
-        self.assertIn("`testpilot-request-discover-write`, step 2", flat(RULES))
+        self.assertIn("(`testpilot-request-discover`, step 2 of each mode)", flat(RULES))
         self.assertIn("The writing version never acts on a production target at all.", flat(RULES))
-        self.assertIn("../testpilot-request-discover-write/SKILL.md", MAIN)
+        self.assertIn("`../testpilot-request-discover/SKILL.md` (both modes)", MAIN)
 
     def test_the_docs_the_paths_page_and_the_readme_describe_it(self):
         docs = flat(DOCS)
@@ -525,8 +537,8 @@ class WiringTests(unittest.TestCase):
         self.assertIn("**Never a production address.**", docs)
         self.assertIn("**You log in yourself**", docs)
         self.assertIn("**A log of every action**", docs)
-        self.assertIn("`testpilot-request-discover-write`", flat(PATHS))
-        self.assertIn("`testpilot-request-discover-write`", flat(README))
+        self.assertIn("`testpilot-request-discover` in write mode", flat(PATHS))
+        self.assertIn("write mode (`modes/write.md`)", flat(README))
 
     def test_the_dialog_says_act_on_the_target_is_never_for_production_and_needs_the_profile(self):
         title = re.search(r'value: "full", label: "Act on the target", title: "([^"]+)"', OPTIONS_TS).group(1)
@@ -638,7 +650,7 @@ class SpecFilesTests(unittest.TestCase):
 
     def test_step_5b_is_the_read_only_ones_and_adds_what_acting_changes(self):
         text = flat(section("5b. Spec files"))
-        for must in ("Exactly as `../testpilot-request-discover/SKILL.md` step 5b says", "../../references/spec-files.md", "One call of `testpilot/tools/spec_git.py write`", "one correction of a refused spec at most",
+        for must in ("Exactly as `modes/read.md` step 5b says", "../../references/spec-files.md", "One call of `testpilot/tools/spec_git.py write`", "one correction of a refused spec at most",
                      "this step never stops the request", "What the action log says you did not do (a password, a payment) is `test.fixme`", "no value that is a secret is ever written",
                      "The log itself is not a spec and is not handed over."):
             with self.subTest(must=must):

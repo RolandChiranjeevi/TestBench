@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent / ".claude"
 RULES = (ROOT / "references" / "agent-rules.md").read_text()
-REPORT_SKILL = (ROOT / "skills" / "testpilot-request-discover" / "SKILL.md").read_text()
+REPORT_SKILL = (ROOT / "skills" / "testpilot-request-discover" / "modes" / "read.md").read_text()
 
 
 def rule(title):
@@ -67,8 +67,8 @@ class HonestReportingTests(unittest.TestCase):
         self.assertIn("**E**xplainability", text)
 
     def test_both_discover_skills_read_the_rules_and_end_with_what_was_not_verified(self):
-        for name in ("testpilot-request-discover", "testpilot-request-discover-write"):
-            text = " ".join((ROOT / "skills" / name / "SKILL.md").read_text().split())
+        for name in ("read", "write"):
+            text = " ".join((ROOT / "skills" / "testpilot-request-discover" / "modes" / f"{name}.md").read_text().split())
             with self.subTest(skill=name):
                 self.assertIn("12 and 13)", text)
                 self.assertIn("End with what was **not** verified and why, as rule 12 says", text)

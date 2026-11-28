@@ -1,6 +1,6 @@
 # Bug report from a discover
 
-Used by `testpilot-request-discover` and `testpilot-request-discover-write` for every `bug_report` finding. A developer must be able to see what the bug is, and do it again, from this text
+Used by `testpilot-request-discover` (both modes) for every `bug_report` finding. A developer must be able to see what the bug is, and do it again, from this text
 alone. Write in English. Never a password, a token, a cookie or a real person's data.
 
 ## The fields TestBench keeps

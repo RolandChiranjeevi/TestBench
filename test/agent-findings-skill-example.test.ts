@@ -6,7 +6,7 @@ import { findingBody } from "../server/agentfindings.ts";
 
 // The example findings files in the request-discover skill are what an agent copies the field names from, and TestBench refuses a field it does not know. So the strict schema of the
 // server must accept every finding in them: an example that drifts from the schema would make the agent send findings that are refused.
-const skill = readFileSync(new URL("../.claude/skills/testpilot-request-discover/SKILL.md", import.meta.url), "utf8");
+const skill = readFileSync(new URL("../.claude/skills/testpilot-request-discover/modes/read.md", import.meta.url), "utf8");
 const files = [...skill.matchAll(/```json\n([\s\S]*?)\n```/g)].map((m) => JSON.parse(m[1]!) as { findings: Record<string, unknown>[] });
 const findings = files.flatMap((f) => f.findings);
 

@@ -13,7 +13,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 SKILL = ROOT / ".claude" / "skills" / "testpilot-request-discover" / "SKILL.md"
-TEXT = SKILL.read_text()
 REQUESTS = (ROOT / ".claude" / "skills" / "testpilot-requests" / "SKILL.md").read_text()
 RULES = (ROOT / ".claude" / "references" / "agent-rules.md").read_text()
 sys.path.insert(0, str(ROOT / "testpilot" / "tools"))
@@ -21,18 +20,66 @@ import request_call  # noqa: E402
 import spec_git  # noqa: E402
 
 
+DISCOVER = ROOT / ".claude" / "skills" / "testpilot-request-discover"
+CHECKS = {"read": ("forms.md", "visual-a11y.md", "api-security.md"), "write": ("visual-a11y.md", "api-security.md")}  # the check files each mode follows (SKILL.md, "The checks")
+
+
+def whole(mode):
+    """What the agent reads for a discover in this mode: the orchestrator, its mode file and the check files (step 3 of the mode file says when each is followed)."""
+    return "\n".join([(DISCOVER / "SKILL.md").read_text(), (DISCOVER / "modes" / f"{mode}.md").read_text(), *[(DISCOVER / "checks" / c).read_text() for c in CHECKS[mode]]])
+
+
+TEXT = whole("read")
+
+
+def check(name):
+    """One check file, flattened: the check the mode file sends the agent to."""
+    return flat((DISCOVER / "checks" / name).read_text())
+
 def section(title):
     """The text of one `## ` section of the skill."""
-    m = re.search(r"^## " + re.escape(title) + r".*?\n(.*?)(?=^## |\Z)", TEXT, re.S | re.M)
+    m = re.search(r"^## " + re.escape(title) + r".*?\n(.*?)(?=^#{1,2} |\Z)", TEXT, re.S | re.M)
     assert m, title
     return m.group(1)
+
+
+class OrchestratorTests(unittest.TestCase):
+    """Step 5, S2: one discover skill for both modes. It says which mode, the mode file says every step, and each check is a file the mode file sends the agent to."""
+
+    ORCH = (DISCOVER / "SKILL.md").read_text()
+
+    def test_there_is_one_discover_skill_and_only_requests_is_typed(self):
+        self.assertFalse((ROOT / ".claude" / "skills" / "testpilot-request-discover-write").exists(), "the write mode is a file of this skill, not a skill of its own")
+        for skill in ("testpilot-request-discover", "testpilot-request-loadtest"):
+            with self.subTest(skill=skill):
+                head = (ROOT / ".claude" / "skills" / skill / "SKILL.md").read_text().split("---")[1]
+                self.assertIn("user-invocable: false", head)
+
+    def test_the_mode_is_read_unless_requests_handed_over_write_and_it_sends_the_agent_to_the_mode_file(self):
+        text = flat(self.ORCH)
+        self.assertIn("**read**, the default: follow `modes/read.md`, steps 1 to 7", text)
+        self.assertIn("**write**: follow `modes/write.md`, steps 1 to 7. Only when `/testpilot-requests` handed over `write`", text)
+        self.assertIn("Never choose `write` yourself, and never switch mode during a run.", text)
+        self.assertIn("in mode `write` instead", flat(REQUESTS))
+
+    def test_every_check_file_is_in_the_table_and_the_mode_file_sends_the_agent_to_it(self):
+        files = sorted(p.name for p in (DISCOVER / "checks").glob("*.md"))
+        self.assertEqual(files, sorted(set(CHECKS["read"]) | set(CHECKS["write"])))
+        read_step3 = flat(section("3. Explore, read-only"))
+        for name in files:
+            with self.subTest(check=name):
+                self.assertIn(f"`checks/{name}`", self.ORCH, "listed in the orchestrator's table")
+                self.assertIn(f"follow `checks/{name}`", read_step3, "the read mode file sends the agent to it")
+
+    def test_a_check_that_was_not_chosen_is_said_in_the_report(self):
+        self.assertIn("A check that was not chosen is not run, and the report says so (rule 12).", flat(self.ORCH))
 
 
 class FileTests(unittest.TestCase):
     def test_it_is_a_skill_with_the_name_and_a_description_that_says_when_to_use_it(self):
         head = TEXT.split("---")[1]
         self.assertIn("name: testpilot-request-discover", head)
-        self.assertIn("Use only when /testpilot-requests hands over a discover request, never for a manual audit.", head)
+        self.assertIn("Use only when /testpilot-requests hands over a discover request.", head)
 
     def test_every_file_it_points_at_exists(self):
         refs = set(re.findall(r"`(\.\./[\w./-]+?\.md)`", TEXT)) | set(re.findall(r"\((\.\./[\w./-]+?\.md)\)", TEXT))
@@ -99,10 +146,10 @@ class ConfirmationTests(unittest.TestCase):
         self.assertIn("The one exception is the production question of this read-only discover", flat(TEXT))
         rules = flat(RULES)
         self.assertIn("**One exception, for a read-only discover only**", rules)
-        self.assertIn("For everything that acts on a target or puts load on it (`testpilot-request-discover-write`, `testpilot-request-loadtest`) the question is asked as before.", rules)
+        self.assertIn("For everything that acts on a target or puts load on it (`testpilot-request-discover` in write mode, `testpilot-request-loadtest`) the question is asked as before.", rules)
         self.assertIn("A request still confirms nothing, and a production target still needs its two separate confirmations.", rules)
         # the writing skill and the load test keep their own separate question
-        self.assertIn('Ask: "Is this a production environment?". If the user says yes, or is not sure, **stop**', (ROOT / ".claude" / "skills" / "testpilot-request-discover-write" / "SKILL.md").read_text())
+        self.assertIn('Ask: "Is this a production environment?". If the user says yes, or is not sure, **stop**', whole("write"))
 
     def test_a_redirect_that_only_adds_or_removes_www_or_upgrades_to_https_is_the_same_site_and_any_other_redirect_stops(self):
         # live test 2026-11-23: saucedemo.com redirected to www.saucedemo.com and the agent stopped after the user's yes
@@ -279,7 +326,7 @@ class AroundTheSkillTests(unittest.TestCase):
         self.assertIn("../testpilot-request-discover/SKILL.md", REQUESTS)
         self.assertIn("**A request is not a confirmation**: answer nothing of this for the user, and do not skip its stop.", REQUESTS)
         self.assertNotIn("The full audit instead", REQUESTS, "the manual audit flow was removed")
-        self.assertIn("A discover handled by `testpilot-request-discover` or `testpilot-request-discover-write` is already marked done", REQUESTS)
+        self.assertIn("A discover handled by `testpilot-request-discover` (in either mode) is already marked done", REQUESTS)
         self.assertIn("A `rerun` or a `run` request needs the profile", REQUESTS)
 
     def test_nothing_else_still_says_that_every_stop_applies_to_a_discover_from_a_request(self):
@@ -503,7 +550,7 @@ class PassiveApiAndSecurityTests(unittest.TestCase):
     """api and security run inside the discover, passively, so that the person's one yes covers them. The tool that reads headers can also return cookies and a body, and no permission rule can stop that."""
 
     def bullet(self):
-        return flat(TEXT).split("**The `api` and `security` checks, passively.**")[1].split("- **Secrets.**")[0]
+        return check("api-security.md")
 
     def test_the_two_checks_run_here_and_the_older_skills_are_not_started_from_a_request(self):
         item4 = flat(section("1. Read what there is"))
@@ -603,7 +650,7 @@ class BugTemplateTests(unittest.TestCase):
 
     def test_both_discover_skills_point_to_it(self):
         self.assertIn("../bug-reporting/templates/discover-bug.md", TEXT)
-        self.assertIn("../bug-reporting/templates/discover-bug.md", (ROOT / ".claude" / "skills" / "testpilot-request-discover-write" / "SKILL.md").read_text())
+        self.assertIn("../bug-reporting/templates/discover-bug.md", whole("write"))
 
     def test_the_example_bug_follows_the_template(self):
         bugs = [f for block in ExampleAndShellTests.examples(self) for f in json.loads(block)["findings"] if f["kind"] == "bug_report"]
@@ -636,7 +683,7 @@ class BugScreenshotTests(unittest.TestCase):
         template = (ROOT / ".claude" / "skills" / "bug-reporting" / "templates" / "discover-bug.md").read_text()
         self.assertIn("**Screenshots** are required", template)
         self.assertIn("Never take a screenshot of a page that shows a password, a token, a cookie, a key or another person's data", RULES)
-        write = flat((ROOT / ".claude" / "skills" / "testpilot-request-discover-write" / "SKILL.md").read_text())
+        write = flat(whole("write"))
         self.assertIn('"Screenshots of a bug", says; a picture is handed in to TestBench only that way', write)
         self.assertNotIn("the picture is never handed in to TestBench", write)
         self.assertNotIn("the picture is never handed in to TestBench", flat(TEXT))
@@ -647,7 +694,7 @@ class FormFieldTests(unittest.TestCase):
     """Plan step 4: the read-only discover fills in form fields to see their rules and never sends a form. The four locks are what keep it read-only."""
 
     def bullet(self):
-        return flat(section("3. Explore, read-only")).split("**Form fields: fill in, never send.**")[1].split("- **An error from another origin**")[0]
+        return check("forms.md")
 
     def test_every_field_and_every_input_class_at_every_depth(self):
         b = self.bullet()
@@ -683,7 +730,7 @@ class FieldCoverageTests(unittest.TestCase):
     precheck that prints every gap before anything is handed in."""
 
     def bullet(self):
-        return flat(section("3. Explore, read-only")).split("**Form fields: fill in, never send.**")[1].split("- **An error from another origin**")[0]
+        return check("forms.md")
 
     def test_one_field_at_a_time_and_the_network_is_read_after_each(self):
         b = self.bullet()
@@ -721,7 +768,7 @@ class LockTwoPerFieldTests(unittest.TestCase):
     made-up values that are never sent."""
 
     def bullet(self):
-        return flat(section("3. Explore, read-only")).split("**Form fields: fill in, never send.**")[1].split("- **An error from another origin**")[0]
+        return check("forms.md")
 
     def test_a_field_that_sends_gets_no_more_values_and_the_others_are_still_tried(self):
         b = self.bullet()
@@ -749,7 +796,7 @@ class BudgetTests(unittest.TestCase):
     """Körning 8: the agent wrote "browser call limit of 300 reached" after 222 calls, so Phone and Message were never tried and the trap never fired."""
 
     def bullet(self):
-        return flat(section("3. Explore, read-only")).split("**Form fields: fill in, never send.**")[1].split("- **An error from another origin**")[0]
+        return check("forms.md")
 
     def test_breadth_first_every_field_once_before_any_second_value(self):
         b = self.bullet()
@@ -769,7 +816,7 @@ class VisualFromTheSnapshotTests(unittest.TestCase):
     skill rests on scans, keys and computed styles that read-only cannot use. The read-only check is written from what the snapshot shows."""
 
     def bullet(self):
-        return flat(section("3. Explore, read-only")).split("**The `visual` check, from the snapshot.**")[1].split("- **The `api` and `security` checks, passively.**")[0]
+        return check("visual-a11y.md")
 
     def test_it_says_what_to_check_on_every_page(self):
         b = self.bullet()
