@@ -132,7 +132,7 @@ Automatiserade testfall ska skrivas i **Playwright-format (`*.spec.ts`)**, så a
 **Framtida:**
 
 - **Azure DevOps** — export av buggar/krav/testfall.
-- **Mobilappstest** — t.ex. via BrowserStack eller liknande (stor scope).
+- **Mobilappstest** — t.ex. via Appium/Maestro (öppen källkod) eller BrowserStack (stor scope).
 
 ## Arkitektur
 

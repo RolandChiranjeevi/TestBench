@@ -335,7 +335,16 @@ Produktfokuserad backlog. Operativa sidospår (lokala modeller, namn, domän) h�
 - **Små förbättringar:** när `check` visar en gräns som gör specs omöjliga bör bekräftelsen säga "Not made" direkt (agenten såg `max-lines: 1` först efter sitt yes). Bilden utan alt-text på demosajten nämndes i ingen körning.
 
 ### Senare
-- Desktop DevOps (skrivbordsappen, och eventuellt F-B), Azure DevOps och mobilappstest.
+- Desktop DevOps (skrivbordsappen, och eventuellt F-B), Azure DevOps och mobilappstest (se nedan).
+
+### Mobilappstest (öppen källkod)
+**Status: idé, inget beslutat**
+- **Nivå 0, import (ingen kod, fungerar redan):** Appium (via WebdriverIO, pytest eller Java/TestNG) och Maestro (`maestro test --format junit`) skriver JUnit XML, och TestBench läser redan JUnit (`server/importers/parse.ts`). Ett team som redan kör mobiltester kan alltså lägga in resultaten i dag. Det som saknas är en rad i docs och ett importtest med en riktig fil från Maestro eller Appium.
+- **Nivå 1, discover mot en app (stort):** samma idé som webbens discover, men mot en emulator eller simulator. Vägar med öppen källkod: Appiums MCP-server (`appium-mcp`), `mobile-next/mobile-mcp` (Android och iOS, läser tillgänglighetsträdet) eller Maestros egen MCP. Emulatorn, SDK:n (Android Studio eller Xcode) och appens bygge ligger på användarens dator. Kräver ett eget säkerhetsbeslut: att installera en APK, läsa och skriva, inloggning, och vad "inte produktion" betyder för en app.
+- **Nivå 2, agenten skriver Maestro-flöden** (YAML, motsvarigheten till `spec.ts`) till git via DG-vägen. Maestro är lättare att generera och granska än Appium-kod.
+- **Värde:** viktig förmåga på sikt, eftersom mycket av det som testas i dag är mobilappar. Nivå 0 är billig och hjälper direkt. Nivå 1 ger verkligt värde först när det finns en app att testa. Arbetssättet (en request, en bekräftelse, ett förslag tillbaka) går att flytta över, men det kostar mycket att sätta upp.
+- **Ordning:** nivå 0 först. Nivå 1 bara när det finns en app att testa, och då skiss och ett eget säkerhetsbeslut innan något byggs.
+- **Öppet:** vilken MCP (jämförs när det blir aktuellt, versionerna är inte kontrollerade), Android först eller båda (iOS kräver Mac med Xcode, vilket finns), och om det blir en ny sorts request (`mobile-discover`) eller ett val i discover.
 
 ## Backlog
 
