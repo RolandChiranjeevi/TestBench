@@ -44,7 +44,7 @@ export const REQUEST_OPTIONS = {
   deliverables: ["plan", "cases", "observations", "bugs", "specs"],
   viewports: ["desktop", "tablet", "mobile"],
   /** Extra parts besides the discover itself. The test plan and the bug proposals always follow test-planning and bug-reporting, so those are not choices. */
-  checks: ["visual", "api", "security"],
+  checks: ["visual", "accessibility", "api", "security", "privacy"],
   /** How much work the agent may do: its ceilings for pages, actions and calls, and for how much it hands in. It never widens what the agent may do (that is `targetMode`). The numbers are in the skills. */
   depths: ["quick", "normal", "deep"],
 } as const;
@@ -62,11 +62,13 @@ export interface RequestOptions {
   /** The person says the target is production. A hint only (the agent still asks for its two confirmations), but with it the target can only be read. */
   production: boolean;
 }
-export const DEFAULT_REQUEST_OPTIONS: RequestOptions = { targetMode: "observe_only", gitMode: "local", deliverables: ["plan", "cases", "observations", "bugs"], viewports: ["desktop", "tablet", "mobile"], checks: [], depth: "normal", production: false };
+/** The checks that only read what the pages show, so they are allowed on a production address too (api and security read more, and security opens a few addresses of its own). */
+export const PRODUCTION_CHECKS: readonly string[] = ["visual", "accessibility", "privacy"];
+export const DEFAULT_REQUEST_OPTIONS: RequestOptions = { targetMode: "observe_only", gitMode: "local", deliverables: ["plan", "cases", "observations", "bugs"], viewports: ["desktop", "tablet", "mobile"], checks: ["visual", "accessibility", "api", "security", "privacy"], depth: "normal", production: false };
 
 /** The options of a discover request, checked and with the defaults filled in. Anything unknown or out of range is refused: these are enumerations, not text. */
 export function cleanOptions(input: unknown): RequestOptions {
-  if (input === undefined || input === null) return { ...DEFAULT_REQUEST_OPTIONS, deliverables: [...DEFAULT_REQUEST_OPTIONS.deliverables], viewports: [...DEFAULT_REQUEST_OPTIONS.viewports], checks: [] };
+  if (input === undefined || input === null) return { ...DEFAULT_REQUEST_OPTIONS, deliverables: [...DEFAULT_REQUEST_OPTIONS.deliverables], viewports: [...DEFAULT_REQUEST_OPTIONS.viewports], checks: [...DEFAULT_REQUEST_OPTIONS.checks] };
   if (typeof input !== "object" || Array.isArray(input)) throw bad("The options must be an object");
   const o = input as Record<string, unknown>;
   const known = ["targetMode", "gitMode", "deliverables", "viewports", "checks", "depth", "production"];
@@ -100,7 +102,7 @@ export function cleanOptions(input: unknown): RequestOptions {
     production: o.production === true,
   };
   if (options.production && options.targetMode !== "observe_only") throw bad("A production target can only be read: choose observe_only");
-  if (options.production && options.checks.some((c) => c !== "visual")) throw bad("A production target can only be read: of the checks only visual is allowed");
+  if (options.production && options.checks.some((c) => !PRODUCTION_CHECKS.includes(c))) throw bad("A production target can only be read: of the checks only visual, accessibility and privacy are allowed");
   return options;
 }
 

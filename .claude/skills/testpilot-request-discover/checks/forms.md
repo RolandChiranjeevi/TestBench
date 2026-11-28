@@ -33,5 +33,9 @@ Followed from `modes/read.md`, step 3, on every page with a form. Paths are rela
   `python3 -I testpilot/tools/request_call.py precheck <request number> --coverage <folder>/coverage.md --read --values <the depth's values per class> --checks <the request's checks joined by commas, or none>` (1, 2 or 3 values; the checks as in `checks/scope.md`). It prints a `GAP` for every field that
   lacks a class or has too few values: do those (or write the row with a hard reason: a file field, a field that sent data (lock 2), a page that left by itself), run it again, and hand in
   only when it prints no `GAP`. "No time" or "skipped" is not a reason.
-  You cannot see the field's own rules (`maxlength`, `pattern`) and the messages a form only shows when it is sent, so `Not checked` says so (rule 12). A field you did not try goes in a coverage
+  You cannot see the messages a form only shows when it is sent, so `Not checked` says so (rule 12). The field's own rules (`maxlength`, `pattern`) are in the page's HTML (`checks/page-html.md`): name them
+  in the finding when you read them. A field you did not try goes in a coverage
   gap, with the reason.
+- **The kind of field**, from the page's HTML (`checks/page-html.md`): an e-mail, phone or number field without the matching `type` or `inputmode` (a phone shows the wrong keyboard), and a
+  name, address or one-time-code field without `autocomplete`. One **observation** per form (`Form:`), severity `info` or `low`, naming the fields. Whether a password field refuses pasting
+  needs a key press, so it is not checked here.

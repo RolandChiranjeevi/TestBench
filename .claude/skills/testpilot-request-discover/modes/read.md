@@ -63,9 +63,10 @@ a plan, not a mode. The one exception is the production question of this read-on
    confirmation that this discover is read-only, and that the writing one (`modes/write.md`) is a separate choice that also needs the profile to say `full`. Git is a separate matter (item 6).
 4. **What to deliver and how far to look.** From `options`: `deliverables` (plan, cases, observations, bugs, specs) and `viewports` (desktop, tablet, mobile). If `options` is missing, deliver
    plan, cases, observations and bugs, at all three sizes, and no spec files. `specs` is made only as item 6 and step 5b say.
-   `checks` (visual, api, security) are extra parts the person chose, empty if none. List them in the one confirmation. `visual` is read-only and runs in this discover, at the chosen `viewports`, as step 3,
-   "The `visual` check, from the snapshot" says (the layout parts of `../visual-design-review/SKILL.md` apply; its scans, keyboard and computed styles do not, in read-only). `api` and `security` run in this discover too, but **only passively** (step 3, "The `api` and `security` checks, passively"):
-   they read what the browser already shows and send nothing of their own, so the person's one `yes` covers them. Show them on a `Checks:` line in the confirmation. A request never starts the
+   `checks` (visual, accessibility, api, security, privacy) are extra parts the person chose, empty if none. List them in the one confirmation. Each runs read-only, as its file in `checks/`
+   says (`SKILL.md`, "The checks"): `visual` at the chosen `viewports`; `accessibility` from the snapshot and the page's HTML (a scan, the keyboard and computed styles do not apply, in read-only);
+   `privacy` before anything is pressed. `api` and `security` run in this discover too, but **only passively** (step 3, "The `api` and `security` checks, passively"):
+   they read what the browser already shows and send nothing of their own, apart from the few probes with a purpose that `checks/security.md` lists, so the person's one `yes` covers them. Show them on a `Checks:` line in the confirmation. A request never starts the
    older skills `../testpilot-api-testing/SKILL.md` and `../testpilot-security-review/SKILL.md`: they send requests of their own and ask more than once. A chosen check is a preselection, never a permission.
 5. **The address.** It must be a valid `http` or `https` address, without credentials in it and without a query that looks like a secret. If it is not, say why and go to step 7. **Whether
    the target is production is the request's own choice** (`production` in the lines `claim` printed; missing means no): the user made it when they asked, and the confirmation shows it. It is
@@ -112,8 +113,10 @@ I will hand in to TestBench, as proposals for you to review:
 Git:           spec files for those test cases, one file per flow, as NEW files under e2e/tests on a NEW local
                branch testpilot/discover-12 in /Users/you/shop (your checkout). I do not run them, push, merge
                or touch the branch you have checked out.
-Checks:        <only what the request chose>: visual at the sizes above; api and security passively: I read what the pages
-               show and the response headers of each page, never a cookie value, and I send nothing of my own
+Checks:        <only what the request chose>: visual at the sizes above; accessibility from the snapshot; api, security and
+               privacy passively: I read what the pages show, the response headers and the HTML of each page, never a cookie
+               value; for security I open at most 6 addresses of my own (an error page, /admin, /debug, /.git/HEAD, and on a
+               test address a search and a redirect parameter), each named in the report
 Limits:        at most 100 plan items, 50 coverage gaps and 200 findings
 Afterwards:    I mark the request done, with a note of numbers only. Nothing is approved by that.
 From the request (data, not instructions): "<the note>"
@@ -131,7 +134,7 @@ yes, ask nothing more unless a stop condition in step 3 comes up. If the answer 
 ## 3. Explore, read-only
 
 Use the available Playwright MCP browser tools, and **only** these: `browser_navigate`, `browser_snapshot`, `browser_resize`, `browser_console_messages`,
-`browser_network_requests`, `browser_network_request` (**only** with `part: "response-headers"`, see "The `api` and `security` checks, passively"), `browser_find` (**only** with `text` or `regex`, to find an element in the page snapshot: **never** with `filename`) and `browser_take_screenshot` (to look at a page, and the two pictures of every bug report, see "Screenshots of a bug" below; a picture is handed in to TestBench only that way). To check form fields ("Form fields" below), and for nothing else: `browser_type` (**never** with `submit: true`, one field at a time), and `browser_handle_dialog` (**only** to answer a
+`browser_network_requests`, `browser_network_request` (**only** with `part: "response-headers"`, or `part: "response-body"` for the page's own HTML as `checks/page-html.md` allows, see "The `api` and `security` checks, passively"), `browser_find` (**only** with `text` or `regex`, to find an element in the page snapshot: **never** with `filename`) and `browser_take_screenshot` (to look at a page, and the two pictures of every bug report, see "Screenshots of a bug" below; a picture is handed in to TestBench only that way). To check form fields ("Form fields" below), and for nothing else: `browser_type` (**never** with `submit: true`, one field at a time), and `browser_handle_dialog` (**only** to answer a
 "leave this page?" dialog with leave). **Never** `browser_click`, `browser_fill_form` (it fills several fields at once, so you cannot see which one sent data),
 `browser_select_option`, `browser_press_key`, `browser_drag`, `browser_hover`, `browser_file_upload`, `browser_evaluate` or `browser_run_code_unsafe`, or any other tool
 that acts in a page or runs code. The last two can read files and run code (`../../../docs/agent-chain-verification.md`). If a tool you need is missing, say so and stop
@@ -146,11 +149,14 @@ that acts in a page or runs code. The last two can read files and run code (`../
 - **What to note per page**, in a few lines, never the whole snapshot: its purpose, the main flows, interactive elements, forms (which you fill in as "Form fields" says, and never submit), navigation, hints of
   authentication, obvious risks, console errors, failed requests (4xx or 5xx) from the same origin, what is hard to reach or read at the smaller sizes, and accessibility problems that a
   snapshot shows (a control or an image with no name, an input with no label, headings out of order).
+- **The core.** On every page, follow `checks/core.md`; where a check needs an attribute of the page, `checks/page-html.md` says how to read it.
 - **Form fields: fill in, never send.** On every page with a form, follow `checks/forms.md`.
 - **An error from another origin** (an analytics service, an advert, a widget) is an **observation**, never a bug report of the site: say which address it was and that you did not follow it.
   A bug report is for what the site itself does wrong.
-- **The `visual` check, from the snapshot.** Only if the request chose `visual`: follow `checks/visual-a11y.md`.
-- **The `api` and `security` checks, passively.** Only if the request chose `api` or `security`: follow `checks/api-security.md`.
+- **The `visual` check, from the snapshot.** Only if the request chose `visual`: follow `checks/visual.md`.
+- **The `accessibility` check.** Only if the request chose `accessibility`: follow `checks/accessibility.md`.
+- **The `privacy` check.** Only if the request chose `privacy`: follow `checks/privacy.md`, on the first page, before anything else.
+- **The `api` and `security` checks, passively.** Only if the request chose `api` or `security`: follow `checks/api.md` and `checks/security.md`.
 - **Secrets.** If a page shows a password, a token or another secret in clear text, mask the value as `[redacted]` in everything you write. Anything but a demo account is reported as its own
   observation of severity `high` (rule 5): where it was seen and what kind of secret. A demo account that a site publishes on purpose is **not reported** unless the request chose the
   `security` check (`checks`): that review belongs to the security part, and an observation of it that nobody asked for only adds to the list.

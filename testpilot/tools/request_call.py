@@ -43,7 +43,7 @@ FINDINGS_MAX = 50  # in one call: TestBench takes 300 findings a minute per toke
 ALIAS = re.compile(r"[A-Za-z0-9_-]{1,40}")  # a `ref` of a plan_item
 # What a person chose when asking for a discover (server/agentrequests.ts, REQUEST_OPTIONS). Only a value from these lists is ever printed, so no free text can pass through them.
 OPTION_CHOICES = {"targetMode": ("observe_only", "full"), "gitMode": ("off", "local", "pr"), "depth": ("quick", "normal", "deep")}
-OPTION_LISTS = {"deliverables": ("plan", "cases", "observations", "bugs", "specs"), "viewports": ("desktop", "tablet", "mobile"), "checks": ("visual", "api", "security")}
+OPTION_LISTS = {"deliverables": ("plan", "cases", "observations", "bugs", "specs"), "viewports": ("desktop", "tablet", "mobile"), "checks": ("visual", "accessibility", "api", "security", "privacy")}
 # What a person chose when asking for a load test (server/loadtest.ts, LOAD_LIMITS). Only a value from these lists, or a cleaned path, is ever printed.
 LOAD_CHOICES = {"vus": (5, 10, 25, 50), "durationSeconds": (30, 60, 120), "rampUpSeconds": (0, 10, 30), "maxErrorRatePercent": (1, 5, 10), "maxP95Ms": (1000, 2000, 5000)}
 LOAD_VERDICTS = ("pass", "warning", "fail")
@@ -382,7 +382,7 @@ def scope_table():
     table = {}
     for line in open(SCOPE_FILE, encoding="utf-8").read().splitlines():
         c = [x.strip() for x in line.strip().strip("|").split("|")]
-        if len(c) == 5 and re.fullmatch(r"[a-z]+\.[a-z0-9-]+", c[0]) and c[2] in ("yes", "no", "never") and c[3] in ("yes", "no", "never"):
+        if len(c) == 5 and re.fullmatch(r"[a-z0-9]+\.[a-z0-9-]+", c[0]) and c[2] in ("yes", "no", "never") and c[3] in ("yes", "no", "never"):
             table[c[0]] = (c[1], c[2], c[3])
     return table
 
@@ -430,7 +430,7 @@ def precheck(rid, path, read=False, values=0, checks=None):
                 pages.setdefault(page, [])
             continue
         parts = [s.strip() for s in line.split("·")]
-        if in_scope and len(parts) >= 2 and re.fullmatch(r"[a-z]+\.[a-z0-9-]+", parts[0]):
+        if in_scope and len(parts) >= 2 and re.fullmatch(r"[a-z0-9]+\.[a-z0-9-]+", parts[0]):
             scope[parts[0]] = (parts[1], " · ".join(parts[2:]).strip())
         elif page is not None and len(parts) >= 3 and parts[2] in ROW_STATUS:
             pages[page].append(parts)
